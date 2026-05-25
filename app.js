@@ -1077,7 +1077,16 @@ const _TL_STORAGE_KEY = 'lesmichels_tierlist';
 let tlState = (() => {
   try {
     const raw = localStorage.getItem(_TL_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
+      const active = parsed.tierlists.find(t => t.id === parsed.activeTierlistId && !t.archived);
+      if (!active) {
+        const first = parsed.tierlists.find(t => !t.archived);
+        parsed.activeTierlistId = first ? first.id : null;
+      }
+      return parsed;
+    }
   } catch (e) {}
   return { tierlists: [], activeTierlistId: null };
 })();
