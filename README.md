@@ -138,7 +138,7 @@ Partage cette URL avec tes amis — elle ne sera pas indexée par Google.
 - [x] Double-clic ou bouton ✏ pour renommer un thème
 - [x] Archivage d'un thème (disparaît de la barre principale)
 - [x] **Bouton "Thèmes archivés"** : affiche un modal listant les thèmes archivés avec options restaurer / supprimer
-- [x] Suppression d'un thème (si au moins un autre thème actif existe)
+- [x] Suppression définitive d'un thème uniquement depuis la modal "Thèmes archivés" (après archivage — sécurité anti-missclic)
 - [x] Sauvegarde automatique dans Firebase
 
 #### Cases (propres au thème actif)
@@ -169,6 +169,7 @@ Partage cette URL avec tes amis — elle ne sera pas indexée par Google.
 - [x] **Message bingo** :
   - 1 ligne → `🎉 BINGO ! Tu as complété une ligne !`
   - N lignes → `🎉 BINGO xN ! Tu as complété N lignes !`
+- [x] **Export PNG** : génère et télécharge la grille active en image (cases cochées et bingos mis en évidence)
 
 ---
 

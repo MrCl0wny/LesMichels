@@ -142,6 +142,7 @@ const btnSizePlus      = document.getElementById('btn-size-plus');
 const btnGenerate      = document.getElementById('btn-generate');
 const btnManual        = document.getElementById('btn-manual');
 const btnReset         = document.getElementById('btn-reset');
+const btnExportBingo   = document.getElementById('btn-export-bingo');
 const gridError        = document.getElementById('grid-error');
 const gridsList        = document.getElementById('grids-list');
 const btnNewGrid       = document.getElementById('btn-new-grid');
@@ -412,17 +413,110 @@ function renderThemesList() {
     btnArch.addEventListener('click', e => { e.stopPropagation(); archiveTheme(t.id); });
     item.appendChild(btnArch);
 
-    const btnDel = document.createElement('button');
-    btnDel.className = 'theme-tab-btn del';
-    btnDel.title = 'Supprimer ce thème';
-    btnDel.textContent = '✕';
-    btnDel.style.display = state.themes.filter(x => !x.archived).length > 1 ? '' : 'none';
-    btnDel.addEventListener('click', e => { e.stopPropagation(); deleteTheme(t.id); });
-    item.appendChild(btnDel);
-
     item.addEventListener('click', () => switchTheme(t.id));
     themesList.appendChild(item);
   });
+}
+
+// ──────────────────────────────────────────────
+// Export PNG de la grille bingo
+// ──────────────────────────────────────────────
+function bingoExport() {
+  const t = activeTheme();
+  const g = activeGrid();
+  if (!t || !g || g.grid.length === 0) return;
+
+  const n = g.gridSize;
+  const cellSize = 120;
+  const gap = 3;
+  const headerH = 44;
+  const totalW = n * cellSize + (n - 1) * gap;
+  const totalH = headerH + n * cellSize + (n - 1) * gap;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = totalW;
+  canvas.height = totalH;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#18181c';
+  ctx.fillRect(0, 0, totalW, totalH);
+
+  // Titre : "ThèmeName — GridName"
+  ctx.fillStyle = '#e8e8f0';
+  ctx.font = 'bold 16px Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${t.name}  —  ${g.name}`, 8, headerH / 2);
+
+  const { indices: bingoIdx } = getBingoResult(n, g.grid);
+  const scale = t.cellFontScale || 1;
+  const font = t.cellFont || 'Arial, sans-serif';
+
+  for (let i = 0; i < n * n; i++) {
+    const row = Math.floor(i / n);
+    const col = i % n;
+    const x = col * (cellSize + gap);
+    const y = headerH + row * (cellSize + gap);
+    const cell = g.grid[i];
+    const el = cell && cell.elementId ? t.elements.find(e => e.id === cell.elementId) : null;
+
+    // Fond de case
+    if (bingoIdx.has(i)) {
+      ctx.fillStyle = '#4caf7d';
+    } else if (cell && cell.checked) {
+      ctx.fillStyle = '#2d6a4f';
+    } else if (el) {
+      ctx.fillStyle = '#23232e';
+    } else {
+      ctx.fillStyle = '#1a1a22';
+    }
+    ctx.fillRect(x, y, cellSize, cellSize);
+
+    // Bordure
+    ctx.strokeStyle = '#333344';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
+
+    if (!el) continue;
+
+    // Texte
+    ctx.fillStyle = (bingoIdx.has(i) || cell.checked) ? '#fff' : '#d0d0e8';
+    const lenText = el.text.length;
+    let basePx;
+    if (lenText <= 6)       basePx = 20;
+    else if (lenText <= 12) basePx = 16;
+    else if (lenText <= 22) basePx = 13;
+    else if (lenText <= 40) basePx = 11;
+    else                    basePx = 9;
+    const fontSize = Math.round(basePx * scale);
+    ctx.font = `bold ${fontSize}px ${font.split(',')[0].replace(/"/g, '')}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Word-wrap simple
+    const maxW = cellSize - 12;
+    const words = el.text.split(' ');
+    const lines = [];
+    let line = '';
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > maxW && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = test;
+      }
+    }
+    lines.push(line);
+    const lineH = fontSize + 3;
+    const startY = y + cellSize / 2 - ((lines.length - 1) * lineH) / 2;
+    lines.forEach((l, li) => ctx.fillText(l, x + cellSize / 2, startY + li * lineH));
+  }
+
+  const link = document.createElement('a');
+  link.download = (`bingo_${t.name}_${g.name}`).replace(/[^a-z0-9]/gi, '_') + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
 }
 
 function renderArchivedThemesModal() {
@@ -989,6 +1083,7 @@ btnManual.addEventListener('click', () => {
 });
 
 btnReset.addEventListener('click', resetGrid);
+btnExportBingo.addEventListener('click', bingoExport);
 
 btnNewGrid.addEventListener('click', () => {
   const t = activeTheme();
