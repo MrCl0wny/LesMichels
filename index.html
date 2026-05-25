@@ -3,10 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <!-- Firebase SDK (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -284,6 +288,36 @@
     </div>
   </div>
 
+  <!-- Modal pseudo -->
+  <div id="modal-pseudo" class="modal-overlay">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Bienvenue sur LesMichels !</h3>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:12px;color:var(--text-faint);font-size:0.9rem;">Entre ton pseudo pour rejoindre la session :</p>
+        <input type="text" id="pseudo-input" class="modal-text-input" placeholder="Ton pseudo..." maxlength="30" />
+        <div class="modal-actions">
+          <button class="btn-action" id="pseudo-confirm">Rejoindre</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase init + app -->
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAMZ_gATvc8uEl9jqykPIPK4-PLH8RIU-I",
+      authDomain: "lesmichels-bf146.firebaseapp.com",
+      databaseURL: "https://lesmichels-bf146-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "lesmichels-bf146",
+      storageBucket: "lesmichels-bf146.firebasestorage.app",
+      messagingSenderId: "537211846544",
+      appId: "1:537211846544:web:1207748504f2a31686fd15"
+    };
+    firebase.initializeApp(firebaseConfig);
+    window._db = firebase.database();
+  </script>
   <script src="app.js"></script>
 </body>
 </html>

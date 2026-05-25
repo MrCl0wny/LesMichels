@@ -1,13 +1,46 @@
 /* ═══════════════════════════════════════════════
    LesMichels — app.js
-   Bingo — logique principale
 ═══════════════════════════════════════════════ */
 
 // ──────────────────────────────────────────────
-// État global — chargé depuis localStorage
+// Pseudo utilisateur
 // ──────────────────────────────────────────────
-const STORAGE_KEY = 'lesmichels_bingo_v2';
+let currentPseudo = sessionStorage.getItem('lesmichels_pseudo') || null;
 
+function setupPseudoModal() {
+  const modal  = document.getElementById('modal-pseudo');
+  const input  = document.getElementById('pseudo-input');
+  const btn    = document.getElementById('pseudo-confirm');
+
+  if (currentPseudo) {
+    modal.classList.add('hidden');
+    return;
+  }
+
+  const confirm = () => {
+    const val = input.value.trim();
+    if (!val) return;
+    currentPseudo = val;
+    sessionStorage.setItem('lesmichels_pseudo', val);
+    modal.classList.add('hidden');
+  };
+
+  btn.addEventListener('click', confirm);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') confirm(); });
+  setTimeout(() => input.focus(), 100);
+}
+
+setupPseudoModal();
+
+// ──────────────────────────────────────────────
+// Firebase — références
+// ──────────────────────────────────────────────
+const _dbBingo    = window._db.ref('bingo');
+const _dbTierlist = window._db.ref('tierlist');
+
+// ──────────────────────────────────────────────
+// État global Bingo
+// ──────────────────────────────────────────────
 const AVAILABLE_FONTS = [
   { label: 'Arial', value: 'Arial, sans-serif' },
   { label: 'Impact', value: 'Impact, fantasy' },
@@ -45,23 +78,12 @@ function migrateState(raw) {
     return { themes: [theme], activeThemeId: theme.id };
   }
 
-  // État vide ou corrompu : pas de thèmes du tout
   if (!raw.themes || raw.themes.length === 0) return null;
-
   return raw;
 }
 
-let state = (function () {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    // Essayer aussi l'ancien storage key
-    const rawOld = !raw ? localStorage.getItem('lesmichels_bingo') : null;
-    const parsed = raw ? JSON.parse(raw) : rawOld ? JSON.parse(rawOld) : null;
-    return migrateState(parsed) || initState();
-  } catch (e) {
-    return initState();
-  }
-})();
+let state = initState();
+let _bingoRemoteUpdate = false;
 
 function initState() {
   return { themes: [], activeThemeId: null };
@@ -94,12 +116,14 @@ function shuffle(arr) {
   return a;
 }
 
+// Sérialise l'état pour Firebase (supprime les undefined, convertit les tableaux)
+function sanitizeForFirebase(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 function saveState() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (e) {
-    console.warn('Sauvegarde impossible :', e);
-  }
+  if (_bingoRemoteUpdate) return;
+  _dbBingo.set(sanitizeForFirebase(state)).catch(e => console.warn('Bingo save error:', e));
 }
 
 // ──────────────────────────────────────────────
@@ -993,49 +1017,6 @@ modalArchivedThemes.addEventListener('click', e => {
 
 // ──────────────────────────────────────────────
 // Initialisation
-// ──────────────────────────────────────────────
-function init() {
-  AVAILABLE_FONTS.forEach(f => {
-    const opt = document.createElement('option');
-    opt.value = f.value;
-    opt.textContent = f.label;
-    opt.style.fontFamily = f.value;
-    fontFamilySelect.appendChild(opt);
-  });
-
-  if (!state.themes) state.themes = [];
-
-  state.themes.forEach(t => {
-    if (!t.elements) t.elements = [];
-    if (!t.grids)    t.grids    = [];
-    if (t.cellFontScale === undefined) t.cellFontScale = 1;
-    if (!t.cellFont) t.cellFont = AVAILABLE_FONTS[0].value;
-
-    t.grids.forEach(g => {
-      const expected = g.gridSize * g.gridSize;
-      if (!g.grid || g.grid.length !== expected) {
-        g.grid = Array.from({ length: expected }, () => ({ elementId: null, checked: false }));
-      }
-    });
-
-    if (t.grids.length > 0 && !t.grids.find(g => g.id === t.activeGridId)) {
-      t.activeGridId = t.grids[0].id;
-    }
-  });
-
-  if (state.themes.length > 0 && !state.themes.find(t => t.id === state.activeThemeId)) {
-    const nonArchived = state.themes.filter(t => !t.archived);
-    state.activeThemeId = nonArchived.length > 0 ? nonArchived[0].id : state.themes[0].id;
-  }
-
-  renderThemesList();
-  renderElements();
-  renderGridsList();
-  renderGrid();
-}
-
-init();
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Navigation multi-pages
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1061,8 +1042,9 @@ init();
 // TIER LIST — logique complète
 // ══════════════════════════════════════════════════════════════════════════════
 
-const TL_STORAGE_KEY = 'lesmichels_tierlist_v1';
-
+// ──────────────────────────────────────────────
+// État Tier List
+// ──────────────────────────────────────────────
 const TL_DEFAULT_TIERS = [
   { label: 'S', color: '#e85b47' },
   { label: 'A', color: '#e8a047' },
@@ -1091,17 +1073,12 @@ const TL_PRESET_COLORS = [
 ];
 
 // ── État ──────────────────────────────────────────────────────────────────────
-let tlState = (function () {
-  try {
-    const raw = localStorage.getItem(TL_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (parsed && parsed.tierlists) return parsed;
-  } catch (e) {}
-  return { tierlists: [], activeTierlistId: null };
-})();
+let tlState = { tierlists: [], activeTierlistId: null };
+let _tlRemoteUpdate = false;
 
 function tlSave() {
-  try { localStorage.setItem(TL_STORAGE_KEY, JSON.stringify(tlState)); } catch (e) { console.warn('TL save error', e); }
+  if (_tlRemoteUpdate) return;
+  _dbTierlist.set(sanitizeForFirebase(tlState)).catch(e => console.warn('TL save error:', e));
 }
 
 function tlActiveTierlist() {
@@ -1946,5 +1923,67 @@ document.addEventListener('paste', e => {
   Promise.all(promises).then(() => { tlSave(); tlRender(); });
 });
 
-// ── Init tierlist ─────────────────────────────────────────────────────────────
-tlRender();
+// ══════════════════════════════════════════════════════════════════════════════
+// Initialisation Firebase temps réel
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Bingo ─────────────────────────────────────────────────────────────────────
+_dbBingo.on('value', snapshot => {
+  _bingoRemoteUpdate = true;
+  const raw = snapshot.val();
+  const migrated = migrateState(raw);
+  state = migrated || initState();
+
+  // Normaliser l'état (comme dans init())
+  if (!state.themes) state.themes = [];
+  state.themes.forEach(t => {
+    if (!t.elements) t.elements = [];
+    if (!t.grids)    t.grids    = [];
+    if (t.cellFontScale === undefined) t.cellFontScale = 1;
+    if (!t.cellFont) t.cellFont = AVAILABLE_FONTS[0].value;
+    t.grids.forEach(g => {
+      const expected = g.gridSize * g.gridSize;
+      if (!g.grid || g.grid.length !== expected) {
+        g.grid = Array.from({ length: expected }, () => ({ elementId: null, checked: false }));
+      }
+    });
+    if (t.grids.length > 0 && !t.grids.find(g => g.id === t.activeGridId)) {
+      t.activeGridId = t.grids[0].id;
+    }
+  });
+  if (state.themes.length > 0 && !state.themes.find(t => t.id === state.activeThemeId)) {
+    const nonArchived = state.themes.filter(t => !t.archived);
+    state.activeThemeId = nonArchived.length > 0 ? nonArchived[0].id : state.themes[0].id;
+  }
+
+  // Premier chargement : init les fonts
+  const fontSelectEl = document.getElementById('font-family-select');
+  if (fontSelectEl && fontSelectEl.options.length === 0) {
+    AVAILABLE_FONTS.forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f.value;
+      opt.textContent = f.label;
+      opt.style.fontFamily = f.value;
+      fontSelectEl.appendChild(opt);
+    });
+  }
+
+  renderThemesList();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+  _bingoRemoteUpdate = false;
+});
+
+// ── Tier List ─────────────────────────────────────────────────────────────────
+_dbTierlist.on('value', snapshot => {
+  _tlRemoteUpdate = true;
+  const raw = snapshot.val();
+  if (raw && raw.tierlists) {
+    tlState = raw;
+  } else {
+    tlState = { tierlists: [], activeTierlistId: null };
+  }
+  tlRender();
+  _tlRemoteUpdate = false;
+});

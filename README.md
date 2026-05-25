@@ -1,7 +1,7 @@
 # LesMichels — Fiche Projet
 
 > Application web privée pour soirées TV entre amis.
-> Thème : sombre, sobre, moderne. Hébergée sur GitHub Pages.
+> Thème : sombre, sobre, moderne. Hébergée sur Firebase Hosting.
 
 ---
 
@@ -12,7 +12,7 @@ LesMichels pour moi et mes amis.
 Cette application permettra principalement de générer des bingos 
 personnalisés, des tierlists et un planning partagé.
 Le style doit être sombre, sobre, moderne et agréable sur PC.
-Le code sera hébergé sur GitHub et mis en ligne via GitHub Pages.
+Le code sera hébergé sur Firebase Hosting avec Firebase Realtime Database.
 
 Je suis novice en informatique. Tu gères donc entièrement toute 
 la partie technique du projet. Tu dois :
@@ -31,15 +31,69 @@ la partie technique du projet. Tu dois :
 
 ```
 LesMichels/
-├── index.html       → Structure de la page
-├── style.css        → Thème sombre, mise en forme (police Arial)
-├── app.js           → Logique (bingo, sauvegarde, thèmes, grilles)
-└── README.md        → Ce fichier
+├── index.html          → Structure de la page + modal pseudo + scripts Firebase
+├── style.css           → Thème sombre, mise en forme
+├── app.js              → Logique complète (bingo, tierlist, Firebase temps réel)
+├── firebase.json       → Configuration Firebase Hosting
+├── .firebaserc         → Projet Firebase cible (lesmichels-bf146)
+├── database.rules.json → Règles d'accès Firebase Realtime Database
+└── README.md           → Ce fichier
 ```
 
 ---
 
+## 🌐 Hébergement & synchronisation
+
+- **Hébergement** : Firebase Hosting (Google) — HTTPS inclus, déploiement simple
+- **Base de données** : Firebase Realtime Database — synchronisation en temps réel via WebSocket
+- **Accès** : uniquement via le lien fourni — `noindex` actif (invisible des moteurs de recherche)
+- **Pseudo** : demandé à l'ouverture (stocké en session, pas de compte nécessaire)
+- **Synchronisation** : toutes les modifications sont répercutées instantanément sur tous les appareils connectés, sans refresh
+
+---
+
+## ⚙️ Déployer sur Firebase Hosting
+
+### Première fois (installation unique)
+
+1. Installe Node.js : https://nodejs.org
+2. Dans un terminal, installe Firebase CLI :
+   ```
+   npm install -g firebase-tools
+   ```
+3. Connecte-toi à ton compte Google :
+   ```
+   firebase login
+   ```
+
+### Déployer
+
+Dans le dossier du projet :
+```
+firebase deploy
+```
+
+Firebase te donne une URL du type :
+```
+https://lesmichels-bf146.web.app
+```
+
+Partage cette URL avec tes amis — elle ne sera pas indexée par Google.
+
+---
+
 ## ✅ Fonctionnalités réalisées
+
+### Temps réel & multi-utilisateurs (Mai 2026)
+
+- [x] **Synchronisation Firebase** : toutes les modifications (bingo, tierlist) sont enregistrées dans Firebase Realtime Database
+- [x] **Temps réel** : les changements apparaissent instantanément sur tous les appareils sans refresh
+- [x] **Multi-utilisateurs** : tous les participants peuvent interagir et modifier simultanément
+- [x] **Pseudo à l'ouverture** : l'utilisateur entre son pseudo lors de la première visite (stocké en session)
+- [x] **Invisible des moteurs de recherche** : balise `noindex` + header HTTP `X-Robots-Tag`
+- [x] **Accès via lien unique** : pas d'inscription, pas de connexion
+
+---
 
 ### Tier List (v1 — Mai 2026)
 
@@ -50,7 +104,7 @@ LesMichels/
 - [x] Archivage d'une tier list (disparaît de la liste principale)
 - [x] **Modal "Archivées"** : restaurer ou supprimer définitivement
 - [x] Suppression définitive d'une tier list
-- [x] Sauvegarde automatique en temps réel dans `localStorage` (clé `lesmichels_tierlist_v1`)
+- [x] Sauvegarde automatique en temps réel dans Firebase
 
 #### Tiers
 - [x] 5 tiers par défaut à la création : S (rouge), A (orange), B (jaune), C (vert), D (bleu)
@@ -85,8 +139,7 @@ LesMichels/
 - [x] Archivage d'un thème (disparaît de la barre principale)
 - [x] **Bouton "Thèmes archivés"** : affiche un modal listant les thèmes archivés avec options restaurer / supprimer
 - [x] Suppression d'un thème (si au moins un autre thème actif existe)
-- [x] Sauvegarde automatique dans `localStorage` (clé `lesmichels_bingo_v2`)
-- [x] Migration automatique depuis l'ancien format v1
+- [x] Sauvegarde automatique dans Firebase
 
 #### Cases (propres au thème actif)
 - [x] Ajout d'une case (bouton ou touche Entrée)
@@ -108,30 +161,18 @@ LesMichels/
 - [x] Suppression d'une grille (si au moins une autre existe)
 
 #### Affichage de la grille
-- [x] **Hauteur fixe à 60% de la hauteur de l'écran** — invariable quoi qu'il arrive (contenu, police, taille)
-- [x] **Zoom texte** : boutons +/- pour augmenter ou réduire la taille du texte dans les cases, **en temps réel** sans rechargement
-- [x] Taille de texte adaptative selon la longueur du texte, sans impacter la taille de la grille
+- [x] **Hauteur fixe à 60% de la hauteur de l'écran**
+- [x] **Zoom texte** : boutons +/- pour augmenter ou réduire la taille du texte dans les cases
+- [x] Taille de texte adaptative selon la longueur du texte
 - [x] **Détection bingo** sur lignes, colonnes et les deux diagonales
 - [x] **Lignes complétées affichées en vert clair** (animations pulse)
 - [x] **Message bingo** :
   - 1 ligne → `🎉 BINGO ! Tu as complété une ligne !`
   - N lignes → `🎉 BINGO xN ! Tu as complété N lignes !`
 
-#### Interface
-- [x] Police **Arial** sur l'intégralité de l'application
-- [x] Logo "LesMichels Bingo" (sans TV)
-
 ---
 
 ## 🔜 À faire
-
-- Sauvegarde en ligne en temps réel disponible pour tous et pour toutes les fonctionnalités de l'application
-
-### Bingo
-- Terminé
-
-### Tier List
-- Terminé
 
 ### Planning partagé
 - À venir
@@ -140,29 +181,27 @@ LesMichels/
 
 ## 💾 Sauvegarde des données
 
-Les données sont sauvegardées automatiquement dans le navigateur via `localStorage` :
-- Bingo : clé `lesmichels_bingo_v2`
-- Tier List : clé `lesmichels_tierlist_v1`
+Les données sont sauvegardées automatiquement dans **Firebase Realtime Database** :
+- Bingo : chemin `/bingo`
+- Tier List : chemin `/tierlist`
 
-**Important :** les données sont liées au navigateur et à l'appareil. Elles ne sont pas partagées entre plusieurs personnes.
-
-Une synchronisation en ligne pourra être ajoutée plus tard si besoin.
+**Note importante :** les images de la Tier List sont stockées en base64 dans Firebase. Pour des images volumineuses, préférer des images redimensionnées.
 
 ---
 
 ## 📝 Notes techniques
 
-- Aucune dépendance externe (pas de framework, pas d'installation)
+- Aucune dépendance locale (pas de framework, pas de build tool, pas d'installation)
+- Firebase SDK chargé via CDN (version 10.12.2 compat)
 - Compatible avec tous les navigateurs modernes
-- Polices chargées depuis Google Fonts (Space Mono pour les monospaces) + Arial système
-- Données stockées côté client uniquement (pas de serveur)
-- Migration automatique depuis l'ancien format v1 (`lesmichels_bingo`)
+- Polices chargées depuis Google Fonts (Space Mono) + Arial système
+- Synchronisation temps réel via WebSocket (Firebase `onValue`)
+- Pas de boucle infinie : flag `_bingoRemoteUpdate` / `_tlRemoteUpdate` bloque la ré-écriture lors d'une mise à jour distante
 
 ---
 
 ## ⚙️ Règles techniques
 
-- Le projet doit rester compatible avec GitHub Pages
 - Toujours préserver les sauvegardes existantes
 - Toujours privilégier les modifications minimales
 - Éviter les frameworks inutiles
