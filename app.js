@@ -35,8 +35,7 @@ setupPseudoModal();
 // ──────────────────────────────────────────────
 // Firebase — références
 // ──────────────────────────────────────────────
-const _dbBingo    = window._db.ref('bingo');
-const _dbTierlist = window._db.ref('tierlist');
+const _dbBingo = window._db.ref('bingo');
 
 // ──────────────────────────────────────────────
 // État global Bingo
@@ -1073,12 +1072,22 @@ const TL_PRESET_COLORS = [
 ];
 
 // ── État ──────────────────────────────────────────────────────────────────────
-let tlState = { tierlists: [], activeTierlistId: null };
-let _tlRemoteUpdate = false;
+const _TL_STORAGE_KEY = 'lesmichels_tierlist';
+
+let tlState = (() => {
+  try {
+    const raw = localStorage.getItem(_TL_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { tierlists: [], activeTierlistId: null };
+})();
 
 function tlSave() {
-  if (_tlRemoteUpdate) return;
-  _dbTierlist.set(sanitizeForFirebase(tlState)).catch(e => console.warn('TL save error:', e));
+  try {
+    localStorage.setItem(_TL_STORAGE_KEY, JSON.stringify(tlState));
+  } catch (e) {
+    console.warn('TL save error (localStorage plein ?):', e);
+  }
 }
 
 function tlActiveTierlist() {
@@ -1976,14 +1985,4 @@ _dbBingo.on('value', snapshot => {
 });
 
 // ── Tier List ─────────────────────────────────────────────────────────────────
-_dbTierlist.on('value', snapshot => {
-  _tlRemoteUpdate = true;
-  const raw = snapshot.val();
-  if (raw && raw.tierlists) {
-    tlState = raw;
-  } else {
-    tlState = { tierlists: [], activeTierlistId: null };
-  }
-  tlRender();
-  _tlRemoteUpdate = false;
-});
+tlRender();
