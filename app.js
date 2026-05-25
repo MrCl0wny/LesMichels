@@ -44,6 +44,10 @@ function migrateState(raw) {
     theme.activeGridId = raw.activeGridId || null;
     return { themes: [theme], activeThemeId: theme.id };
   }
+
+  // État vide ou corrompu : pas de thèmes du tout
+  if (!raw.themes || raw.themes.length === 0) return null;
+
   return raw;
 }
 
@@ -65,6 +69,7 @@ function initState() {
 }
 
 function activeTheme() {
+  if (!state.themes || state.themes.length === 0) return null;
   return state.themes.find(t => t.id === state.activeThemeId) || state.themes[0];
 }
 
@@ -134,6 +139,12 @@ const archivedThemesList    = document.getElementById('archived-themes-list');
 // ──────────────────────────────────────────────
 function renderElements() {
   const t = activeTheme();
+  if (!t) {
+    listActive.innerHTML = '';
+    listArchived.innerHTML = '';
+    elementCount.textContent = '0';
+    return;
+  }
   const active   = t.elements.filter(e => !e.archived);
   const archived = t.elements.filter(e => e.archived);
 
@@ -241,6 +252,7 @@ function addElement() {
   if (!text) return;
 
   const t = activeTheme();
+  if (!t) return;
   t.elements.push({ id: uid(), text, archived: false });
   inputEl.value = '';
   saveState();
@@ -315,15 +327,24 @@ function deleteTheme(id) {
   renderGrid();
 }
 
+function ensureThemeExists() {
+  if (!state.themes || state.themes.length === 0) {
+    const t = defaultTheme('Soirée 1');
+    state.themes = [t];
+    state.activeThemeId = t.id;
+    saveState();
+  }
+}
+
 function archiveTheme(id) {
   const t = state.themes.find(t => t.id === id);
   if (!t) return;
+  const nonArchived = state.themes.filter(x => !x.archived);
+  if (!t.archived && nonArchived.length <= 1) return; // bloquer l'archivage du dernier thème actif
   t.archived = !t.archived;
   if (t.archived && state.activeThemeId === id) {
     const remaining = state.themes.filter(x => !x.archived);
-    if (remaining.length > 0) {
-      state.activeThemeId = remaining[0].id;
-    }
+    state.activeThemeId = remaining.length > 0 ? remaining[0].id : null;
   }
   saveState();
   renderThemesList();
@@ -491,6 +512,7 @@ function renameGrid(id, newName) {
 function renderGridsList() {
   gridsList.innerHTML = '';
   const t = activeTheme();
+  if (!t) return;
   t.grids.forEach(g => {
     const item = document.createElement('div');
     item.className = 'grid-tab' + (g.id === t.activeGridId ? ' active' : '');
@@ -694,6 +716,13 @@ function exitManualMode() {
 function renderGrid() {
   const t = activeTheme();
   const g = activeGrid();
+
+  if (!t) {
+    gridEl.innerHTML = '<div class="no-grid-msg">Crée un thème pour commencer.</div>';
+    sizeDisplay.textContent = '—';
+    bingoMsg.classList.add('hidden');
+    return;
+  }
 
   if (!g) {
     gridEl.innerHTML = '<div class="no-grid-msg">Crée ou génère une grille pour commencer.</div>';
@@ -905,7 +934,7 @@ btnNewGrid.addEventListener('click', () => {
 });
 
 btnNewTheme.addEventListener('click', () => {
-  const count = state.themes.length + 1;
+  const count = (state.themes || []).length + 1;
   createTheme(`Soirée ${count}`);
 });
 
