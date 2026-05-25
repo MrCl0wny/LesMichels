@@ -117,6 +117,23 @@
 
   </main>
 
+  <!-- Modal nouveau thème -->
+  <div id="modal-new-theme" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Nouveau thème</h3>
+        <button class="modal-close" id="btn-close-new-theme-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="new-theme-name-input" class="modal-text-input" placeholder="Nom du thème..." maxlength="40" />
+        <div class="modal-actions">
+          <button class="btn-action" id="btn-confirm-new-theme">Créer</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-new-theme">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal thèmes archivés -->
   <div id="modal-archived-themes" class="modal-overlay hidden">
     <div class="modal-box">

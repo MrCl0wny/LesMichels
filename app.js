@@ -64,17 +64,17 @@ let state = (function () {
 })();
 
 function initState() {
-  const theme = defaultTheme('Soirée 1');
-  return { themes: [theme], activeThemeId: theme.id };
+  return { themes: [], activeThemeId: null };
 }
 
 function activeTheme() {
   if (!state.themes || state.themes.length === 0) return null;
-  return state.themes.find(t => t.id === state.activeThemeId) || state.themes[0];
+  return state.themes.find(t => t.id === state.activeThemeId) || null;
 }
 
 function activeGrid() {
   const t = activeTheme();
+  if (!t) return null;
   return t.grids.find(g => g.id === t.activeGridId) || t.grids[0] || null;
 }
 
@@ -217,6 +217,7 @@ function buildElementItem(el, isArchived) {
 
 function startEditElement(id, span) {
   const t = activeTheme();
+  if (!t) return;
   const el = t.elements.find(e => e.id === id);
   if (!el) return;
 
@@ -262,6 +263,7 @@ function addElement() {
 
 function deleteElement(id) {
   const t = activeTheme();
+  if (!t) return;
   t.elements = t.elements.filter(e => e.id !== id);
   t.grids.forEach(g => {
     g.grid = g.grid.map(cell =>
@@ -275,6 +277,7 @@ function deleteElement(id) {
 
 function archiveElement(id) {
   const t = activeTheme();
+  if (!t) return;
   const el = t.elements.find(e => e.id === id);
   if (el) el.archived = true;
   saveState();
@@ -283,6 +286,7 @@ function archiveElement(id) {
 
 function restoreElement(id) {
   const t = activeTheme();
+  if (!t) return;
   const el = t.elements.find(e => e.id === id);
   if (el) el.archived = false;
   saveState();
@@ -313,8 +317,6 @@ function switchTheme(id) {
 }
 
 function deleteTheme(id) {
-  const nonArchived = state.themes.filter(t => !t.archived);
-  if (nonArchived.length <= 1 && !state.themes.find(t => t.id === id)?.archived) return;
   state.themes = state.themes.filter(t => t.id !== id);
   if (state.activeThemeId === id) {
     const remaining = state.themes.filter(t => !t.archived);
@@ -327,20 +329,9 @@ function deleteTheme(id) {
   renderGrid();
 }
 
-function ensureThemeExists() {
-  if (!state.themes || state.themes.length === 0) {
-    const t = defaultTheme('Soirée 1');
-    state.themes = [t];
-    state.activeThemeId = t.id;
-    saveState();
-  }
-}
-
 function archiveTheme(id) {
   const t = state.themes.find(t => t.id === id);
   if (!t) return;
-  const nonArchived = state.themes.filter(x => !x.archived);
-  if (!t.archived && nonArchived.length <= 1) return; // bloquer l'archivage du dernier thème actif
   t.archived = !t.archived;
   if (t.archived && state.activeThemeId === id) {
     const remaining = state.themes.filter(x => !x.archived);
@@ -363,6 +354,15 @@ function renameTheme(id, newName) {
 function renderThemesList() {
   themesList.innerHTML = '';
   const activeThemes = state.themes.filter(t => !t.archived);
+
+  if (activeThemes.length === 0) {
+    const msg = document.createElement('span');
+    msg.className = 'themes-empty-msg';
+    msg.textContent = 'Aucun thème actif — crée-en un !';
+    themesList.appendChild(msg);
+    return;
+  }
+
   activeThemes.forEach(t => {
     const item = document.createElement('div');
     item.className = 'theme-tab' + (t.id === state.activeThemeId ? ' active' : '');
@@ -491,10 +491,10 @@ function switchGrid(id) {
 
 function deleteGrid(id) {
   const t = activeTheme();
-  if (t.grids.length <= 1) return;
+  if (!t) return;
   t.grids = t.grids.filter(g => g.id !== id);
   if (t.activeGridId === id) {
-    t.activeGridId = t.grids[0].id;
+    t.activeGridId = t.grids.length > 0 ? t.grids[0].id : null;
   }
   saveState();
   renderGridsList();
@@ -536,7 +536,6 @@ function renderGridsList() {
     btnDel.className = 'grid-tab-del';
     btnDel.title = 'Supprimer cette grille';
     btnDel.textContent = '✕';
-    btnDel.style.display = t.grids.length > 1 ? '' : 'none';
     btnDel.addEventListener('click', e => { e.stopPropagation(); deleteGrid(g.id); });
     item.appendChild(btnDel);
 
@@ -641,6 +640,7 @@ function applyGridScale() {
 
 function changeFontScale(delta) {
   const t = activeTheme();
+  if (!t) return;
   t.cellFontScale = Math.max(0.5, Math.min(3, (t.cellFontScale || 1) + delta));
   saveState();
   applyFontScale();
@@ -648,6 +648,7 @@ function changeFontScale(delta) {
 
 function applyFontScale() {
   const t = activeTheme();
+  if (!t) return;
   const scale = t.cellFontScale || 1;
   const pct = Math.round(scale * 100);
   fontScaleInput.value = pct;
@@ -667,6 +668,7 @@ function applyFontScale() {
 
 function applyFont() {
   const t = activeTheme();
+  if (!t) return;
   const font = t.cellFont || AVAILABLE_FONTS[0].value;
   fontFamilySelect.value = font;
   gridEl.querySelectorAll('.bingo-cell').forEach(div => {
@@ -676,6 +678,7 @@ function applyFont() {
 
 function changeFont(value) {
   const t = activeTheme();
+  if (!t) return;
   t.cellFont = value;
   saveState();
   applyFont();
@@ -721,15 +724,18 @@ function renderGrid() {
     gridEl.innerHTML = '<div class="no-grid-msg">Crée un thème pour commencer.</div>';
     sizeDisplay.textContent = '—';
     bingoMsg.classList.add('hidden');
+    btnGenerate.disabled = true;
+    btnGenerate.classList.add('btn-disabled');
     return;
   }
 
   if (!g) {
-    gridEl.innerHTML = '<div class="no-grid-msg">Crée ou génère une grille pour commencer.</div>';
+    gridEl.innerHTML = '<div class="no-grid-msg">Crée une grille pour commencer.</div>';
     sizeDisplay.textContent = '—';
     bingoMsg.classList.add('hidden');
+    btnGenerate.disabled = false;
+    btnGenerate.classList.remove('btn-disabled');
     applyGridScale();
-    applyFontScale();
     return;
   }
 
@@ -859,6 +865,41 @@ function getBingoResult(n, grid) {
 }
 
 // ──────────────────────────────────────────────
+// Modale : nouveau thème
+// ──────────────────────────────────────────────
+const modalNewTheme        = document.getElementById('modal-new-theme');
+const newThemeNameInput    = document.getElementById('new-theme-name-input');
+const btnConfirmNewTheme   = document.getElementById('btn-confirm-new-theme');
+const btnCancelNewTheme    = document.getElementById('btn-cancel-new-theme');
+const btnCloseNewThemeModal = document.getElementById('btn-close-new-theme-modal');
+
+function openNewThemeModal() {
+  newThemeNameInput.value = '';
+  modalNewTheme.classList.remove('hidden');
+  setTimeout(() => newThemeNameInput.focus(), 50);
+}
+
+function closeNewThemeModal() {
+  modalNewTheme.classList.add('hidden');
+}
+
+function confirmNewTheme() {
+  const name = newThemeNameInput.value.trim();
+  if (!name) return;
+  closeNewThemeModal();
+  createTheme(name);
+}
+
+btnConfirmNewTheme.addEventListener('click', confirmNewTheme);
+btnCancelNewTheme.addEventListener('click', closeNewThemeModal);
+btnCloseNewThemeModal.addEventListener('click', closeNewThemeModal);
+modalNewTheme.addEventListener('click', e => { if (e.target === modalNewTheme) closeNewThemeModal(); });
+newThemeNameInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmNewTheme();
+  if (e.key === 'Escape') closeNewThemeModal();
+});
+
+// ──────────────────────────────────────────────
 // Onglets actifs / archivés
 // ──────────────────────────────────────────────
 tabBtns.forEach(btn => {
@@ -889,8 +930,9 @@ btnSizePlus.addEventListener('click',  () => changeSize(+1));
 btnFontMinus.addEventListener('click', () => changeFontScale(-0.1));
 btnFontPlus.addEventListener('click',  () => changeFontScale(+0.1));
 fontScaleInput.addEventListener('change', () => {
-  const pct = Math.max(50, Math.min(300, parseInt(fontScaleInput.value) || 100));
   const t = activeTheme();
+  if (!t) return;
+  const pct = Math.max(50, Math.min(300, parseInt(fontScaleInput.value) || 100));
   t.cellFontScale = pct / 100;
   saveState();
   applyFontScale();
@@ -900,10 +942,8 @@ fontFamilySelect.addEventListener('change', () => changeFont(fontFamilySelect.va
 
 btnGenerate.addEventListener('click', () => {
   if (manualMode) return;
-  const t = activeTheme();
-  if (!activeGrid()) {
-    createGrid('Grille 1');
-  }
+  if (!activeTheme()) return;
+  if (!activeGrid()) createGrid('Grille 1');
   generateGrid();
 });
 
@@ -911,11 +951,11 @@ btnManual.addEventListener('click', () => {
   if (manualMode) {
     exitManualMode();
   } else {
+    const t = activeTheme();
+    if (!t) return;
     if (!activeGrid()) {
-      const t = activeTheme();
-      const n = 4;
       const g = defaultGrid('Grille 1');
-      g.grid = Array.from({ length: n * n }, () => ({ elementId: null, checked: false }));
+      g.grid = Array.from({ length: 16 }, () => ({ elementId: null, checked: false }));
       t.grids.push(g);
       t.activeGridId = g.id;
       saveState();
@@ -929,13 +969,13 @@ btnReset.addEventListener('click', resetGrid);
 
 btnNewGrid.addEventListener('click', () => {
   const t = activeTheme();
+  if (!t) return;
   const count = t.grids.length + 1;
   createGrid(`Grille ${count}`);
 });
 
 btnNewTheme.addEventListener('click', () => {
-  const count = (state.themes || []).length + 1;
-  createTheme(`Soirée ${count}`);
+  openNewThemeModal();
 });
 
 btnArchivedThemes.addEventListener('click', () => {
@@ -955,7 +995,6 @@ modalArchivedThemes.addEventListener('click', e => {
 // Initialisation
 // ──────────────────────────────────────────────
 function init() {
-  // Peupler le sélecteur de polices
   AVAILABLE_FONTS.forEach(f => {
     const opt = document.createElement('option');
     opt.value = f.value;
@@ -963,6 +1002,8 @@ function init() {
     opt.style.fontFamily = f.value;
     fontFamilySelect.appendChild(opt);
   });
+
+  if (!state.themes) state.themes = [];
 
   state.themes.forEach(t => {
     if (!t.elements) t.elements = [];
@@ -982,14 +1023,9 @@ function init() {
     }
   });
 
-  if (!state.themes || state.themes.length === 0) {
-    const t = defaultTheme('Soirée 1');
-    state.themes = [t];
-    state.activeThemeId = t.id;
-  }
-
-  if (!state.themes.find(t => t.id === state.activeThemeId)) {
-    state.activeThemeId = state.themes[0].id;
+  if (state.themes.length > 0 && !state.themes.find(t => t.id === state.activeThemeId)) {
+    const nonArchived = state.themes.filter(t => !t.archived);
+    state.activeThemeId = nonArchived.length > 0 ? nonArchived[0].id : state.themes[0].id;
   }
 
   renderThemesList();

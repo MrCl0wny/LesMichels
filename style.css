@@ -893,3 +893,52 @@ body {
   font-size: 0.88rem;
   padding: 20px 0;
 }
+
+/* ── Modal nouveau thème ── */
+.modal-box-sm {
+  min-width: 300px;
+  max-width: 380px;
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-text-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.95rem;
+  padding: 10px 14px;
+  outline: none;
+  transition: var(--transition);
+}
+.modal-text-input:focus { border-color: var(--accent); }
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.btn-secondary {
+  background: var(--surface-2) !important;
+  color: var(--text-muted) !important;
+  border: 1px solid var(--border) !important;
+}
+.btn-secondary:hover {
+  background: var(--surface-3) !important;
+  color: var(--text) !important;
+}
+
+.themes-empty-msg {
+  color: var(--text-faint);
+  font-style: italic;
+  font-size: 0.85rem;
+  align-self: center;
+  padding: 0 8px;
+}
