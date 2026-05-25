@@ -5,6 +5,28 @@
 
 ---
 
+## Instructions
+
+L'objectif est de créer une application web en français appelée 
+LesMichels pour moi et mes amis.
+Cette application permettra principalement de générer des bingos 
+personnalisés, des tierlists et un planning partagé.
+Le style doit être sombre, sobre, moderne et agréable sur PC.
+Le code sera hébergé sur GitHub et mis en ligne via GitHub Pages.
+
+Je suis novice en informatique. Tu gères donc entièrement toute 
+la partie technique du projet. Tu dois :
+- coder les fonctionnalités complètes
+- proposer les meilleures solutions techniques adaptées à un débutant
+- expliquer simplement les choses
+- détailler clairement les étapes à suivre
+- indiquer où placer les fichiers et comment lancer le projet
+- privilégier un code propre, moderne et facile à maintenir
+- éviter les solutions inutilement complexes
+- mettre le fichier README constamment à jour
+
+---
+
 ## 🗂️ Structure du projet
 
 ```
@@ -18,6 +40,41 @@ LesMichels/
 ---
 
 ## ✅ Fonctionnalités réalisées
+
+### Tier List (v1 — Mai 2026)
+
+#### Gestion des tier lists
+- [x] Création d'une tier list avec titre (demandé à la création)
+- [x] Renommage du titre à tout moment via le bouton ✏
+- [x] Copie d'une tier list existante (clone complet)
+- [x] Archivage d'une tier list (disparaît de la liste principale)
+- [x] **Modal "Archivées"** : restaurer ou supprimer définitivement
+- [x] Suppression définitive d'une tier list
+- [x] Sauvegarde automatique en temps réel dans `localStorage` (clé `lesmichels_tierlist_v1`)
+
+#### Tiers
+- [x] 5 tiers par défaut à la création : S (rouge), A (orange), B (jaune), C (vert), D (bleu)
+- [x] Ajout d'un tier : label + choix de couleur
+- [x] **Renommage d'un tier** via la modal "Modifier le tier" (bouton ✏ au survol)
+- [x] Modification de la couleur d'un tier : **16 swatches prédéfinis** + color picker "Autre" pour couleur personnalisée
+- [x] Déplacement d'un tier (▲ / ▼)
+- [x] Suppression d'un tier (les images retournent dans "non placées")
+
+#### Images
+- [x] **Import via bouton "📁 Images"** (multi-fichiers, tous formats image)
+- [x] **Glisser-déposer depuis le bureau** directement dans la zone "non placées"
+- [x] **Coller depuis le presse-papier** (`Ctrl+V` sur la page) — colle l'image capturée
+- [x] **Glisser-déposer** des images entre les tiers et la zone "non placées"
+- [x] Suppression d'une image (bouton ✕ au survol)
+- [x] Renommage d'une image (bouton ✏ au survol, ou double-clic sur le bandeau)
+
+#### Affichage
+- [x] **Zone tiers à 60 % de la hauteur de l'écran** (scrollable si beaucoup de tiers)
+- [x] **Bandeau nom** activé par défaut — affiche le nom sous chaque image (toggle "Noms")
+- [x] **Slider de taille** des images (48 px → 180 px)
+- [x] **Export PNG** : génère et télécharge la tier list complète en image
+
+---
 
 ### Bingo (v2 — Mai 2026)
 
@@ -68,11 +125,13 @@ LesMichels/
 
 ## 🔜 À faire
 
+- Sauvegarde en ligne en temps réel disponible pour tous et pour toutes les fonctionnalités de l'application
+
 ### Bingo
-- Sauvegarde en ligne en temps réel disponible pour tous.
+- Terminé
 
 ### Tier List
-- À venir
+- Terminé
 
 ### Planning partagé
 - À venir
@@ -81,7 +140,9 @@ LesMichels/
 
 ## 💾 Sauvegarde des données
 
-Les données (thèmes, cases, grilles) sont sauvegardées automatiquement dans le navigateur via `localStorage` (clé `lesmichels_bingo_v2`).
+Les données sont sauvegardées automatiquement dans le navigateur via `localStorage` :
+- Bingo : clé `lesmichels_bingo_v2`
+- Tier List : clé `lesmichels_tierlist_v1`
 
 **Important :** les données sont liées au navigateur et à l'appareil. Elles ne sont pas partagées entre plusieurs personnes.
 
@@ -96,3 +157,17 @@ Une synchronisation en ligne pourra être ajoutée plus tard si besoin.
 - Polices chargées depuis Google Fonts (Space Mono pour les monospaces) + Arial système
 - Données stockées côté client uniquement (pas de serveur)
 - Migration automatique depuis l'ancien format v1 (`lesmichels_bingo`)
+
+---
+
+## ⚙️ Règles techniques
+
+- Le projet doit rester compatible avec GitHub Pages
+- Toujours préserver les sauvegardes existantes
+- Toujours privilégier les modifications minimales
+- Éviter les frameworks inutiles
+- Conserver un code simple et lisible
+- Éviter les dépendances externes inutiles
+- Éviter les réécritures complètes inutiles
+- Toujours expliquer les fichiers modifiés
+- Toujours mettre à jour ce README après une modification importante

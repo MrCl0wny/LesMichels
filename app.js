@@ -1035,3 +1035,916 @@ function init() {
 }
 
 init();
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Navigation multi-pages
+// ──────────────────────────────────────────────────────────────────────────────
+(function setupNav() {
+  const navBtns = document.querySelectorAll('.nav-btn[data-page]');
+  const pages   = document.querySelectorAll('.page');
+  const logoTag = document.querySelector('.logo-tag');
+
+  const pageLabels = { bingo: 'Bingo', tierlist: 'Tier List' };
+
+  navBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('disabled')) return;
+      const target = btn.dataset.page;
+      navBtns.forEach(b => b.classList.toggle('active', b.dataset.page === target));
+      pages.forEach(p => p.classList.toggle('active', p.id === `page-${target}`));
+      if (logoTag) logoTag.textContent = pageLabels[target] || target;
+    });
+  });
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TIER LIST — logique complète
+// ══════════════════════════════════════════════════════════════════════════════
+
+const TL_STORAGE_KEY = 'lesmichels_tierlist_v1';
+
+const TL_DEFAULT_TIERS = [
+  { label: 'S', color: '#e85b47' },
+  { label: 'A', color: '#e8a047' },
+  { label: 'B', color: '#e8d447' },
+  { label: 'C', color: '#6ac96a' },
+  { label: 'D', color: '#5b9de8' },
+];
+
+const TL_PRESET_COLORS = [
+  '#e85b47', // rouge
+  '#e8733a', // orange-rouge
+  '#e8a047', // orange
+  '#e8c547', // jaune-or
+  '#e8d447', // jaune
+  '#b5d44a', // jaune-vert
+  '#6ac96a', // vert
+  '#3db88b', // vert-teal
+  '#3db8c8', // cyan
+  '#5b9de8', // bleu
+  '#7b5be8', // violet
+  '#c05be8', // mauve
+  '#e85bb8', // rose
+  '#e85b7b', // rose-rouge
+  '#888888', // gris
+  '#444455', // gris sombre
+];
+
+// ── État ──────────────────────────────────────────────────────────────────────
+let tlState = (function () {
+  try {
+    const raw = localStorage.getItem(TL_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && parsed.tierlists) return parsed;
+  } catch (e) {}
+  return { tierlists: [], activeTierlistId: null };
+})();
+
+function tlSave() {
+  try { localStorage.setItem(TL_STORAGE_KEY, JSON.stringify(tlState)); } catch (e) { console.warn('TL save error', e); }
+}
+
+function tlActiveTierlist() {
+  return tlState.tierlists.find(tl => tl.id === tlState.activeTierlistId) || null;
+}
+
+function tlDefaultTierlist(name) {
+  return {
+    id: uid(),
+    name,
+    archived: false,
+    showLabels: true,
+    imgSize: 80,
+    tiers: TL_DEFAULT_TIERS.map(t => ({ id: uid(), label: t.label, color: t.color, items: [] })),
+    unplaced: [],
+    images: [],
+  };
+}
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const tlBtnNew            = document.getElementById('tl-btn-new');
+const tlList              = document.getElementById('tl-list');
+const tlBtnShowArchived   = document.getElementById('tl-btn-show-archived');
+const tlEmptyState        = document.getElementById('tl-empty-state');
+const tlEditor            = document.getElementById('tl-editor');
+const tlTitleDisplay      = document.getElementById('tl-title-display');
+const tlBtnRenameTl       = document.getElementById('tl-btn-rename-tl');
+const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
+const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
+const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
+const tlBtnImportImages   = document.getElementById('tl-btn-import-images');
+const tlFileInput         = document.getElementById('tl-file-input');
+const tlBtnExport         = document.getElementById('tl-btn-export');
+const tlTiersZone         = document.getElementById('tl-tiers-zone');
+const tlUnplacedZone      = document.getElementById('tl-unplaced-zone');
+const tlUnplacedCount     = document.getElementById('tl-unplaced-count');
+
+// Modals
+const tlModalNew          = document.getElementById('tl-modal-new');
+const tlModalNewTitle     = document.getElementById('tl-modal-new-title');
+const tlModalNewInput     = document.getElementById('tl-modal-new-input');
+const tlModalNewConfirm   = document.getElementById('tl-modal-new-confirm');
+const tlModalNewCancel    = document.getElementById('tl-modal-new-cancel');
+const tlModalNewClose     = document.getElementById('tl-modal-new-close');
+
+const tlModalTier         = document.getElementById('tl-modal-tier');
+const tlModalTierLabel    = document.getElementById('tl-modal-tier-label');
+const tlModalTierColor    = document.getElementById('tl-modal-tier-color');
+const tlModalTierConfirm  = document.getElementById('tl-modal-tier-confirm');
+const tlModalTierCancel   = document.getElementById('tl-modal-tier-cancel');
+const tlModalTierClose    = document.getElementById('tl-modal-tier-close');
+
+const tlModalArchived     = document.getElementById('tl-modal-archived');
+const tlModalArchivedClose= document.getElementById('tl-modal-archived-close');
+const tlArchivedList      = document.getElementById('tl-archived-list');
+
+const tlModalImgName      = document.getElementById('tl-modal-imgname');
+const tlModalImgNameInput = document.getElementById('tl-modal-imgname-input');
+const tlModalImgNameConfirm = document.getElementById('tl-modal-imgname-confirm');
+const tlModalImgNameCancel  = document.getElementById('tl-modal-imgname-cancel');
+const tlModalImgNameClose   = document.getElementById('tl-modal-imgname-close');
+
+// ── Drag state ────────────────────────────────────────────────────────────────
+let tlDragImgId = null;
+
+// ── Rendu principal ───────────────────────────────────────────────────────────
+function tlRender() {
+  tlRenderList();
+  const tl = tlActiveTierlist();
+  if (!tl || tl.archived) {
+    tlEmptyState.classList.remove('hidden');
+    tlEditor.classList.add('hidden');
+    return;
+  }
+  tlEmptyState.classList.add('hidden');
+  tlEditor.classList.remove('hidden');
+
+  tlTitleDisplay.textContent = tl.name;
+  tlShowLabelsToggle.checked = !!tl.showLabels;
+  tlImgSizeSlider.value = tl.imgSize || 80;
+
+  tlRenderTiers(tl);
+  tlRenderUnplaced(tl);
+}
+
+function tlRenderList() {
+  tlList.innerHTML = '';
+  const active = tlState.tierlists.filter(tl => !tl.archived);
+  if (active.length === 0) {
+    const msg = document.createElement('div');
+    msg.className = 'tl-list-empty';
+    msg.style.cssText = 'color:var(--text-faint);font-style:italic;font-size:0.82rem;padding:8px 4px;';
+    msg.textContent = 'Aucune tier list';
+    tlList.appendChild(msg);
+    return;
+  }
+  active.forEach(tl => {
+    const item = document.createElement('div');
+    item.className = 'tl-list-item' + (tl.id === tlState.activeTierlistId ? ' active' : '');
+    item.dataset.id = tl.id;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tl-list-item-name';
+    nameSpan.textContent = tl.name;
+    nameSpan.title = tl.name;
+    item.appendChild(nameSpan);
+
+    const btnCopy = document.createElement('button');
+    btnCopy.className = 'tl-list-item-btn copy';
+    btnCopy.title = 'Copier';
+    btnCopy.textContent = '⎘';
+    btnCopy.addEventListener('click', e => { e.stopPropagation(); tlCopy(tl.id); });
+    item.appendChild(btnCopy);
+
+    const btnArch = document.createElement('button');
+    btnArch.className = 'tl-list-item-btn';
+    btnArch.title = 'Archiver';
+    btnArch.textContent = '📦';
+    btnArch.addEventListener('click', e => { e.stopPropagation(); tlArchive(tl.id); });
+    item.appendChild(btnArch);
+
+    const btnDel = document.createElement('button');
+    btnDel.className = 'tl-list-item-btn del';
+    btnDel.title = 'Supprimer';
+    btnDel.textContent = '✕';
+    btnDel.addEventListener('click', e => { e.stopPropagation(); tlDelete(tl.id); });
+    item.appendChild(btnDel);
+
+    item.addEventListener('click', () => tlSwitch(tl.id));
+    tlList.appendChild(item);
+  });
+}
+
+function tlRenderTiers(tl) {
+  tlTiersZone.innerHTML = '';
+  const imgSize = tl.imgSize || 80;
+
+  tl.tiers.forEach((tier, tierIdx) => {
+    const row = document.createElement('div');
+    row.className = 'tl-tier-row';
+    row.dataset.tierId = tier.id;
+
+    // Cellule label
+    const labelCell = document.createElement('div');
+    labelCell.className = 'tl-tier-label-cell';
+    labelCell.style.background = tier.color;
+
+    const labelText = document.createElement('span');
+    labelText.className = 'tl-tier-label-text';
+    labelText.textContent = tier.label;
+    labelCell.appendChild(labelText);
+
+    // Contrôles du tier (au hover)
+    const controls = document.createElement('div');
+    controls.className = 'tl-tier-controls';
+
+    const btnEdit = document.createElement('button');
+    btnEdit.className = 'tl-tier-ctrl-btn';
+    btnEdit.title = 'Modifier';
+    btnEdit.textContent = '✏';
+    btnEdit.addEventListener('click', e => { e.stopPropagation(); tlEditTier(tl, tier); });
+    controls.appendChild(btnEdit);
+
+    const btnUp = document.createElement('button');
+    btnUp.className = 'tl-tier-ctrl-btn';
+    btnUp.title = 'Monter';
+    btnUp.textContent = '▲';
+    btnUp.disabled = tierIdx === 0;
+    btnUp.addEventListener('click', e => { e.stopPropagation(); tlMoveTier(tl, tierIdx, -1); });
+    controls.appendChild(btnUp);
+
+    const btnDown = document.createElement('button');
+    btnDown.className = 'tl-tier-ctrl-btn';
+    btnDown.title = 'Descendre';
+    btnDown.textContent = '▼';
+    btnDown.disabled = tierIdx === tl.tiers.length - 1;
+    btnDown.addEventListener('click', e => { e.stopPropagation(); tlMoveTier(tl, tierIdx, +1); });
+    controls.appendChild(btnDown);
+
+    const btnDel = document.createElement('button');
+    btnDel.className = 'tl-tier-ctrl-btn';
+    btnDel.title = 'Supprimer ce tier';
+    btnDel.textContent = '✕';
+    btnDel.addEventListener('click', e => { e.stopPropagation(); tlDeleteTier(tl, tier.id); });
+    controls.appendChild(btnDel);
+
+    labelCell.appendChild(controls);
+    row.appendChild(labelCell);
+
+    // Zone images
+    const imgsDiv = document.createElement('div');
+    imgsDiv.className = 'tl-tier-images';
+    imgsDiv.dataset.dropzone = tier.id;
+    imgsDiv.addEventListener('dragover', tlDragOver);
+    imgsDiv.addEventListener('drop', e => tlDrop(e, tier.id));
+    imgsDiv.addEventListener('dragleave', tlDragLeave);
+
+    if (tier.items.length === 0) {
+      const hint = document.createElement('span');
+      hint.className = 'tl-tier-images-empty';
+      hint.textContent = 'Dépose des images ici';
+      imgsDiv.appendChild(hint);
+    } else {
+      tier.items.forEach(itemId => {
+        const img = tlFindImage(tl, itemId);
+        if (img) imgsDiv.appendChild(tlBuildImgCard(tl, img, imgSize));
+      });
+    }
+
+    row.appendChild(imgsDiv);
+    tlTiersZone.appendChild(row);
+  });
+}
+
+function tlRenderUnplaced(tl) {
+  tlUnplacedZone.innerHTML = '';
+  const imgSize = tl.imgSize || 80;
+
+  if (tl.unplaced.length === 0) {
+    const hint = document.createElement('div');
+    hint.className = 'tl-unplaced-hint';
+    hint.textContent = 'Dépose des images ici ou importe-en';
+    tlUnplacedZone.appendChild(hint);
+  } else {
+    tl.unplaced.forEach(imgId => {
+      const img = tlFindImage(tl, imgId);
+      if (img) tlUnplacedZone.appendChild(tlBuildImgCard(tl, img, imgSize));
+    });
+  }
+  tlUnplacedCount.textContent = tl.unplaced.length;
+}
+
+function tlBuildImgCard(tl, img, size) {
+  const card = document.createElement('div');
+  card.className = 'tl-img-card';
+  card.draggable = true;
+  card.dataset.imgId = img.id;
+
+  card.addEventListener('dragstart', e => {
+    tlDragImgId = img.id;
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => card.classList.add('dragging'), 0);
+  });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+    tlDragImgId = null;
+  });
+
+  const imgEl = document.createElement('img');
+  imgEl.src = img.src;
+  imgEl.style.width = size + 'px';
+  imgEl.style.height = size + 'px';
+  imgEl.draggable = false;
+  card.appendChild(imgEl);
+
+  if (tl.showLabels) {
+    const label = document.createElement('div');
+    label.className = 'tl-img-label';
+    label.style.width = size + 'px';
+    label.textContent = img.name;
+    label.title = 'Double-clic pour renommer';
+    label.addEventListener('dblclick', e => { e.stopPropagation(); tlOpenRenameImg(tl, img); });
+    card.appendChild(label);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'tl-img-card-actions';
+
+  const btnRename = document.createElement('button');
+  btnRename.className = 'tl-img-action-btn rename';
+  btnRename.title = 'Renommer';
+  btnRename.textContent = '✏';
+  btnRename.addEventListener('click', e => { e.stopPropagation(); tlOpenRenameImg(tl, img); });
+  actions.appendChild(btnRename);
+
+  const btnDel = document.createElement('button');
+  btnDel.className = 'tl-img-action-btn';
+  btnDel.title = 'Supprimer cette image';
+  btnDel.textContent = '✕';
+  btnDel.addEventListener('click', e => { e.stopPropagation(); tlDeleteImage(tl, img.id); });
+  actions.appendChild(btnDel);
+
+  card.appendChild(actions);
+  return card;
+}
+
+// ── Recherche d'image ─────────────────────────────────────────────────────────
+function tlFindImage(tl, imgId) {
+  return (tl.images || []).find(i => i.id === imgId) || null;
+}
+
+// ── Actions sur les tierlists ─────────────────────────────────────────────────
+function tlCreate(name) {
+  const tl = tlDefaultTierlist(name);
+  tlState.tierlists.push(tl);
+  tlState.activeTierlistId = tl.id;
+  tlSave();
+  tlRender();
+}
+
+function tlSwitch(id) {
+  tlState.activeTierlistId = id;
+  tlSave();
+  tlRender();
+}
+
+function tlDelete(id) {
+  tlState.tierlists = tlState.tierlists.filter(t => t.id !== id);
+  if (tlState.activeTierlistId === id) {
+    const remaining = tlState.tierlists.filter(t => !t.archived);
+    tlState.activeTierlistId = remaining.length > 0 ? remaining[0].id : null;
+  }
+  tlSave();
+  tlRender();
+}
+
+function tlArchive(id) {
+  const tl = tlState.tierlists.find(t => t.id === id);
+  if (!tl) return;
+  tl.archived = true;
+  if (tlState.activeTierlistId === id) {
+    const remaining = tlState.tierlists.filter(t => !t.archived);
+    tlState.activeTierlistId = remaining.length > 0 ? remaining[0].id : null;
+  }
+  tlSave();
+  tlRender();
+}
+
+function tlUnarchive(id) {
+  const tl = tlState.tierlists.find(t => t.id === id);
+  if (tl) tl.archived = false;
+  tlSave();
+  tlRender();
+  tlRenderArchivedModal();
+}
+
+function tlCopy(id) {
+  const src = tlState.tierlists.find(t => t.id === id);
+  if (!src) return;
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = uid();
+  copy.name = src.name + ' (copie)';
+  copy.archived = false;
+  // Remap image ids
+  const idMap = {};
+  copy.images = (copy.images || []).map(img => {
+    const newId = uid();
+    idMap[img.id] = newId;
+    return { ...img, id: newId };
+  });
+  // Remap tier ids et items
+  copy.tiers = copy.tiers.map(t => ({
+    ...t,
+    id: uid(),
+    items: t.items.map(oid => idMap[oid] || oid),
+  }));
+  copy.unplaced = (copy.unplaced || []).map(oid => idMap[oid] || oid);
+  tlState.tierlists.push(copy);
+  tlState.activeTierlistId = copy.id;
+  tlSave();
+  tlRender();
+}
+
+function tlRename(id, newName) {
+  const tl = tlState.tierlists.find(t => t.id === id);
+  if (tl && newName.trim()) tl.name = newName.trim();
+  tlSave();
+  tlRender();
+}
+
+// ── Actions sur les tiers ─────────────────────────────────────────────────────
+function tlAddTier(label, color) {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  tl.tiers.push({ id: uid(), label, color, items: [] });
+  tlSave();
+  tlRender();
+}
+
+function tlDeleteTier(tl, tierId) {
+  const tier = tl.tiers.find(t => t.id === tierId);
+  if (tier) {
+    tier.items.forEach(imgId => {
+      if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId);
+    });
+  }
+  tl.tiers = tl.tiers.filter(t => t.id !== tierId);
+  tlSave();
+  tlRender();
+}
+
+function tlMoveTier(tl, idx, delta) {
+  const newIdx = idx + delta;
+  if (newIdx < 0 || newIdx >= tl.tiers.length) return;
+  [tl.tiers[idx], tl.tiers[newIdx]] = [tl.tiers[newIdx], tl.tiers[idx]];
+  tlSave();
+  tlRender();
+}
+
+function tlEditTier(tl, tier) {
+  tlOpenTierModal({ mode: 'edit', tl, tier });
+}
+
+// ── Images ────────────────────────────────────────────────────────────────────
+// tl.images = [{id, src, name}] — source de vérité pour les images
+// tl.unplaced = [id, id, ...] — ids des images non placées dans un tier
+// tier.items  = [id, id, ...] — ids des images dans ce tier
+
+function tlImportImages(files) {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  if (!tl.images) tl.images = [];
+
+  const processFile = (file) => new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = { id: uid(), src: e.target.result, name: file.name.replace(/\.[^.]+$/, '') };
+      tl.images.push(img);
+      tl.unplaced.push(img.id);
+      resolve();
+    };
+    reader.readAsDataURL(file);
+  });
+
+  Promise.all(Array.from(files).map(processFile)).then(() => {
+    tlSave();
+    tlRender();
+  });
+}
+
+function tlDeleteImage(tl, imgId) {
+  tl.unplaced = tl.unplaced.filter(id => id !== imgId);
+  tl.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
+  if (tl.images) tl.images = tl.images.filter(i => i.id !== imgId);
+  tlSave();
+  tlRender();
+}
+
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+function tlDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function tlDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+function tlDrop(e, targetZoneId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const imgId = tlDragImgId;
+  if (!imgId) return;
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+
+  // Retirer de partout
+  tl.unplaced = tl.unplaced.filter(id => id !== imgId);
+  tl.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
+
+  if (targetZoneId === '__unplaced__') {
+    tl.unplaced.push(imgId);
+  } else {
+    const tier = tl.tiers.find(t => t.id === targetZoneId);
+    if (tier) tier.items.push(imgId);
+  }
+
+  tlSave();
+  tlRender();
+}
+
+// Exposer les fonctions de drag globalement (utilisées dans le HTML via attributs)
+window.tlDragOver  = tlDragOver;
+window.tlDragLeave = tlDragLeave;
+window.tlDrop      = tlDrop;
+
+// ── Renommer image ────────────────────────────────────────────────────────────
+let tlRenameImgContext = null;
+
+function tlOpenRenameImg(tl, img) {
+  tlRenameImgContext = { tl, img };
+  tlModalImgNameInput.value = img.name;
+  tlModalImgName.classList.remove('hidden');
+  setTimeout(() => { tlModalImgNameInput.focus(); tlModalImgNameInput.select(); }, 50);
+}
+
+function tlConfirmRenameImg() {
+  if (!tlRenameImgContext) return;
+  const { img } = tlRenameImgContext;
+  const newName = tlModalImgNameInput.value.trim();
+  if (newName) img.name = newName;
+  tlModalImgName.classList.add('hidden');
+  tlRenameImgContext = null;
+  tlSave();
+  tlRender();
+}
+
+// ── Export PNG ────────────────────────────────────────────────────────────────
+function tlExport() {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+
+  const imgSize = tl.imgSize || 80;
+  const labelW = 80;
+  const padding = 6;
+  const rowGap = 4;
+  const imgGap = 4;
+  const labelFontSize = Math.round(imgSize * 0.35);
+
+  // Calcul de la hauteur de chaque tier
+  const tierHeights = tl.tiers.map(tier => {
+    if (tier.items.length === 0) return imgSize + padding * 2;
+    const rows = Math.ceil(tier.items.length * (imgSize + imgGap) / (800 - labelW));
+    return Math.max(imgSize + padding * 2, rows * (imgSize + imgGap) + padding * 2);
+  });
+
+  const totalHeight = tierHeights.reduce((a, b) => a + b + rowGap, 0) + 40;
+  const totalWidth = 820;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = totalWidth;
+  canvas.height = totalHeight;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#18181c';
+  ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+  // Titre
+  ctx.fillStyle = '#e8e8f0';
+  ctx.font = `bold 18px Arial`;
+  ctx.fillText(tl.name, 12, 26);
+
+  let y = 36;
+
+  const loadImage = (src) => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+
+  const drawTier = async (tier, tierH, yPos) => {
+    // Label cell
+    ctx.fillStyle = tier.color;
+    ctx.fillRect(0, yPos, labelW, tierH);
+    ctx.fillStyle = '#111';
+    ctx.font = `bold ${labelFontSize}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(tier.label, labelW / 2, yPos + tierH / 2);
+
+    // Images zone bg
+    ctx.fillStyle = '#22222a';
+    ctx.fillRect(labelW, yPos, totalWidth - labelW, tierH);
+
+    // Draw images
+    let x = labelW + padding;
+    let rowY = yPos + padding;
+    for (const imgId of tier.items) {
+      const imgData = tl.images ? tl.images.find(i => i.id === imgId) : null;
+      if (!imgData) continue;
+      if (x + imgSize > totalWidth - padding) { x = labelW + padding; rowY += imgSize + imgGap; }
+      const imgEl = await loadImage(imgData.src);
+      if (imgEl) ctx.drawImage(imgEl, x, rowY, imgSize, imgSize);
+      if (tl.showLabels) {
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(x, rowY + imgSize - 14, imgSize, 14);
+        ctx.fillStyle = '#ccc';
+        ctx.font = '9px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(imgData.name.slice(0, 14), x + imgSize / 2, rowY + imgSize - 7);
+      }
+      x += imgSize + imgGap;
+    }
+  };
+
+  (async () => {
+    for (let i = 0; i < tl.tiers.length; i++) {
+      await drawTier(tl.tiers[i], tierHeights[i], y);
+      y += tierHeights[i] + rowGap;
+    }
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+
+    const link = document.createElement('a');
+    link.download = (tl.name || 'tierlist').replace(/[^a-z0-9]/gi, '_') + '.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  })();
+}
+
+// ── Modal archivées ───────────────────────────────────────────────────────────
+function tlRenderArchivedModal() {
+  tlArchivedList.innerHTML = '';
+  const archived = tlState.tierlists.filter(t => t.archived);
+  if (archived.length === 0) {
+    tlArchivedList.innerHTML = '<p class="archived-empty">Aucune tier list archivée.</p>';
+    return;
+  }
+  archived.forEach(tl => {
+    const item = document.createElement('div');
+    item.className = 'archived-theme-item';
+
+    const name = document.createElement('span');
+    name.className = 'archived-theme-name';
+    name.textContent = tl.name;
+    item.appendChild(name);
+
+    const btnRestore = document.createElement('button');
+    btnRestore.className = 'archived-theme-btn restore';
+    btnRestore.textContent = '↩ Restaurer';
+    btnRestore.addEventListener('click', () => tlUnarchive(tl.id));
+    item.appendChild(btnRestore);
+
+    const btnDel = document.createElement('button');
+    btnDel.className = 'archived-theme-btn del';
+    btnDel.textContent = '✕ Supprimer';
+    btnDel.addEventListener('click', () => { tlDelete(tl.id); tlRenderArchivedModal(); });
+    item.appendChild(btnDel);
+
+    tlArchivedList.appendChild(item);
+  });
+}
+
+// ── Modal nouvelle tierlist ───────────────────────────────────────────────────
+let tlModalNewMode = 'create'; // 'create' | 'rename'
+let tlModalNewTargetId = null;
+
+function tlOpenNewModal() {
+  tlModalNewMode = 'create';
+  tlModalNewTargetId = null;
+  tlModalNewTitle.textContent = 'Nouvelle tier list';
+  tlModalNewInput.value = '';
+  tlModalNew.classList.remove('hidden');
+  setTimeout(() => tlModalNewInput.focus(), 50);
+}
+
+function tlOpenRenameModal(id) {
+  const tl = tlState.tierlists.find(t => t.id === id);
+  if (!tl) return;
+  tlModalNewMode = 'rename';
+  tlModalNewTargetId = id;
+  tlModalNewTitle.textContent = 'Renommer la tier list';
+  tlModalNewInput.value = tl.name;
+  tlModalNew.classList.remove('hidden');
+  setTimeout(() => { tlModalNewInput.focus(); tlModalNewInput.select(); }, 50);
+}
+
+function tlConfirmNewModal() {
+  const val = tlModalNewInput.value.trim();
+  if (!val) return;
+  tlModalNew.classList.add('hidden');
+  if (tlModalNewMode === 'create') tlCreate(val);
+  else if (tlModalNewMode === 'rename') tlRename(tlModalNewTargetId, val);
+}
+
+// ── Modal nouveau/modifier tier ───────────────────────────────────────────────
+const tlModalTierTitle = document.getElementById('tl-modal-tier-title');
+const tlColorSwatches  = document.getElementById('tl-color-swatches');
+
+let tlTierModalCtx = null; // { mode: 'create' } | { mode: 'edit', tl, tier }
+let tlTierSelectedColor = TL_PRESET_COLORS[0];
+
+function tlInitSwatches() {
+  tlColorSwatches.innerHTML = '';
+  TL_PRESET_COLORS.forEach(color => {
+    const sw = document.createElement('button');
+    sw.className = 'tl-swatch';
+    sw.type = 'button';
+    sw.style.background = color;
+    sw.dataset.color = color;
+    sw.title = color;
+    sw.addEventListener('click', () => tlSelectColor(color, sw));
+    tlColorSwatches.appendChild(sw);
+  });
+}
+
+function tlSelectColor(color, swatchEl) {
+  tlTierSelectedColor = color;
+  tlModalTierColor.value = color;
+  tlColorSwatches.querySelectorAll('.tl-swatch').forEach(s => s.classList.remove('selected'));
+  if (swatchEl) swatchEl.classList.add('selected');
+  else tlColorSwatches.querySelectorAll('.tl-swatch').forEach(s => {
+    if (s.dataset.color === color) s.classList.add('selected');
+  });
+}
+
+function tlOpenTierModal(ctx = { mode: 'create' }) {
+  tlTierModalCtx = ctx;
+  if (ctx.mode === 'edit') {
+    tlModalTierTitle.textContent = 'Modifier le tier';
+    tlModalTierLabel.value = ctx.tier.label;
+    document.getElementById('tl-modal-tier-confirm').textContent = 'Enregistrer';
+    tlSelectColor(ctx.tier.color, null);
+    tlModalTierColor.value = ctx.tier.color;
+  } else {
+    tlModalTierTitle.textContent = 'Nouveau tier';
+    tlModalTierLabel.value = '';
+    document.getElementById('tl-modal-tier-confirm').textContent = 'Ajouter';
+    tlSelectColor(TL_PRESET_COLORS[0], null);
+    tlModalTierColor.value = TL_PRESET_COLORS[0];
+  }
+  tlModalTier.classList.remove('hidden');
+  setTimeout(() => { tlModalTierLabel.focus(); tlModalTierLabel.select(); }, 50);
+}
+
+function tlConfirmTierModal() {
+  const label = tlModalTierLabel.value.trim();
+  if (!label) return;
+  const color = tlTierSelectedColor;
+  tlModalTier.classList.add('hidden');
+  if (tlTierModalCtx && tlTierModalCtx.mode === 'edit') {
+    tlTierModalCtx.tier.label = label;
+    tlTierModalCtx.tier.color = color;
+    tlSave();
+    tlRender();
+  } else {
+    tlAddTier(label, color);
+  }
+  tlTierModalCtx = null;
+}
+
+// ── Listeners ─────────────────────────────────────────────────────────────────
+tlBtnNew.addEventListener('click', tlOpenNewModal);
+
+tlModalNewConfirm.addEventListener('click', tlConfirmNewModal);
+tlModalNewCancel.addEventListener('click', () => tlModalNew.classList.add('hidden'));
+tlModalNewClose.addEventListener('click', () => tlModalNew.classList.add('hidden'));
+tlModalNew.addEventListener('click', e => { if (e.target === tlModalNew) tlModalNew.classList.add('hidden'); });
+tlModalNewInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') tlConfirmNewModal();
+  if (e.key === 'Escape') tlModalNew.classList.add('hidden');
+});
+
+tlBtnRenameTl.addEventListener('click', () => {
+  const tl = tlActiveTierlist();
+  if (tl) tlOpenRenameModal(tl.id);
+});
+
+tlBtnAddTier.addEventListener('click', () => tlOpenTierModal({ mode: 'create' }));
+tlModalTierConfirm.addEventListener('click', tlConfirmTierModal);
+tlModalTierCancel.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
+tlModalTierClose.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
+tlModalTier.addEventListener('click', e => { if (e.target === tlModalTier) { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; } });
+tlModalTierLabel.addEventListener('keydown', e => {
+  if (e.key === 'Enter') tlConfirmTierModal();
+  if (e.key === 'Escape') { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; }
+});
+tlModalTierColor.addEventListener('input', () => {
+  tlTierSelectedColor = tlModalTierColor.value;
+  tlColorSwatches.querySelectorAll('.tl-swatch').forEach(s => s.classList.remove('selected'));
+});
+
+// Init swatches au démarrage
+tlInitSwatches();
+
+tlBtnImportImages.addEventListener('click', () => tlFileInput.click());
+tlFileInput.addEventListener('change', () => { if (tlFileInput.files.length) tlImportImages(tlFileInput.files); tlFileInput.value = ''; });
+
+tlBtnExport.addEventListener('click', tlExport);
+
+tlShowLabelsToggle.addEventListener('change', () => {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  tl.showLabels = tlShowLabelsToggle.checked;
+  tlSave();
+  tlRender();
+});
+
+tlImgSizeSlider.addEventListener('input', () => {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  tl.imgSize = parseInt(tlImgSizeSlider.value);
+  tlSave();
+  tlRender();
+});
+
+tlBtnShowArchived.addEventListener('click', () => {
+  tlRenderArchivedModal();
+  tlModalArchived.classList.remove('hidden');
+});
+tlModalArchivedClose.addEventListener('click', () => tlModalArchived.classList.add('hidden'));
+tlModalArchived.addEventListener('click', e => { if (e.target === tlModalArchived) tlModalArchived.classList.add('hidden'); });
+
+tlModalImgNameConfirm.addEventListener('click', tlConfirmRenameImg);
+tlModalImgNameCancel.addEventListener('click', () => { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; });
+tlModalImgNameClose.addEventListener('click', () => { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; });
+tlModalImgName.addEventListener('click', e => { if (e.target === tlModalImgName) { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; } });
+tlModalImgNameInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') tlConfirmRenameImg();
+  if (e.key === 'Escape') { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; }
+});
+
+// Drag & drop global — images depuis le bureau
+tlUnplacedZone.addEventListener('dragover', tlDragOver);
+tlUnplacedZone.addEventListener('drop', e => {
+  e.preventDefault();
+  tlUnplacedZone.classList.remove('drag-over');
+  // Si on drop des fichiers depuis le bureau
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    tlImportImages(e.dataTransfer.files);
+    return;
+  }
+  tlDrop(e, '__unplaced__');
+});
+tlUnplacedZone.addEventListener('dragleave', tlDragLeave);
+
+// ── Coller depuis le presse-papier ────────────────────────────────────────────
+document.addEventListener('paste', e => {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  // Vérifier qu'on est sur la page tierlist
+  const tlPage = document.getElementById('page-tierlist');
+  if (!tlPage.classList.contains('active')) return;
+  // Ignorer si on est dans un champ texte
+  const tag = document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  const imageItems = Array.from(items).filter(it => it.type.startsWith('image/'));
+  if (imageItems.length === 0) return;
+
+  if (!tl.images) tl.images = [];
+  const promises = imageItems.map(it => new Promise(resolve => {
+    const file = it.getAsFile();
+    if (!file) return resolve();
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const now = new Date();
+      const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
+      const img = { id: uid(), src: ev.target.result, name };
+      tl.images.push(img);
+      tl.unplaced.push(img.id);
+      resolve();
+    };
+    reader.readAsDataURL(file);
+  }));
+
+  Promise.all(promises).then(() => { tlSave(); tlRender(); });
+});
+
+// ── Init tierlist ─────────────────────────────────────────────────────────────
+tlRender();
