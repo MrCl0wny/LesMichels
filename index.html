@@ -14,7 +14,7 @@
     <div class="header-inner">
       <div class="logo">
         <span class="logo-les">Les</span><span class="logo-michels">Michels</span>
-        <span class="logo-tag">Bingo TV</span>
+        <span class="logo-tag">Bingo</span>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-page="bingo">Bingo</button>
@@ -29,12 +29,20 @@
     <!-- ═══════════════════ BINGO PAGE ═══════════════════ -->
     <section id="page-bingo" class="page active">
 
+      <!-- ── Barre des thèmes ── -->
+      <div class="themes-bar">
+        <span class="themes-bar-label">Thème :</span>
+        <div id="themes-list" class="themes-list"></div>
+        <button class="btn-new-theme" id="btn-new-theme" title="Nouveau thème">+ Nouveau thème</button>
+        <button class="btn-archived-themes" id="btn-archived-themes" title="Thèmes archivés">📦 Thèmes archivés</button>
+      </div>
+
       <div class="bingo-layout">
 
-        <!-- ── Panneau gauche : Éléments ── -->
+        <!-- ── Panneau gauche : Cases du thème ── -->
         <aside class="panel panel-elements">
           <div class="panel-header">
-            <h2>Éléments</h2>
+            <h2>Cases</h2>
             <span class="element-count" id="element-count">0</span>
           </div>
 
@@ -42,7 +50,7 @@
             <input
               type="text"
               id="new-element-input"
-              placeholder="Ajouter un élément..."
+              placeholder="Ajouter une case..."
               maxlength="80"
             />
             <button id="btn-add-element" class="btn-icon" title="Ajouter">+</button>
@@ -59,6 +67,14 @@
 
         <!-- ── Panneau central : Grille ── -->
         <div class="panel panel-grid">
+
+          <!-- Sélecteur de grilles du thème -->
+          <div class="grids-bar">
+            <div id="grids-list" class="grids-list"></div>
+            <button class="btn-new-grid" id="btn-new-grid" title="Nouvelle grille">+ Grille</button>
+          </div>
+
+          <!-- Toolbar grille -->
           <div class="grid-toolbar">
             <div class="grid-size-control">
               <label>Taille</label>
@@ -66,21 +82,51 @@
               <span id="grid-size-display">4×4</span>
               <button class="size-btn" id="btn-size-plus">+</button>
             </div>
+
+            <div class="grid-size-control">
+              <label>Texte</label>
+              <button class="size-btn" id="btn-font-minus">−</button>
+              <input type="number" id="font-scale-input" class="scale-input" min="50" max="300" step="10" value="100" title="Taille du texte en %" />
+              <span class="scale-unit">%</span>
+              <button class="size-btn" id="btn-font-plus">+</button>
+            </div>
+
+            <div class="grid-size-control">
+              <label>Police</label>
+              <select id="font-family-select" class="font-select"></select>
+            </div>
+
             <div class="grid-actions">
               <button class="btn-action" id="btn-generate">🎲 Générer</button>
+              <button class="btn-action btn-manual" id="btn-manual">✋ Manuel</button>
               <button class="btn-action btn-reset" id="btn-reset">↺ Reset</button>
             </div>
           </div>
 
-          <div id="bingo-grid" class="bingo-grid"></div>
+          <div id="grid-error" class="grid-error hidden"></div>
 
-          <div id="bingo-message" class="bingo-message hidden">🎉 BINGO !</div>
+          <div id="grid-wrapper" class="grid-wrapper">
+            <div id="bingo-grid" class="bingo-grid"></div>
+          </div>
+
+          <div id="bingo-message" class="bingo-message hidden"></div>
         </div>
 
       </div>
     </section>
 
   </main>
+
+  <!-- Modal thèmes archivés -->
+  <div id="modal-archived-themes" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Thèmes archivés</h3>
+        <button class="modal-close" id="btn-close-archived-modal">✕</button>
+      </div>
+      <div id="archived-themes-list" class="archived-themes-list"></div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
