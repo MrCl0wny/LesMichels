@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LesMichels</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-les">Les</span><span class="logo-michels">Michels</span>
+        <span class="logo-tag">Bingo TV</span>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" data-page="bingo">Bingo</button>
+        <button class="nav-btn disabled" title="Bientôt disponible">Tier List</button>
+        <button class="nav-btn disabled" title="Bientôt disponible">Planning</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- ═══════════════════ BINGO PAGE ═══════════════════ -->
+    <section id="page-bingo" class="page active">
+
+      <div class="bingo-layout">
+
+        <!-- ── Panneau gauche : Éléments ── -->
+        <aside class="panel panel-elements">
+          <div class="panel-header">
+            <h2>Éléments</h2>
+            <span class="element-count" id="element-count">0</span>
+          </div>
+
+          <div class="add-element-form">
+            <input
+              type="text"
+              id="new-element-input"
+              placeholder="Ajouter un élément..."
+              maxlength="80"
+            />
+            <button id="btn-add-element" class="btn-icon" title="Ajouter">+</button>
+          </div>
+
+          <div class="elements-tabs">
+            <button class="tab-btn active" data-tab="active">Actifs</button>
+            <button class="tab-btn" data-tab="archived">Archivés</button>
+          </div>
+
+          <ul id="elements-list" class="elements-list"></ul>
+          <ul id="elements-archived" class="elements-list hidden"></ul>
+        </aside>
+
+        <!-- ── Panneau central : Grille ── -->
+        <div class="panel panel-grid">
+          <div class="grid-toolbar">
+            <div class="grid-size-control">
+              <label>Taille</label>
+              <button class="size-btn" id="btn-size-minus">−</button>
+              <span id="grid-size-display">4×4</span>
+              <button class="size-btn" id="btn-size-plus">+</button>
+            </div>
+            <div class="grid-actions">
+              <button class="btn-action" id="btn-generate">🎲 Générer</button>
+              <button class="btn-action btn-reset" id="btn-reset">↺ Reset</button>
+            </div>
+          </div>
+
+          <div id="bingo-grid" class="bingo-grid"></div>
+
+          <div id="bingo-message" class="bingo-message hidden">🎉 BINGO !</div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
