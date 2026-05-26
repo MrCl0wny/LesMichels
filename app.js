@@ -58,14 +58,41 @@ const _dbBingo = window._db.ref('bingo');
 // ──────────────────────────────────────────────
 // État global Bingo
 // ──────────────────────────────────────────────
-const AVAILABLE_FONTS = [
-  { label: 'Arial', value: 'Arial, sans-serif' },
-  { label: 'Impact', value: 'Impact, fantasy' },
-  { label: 'Georgia', value: 'Georgia, serif' },
-  { label: 'Courier New', value: '"Courier New", monospace' },
-  { label: 'Trebuchet MS', value: '"Trebuchet MS", sans-serif' },
-  { label: 'Space Mono', value: '"Space Mono", monospace' },
-];
+
+// La taille de texte est locale (par navigateur), pas partagée via Firebase
+const _LOCAL_FONT_SCALE_KEY = 'lesmichels_bingo_fontscale';
+let _localFontScale = parseFloat(localStorage.getItem(_LOCAL_FONT_SCALE_KEY)) || 1;
+
+function saveLocalFontScale(scale) {
+  _localFontScale = Math.max(0.5, Math.min(3, scale));
+  localStorage.setItem(_LOCAL_FONT_SCALE_KEY, _localFontScale);
+}
+
+// IDs des grilles sélectionnées (affichées simultanément, max 3, local non partagé)
+// Stocké par thème : { [themeId]: [gridId, ...] }
+const _LOCAL_SELECTED_GRIDS_KEY = 'lesmichels_bingo_selectedgrids_v2';
+let _selectedGridIds = [];
+let _selectedGridsByTheme = {};
+
+function _loadSelectedGridsByTheme() {
+  try {
+    const raw = localStorage.getItem(_LOCAL_SELECTED_GRIDS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveLocalSelectedGrids(ids) {
+  _selectedGridIds = ids.slice(0, 3);
+  const themeId = state && state.activeThemeId;
+  if (themeId) _selectedGridsByTheme[themeId] = _selectedGridIds.slice();
+  localStorage.setItem(_LOCAL_SELECTED_GRIDS_KEY, JSON.stringify(_selectedGridsByTheme));
+}
+
+function loadLocalSelectedGridsForTheme(themeId) {
+  return (_selectedGridsByTheme[themeId] || []).slice();
+}
+
+_selectedGridsByTheme = _loadSelectedGridsByTheme();
 
 function defaultTheme(name) {
   return {
@@ -74,13 +101,12 @@ function defaultTheme(name) {
     elements: [],
     grids: [],
     activeGridId: null,
-    cellFontScale: 1,
-    cellFont: AVAILABLE_FONTS[0].value,
+    locked: false,
   };
 }
 
 function defaultGrid(name) {
-  return { id: uid(), name, gridSize: 4, grid: [] };
+  return { id: uid(), name, gridSize: 4, grid: [], archived: false, hidden: false, title: '' };
 }
 
 function migrateState(raw) {
@@ -96,6 +122,22 @@ function migrateState(raw) {
   }
 
   if (!raw.themes || raw.themes.length === 0) return null;
+
+  // Supprimer cellFont/cellFontScale des thèmes (désormais local)
+  raw.themes.forEach(t => {
+    delete t.cellFont;
+    delete t.cellFontScale;
+    if (t.locked === undefined) t.locked = false;
+    if (t.grids) {
+      t.grids.forEach(g => {
+        if (g.archived === undefined) g.archived = false;
+        if (g.hidden === undefined) g.hidden = false;
+        if (g.title === undefined) g.title = '';
+        if (g.locked === undefined) g.locked = false;
+      });
+    }
+  });
+
   return raw;
 }
 
@@ -114,7 +156,10 @@ function activeTheme() {
 function activeGrid() {
   const t = activeTheme();
   if (!t) return null;
-  return t.grids.find(g => g.id === t.activeGridId) || t.grids[0] || null;
+  if (t.activeGridId) return t.grids.find(g => g.id === t.activeGridId) || null;
+  return _selectedGridIds.length > 0
+    ? t.grids.find(g => g.id === _selectedGridIds[0]) || null
+    : null;
 }
 
 // ──────────────────────────────────────────────
@@ -152,15 +197,13 @@ const listActive       = document.getElementById('elements-list');
 const listArchived     = document.getElementById('elements-archived');
 const elementCount     = document.getElementById('element-count');
 const tabBtns          = document.querySelectorAll('.tab-btn');
-const gridEl           = document.getElementById('bingo-grid');
 const bingoMsg         = document.getElementById('bingo-message');
 const sizeDisplay      = document.getElementById('grid-size-display');
 const btnSizeMinus     = document.getElementById('btn-size-minus');
 const btnSizePlus      = document.getElementById('btn-size-plus');
 const btnGenerate      = document.getElementById('btn-generate');
-const btnManual        = document.getElementById('btn-manual');
 const btnReset         = document.getElementById('btn-reset');
-const btnExportBingo   = document.getElementById('btn-export-bingo');
+const btnScreenshot    = document.getElementById('btn-screenshot-bingo');
 const gridError        = document.getElementById('grid-error');
 const gridsList        = document.getElementById('grids-list');
 const btnNewGrid       = document.getElementById('btn-new-grid');
@@ -169,12 +212,36 @@ const btnNewTheme      = document.getElementById('btn-new-theme');
 const btnFontMinus       = document.getElementById('btn-font-minus');
 const btnFontPlus        = document.getElementById('btn-font-plus');
 const fontScaleInput     = document.getElementById('font-scale-input');
-const fontFamilySelect   = document.getElementById('font-family-select');
 const gridWrapper        = document.getElementById('grid-wrapper');
 const btnArchivedThemes     = document.getElementById('btn-archived-themes');
 const modalArchivedThemes   = document.getElementById('modal-archived-themes');
 const btnCloseArchivedModal = document.getElementById('btn-close-archived-modal');
 const archivedThemesList    = document.getElementById('archived-themes-list');
+const btnArchivedGrids      = document.getElementById('btn-archived-grids');
+const modalArchivedGrids    = document.getElementById('modal-archived-grids');
+const btnCloseArchivedGridsModal = document.getElementById('btn-close-archived-grids-modal');
+const archivedGridsList     = document.getElementById('archived-grids-list');
+const chkLockGenerate          = document.getElementById('chk-lock-generate');
+const btnCollapsePanel         = document.getElementById('btn-collapse-panel');
+const panelElements            = document.getElementById('panel-elements');
+const panelElementsBody        = document.getElementById('panel-elements-body');
+const bingoLayout              = document.getElementById('bingo-layout');
+const btnCollapseControlPanel  = document.getElementById('btn-collapse-control-panel');
+const bingoControlPanel        = document.getElementById('bingo-control-panel');
+const bingoControlPanelBody    = document.getElementById('bingo-control-panel-body');
+// Modales renommage
+const modalRenameTheme      = document.getElementById('modal-rename-theme');
+const renameThemeInput      = document.getElementById('rename-theme-input');
+const btnConfirmRenameTheme = document.getElementById('btn-confirm-rename-theme');
+const btnCancelRenameTheme  = document.getElementById('btn-cancel-rename-theme');
+const btnCloseRenameThemeModal = document.getElementById('btn-close-rename-theme-modal');
+const modalRenameGrid       = document.getElementById('modal-rename-grid');
+const renameGridInput       = document.getElementById('rename-grid-input');
+const btnConfirmRenameGrid  = document.getElementById('btn-confirm-rename-grid');
+const btnCancelRenameGrid   = document.getElementById('btn-cancel-rename-grid');
+const btnCloseRenameGridModal = document.getElementById('btn-close-rename-grid-modal');
+let _renameThemeId = null;
+let _renameGridId  = null;
 
 // ──────────────────────────────────────────────
 // Rendu : liste d'éléments
@@ -225,12 +292,9 @@ function buildElementItem(el, isArchived) {
     });
     li.addEventListener('dragend', () => li.classList.remove('dragging'));
 
-    const btnEdit = document.createElement('button');
-    btnEdit.className = 'elem-btn edit';
-    btnEdit.title = 'Modifier';
-    btnEdit.textContent = '✏';
-    btnEdit.addEventListener('click', () => startEditElement(el.id, span));
-    li.appendChild(btnEdit);
+    span.title = 'Double-clic pour modifier';
+    span.style.cursor = 'text';
+    span.addEventListener('dblclick', e => { e.stopPropagation(); startEditElement(el.id, span); });
 
     const btnArch = document.createElement('button');
     btnArch.className = 'elem-btn archive';
@@ -245,14 +309,14 @@ function buildElementItem(el, isArchived) {
     btnRestore.textContent = '↩';
     btnRestore.addEventListener('click', () => restoreElement(el.id));
     li.appendChild(btnRestore);
-  }
 
-  const btnDel = document.createElement('button');
-  btnDel.className = 'elem-btn delete';
-  btnDel.title = 'Supprimer';
-  btnDel.textContent = '✕';
-  btnDel.addEventListener('click', () => deleteElement(el.id));
-  li.appendChild(btnDel);
+    const btnDel = document.createElement('button');
+    btnDel.className = 'elem-btn delete';
+    btnDel.title = 'Supprimer';
+    btnDel.textContent = '✕';
+    btnDel.addEventListener('click', () => deleteElement(el.id));
+    li.appendChild(btnDel);
+  }
 
   return li;
 }
@@ -351,6 +415,14 @@ function createTheme(name) {
 
 function switchTheme(id) {
   state.activeThemeId = id;
+  _selectedGridIds = loadLocalSelectedGridsForTheme(id);
+  if (_selectedGridIds.length === 0) {
+    const t = state.themes.find(th => th.id === id);
+    if (t) {
+      const firstGrid = t.grids.find(g => !g.archived);
+      if (firstGrid) _selectedGridIds = [firstGrid.id];
+    }
+  }
   saveState();
   renderThemesList();
   renderElements();
@@ -393,6 +465,24 @@ function renameTheme(id, newName) {
   renderThemesList();
 }
 
+function duplicateTheme(id) {
+  const src = state.themes.find(t => t.id === id);
+  if (!src) return;
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = uid();
+  copy.name = src.name + ' (copie)';
+  copy.archived = false;
+  copy.grids = copy.grids.map(g => ({ ...g, id: uid() }));
+  copy.activeGridId = copy.grids.find(g => !g.archived)?.id || null;
+  state.themes.push(copy);
+  state.activeThemeId = copy.id;
+  saveState();
+  renderThemesList();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
 function renderThemesList() {
   themesList.innerHTML = '';
   const activeThemes = state.themes.filter(t => !t.archived);
@@ -400,7 +490,7 @@ function renderThemesList() {
   if (activeThemes.length === 0) {
     const msg = document.createElement('span');
     msg.className = 'themes-empty-msg';
-    msg.textContent = 'Aucun thème actif — crée-en un !';
+    msg.textContent = 'Aucun thème — crée-en un !';
     themesList.appendChild(msg);
     return;
   }
@@ -409,29 +499,42 @@ function renderThemesList() {
     const item = document.createElement('div');
     item.className = 'theme-tab' + (t.id === state.activeThemeId ? ' active' : '');
     item.dataset.id = t.id;
+    item.draggable = true;
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'theme-tab-name';
     nameSpan.textContent = t.name;
-    nameSpan.title = 'Double-cliquer pour renommer';
-    nameSpan.addEventListener('dblclick', e => { e.stopPropagation(); startRenameTheme(t.id, nameSpan); });
     item.appendChild(nameSpan);
 
-    const btnRename = document.createElement('button');
-    btnRename.className = 'theme-tab-btn rename';
-    btnRename.title = 'Renommer';
-    btnRename.textContent = '✏';
-    btnRename.addEventListener('click', e => { e.stopPropagation(); startRenameTheme(t.id, nameSpan); });
-    item.appendChild(btnRename);
-
-    const btnArch = document.createElement('button');
-    btnArch.className = 'theme-tab-btn';
-    btnArch.title = 'Archiver';
-    btnArch.textContent = '📦';
-    btnArch.addEventListener('click', e => { e.stopPropagation(); archiveTheme(t.id); });
-    item.appendChild(btnArch);
-
     item.addEventListener('click', () => switchTheme(t.id));
+
+    item.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      openCtxMenuTheme(t.id, e);
+    });
+
+    // Drag & drop pour réordonner les thèmes
+    item.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', t.id);
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => item.classList.remove('dragging'));
+    item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over-tab'); });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over-tab'));
+    item.addEventListener('drop', e => {
+      e.preventDefault();
+      item.classList.remove('drag-over-tab');
+      const srcId = e.dataTransfer.getData('text/plain');
+      if (srcId === t.id) return;
+      const srcIdx = state.themes.findIndex(x => x.id === srcId);
+      const dstIdx = state.themes.findIndex(x => x.id === t.id);
+      if (srcIdx === -1 || dstIdx === -1) return;
+      const [moved] = state.themes.splice(srcIdx, 1);
+      state.themes.splice(dstIdx, 0, moved);
+      saveState();
+      renderThemesList();
+    });
+
     themesList.appendChild(item);
   });
 }
@@ -439,17 +542,14 @@ function renderThemesList() {
 // ──────────────────────────────────────────────
 // Export PNG de la grille bingo
 // ──────────────────────────────────────────────
-function bingoExport() {
-  const t = activeTheme();
-  const g = activeGrid();
-  if (!t || !g || g.grid.length === 0) return;
-
+function renderGridToCanvas(t, g) {
   const n = g.gridSize;
   const cellSize = 120;
   const gap = 3;
+  const titleH = g.title ? 32 : 0;
   const headerH = 44;
   const totalW = n * cellSize + (n - 1) * gap;
-  const totalH = headerH + n * cellSize + (n - 1) * gap;
+  const totalH = titleH + headerH + n * cellSize + (n - 1) * gap;
 
   const canvas = document.createElement('canvas');
   canvas.width = totalW;
@@ -459,26 +559,35 @@ function bingoExport() {
   ctx.fillStyle = '#18181c';
   ctx.fillRect(0, 0, totalW, totalH);
 
-  // Titre : "ThèmeName — GridName"
+  // Titre personnalisé (au dessus)
+  let offsetY = 0;
+  if (g.title) {
+    ctx.fillStyle = '#e8c547';
+    ctx.font = 'bold 15px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(g.title, totalW / 2, titleH / 2);
+    offsetY = titleH;
+  }
+
+  // Sous-titre : "ThèmeName — GridName"
   ctx.fillStyle = '#e8e8f0';
   ctx.font = 'bold 16px Arial';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`${t.name}  —  ${g.name}`, 8, headerH / 2);
+  ctx.fillText(`${t.name}  —  ${g.name}`, 8, offsetY + headerH / 2);
 
   const { indices: bingoIdx } = getBingoResult(n, g.grid);
-  const scale = t.cellFontScale || 1;
-  const font = t.cellFont || 'Arial, sans-serif';
+  const scale = _localFontScale;
 
   for (let i = 0; i < n * n; i++) {
     const row = Math.floor(i / n);
     const col = i % n;
     const x = col * (cellSize + gap);
-    const y = headerH + row * (cellSize + gap);
+    const y = offsetY + headerH + row * (cellSize + gap);
     const cell = g.grid[i];
     const el = cell && cell.elementId ? t.elements.find(e => e.id === cell.elementId) : null;
 
-    // Fond de case
     if (bingoIdx.has(i)) {
       ctx.fillStyle = '#4caf7d';
     } else if (cell && cell.checked) {
@@ -490,15 +599,13 @@ function bingoExport() {
     }
     ctx.fillRect(x, y, cellSize, cellSize);
 
-    // Bordure
     ctx.strokeStyle = '#333344';
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
 
     if (!el) continue;
 
-    // Texte
-    ctx.fillStyle = (bingoIdx.has(i) || cell.checked) ? '#fff' : '#d0d0e8';
+    ctx.fillStyle = (bingoIdx.has(i) || (cell && cell.checked)) ? '#fff' : '#d0d0e8';
     const lenText = el.text.length;
     let basePx;
     if (lenText <= 6)       basePx = 20;
@@ -506,13 +613,13 @@ function bingoExport() {
     else if (lenText <= 22) basePx = 13;
     else if (lenText <= 40) basePx = 11;
     else                    basePx = 9;
-    const fontSize = Math.round(basePx * scale);
-    ctx.font = `bold ${fontSize}px ${font.split(',')[0].replace(/"/g, '')}`;
+    const fontSize = Math.max(8, Math.round(basePx * scale));
+    ctx.font = `bold ${fontSize}px Arial`;
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.textBaseline = 'top';
 
-    // Word-wrap simple
-    const maxW = cellSize - 12;
+    // Word-wrap avec respect de la hauteur de cellule
+    const maxW = cellSize - 14;
     const words = el.text.split(' ');
     const lines = [];
     let line = '';
@@ -525,16 +632,90 @@ function bingoExport() {
         line = test;
       }
     }
-    lines.push(line);
-    const lineH = fontSize + 3;
-    const startY = y + cellSize / 2 - ((lines.length - 1) * lineH) / 2;
-    lines.forEach((l, li) => ctx.fillText(l, x + cellSize / 2, startY + li * lineH));
+    if (line) lines.push(line);
+
+    const lineH = fontSize + 4;
+    const totalTextH = lines.length * lineH;
+    const startY = y + (cellSize - totalTextH) / 2;
+    lines.forEach((l, li) => {
+      ctx.fillText(l, x + cellSize / 2, startY + li * lineH);
+    });
   }
 
-  const link = document.createElement('a');
-  link.download = (`bingo_${t.name}_${g.name}`).replace(/[^a-z0-9]/gi, '_') + '.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
+  return canvas;
+}
+
+function getVisibleGrids() {
+  const t = activeTheme();
+  if (!t) return [];
+  const activeGrids = t.grids.filter(x => !x.archived);
+  if (activeGrids.length === 0) return [];
+
+  // Nettoyer les ids sélectionnés qui n'existent plus
+  _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id));
+
+  // Retourner dans l'ordre de _selectedGridIds, filtré par grilles existantes
+  return _selectedGridIds.map(id => activeGrids.find(x => x.id === id)).filter(Boolean);
+}
+
+
+function playCaptureSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.25);
+  } catch (e) {}
+}
+
+function copyGridToClipboard(grids) {
+  const t = activeTheme();
+  if (!t || grids.length === 0) return;
+  let canvas;
+  if (grids.length === 1) {
+    canvas = renderGridToCanvas(t, grids[0]);
+  } else {
+    const canvases = grids.map(gx => renderGridToCanvas(t, gx));
+    const gap = 12;
+    const totalW = canvases.reduce((s, c) => s + c.width, 0) + gap * (canvases.length - 1);
+    const totalH = Math.max(...canvases.map(c => c.height));
+    canvas = document.createElement('canvas');
+    canvas.width = totalW;
+    canvas.height = totalH;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0e0e10';
+    ctx.fillRect(0, 0, totalW, totalH);
+    let xOff = 0;
+    canvases.forEach(c => { ctx.drawImage(c, xOff, 0); xOff += c.width + gap; });
+  }
+  canvas.toBlob(blob => {
+    if (!blob) return;
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
+      playCaptureSound();
+    }).catch(err => {
+      console.warn('Clipboard write failed:', err);
+    });
+  }, 'image/png');
+}
+
+function bingoScreenshot() {
+  copyGridToClipboard(getVisibleGrids());
+}
+
+function bingoScreenshotOne(gId) {
+  const t = activeTheme();
+  if (!t) return;
+  const g = t.grids.find(x => x.id === gId);
+  if (!g) return;
+  copyGridToClipboard([g]);
 }
 
 function renderArchivedThemesModal() {
@@ -577,33 +758,31 @@ function renderArchivedThemesModal() {
   });
 }
 
-function startRenameTheme(id, nameSpan) {
+function openRenameThemeModal(id) {
   const t = state.themes.find(t => t.id === id);
   if (!t) return;
+  _renameThemeId = id;
+  renameThemeInput.value = t.name;
+  modalRenameTheme.classList.remove('hidden');
+  setTimeout(() => { renameThemeInput.focus(); renameThemeInput.select(); }, 50);
+}
 
-  const input = document.createElement('input');
-  input.className = 'theme-tab-rename';
-  input.value = t.name;
-  input.maxLength = 40;
+function closeRenameThemeModal() {
+  modalRenameTheme.classList.add('hidden');
+  _renameThemeId = null;
+}
 
-  const commit = () => renameTheme(id, input.value);
-
-  input.addEventListener('blur', commit);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') input.blur();
-    if (e.key === 'Escape') { input.value = t.name; input.blur(); }
-  });
-
-  nameSpan.replaceWith(input);
-  input.focus();
-  input.select();
+function confirmRenameTheme() {
+  if (!_renameThemeId) return;
+  renameTheme(_renameThemeId, renameThemeInput.value);
+  closeRenameThemeModal();
 }
 
 // ──────────────────────────────────────────────
 // Grilles (dans le thème actif)
 // ──────────────────────────────────────────────
 const MIN_SIZE = 3;
-const MAX_SIZE = 8;
+const MAX_SIZE = 5;
 
 function createGrid(name) {
   const t = activeTheme();
@@ -612,13 +791,35 @@ function createGrid(name) {
   g.grid  = Array.from({ length: n * n }, () => ({ elementId: null, checked: false }));
   t.grids.push(g);
   t.activeGridId = g.id;
+  // Sélectionner automatiquement la nouvelle grille
+  if (!_selectedGridIds.includes(g.id)) {
+    if (_selectedGridIds.length >= 3) _selectedGridIds.pop();
+    _selectedGridIds.unshift(g.id);
+    saveLocalSelectedGrids(_selectedGridIds);
+  }
   saveState();
   renderGridsList();
   renderGrid();
 }
 
+function getGlobalCheckedElementIds(t) {
+  const checked = new Set();
+  t.grids.filter(gx => !gx.archived).forEach(gx => {
+    gx.grid.forEach(c => { if (c.checked && c.elementId) checked.add(c.elementId); });
+  });
+  return checked;
+}
+
 function switchGrid(id) {
-  activeTheme().activeGridId = id;
+  const t = activeTheme();
+  if (!t) return;
+  t.activeGridId = id;
+  // Ajouter à la sélection si pas déjà dedans (max 3)
+  if (!_selectedGridIds.includes(id)) {
+    if (_selectedGridIds.length >= 3) _selectedGridIds.pop();
+    _selectedGridIds.unshift(id);
+    saveLocalSelectedGrids(_selectedGridIds);
+  }
   saveState();
   renderGridsList();
   renderGrid();
@@ -629,7 +830,8 @@ function deleteGrid(id) {
   if (!t) return;
   t.grids = t.grids.filter(g => g.id !== id);
   if (t.activeGridId === id) {
-    t.activeGridId = t.grids.length > 0 ? t.grids[0].id : null;
+    const remaining = t.grids.filter(g => !g.archived);
+    t.activeGridId = remaining.length > 0 ? remaining[0].id : null;
   }
   saveState();
   renderGridsList();
@@ -638,74 +840,228 @@ function deleteGrid(id) {
 
 function renameGrid(id, newName) {
   const t = activeTheme();
-  const g = t.grids.find(g => g.id === id);
-  if (g && newName.trim()) g.name = newName.trim();
+  const g = t?.grids.find(g => g.id === id);
+  if (g && newName.trim()) { g.name = newName.trim(); g.title = newName.trim(); }
   saveState();
   renderGridsList();
+  renderGrid();
+}
+
+function duplicateGrid(id) {
+  const t = activeTheme();
+  if (!t) return;
+  const src = t.grids.find(g => g.id === id);
+  if (!src) return;
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = uid();
+  copy.name = src.name + ' (copie)';
+  copy.archived = false;
+  copy.hidden = false;
+  t.grids.push(copy);
+  t.activeGridId = copy.id;
+  saveState();
+  renderGridsList();
+  renderGrid();
+}
+
+function toggleHideGrid(id) {
+  const t = activeTheme();
+  if (!t) return;
+  const g = t.grids.find(g => g.id === id);
+  if (!g) return;
+  g.hidden = !g.hidden;
+  saveState();
+  renderGridsList();
+  renderGrid();
 }
 
 function renderGridsList() {
   gridsList.innerHTML = '';
   const t = activeTheme();
   if (!t) return;
-  t.grids.forEach(g => {
+  const activeGrids = t.grids.filter(g => !g.archived);
+
+  // Nettoyer les ids sélectionnés obsolètes (grilles supprimées/archivées)
+  _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id));
+
+  activeGrids.forEach(g => {
+    const isSelected = _selectedGridIds.includes(g.id);
+    const isActive = g.id === t.activeGridId;
     const item = document.createElement('div');
-    item.className = 'grid-tab' + (g.id === t.activeGridId ? ' active' : '');
+    item.className = 'grid-tab' + (isActive && isSelected ? ' active' : '') + (isSelected ? ' grid-tab-selected' : '');
     item.dataset.id = g.id;
+    item.draggable = true;
+    item.title = isSelected ? 'Cliquer pour masquer cette grille' : 'Cliquer pour afficher cette grille (max 3)';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'grid-tab-name';
     nameSpan.textContent = g.name;
-    nameSpan.title = 'Double-cliquer pour renommer';
-    nameSpan.addEventListener('dblclick', e => { e.stopPropagation(); startRenameGrid(g.id, nameSpan); });
     item.appendChild(nameSpan);
 
-    const btnRenameGrid = document.createElement('button');
-    btnRenameGrid.className = 'grid-tab-rename-btn';
-    btnRenameGrid.title = 'Renommer';
-    btnRenameGrid.textContent = '✏';
-    btnRenameGrid.addEventListener('click', e => { e.stopPropagation(); startRenameGrid(g.id, nameSpan); });
-    item.appendChild(btnRenameGrid);
+    // Drag & drop pour réordonner
+    item.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', g.id);
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => item.classList.remove('dragging'));
+    item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over-tab'); });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over-tab'));
+    item.addEventListener('drop', e => {
+      e.preventDefault();
+      item.classList.remove('drag-over-tab');
+      const srcId = e.dataTransfer.getData('text/plain');
+      if (srcId === g.id) return;
+      const tNow = activeTheme();
+      if (!tNow) return;
+      const srcIdx = tNow.grids.findIndex(x => x.id === srcId);
+      const dstIdx = tNow.grids.findIndex(x => x.id === g.id);
+      if (srcIdx === -1 || dstIdx === -1) return;
+      const [moved] = tNow.grids.splice(srcIdx, 1);
+      tNow.grids.splice(dstIdx, 0, moved);
+      saveState();
+      renderGridsList();
+      renderGrid();
+    });
 
-    const btnDel = document.createElement('button');
-    btnDel.className = 'grid-tab-del';
-    btnDel.title = 'Supprimer cette grille';
-    btnDel.textContent = '✕';
-    btnDel.addEventListener('click', e => { e.stopPropagation(); deleteGrid(g.id); });
-    item.appendChild(btnDel);
+    let _clickTimer = null;
+    item.addEventListener('click', e => {
+      if (_clickTimer) { clearTimeout(_clickTimer); _clickTimer = null; return; }
+      _clickTimer = setTimeout(() => {
+        _clickTimer = null;
+        const tNow = activeTheme();
+        if (!tNow) return;
+        const nowSelected = _selectedGridIds.includes(g.id);
+        if (nowSelected) {
+          _selectedGridIds = _selectedGridIds.filter(id => id !== g.id);
+          if (tNow.activeGridId === g.id) {
+            tNow.activeGridId = _selectedGridIds.length > 0 ? _selectedGridIds[0] : null;
+          }
+        } else {
+          if (_selectedGridIds.length >= 3) return;
+          _selectedGridIds.push(g.id);
+          tNow.activeGridId = g.id;
+        }
+        saveLocalSelectedGrids(_selectedGridIds);
+        saveState();
+        renderGridsList();
+        renderGrid();
+      }, 220);
+    });
 
-    item.addEventListener('click', () => switchGrid(g.id));
+    item.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      if (_clickTimer) { clearTimeout(_clickTimer); _clickTimer = null; }
+      openCtxMenuGrid(g.id, e);
+    });
+
     gridsList.appendChild(item);
   });
 }
 
-function startRenameGrid(id, nameSpan) {
+function openRenameGridModal(id) {
   const t = activeTheme();
+  if (!t) return;
   const g = t.grids.find(g => g.id === id);
   if (!g) return;
+  _renameGridId = id;
+  renameGridInput.value = g.name;
+  modalRenameGrid.classList.remove('hidden');
+  setTimeout(() => { renameGridInput.focus(); renameGridInput.select(); }, 50);
+}
 
-  const input = document.createElement('input');
-  input.className = 'grid-tab-rename';
-  input.value = g.name;
-  input.maxLength = 40;
+function closeRenameGridModal() {
+  modalRenameGrid.classList.add('hidden');
+  _renameGridId = null;
+}
 
-  const commit = () => renameGrid(id, input.value);
+function confirmRenameGrid() {
+  if (!_renameGridId) return;
+  renameGrid(_renameGridId, renameGridInput.value);
+  closeRenameGridModal();
+}
 
-  input.addEventListener('blur', commit);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') input.blur();
-    if (e.key === 'Escape') { input.value = g.name; input.blur(); }
+function archiveGrid(id) {
+  const t = activeTheme();
+  if (!t) return;
+  const g = t.grids.find(g => g.id === id);
+  if (!g) return;
+  g.archived = true;
+  if (t.activeGridId === id) {
+    const remaining = t.grids.filter(x => !x.archived);
+    t.activeGridId = remaining.length > 0 ? remaining[0].id : null;
+  }
+  saveState();
+  renderGridsList();
+  renderGrid();
+}
+
+function renderArchivedGridsModal() {
+  archivedGridsList.innerHTML = '';
+  const t = activeTheme();
+  if (!t) {
+    archivedGridsList.innerHTML = '<p class="archived-empty">Aucun thème actif.</p>';
+    return;
+  }
+  const archived = t.grids.filter(g => g.archived);
+  if (archived.length === 0) {
+    archivedGridsList.innerHTML = '<p class="archived-empty">Aucune grille archivée.</p>';
+    return;
+  }
+  archived.forEach(g => {
+    const item = document.createElement('div');
+    item.className = 'archived-theme-item';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'archived-theme-name';
+    nameSpan.textContent = g.name;
+    item.appendChild(nameSpan);
+
+    const btnRestore = document.createElement('button');
+    btnRestore.className = 'archived-theme-btn restore';
+    btnRestore.textContent = '↩ Restaurer';
+    btnRestore.addEventListener('click', () => {
+      g.archived = false;
+      saveState();
+      renderGridsList();
+      renderArchivedGridsModal();
+    });
+    item.appendChild(btnRestore);
+
+    const btnDel = document.createElement('button');
+    btnDel.className = 'archived-theme-btn del';
+    btnDel.textContent = '✕ Supprimer';
+    btnDel.addEventListener('click', () => {
+      deleteGrid(g.id);
+      renderArchivedGridsModal();
+    });
+    item.appendChild(btnDel);
+
+    archivedGridsList.appendChild(item);
   });
-
-  nameSpan.replaceWith(input);
-  input.focus();
-  input.select();
 }
 
 // ──────────────────────────────────────────────
 // Grille — actions
 // ──────────────────────────────────────────────
+function generateOneGrid(t, g) {
+  if (g.locked) return false;
+  const n = g.gridSize;
+  const cellCount = n * n;
+  const active = t.elements.filter(e => !e.archived);
+  if (active.length < cellCount) return false;
+  const pool = shuffle(active).slice(0, cellCount);
+  // Utiliser les cases cochées de toutes les grilles (état partagé)
+  const globalChecked = getGlobalCheckedElementIds(t);
+  g.grid = Array.from({ length: cellCount }, (_, i) => ({
+    elementId: pool[i] ? pool[i].id : null,
+    checked: pool[i] ? globalChecked.has(pool[i].id) : false,
+  }));
+  return true;
+}
+
 function generateGrid() {
+  const t0 = activeTheme();
+  if (t0 && t0.locked) return;
   const t = activeTheme();
   const g = activeGrid();
   if (!g) return;
@@ -720,12 +1076,7 @@ function generateGrid() {
   }
   gridError.classList.add('hidden');
 
-  const pool = shuffle(active).slice(0, cellCount);
-  g.grid = Array.from({ length: cellCount }, (_, i) => ({
-    elementId: pool[i] ? pool[i].id : null,
-    checked: false,
-  }));
-
+  generateOneGrid(t, g);
   saveState();
   renderGrid();
 }
@@ -738,15 +1089,6 @@ function resetGrid() {
   renderGrid();
 }
 
-function toggleCell(index) {
-  const g = activeGrid();
-  if (!g) return;
-  const cell = g.grid[index];
-  if (!cell || !cell.elementId) return;
-  cell.checked = !cell.checked;
-  saveState();
-  renderGrid();
-}
 
 function changeSize(delta) {
   const g = activeGrid();
@@ -769,54 +1111,30 @@ function changeSize(delta) {
   renderGrid();
 }
 
-function applyGridScale() {
-  // La hauteur est fixée à 60vh via CSS — rien à faire ici
-}
 
 function changeFontScale(delta) {
-  const t = activeTheme();
-  if (!t) return;
-  t.cellFontScale = Math.max(0.5, Math.min(3, (t.cellFontScale || 1) + delta));
-  saveState();
+  saveLocalFontScale(_localFontScale + delta);
   applyFontScale();
 }
 
 function applyFontScale() {
-  const t = activeTheme();
-  if (!t) return;
-  const scale = t.cellFontScale || 1;
+  const scale = _localFontScale;
   const pct = Math.round(scale * 100);
   fontScaleInput.value = pct;
 
-  const g = activeGrid();
-  if (!g) return;
-  const cells = gridEl.querySelectorAll('.bingo-cell:not(.empty)');
-  cells.forEach(div => {
+  const t = activeTheme();
+  if (!t) return;
+  gridWrapper.querySelectorAll('.bingo-cell:not(.empty)').forEach(div => {
     const idx = parseInt(div.dataset.index);
     if (isNaN(idx)) return;
+    const gridId = div.closest('[data-grid-id]')?.dataset.gridId;
+    const g = gridId ? t.grids.find(x => x.id === gridId) : activeGrid();
+    if (!g) return;
     const cell = g.grid[idx];
     if (!cell || !cell.elementId) return;
     const el = t.elements.find(e => e.id === cell.elementId);
     if (el) div.style.fontSize = getCellFontSize(el.text, scale);
   });
-}
-
-function applyFont() {
-  const t = activeTheme();
-  if (!t) return;
-  const font = t.cellFont || AVAILABLE_FONTS[0].value;
-  fontFamilySelect.value = font;
-  gridEl.querySelectorAll('.bingo-cell').forEach(div => {
-    div.style.fontFamily = font;
-  });
-}
-
-function changeFont(value) {
-  const t = activeTheme();
-  if (!t) return;
-  t.cellFont = value;
-  saveState();
-  applyFont();
 }
 
 function getCellFontSize(text, scale) {
@@ -830,72 +1148,118 @@ function getCellFontSize(text, scale) {
   return (base * scale).toFixed(2) + 'rem';
 }
 
-// ──────────────────────────────────────────────
-// Mode placement manuel
-// ──────────────────────────────────────────────
-let manualMode = false;
+// Mode placement manuel supprimé
+const manualMode = false;
 
-function enterManualMode() {
-  manualMode = true;
-  btnManual.classList.add('active');
-  btnGenerate.disabled = false;
-  gridError.classList.add('hidden');
-  renderGrid();
-  renderElements();
-}
-
-function exitManualMode() {
-  manualMode = false;
-  btnManual.classList.remove('active');
-  renderGrid();
-  renderElements();
-}
-
-function renderGrid() {
-  const t = activeTheme();
-  const g = activeGrid();
-
-  if (!t) {
-    gridEl.innerHTML = '<div class="no-grid-msg">Crée un thème pour commencer.</div>';
-    sizeDisplay.textContent = '—';
-    bingoMsg.classList.add('hidden');
-    btnGenerate.disabled = true;
-    btnGenerate.classList.add('btn-disabled');
-    return;
-  }
-
-  if (!g) {
-    gridEl.innerHTML = '<div class="no-grid-msg">Crée une grille pour commencer.</div>';
-    sizeDisplay.textContent = '—';
-    bingoMsg.classList.add('hidden');
-    btnGenerate.disabled = false;
-    btnGenerate.classList.remove('btn-disabled');
-    applyGridScale();
-    return;
-  }
-
+function buildSingleGrid(t, g, isActive) {
   const n = g.gridSize;
-  sizeDisplay.textContent = `${n}×${n}`;
-
-  const activeCount = t.elements.filter(e => !e.archived).length;
-  const enoughElements = activeCount >= n * n;
-  btnGenerate.disabled = !enoughElements || manualMode;
-  btnGenerate.classList.toggle('btn-disabled', !enoughElements || manualMode);
-  if (enoughElements) gridError.classList.add('hidden');
-
+  const scale = _localFontScale;
   const { indices: bingoIndices, lines: bingoLines } = getBingoResult(n, g.grid);
 
-  const scale = t.cellFontScale || 1;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'grid-view-wrapper';
+  wrapper.dataset.gridId = g.id;
 
+  // Titre de grille éditable (synchronisé avec le nom de l'onglet)
+  const titleRow = document.createElement('div');
+  titleRow.className = 'grid-view-title-row';
+  const titleInput = document.createElement('input');
+  titleInput.type = 'text';
+  titleInput.className = 'grid-view-title-input';
+  titleInput.placeholder = g.name;
+  titleInput.value = g.title || g.name;
+  titleInput.maxLength = 60;
+  titleInput.addEventListener('input', () => {
+    const tNow = activeTheme();
+    if (!tNow) return;
+    const gNow = tNow.grids.find(x => x.id === g.id);
+    if (!gNow) return;
+    const val = titleInput.value.trim();
+    gNow.title = val;
+    gNow.name = val || gNow.name;
+    // Mettre à jour l'onglet en live sans re-render complet
+    const tabEl = gridsList.querySelector(`.grid-tab[data-id="${g.id}"] .grid-tab-name`);
+    if (tabEl && val) tabEl.textContent = val;
+  });
+  titleInput.addEventListener('change', () => {
+    const tNow = activeTheme();
+    if (!tNow) return;
+    const gNow = tNow.grids.find(x => x.id === g.id);
+    if (!gNow) return;
+    const val = titleInput.value.trim();
+    if (val) { gNow.title = val; gNow.name = val; }
+    saveState();
+    renderGridsList();
+  });
+  titleRow.appendChild(titleInput);
+  wrapper.appendChild(titleRow);
+
+  // Contrôles par grille (ordre : Bloquer | Générer | Reset | Capture)
+  const subCtrl = document.createElement('div');
+  subCtrl.className = 'subgrid-controls';
+
+  const globalLocked = !!t.locked;
+  const gridLocked = g.locked || globalLocked;
+
+  const lblLock = document.createElement('label');
+  lblLock.className = 'subgrid-lock-label';
+  lblLock.title = 'Bloquer la génération et le reset de cette grille';
+  const chkLock = document.createElement('input');
+  chkLock.type = 'checkbox';
+  chkLock.checked = gridLocked;
+  chkLock.disabled = globalLocked;
+  chkLock.addEventListener('change', () => {
+    const tNow = activeTheme();
+    if (!tNow || tNow.locked) return;
+    const gNow = tNow.grids.find(x => x.id === g.id);
+    if (gNow) { gNow.locked = chkLock.checked; saveState(); renderGrid(); }
+  });
+  lblLock.appendChild(chkLock);
+  lblLock.appendChild(document.createTextNode('🔒'));
+  subCtrl.appendChild(lblLock);
+
+  const btnSubGen = document.createElement('button');
+  btnSubGen.className = 'btn-action btn-subgrid' + (gridLocked ? ' btn-disabled' : '');
+  btnSubGen.disabled = gridLocked || manualMode;
+  btnSubGen.textContent = '🎲';
+  btnSubGen.title = 'Générer cette grille';
+  btnSubGen.addEventListener('click', () => {
+    const tNow = activeTheme();
+    if (!tNow || tNow.locked) return;
+    const gNow = tNow.grids.find(x => x.id === g.id);
+    if (!gNow || gNow.locked) return;
+    const ok = generateOneGrid(tNow, gNow);
+    if (!ok) {
+      gridError.textContent = `⚠ Pas assez d'éléments actifs pour générer.`;
+      gridError.classList.remove('hidden');
+      return;
+    }
+    gridError.classList.add('hidden');
+    saveState();
+    renderGrid();
+  });
+  subCtrl.appendChild(btnSubGen);
+
+
+  const btnSubCapture = document.createElement('button');
+  btnSubCapture.className = 'btn-action btn-screenshot-bingo btn-subgrid';
+  btnSubCapture.textContent = '📷';
+  btnSubCapture.title = 'Copier cette grille dans le presse-papier';
+  btnSubCapture.addEventListener('click', () => bingoScreenshotOne(g.id));
+  subCtrl.appendChild(btnSubCapture);
+
+  wrapper.appendChild(subCtrl);
+
+  const gridEl = document.createElement('div');
+  gridEl.className = 'bingo-grid';
   gridEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
-  gridEl.innerHTML = '';
 
   g.grid.forEach((cell, i) => {
     const div = document.createElement('div');
     div.className = 'bingo-cell';
     div.dataset.index = i;
 
-    if (manualMode) {
+    if (manualMode && isActive) {
       div.classList.add('manual-target');
       div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
       div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
@@ -905,7 +1269,8 @@ function renderGrid() {
         const elId = e.dataTransfer.getData('text/plain');
         const targetIdx = parseInt(div.dataset.index);
         if (elId && !isNaN(targetIdx)) {
-          g.grid[targetIdx] = { elementId: elId, checked: false };
+          const prevChecked = g.grid[targetIdx]?.checked || false;
+          g.grid[targetIdx] = { elementId: elId, checked: prevChecked };
           saveState();
           renderGrid();
           renderElements();
@@ -915,7 +1280,7 @@ function renderGrid() {
 
     if (!cell.elementId) {
       div.classList.add('empty');
-      div.textContent = manualMode ? '+ Dépose ici' : '—';
+      div.textContent = (manualMode && isActive) ? '+ Dépose ici' : '—';
     } else {
       const el = t.elements.find(e => e.id === cell.elementId);
       const cellText = el ? el.text : '?';
@@ -925,10 +1290,22 @@ function renderGrid() {
       if (cell.checked)        div.classList.add('checked');
       if (bingoIndices.has(i)) div.classList.add('bingo-line');
 
-      if (!manualMode) {
-        div.addEventListener('click', () => toggleCell(i));
+      if (!manualMode || !isActive) {
+        div.addEventListener('click', () => {
+          if (!cell.elementId) return;
+          const newChecked = !cell.checked;
+          // Appliquer le même état à toutes les grilles non-archivées contenant cet élément
+          const tNow = activeTheme();
+          if (tNow) {
+            tNow.grids.filter(gx => !gx.archived).forEach(gx => {
+              const matchCell = gx.grid.find(c => c.elementId === cell.elementId);
+              if (matchCell) matchCell.checked = newChecked;
+            });
+          }
+          saveState();
+          renderGrid();
+        });
       } else {
-        // En mode manuel, clic vide la case
         div.addEventListener('click', () => {
           g.grid[i] = { elementId: null, checked: false };
           saveState();
@@ -942,22 +1319,88 @@ function renderGrid() {
     gridEl.appendChild(div);
   });
 
-  // Message bingo
+  wrapper.appendChild(gridEl);
+
+  // Message bingo individuel sous cette grille
   if (bingoLines.length > 0) {
+    const msg = document.createElement('div');
+    msg.className = 'bingo-message bingo-message-inline';
     const count = bingoLines.length;
-    if (count === 1) {
-      bingoMsg.innerHTML = `🎉 BINGO ! Tu as complété une ligne !`;
-    } else {
-      bingoMsg.innerHTML = `🎉 BINGO x${count} ! Tu as complété ${count} lignes !`;
-    }
-    bingoMsg.classList.remove('hidden');
-  } else {
-    bingoMsg.classList.add('hidden');
+    msg.innerHTML = count === 1
+      ? `🎉 BINGO ! Tu as complété une ligne !`
+      : `🎉 BINGO x${count} ! Tu as complété ${count} lignes !`;
+    wrapper.appendChild(msg);
   }
 
-  applyGridScale();
+  return { wrapper, bingoLines };
+}
+
+function renderGrid() {
+  const t = activeTheme();
+  const g = activeGrid();
+
+  gridWrapper.innerHTML = '';
+
+  if (!t) {
+    gridWrapper.innerHTML = '<div class="no-grid-msg">Crée un thème pour commencer.</div>';
+    sizeDisplay.textContent = '—';
+    bingoMsg.classList.add('hidden');
+    btnGenerate.disabled = true;
+    btnGenerate.classList.add('btn-disabled');
+    btnReset.disabled = false;
+    btnReset.classList.remove('btn-disabled');
+    chkLockGenerate.checked = false;
+    return;
+  }
+
+  const hasAnyGrid = t.grids.some(x => !x.archived);
+  if (!g && !hasAnyGrid) {
+    gridWrapper.innerHTML = '<div class="no-grid-msg">Crée une grille pour commencer.</div>';
+    sizeDisplay.textContent = '—';
+    bingoMsg.classList.add('hidden');
+    btnGenerate.disabled = false;
+    btnGenerate.classList.remove('btn-disabled');
+    btnReset.disabled = false;
+    btnReset.classList.remove('btn-disabled');
+    return;
+  }
+
+  const n = (g || t.grids.find(x => !x.archived)).gridSize;
+  sizeDisplay.textContent = `${n}×${n}`;
+
+  // Synchroniser le checkbox avec l'état Firebase du thème
+  const locked = !!t.locked;
+  chkLockGenerate.checked = locked;
+
+  const activeCount = t.elements.filter(e => !e.archived).length;
+  const enoughElements = activeCount >= n * n;
+  btnGenerate.disabled = !enoughElements || locked;
+  btnGenerate.classList.toggle('btn-disabled', !enoughElements || locked);
+  btnReset.disabled = locked;
+  btnReset.classList.toggle('btn-disabled', locked);
+  if (enoughElements) gridError.classList.add('hidden');
+
+  const gridsToShow = getVisibleGrids();
+
+  if (gridsToShow.length === 0) {
+    gridWrapper.innerHTML = '<div class="no-grid-msg">Aucune grille sélectionnée — clique sur un onglet pour afficher une grille.</div>';
+    gridWrapper.className = 'grid-wrapper';
+    bingoMsg.classList.add('hidden');
+    return;
+  }
+
+  gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}`;
+
+  // Le message global est désormais remplacé par des messages individuels par grille
+  bingoMsg.classList.add('hidden');
+
+  gridsToShow.forEach(gridItem => {
+    const isActive = gridItem.id === g.id;
+    const { wrapper } = buildSingleGrid(t, gridItem, isActive);
+    gridWrapper.appendChild(wrapper);
+  });
+
   applyFontScale();
-  applyFont();
 }
 
 // ──────────────────────────────────────────────
@@ -1009,9 +1452,10 @@ const btnCancelNewTheme    = document.getElementById('btn-cancel-new-theme');
 const btnCloseNewThemeModal = document.getElementById('btn-close-new-theme-modal');
 
 function openNewThemeModal() {
-  newThemeNameInput.value = '';
+  const n = state.themes.length + 1;
+  newThemeNameInput.value = `Thème ${n}`;
   modalNewTheme.classList.remove('hidden');
-  setTimeout(() => newThemeNameInput.focus(), 50);
+  setTimeout(() => { newThemeNameInput.focus(); newThemeNameInput.select(); }, 50);
 }
 
 function closeNewThemeModal() {
@@ -1065,49 +1509,188 @@ btnSizePlus.addEventListener('click',  () => changeSize(+1));
 btnFontMinus.addEventListener('click', () => changeFontScale(-0.1));
 btnFontPlus.addEventListener('click',  () => changeFontScale(+0.1));
 fontScaleInput.addEventListener('change', () => {
-  const t = activeTheme();
-  if (!t) return;
   const pct = Math.max(50, Math.min(300, parseInt(fontScaleInput.value) || 100));
-  t.cellFontScale = pct / 100;
-  saveState();
+  saveLocalFontScale(pct / 100);
   applyFontScale();
 });
 
-fontFamilySelect.addEventListener('change', () => changeFont(fontFamilySelect.value));
+chkLockGenerate.addEventListener('change', () => {
+  const t = activeTheme();
+  if (t) {
+    t.locked = chkLockGenerate.checked;
+    saveState();
+  }
+  renderGrid();
+});
+
+btnCollapsePanel.addEventListener('click', () => {
+  const collapsed = panelElements.classList.toggle('panel-collapsed');
+  bingoLayout.classList.toggle('panel-hidden', collapsed);
+  btnCollapsePanel.textContent = collapsed ? '▶' : '◀';
+  btnCollapsePanel.title = collapsed ? 'Ouvrir le panneau' : 'Réduire le panneau';
+});
+
+btnCollapseControlPanel.addEventListener('click', () => {
+  const collapsed = bingoControlPanel.classList.toggle('panel-ctrl-collapsed');
+  btnCollapseControlPanel.textContent = collapsed ? '▼' : '▲';
+  btnCollapseControlPanel.title = collapsed ? 'Déployer le panneau de contrôle' : 'Rétracter le panneau de contrôle';
+});
+
+// ──────────────────────────────────────────────
+// Menu contextuel — Thèmes
+// ──────────────────────────────────────────────
+const ctxMenuTheme  = document.getElementById('ctx-menu-theme');
+const ctxThemeRename    = document.getElementById('ctx-theme-rename');
+const ctxThemeDuplicate = document.getElementById('ctx-theme-duplicate');
+const ctxThemeArchive   = document.getElementById('ctx-theme-archive');
+let _ctxThemeId = null;
+
+function openCtxMenuTheme(id, e) {
+  _ctxThemeId = id;
+  positionCtxMenu(ctxMenuTheme, e);
+  ctxMenuTheme.classList.remove('hidden');
+}
+
+function closeCtxMenuTheme() {
+  ctxMenuTheme.classList.add('hidden');
+  _ctxThemeId = null;
+}
+
+ctxThemeRename.addEventListener('click', () => {
+  if (_ctxThemeId) openRenameThemeModal(_ctxThemeId);
+  closeCtxMenuTheme();
+});
+ctxThemeDuplicate.addEventListener('click', () => {
+  if (_ctxThemeId) duplicateTheme(_ctxThemeId);
+  closeCtxMenuTheme();
+});
+ctxThemeArchive.addEventListener('click', () => {
+  if (_ctxThemeId) archiveTheme(_ctxThemeId);
+  closeCtxMenuTheme();
+});
+
+// ──────────────────────────────────────────────
+// Menu contextuel — Grilles
+// ──────────────────────────────────────────────
+const ctxMenuGrid    = document.getElementById('ctx-menu-grid');
+const ctxGridRename    = document.getElementById('ctx-grid-rename');
+const ctxGridDuplicate = document.getElementById('ctx-grid-duplicate');
+const ctxGridArchive   = document.getElementById('ctx-grid-archive');
+let _ctxGridId = null;
+
+function openCtxMenuGrid(id, e) {
+  _ctxGridId = id;
+  positionCtxMenu(ctxMenuGrid, e);
+  ctxMenuGrid.classList.remove('hidden');
+}
+
+function closeCtxMenuGrid() {
+  ctxMenuGrid.classList.add('hidden');
+  _ctxGridId = null;
+}
+
+ctxGridRename.addEventListener('click', () => {
+  if (_ctxGridId) openRenameGridModal(_ctxGridId);
+  closeCtxMenuGrid();
+});
+ctxGridDuplicate.addEventListener('click', () => {
+  if (_ctxGridId) duplicateGrid(_ctxGridId);
+  closeCtxMenuGrid();
+});
+ctxGridArchive.addEventListener('click', () => {
+  if (_ctxGridId) archiveGrid(_ctxGridId);
+  closeCtxMenuGrid();
+});
+
+function positionCtxMenu(menu, e) {
+  menu.style.left = e.pageX + 'px';
+  menu.style.top  = e.pageY + 'px';
+  // Ajuster si déborde à droite ou en bas
+  requestAnimationFrame(() => {
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 8)  menu.style.left = (e.pageX - rect.width) + 'px';
+    if (rect.bottom > window.innerHeight - 8) menu.style.top = (e.pageY - rect.height) + 'px';
+  });
+}
+
+document.addEventListener('click', () => {
+  closeCtxMenuTheme();
+  closeCtxMenuGrid();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeCtxMenuTheme(); closeCtxMenuGrid(); }
+});
 
 btnGenerate.addEventListener('click', () => {
   if (manualMode) return;
-  if (!activeTheme()) return;
+  const t = activeTheme();
+  if (!t || t.locked) return;
   if (!activeGrid()) createGrid('Grille 1');
-  generateGrid();
-});
-
-btnManual.addEventListener('click', () => {
-  if (manualMode) {
-    exitManualMode();
-  } else {
-    const t = activeTheme();
-    if (!t) return;
-    if (!activeGrid()) {
-      const g = defaultGrid('Grille 1');
-      g.grid = Array.from({ length: 16 }, () => ({ elementId: null, checked: false }));
-      t.grids.push(g);
-      t.activeGridId = g.id;
-      saveState();
-      renderGridsList();
-    }
-    enterManualMode();
+  const grids = getVisibleGrids();
+  const n = activeGrid()?.gridSize || 4;
+  const cellCount = n * n;
+  const active = t.elements.filter(e => !e.archived);
+  if (active.length < cellCount) {
+    gridError.textContent = `⚠ Il faut au moins ${cellCount} éléments actifs pour générer une grille ${n}×${n} (${active.length}/${cellCount}).`;
+    gridError.classList.remove('hidden');
+    return;
   }
+  gridError.classList.add('hidden');
+  grids.forEach(gx => generateOneGrid(t, gx));
+  saveState();
+  renderGrid();
 });
 
-btnReset.addEventListener('click', resetGrid);
-btnExportBingo.addEventListener('click', bingoExport);
 
-btnNewGrid.addEventListener('click', () => {
+btnReset.addEventListener('click', () => {
+  const t = activeTheme();
+  if (!t || t.locked) return;
+  if (!confirm('Décocher toutes les cases de toutes les grilles ?')) return;
+  t.grids.filter(gx => !gx.archived).forEach(gx => { if (!gx.locked) gx.grid = gx.grid.map(c => ({ ...c, checked: false })); });
+  saveState();
+  renderGrid();
+});
+btnScreenshot.addEventListener('click', bingoScreenshot);
+
+// Modal nouvelle grille
+const modalNewGrid       = document.getElementById('modal-new-grid');
+const newGridNameInput   = document.getElementById('new-grid-name-input');
+const btnConfirmNewGrid  = document.getElementById('btn-confirm-new-grid');
+const btnCancelNewGrid   = document.getElementById('btn-cancel-new-grid');
+const btnCloseNewGridModal = document.getElementById('btn-close-new-grid-modal');
+
+function openNewGridModal() {
   const t = activeTheme();
   if (!t) return;
-  const count = t.grids.length + 1;
-  createGrid(`Grille ${count}`);
+  const count = t.grids.filter(g => !g.archived).length + 1;
+  newGridNameInput.value = `Grille ${count}`;
+  modalNewGrid.classList.remove('hidden');
+  setTimeout(() => { newGridNameInput.focus(); newGridNameInput.select(); }, 50);
+}
+
+function closeNewGridModal() {
+  modalNewGrid.classList.add('hidden');
+}
+
+function confirmNewGrid() {
+  const name = newGridNameInput.value.trim();
+  if (!name) return;
+  closeNewGridModal();
+  createGrid(name);
+}
+
+btnConfirmNewGrid.addEventListener('click', confirmNewGrid);
+btnCancelNewGrid.addEventListener('click', closeNewGridModal);
+btnCloseNewGridModal.addEventListener('click', closeNewGridModal);
+modalNewGrid.addEventListener('click', e => { if (e.target === modalNewGrid) closeNewGridModal(); });
+newGridNameInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmNewGrid();
+  if (e.key === 'Escape') closeNewGridModal();
+});
+
+btnNewGrid.addEventListener('click', () => {
+  if (!activeTheme()) return;
+  openNewGridModal();
 });
 
 btnNewTheme.addEventListener('click', () => {
@@ -1125,6 +1708,39 @@ btnCloseArchivedModal.addEventListener('click', () => {
 
 modalArchivedThemes.addEventListener('click', e => {
   if (e.target === modalArchivedThemes) modalArchivedThemes.classList.add('hidden');
+});
+
+btnArchivedGrids.addEventListener('click', () => {
+  renderArchivedGridsModal();
+  modalArchivedGrids.classList.remove('hidden');
+});
+
+btnCloseArchivedGridsModal.addEventListener('click', () => {
+  modalArchivedGrids.classList.add('hidden');
+});
+
+modalArchivedGrids.addEventListener('click', e => {
+  if (e.target === modalArchivedGrids) modalArchivedGrids.classList.add('hidden');
+});
+
+// Modales renommage thème
+btnConfirmRenameTheme.addEventListener('click', confirmRenameTheme);
+btnCancelRenameTheme.addEventListener('click', closeRenameThemeModal);
+btnCloseRenameThemeModal.addEventListener('click', closeRenameThemeModal);
+modalRenameTheme.addEventListener('click', e => { if (e.target === modalRenameTheme) closeRenameThemeModal(); });
+renameThemeInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmRenameTheme();
+  if (e.key === 'Escape') closeRenameThemeModal();
+});
+
+// Modales renommage grille
+btnConfirmRenameGrid.addEventListener('click', confirmRenameGrid);
+btnCancelRenameGrid.addEventListener('click', closeRenameGridModal);
+btnCloseRenameGridModal.addEventListener('click', closeRenameGridModal);
+modalRenameGrid.addEventListener('click', e => { if (e.target === modalRenameGrid) closeRenameGridModal(); });
+renameGridInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmRenameGrid();
+  if (e.key === 'Escape') closeRenameGridModal();
 });
 
 // ──────────────────────────────────────────────
@@ -2065,38 +2681,52 @@ _dbBingo.on('value', snapshot => {
   const migrated = migrateState(raw);
   state = migrated || initState();
 
-  // Normaliser l'état (comme dans init())
+  // Normaliser l'état
   if (!state.themes) state.themes = [];
   state.themes.forEach(t => {
     if (!t.elements) t.elements = [];
     if (!t.grids)    t.grids    = [];
-    if (t.cellFontScale === undefined) t.cellFontScale = 1;
-    if (!t.cellFont) t.cellFont = AVAILABLE_FONTS[0].value;
+    if (t.locked === undefined) t.locked = false;
+    // Nettoyer les champs locaux qui n'ont pas leur place en Firebase
+    delete t.cellFont;
+    delete t.cellFontScale;
     t.grids.forEach(g => {
+      if (g.archived === undefined) g.archived = false;
+      if (g.hidden === undefined)   g.hidden   = false;
+      if (g.title === undefined)    g.title    = '';
+      if (g.locked === undefined)   g.locked   = false;
       const expected = g.gridSize * g.gridSize;
       if (!g.grid || g.grid.length !== expected) {
         g.grid = Array.from({ length: expected }, () => ({ elementId: null, checked: false }));
       }
     });
-    if (t.grids.length > 0 && !t.grids.find(g => g.id === t.activeGridId)) {
-      t.activeGridId = t.grids[0].id;
+    const nonArchivedGrids = t.grids.filter(g => !g.archived);
+    if (nonArchivedGrids.length === 0) {
+      t.activeGridId = null;
+    } else if (t.activeGridId && !nonArchivedGrids.find(g => g.id === t.activeGridId)) {
+      // activeGridId pointe vers une grille qui n'existe plus, corriger
+      t.activeGridId = nonArchivedGrids[0].id;
     }
+    // Si activeGridId est null, on le laisse null (désélection volontaire)
   });
   if (state.themes.length > 0 && !state.themes.find(t => t.id === state.activeThemeId)) {
     const nonArchived = state.themes.filter(t => !t.archived);
     state.activeThemeId = nonArchived.length > 0 ? nonArchived[0].id : state.themes[0].id;
   }
 
-  // Premier chargement : init les fonts
-  const fontSelectEl = document.getElementById('font-family-select');
-  if (fontSelectEl && fontSelectEl.options.length === 0) {
-    AVAILABLE_FONTS.forEach(f => {
-      const opt = document.createElement('option');
-      opt.value = f.value;
-      opt.textContent = f.label;
-      opt.style.fontFamily = f.value;
-      fontSelectEl.appendChild(opt);
-    });
+  // Init affichage de la taille de texte locale
+  fontScaleInput.value = Math.round(_localFontScale * 100);
+
+  // Charger les grilles sélectionnées pour le thème actif
+  // Le fallback vers la première grille ne s'applique que si aucune entrée n'a jamais été sauvegardée
+  const _themeHasSavedSelection = state.activeThemeId in _selectedGridsByTheme;
+  _selectedGridIds = loadLocalSelectedGridsForTheme(state.activeThemeId);
+  if (_selectedGridIds.length === 0 && !_themeHasSavedSelection) {
+    const t = activeTheme();
+    if (t) {
+      const firstGrid = t.grids.find(g => !g.archived);
+      if (firstGrid) _selectedGridIds = [firstGrid.id];
+    }
   }
 
   renderThemesList();

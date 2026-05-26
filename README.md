@@ -31,12 +31,13 @@ la partie technique du projet. Tu dois :
 
 ```
 LesMichels/
-├── index.html          → Structure de la page + modal pseudo + scripts Firebase
-├── style.css           → Thème sombre, mise en forme
-├── app.js              → Logique complète (bingo, tierlist, Firebase temps réel)
+├── index.html          → Structure de la page + modal connexion Google + scripts Firebase
+├── style.css           → Thème sombre, mise en forme, badge utilisateur
+├── app.js              → Logique complète (auth, bingo, tierlist, Firebase temps réel)
+├── 404.html            → Page d'erreur Firebase Hosting
 ├── firebase.json       → Configuration Firebase Hosting
 ├── .firebaserc         → Projet Firebase cible (lesmichels-bf146)
-├── database.rules.json → Règles d'accès Firebase Realtime Database
+├── database.rules.json → Règles d'accès Firebase (authentifiés uniquement)
 └── README.md           → Ce fichier
 ```
 
@@ -47,7 +48,8 @@ LesMichels/
 - **Hébergement** : Firebase Hosting (Google) — HTTPS inclus, déploiement simple
 - **Base de données** : Firebase Realtime Database — synchronisation en temps réel via WebSocket
 - **Accès** : uniquement via le lien fourni — `noindex` actif (invisible des moteurs de recherche)
-- **Pseudo** : demandé à l'ouverture (stocké en session, pas de compte nécessaire)
+- **Authentification** : connexion Google obligatoire (Firebase Auth) — pas d'accès sans compte Google
+- **Badge utilisateur** : affiché en bas à droite avec photo de profil, nom et bouton de déconnexion
 - **Synchronisation** : toutes les modifications sont répercutées instantanément sur tous les appareils connectés, sans refresh
 
 ---
@@ -59,9 +61,10 @@ LesMichels/
 - [x] **Synchronisation Firebase** : toutes les modifications de bingo sont enregistrées dans Firebase Realtime Database, les modifications de tierlist sont pour le moment enregistrées en LocalStorage
 - [x] **Temps réel** : les changements apparaissent instantanément sur tous les appareils sans refresh
 - [x] **Multi-utilisateurs** : tous les participants peuvent interagir et modifier simultanément
-- [x] **Pseudo à l'ouverture** : l'utilisateur entre son pseudo lors de la première visite (stocké en session)
 - [x] **Invisible des moteurs de recherche** : balise `noindex` + header HTTP `X-Robots-Tag`
-- [x] **Accès via lien unique** : pas d'inscription, pas de connexion
+- [x] **Authentification Google** : connexion obligatoire via compte Google (Firebase Auth) — modal de connexion bloque l'accès si non connecté
+- [x] **Badge utilisateur** : affiché en bas à droite avec photo de profil Google, nom et bouton déconnexion
+- [x] **Accès sécurisé** : règles Firebase Realtime Database limitées aux utilisateurs authentifiés uniquement
 
 ---
 
@@ -100,55 +103,77 @@ LesMichels/
 
 ---
 
-### Bingo (v2 — Mai 2026)
+### Bingo (v9 — Mai 2026)
+
+#### Panneau de contrôle unifié
+- [x] **Thèmes, grilles et barre d'outils regroupés** dans un seul panneau en haut — rétractable d'un clic (▲/▼)
+- [x] Trois lignes : Thème / Grille / contrôles (Taille, Texte, Bloquer, Générer, Reset, Capture)
 
 #### Thèmes
-- [x] **Thèmes de soirée** : l'utilisateur crée autant de thèmes qu'il veut, chacun avec son propre nom, ses propres cases et ses propres grilles
-- [x] Barre de thèmes en haut de page, toujours visible (thèmes actifs uniquement)
-- [x] Double-clic ou bouton ✏ pour renommer un thème
+- [x] **Thèmes de soirée** : l'utilisateur crée autant de thèmes qu'il veut — nom par défaut "Thème N" (modifiable), chacun avec ses propres cases et grilles
+- [x] Onglets de thèmes épurés (nom uniquement, sans icônes)
+- [x] **Double-clic sur un thème** → menu contextuel clair : Renommer / Dupliquer / Archiver
+- [x] **Réordonner les thèmes par glisser-déposer** : faire glisser un onglet de thème pour changer son ordre
 - [x] Archivage d'un thème (disparaît de la barre principale)
-- [x] **Bouton "Thèmes archivés"** : affiche un modal listant les thèmes archivés avec options restaurer / supprimer
-- [x] Suppression définitive d'un thème uniquement depuis la modal "Thèmes archivés" (après archivage — sécurité anti-missclic)
+- [x] **Bouton "📦 Thèmes archivés"** : affiche un modal listant les thèmes archivés avec options restaurer / supprimer
+- [x] Suppression définitive d'un thème uniquement depuis la modal "Thèmes archivés" (sécurité anti-missclic)
 - [x] Sauvegarde automatique dans Firebase
 
 #### Cases (propres au thème actif)
 - [x] Ajout d'une case (bouton ou touche Entrée)
-- [x] **Modification inline** d'une case (bouton ✏)
-- [x] Suppression définitive d'une case
-- [x] Archivage / restauration d'une case
-- [x] Onglets Actifs / Archivés
+- [x] **Double-clic sur une case** → édition inline directe (plus besoin du bouton ✏)
+- [x] Archivage d'une case active (bouton 📦) — disparaît de la liste active
+- [x] Restauration d'une case archivée (onglet "Archivées")
+- [x] **Suppression définitive uniquement depuis l'onglet "Archivées"** (sécurité anti-missclic)
+- [x] Onglets **Actives** / **Archivées**
 - [x] Compteur de cases actives
+- [x] **Panneau Cases rétractable** : bouton ◀/▶ toujours accessible même panneau réduit, libérant l'espace pour la grille
 
 #### Grilles (propres au thème actif)
-- [x] Plusieurs grilles par thème (onglets)
-- [x] Taille variable de 3×3 à 8×8, modifiable à tout moment
+- [x] Plusieurs grilles par thème (onglets) — **nom demandé à la création** via modal
+- [x] Taille variable de **3×3 à 5×5**, modifiable à tout moment — **taille par défaut : 4×4**
+- [x] **Titre de grille = nom de l'onglet** : modifier le titre dans la grille met à jour l'onglet automatiquement (et vice-versa via renommage modal)
+- [x] Onglets de grilles épurés (nom uniquement, sans icônes)
+- [x] **Double-clic sur une grille** → menu contextuel clair : Renommer / Dupliquer / Archiver
+- [x] **Dupliquer une grille** : clone complet (via menu contextuel double-clic)
+- [x] **Archivage d'une grille** (via menu contextuel double-clic)
+- [x] **Bouton "📦 Grilles archivées"** : restaurer ou supprimer définitivement une grille
+- [x] Suppression définitive d'une grille uniquement depuis le modal "Grilles archivées" (sécurité anti-missclic)
+- [x] **Réordonner les grilles par glisser-déposer** : faire glisser un onglet de grille pour changer son ordre
+
+#### Mode de jeu
+- [x] **Sélection multi-grilles (max 3)** : cliquer sur un onglet met la grille en surbrillance et l'affiche — recliquer la masque (max 3 simultanément)
+- [x] **Possibilité de n'afficher aucune grille** : retirer la surbrillance de tous les onglets pour masquer toutes les grilles
+- [x] **Barre d'outils sur une seule ligne** : Taille, Texte, séparateur, puis Bloquer / Générer / Reset / Capture
+- [x] **Bloquer** (toolbar) : empêche la génération **et le reset** global — chaque grille a aussi son propre verrou
 - [x] **Bouton Générer** : placement aléatoire depuis les cases actives du thème
-- [x] **Bouton Manuel** : mode placement par glisser-déposer depuis une palette de cases
-  - Clic sur une case remplie en mode manuel vide la case
-- [x] **Bouton Reset** : décoche toutes les cases sans changer la grille
+- [x] **Cases cochées persistantes** : les cases déjà cochées conservent leur état lors d'une regénération (même sur les nouvelles grilles générées entre temps)
+- [x] **Bouton Reset** : décoche toutes les cases de toutes les grilles (y compris non affichées) — demande confirmation avant d'agir
+- [x] **Valider une case = valider pour toutes les grilles** : cocher/décocher un élément l'applique à toutes les grilles non archivées, qu'elles soient affichées ou non
 - [x] Clic sur une case = coche / décoche
-- [x] Double-clic ou bouton ✏ sur un onglet de grille pour le renommer
-- [x] Suppression d'une grille
+
+#### Contrôles par grille (multi-grilles)
+- [x] **Contrôles indépendants par grille** (ordre : Bloquer | Générer | Capture) :
+  - 🔒 Bloquer/débloquer la génération de cette grille
+  - 🎲 Générer uniquement cette grille
+  - 📷 Copier cette grille dans le presse-papier
+- [x] **Boutons globaux** (toolbar principale) agissent sur **toutes** les grilles non archivées :
+  - Bloquer toutes, Générer toutes, Reset toutes (avec confirmation), Capturer toutes (presse-papier)
 
 #### Affichage de la grille
 - [x] **Hauteur fixe à 60% de la hauteur de l'écran**
-- [x] **Zoom texte** : boutons +/- pour augmenter ou réduire la taille du texte dans les cases
+- [x] **Titre personnalisé par grille** : champ de saisie au-dessus de chaque grille — synchronisé avec le nom de l'onglet
+- [x] **Zoom texte local** : boutons +/- pour agrandir ou réduire la taille du texte — réglage propre à chaque navigateur
+- [x] Police fixée à **Arial** pour tous les textes des cases
 - [x] Taille de texte adaptative selon la longueur du texte
 - [x] **Détection bingo** sur lignes, colonnes et les deux diagonales
 - [x] **Lignes complétées affichées en vert clair** (animations pulse)
-- [x] **Message bingo** :
-  - 1 ligne → `🎉 BINGO ! Tu as complété une ligne !`
-  - N lignes → `🎉 BINGO xN ! Tu as complété N lignes !`
-- [x] **Export PNG** : génère et télécharge la grille active en image (cases cochées et bingos mis en évidence)
+- [x] **Message bingo par grille** : affiché sous chaque grille concernée indépendamment
+- [x] **Capture** : copie la grille dans le presse-papier + **son de confirmation** au succès
 
 ---
 
 ## 🔜 À faire
-
-### Bingo
-
-- Faire en sorte que le texte dans les cases s'affiche correctement quand on exporte la grille
-- Possibilité de faire une capture d'écran de la grille
 
 ### Tierlist
 
@@ -187,7 +212,7 @@ Les données sont sauvegardées automatiquement dans **Firebase Realtime Databas
 ## 📝 Notes techniques
 
 - Aucune dépendance locale (pas de framework, pas de build tool, pas d'installation)
-- Firebase SDK chargé via CDN (version 10.12.2 compat)
+- Firebase SDK chargé via CDN (version 10.12.2 compat) — modules `app`, `database`, `auth`
 - Compatible avec tous les navigateurs modernes
 - Polices chargées depuis Google Fonts (Space Mono) + Arial système
 - Synchronisation temps réel via WebSocket (Firebase `onValue`)
