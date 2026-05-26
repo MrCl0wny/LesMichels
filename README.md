@@ -52,41 +52,11 @@ LesMichels/
 
 ---
 
-## ⚙️ Déployer sur Firebase Hosting
-
-### Première fois (installation unique)
-
-1. Installe Node.js : https://nodejs.org
-2. Dans un terminal, installe Firebase CLI :
-   ```
-   npm install -g firebase-tools
-   ```
-3. Connecte-toi à ton compte Google :
-   ```
-   firebase login
-   ```
-
-### Déployer
-
-Dans le dossier du projet :
-```
-firebase deploy
-```
-
-Firebase te donne une URL du type :
-```
-https://lesmichels-bf146.web.app
-```
-
-Partage cette URL avec tes amis — elle ne sera pas indexée par Google.
-
----
-
 ## ✅ Fonctionnalités réalisées
 
 ### Temps réel & multi-utilisateurs (Mai 2026)
 
-- [x] **Synchronisation Firebase** : toutes les modifications (bingo, tierlist) sont enregistrées dans Firebase Realtime Database
+- [x] **Synchronisation Firebase** : toutes les modifications de bingo sont enregistrées dans Firebase Realtime Database, les modifications de tierlist sont pour le moment enregistrées en LocalStorage
 - [x] **Temps réel** : les changements apparaissent instantanément sur tous les appareils sans refresh
 - [x] **Multi-utilisateurs** : tous les participants peuvent interagir et modifier simultanément
 - [x] **Pseudo à l'ouverture** : l'utilisateur entre son pseudo lors de la première visite (stocké en session)
@@ -133,7 +103,7 @@ Partage cette URL avec tes amis — elle ne sera pas indexée par Google.
 ### Bingo (v2 — Mai 2026)
 
 #### Thèmes
-- [x] **Thèmes de soirée** : l'utilisateur crée autant de thèmes qu'il veut (ex : "Soirée Walking Dead"), chacun avec son propre nom, ses propres cases et ses propres grilles
+- [x] **Thèmes de soirée** : l'utilisateur crée autant de thèmes qu'il veut, chacun avec son propre nom, ses propres cases et ses propres grilles
 - [x] Barre de thèmes en haut de page, toujours visible (thèmes actifs uniquement)
 - [x] Double-clic ou bouton ✏ pour renommer un thème
 - [x] Archivage d'un thème (disparaît de la barre principale)
@@ -158,7 +128,7 @@ Partage cette URL avec tes amis — elle ne sera pas indexée par Google.
 - [x] **Bouton Reset** : décoche toutes les cases sans changer la grille
 - [x] Clic sur une case = coche / décoche
 - [x] Double-clic ou bouton ✏ sur un onglet de grille pour le renommer
-- [x] Suppression d'une grille (si au moins une autre existe)
+- [x] Suppression d'une grille
 
 #### Affichage de la grille
 - [x] **Hauteur fixe à 60% de la hauteur de l'écran**
@@ -175,8 +145,34 @@ Partage cette URL avec tes amis — elle ne sera pas indexée par Google.
 
 ## 🔜 À faire
 
-### Planning partagé
-- À venir
+### Bingo
+
+- Faire en sorte que le texte dans les cases s'affiche correctement quand on exporte la grille
+- Possibilité de faire une capture d'écran de la grille
+
+### Tierlist
+
+- Augmenter la largeur des tiers
+- Sauvegarde en temps réel pour tous
+- Possibilité de faire une capture d'écran de la tierlist
+
+### Planning
+
+- Affichage du calendrier, semaine en cours en haut suivi des 3 prochaines semaines
+- Création d'une soirée (ex : une émission TV)
+- Possibilité de créer des sous-soirées (ex : une saison)
+- Possibilité de créer des épisodes
+- Possibilité d'archiver des soirées, des épisodes
+- Possibilité d'écrire un sous-titre pour les soirées (ex : saison + numéro de l'épisode)
+- Possibilité de mettre un lien URL à une soirée
+- Glisser-Déposer des soirées dans le calendrier
+- Bouton "vu" à cocher qui archive automatiquement l'épisode
+- Boutons "Live" et "Replay" qui indiquent lorsque l'émission est diffusée en direct ou non.
+- Bouton Export PNG qui génère le planning en image
+- Possibilité de créer la soirée en cliquant directement sur le calendrier
+- Ajouter des participants et indiquer leur disponibilité
+- Pastille de couleur avec initiale du participant en gros dans le calendrier, possibilité de cocher/décocher un jour spécifique
+- Possibilité de faire une capture d'écran du planning
 
 ---
 
@@ -184,9 +180,7 @@ Partage cette URL avec tes amis — elle ne sera pas indexée par Google.
 
 Les données sont sauvegardées automatiquement dans **Firebase Realtime Database** :
 - Bingo : chemin `/bingo`
-- Tier List : chemin `/tierlist`
-
-**Note importante :** les images de la Tier List sont stockées en base64 dans Firebase. Pour des images volumineuses, préférer des images redimensionnées.
+- Tier List : LocalStorage pour le moment, chemin `/tierlist` à l'avenir
 
 ---
 
