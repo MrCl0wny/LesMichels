@@ -143,6 +143,7 @@ function migrateState(raw) {
 
 let state = initState();
 let _bingoRemoteUpdate = false;
+let _firebaseReady = false;
 
 function initState() {
   return { themes: [], activeThemeId: null };
@@ -184,7 +185,7 @@ function sanitizeForFirebase(obj) {
 }
 
 function saveState() {
-  if (_bingoRemoteUpdate) return;
+  if (_bingoRemoteUpdate || !_firebaseReady) return;
   _dbBingo.set(sanitizeForFirebase(state)).catch(e => console.warn('Bingo save error:', e));
 }
 
@@ -2677,6 +2678,7 @@ document.addEventListener('paste', e => {
 // ── Bingo ─────────────────────────────────────────────────────────────────────
 _dbBingo.on('value', snapshot => {
   _bingoRemoteUpdate = true;
+  _firebaseReady = true;
   const raw = snapshot.val();
   const migrated = migrateState(raw);
   state = migrated || initState();
