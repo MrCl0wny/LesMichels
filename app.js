@@ -3,34 +3,52 @@
 ═══════════════════════════════════════════════ */
 
 // ──────────────────────────────────────────────
-// Pseudo utilisateur
+// Authentification Firebase Google
 // ──────────────────────────────────────────────
-let currentPseudo = sessionStorage.getItem('lesmichels_pseudo') || null;
+let currentUser = null;
+let currentPseudo = null;
 
-function setupPseudoModal() {
-  const modal  = document.getElementById('modal-pseudo');
-  const input  = document.getElementById('pseudo-input');
-  const btn    = document.getElementById('pseudo-confirm');
+const _auth = firebase.auth();
 
-  if (currentPseudo) {
-    modal.classList.add('hidden');
-    return;
-  }
+function setupAuth() {
+  const modalAuth    = document.getElementById('modal-auth');
+  const btnGoogle    = document.getElementById('btn-google-signin');
+  const userBadge    = document.getElementById('user-badge');
+  const userAvatar   = document.getElementById('user-avatar');
+  const userName     = document.getElementById('user-name');
+  const btnSignout   = document.getElementById('btn-signout');
 
-  const confirm = () => {
-    const val = input.value.trim();
-    if (!val) return;
-    currentPseudo = val;
-    sessionStorage.setItem('lesmichels_pseudo', val);
-    modal.classList.add('hidden');
-  };
+  btnGoogle.addEventListener('click', () => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    _auth.signInWithPopup(provider).catch(err => {
+      console.error('Erreur connexion Google:', err);
+      alert('Erreur lors de la connexion. Réessaie.');
+    });
+  });
 
-  btn.addEventListener('click', confirm);
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') confirm(); });
-  setTimeout(() => input.focus(), 100);
+  btnSignout.addEventListener('click', () => {
+    _auth.signOut();
+  });
+
+  _auth.onAuthStateChanged(user => {
+    if (user) {
+      currentUser  = user;
+      currentPseudo = user.displayName || user.email;
+      modalAuth.classList.add('hidden');
+      userBadge.classList.remove('hidden');
+      userAvatar.src = user.photoURL || '';
+      userAvatar.style.display = user.photoURL ? 'block' : 'none';
+      userName.textContent = user.displayName || user.email;
+    } else {
+      currentUser   = null;
+      currentPseudo = null;
+      modalAuth.classList.remove('hidden');
+      userBadge.classList.add('hidden');
+    }
+  });
 }
 
-setupPseudoModal();
+setupAuth();
 
 // ──────────────────────────────────────────────
 // Firebase — références
