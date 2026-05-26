@@ -103,7 +103,7 @@ LesMichels/
 
 ---
 
-### Bingo (v9 — Mai 2026)
+### Bingo (v10 — Mai 2026)
 
 #### Panneau de contrôle unifié
 - [x] **Thèmes, grilles et barre d'outils regroupés** dans un seul panneau en haut — rétractable d'un clic (▲/▼)
@@ -162,6 +162,7 @@ LesMichels/
 
 #### Affichage de la grille
 - [x] **Hauteur fixe à 60% de la hauteur de l'écran**
+- [x] **Séparation visuelle distincte** : en mode multi-grilles, chaque grille est encadrée indépendamment (fond, bordure, ombre) pour les distinguer clairement
 - [x] **Titre personnalisé par grille** : champ de saisie au-dessus de chaque grille — synchronisé avec le nom de l'onglet
 - [x] **Zoom texte local** : boutons +/- pour agrandir ou réduire la taille du texte — réglage propre à chaque navigateur
 - [x] Police fixée à **Arial** pour tous les textes des cases

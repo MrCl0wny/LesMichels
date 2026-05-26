@@ -777,8 +777,8 @@ body {
   gap: 16px;
 }
 
-.grid-views-2 { gap: 12px; }
-.grid-views-3 { gap: 10px; }
+.grid-views-2 { gap: 0; }
+.grid-views-3 { gap: 0; }
 
 .grid-view-wrapper {
   display: flex;
@@ -787,6 +787,21 @@ body {
   gap: 6px;
   flex: 1;
   min-width: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+}
+
+.grid-views-2 .grid-view-wrapper,
+.grid-views-3 .grid-view-wrapper {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+}
+
+.grid-views-2 .grid-view-wrapper + .grid-view-wrapper,
+.grid-views-3 .grid-view-wrapper + .grid-view-wrapper {
+  border-left: 2px solid var(--accent-dim, #5a4fcf);
+  margin-left: 2px;
 }
 
 .grid-view-title-row {
