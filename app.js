@@ -2812,19 +2812,46 @@ function tlDeleteImage(tl, imgId) {
 }
 
 // ── Drag & drop ───────────────────────────────────────────────────────────────
+function tlClearDropBefore() {
+  document.querySelectorAll('.tl-img-card.drop-before').forEach(c => c.classList.remove('drop-before'));
+}
+
 function tlDragOver(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
   e.currentTarget.classList.add('drag-over');
+  // Indicateur de position
+  tlClearDropBefore();
+  const zone = e.currentTarget;
+  const cards = Array.from(zone.querySelectorAll('.tl-img-card'));
+  const idx = tlDropInsertIndex(zone, e.clientX, e.clientY);
+  if (idx < cards.length) cards[idx].classList.add('drop-before');
 }
 
 function tlDragLeave(e) {
   e.currentTarget.classList.remove('drag-over');
+  tlClearDropBefore();
+}
+
+// Calcule l'index d'insertion dans une zone flex-wrap à partir de la position du curseur
+function tlDropInsertIndex(zone, clientX, clientY) {
+  const cards = Array.from(zone.querySelectorAll('.tl-img-card'));
+  if (cards.length === 0) return 0;
+  for (let i = 0; i < cards.length; i++) {
+    const rect = cards[i].getBoundingClientRect();
+    const midX = rect.left + rect.width / 2;
+    const midY = rect.top + rect.height / 2;
+    // Si le curseur est au-dessus du milieu vertical de la carte, ou sur la même ligne à gauche
+    if (clientY < midY - rect.height * 0.1) return i;
+    if (Math.abs(clientY - midY) <= rect.height * 0.6 && clientX < midX) return i;
+  }
+  return cards.length;
 }
 
 function tlDrop(e, targetZoneId) {
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
+  tlClearDropBefore();
   const imgId = tlDragImgId;
   if (!imgId) return;
   const tl = tlActiveTierlist();
@@ -2835,10 +2862,17 @@ function tlDrop(e, targetZoneId) {
   tl.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
 
   if (targetZoneId === '__unplaced__') {
-    tl.unplaced.push(imgId);
+    // Insertion à la position du curseur dans la zone unplaced
+    const insertIdx = tlDropInsertIndex(tlUnplacedZone, e.clientX, e.clientY);
+    tl.unplaced.splice(insertIdx, 0, imgId);
   } else {
     const tier = tl.tiers.find(t => t.id === targetZoneId);
-    if (tier) tier.items.push(imgId);
+    if (tier) {
+      // Insertion à la position du curseur dans la zone du tier
+      const imgsDiv = e.currentTarget;
+      const insertIdx = tlDropInsertIndex(imgsDiv, e.clientX, e.clientY);
+      tier.items.splice(insertIdx, 0, imgId);
+    }
   }
 
   tlSave();
@@ -3223,6 +3257,18 @@ function tlCommitTitleEdit() {
     tlTitleDisplay.textContent = tl.name;
   }
 }
+
+// ── Sidebar collapse ─────────────────────────────────────────────────────────
+const tlLayout          = document.querySelector('.tl-layout');
+const tlSidebarCollapse = document.getElementById('tl-sidebar-collapse');
+const tlSidebarExpand   = document.getElementById('tl-sidebar-expand');
+
+tlSidebarCollapse.addEventListener('click', () => {
+  tlLayout.classList.add('sidebar-collapsed');
+});
+tlSidebarExpand.addEventListener('click', () => {
+  tlLayout.classList.remove('sidebar-collapsed');
+});
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
 tlBtnNew.addEventListener('click', tlOpenNewModal);

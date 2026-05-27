@@ -1413,9 +1413,14 @@ body {
 /* ── Layout principal tierlist ── */
 .tl-layout {
   display: grid;
-  grid-template-columns: 480px 1fr;
+  grid-template-columns: 240px 1fr;
   gap: 16px;
   align-items: start;
+  transition: grid-template-columns 0.22s ease, gap 0.22s ease;
+}
+.tl-layout.sidebar-collapsed {
+  grid-template-columns: 32px 1fr;
+  gap: 8px;
 }
 
 @media (max-width: 768px) {
@@ -1435,7 +1440,48 @@ body {
   top: 74px;
   max-height: calc(100vh - 90px);
   overflow: hidden;
+  transition: padding 0.22s, border-radius 0.22s;
+  min-width: 0;
 }
+
+/* Quand sidebar est rétractée */
+.tl-layout.sidebar-collapsed .tl-sidebar {
+  padding: 6px 4px;
+  border-radius: var(--radius);
+}
+/* Masquer tout sauf le bouton expand quand rétractée */
+.tl-layout.sidebar-collapsed .tl-sidebar-header,
+.tl-layout.sidebar-collapsed .tl-list,
+.tl-layout.sidebar-collapsed .tl-btn-archived-toggle,
+.tl-layout.sidebar-collapsed .tl-sidebar-collapse-btn {
+  display: none;
+}
+.tl-layout.sidebar-collapsed .tl-sidebar-expand-btn {
+  display: flex !important;
+}
+
+/* Boutons toggle sidebar */
+.tl-sidebar-toggle-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-faint);
+  font-size: 0.65rem;
+  padding: 4px 7px;
+  cursor: pointer;
+  transition: var(--transition);
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+.tl-sidebar-toggle-btn:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--accent-glow); }
+.tl-sidebar-collapse-btn { margin-top: auto; }
+.tl-sidebar-expand-btn {
+  align-self: center;
+  padding: 8px 6px;
+  font-size: 0.7rem;
+  margin: auto;
+}
+.tl-sidebar-expand-btn.hidden { display: none; }
 
 .tl-sidebar-header {
   display: flex;
@@ -1981,26 +2027,55 @@ body {
 }
 
 /* ── Modal gestion tierlist ── */
+.tl-modal-manage-box {
+  min-width: 0 !important;
+  max-width: 200px !important;
+  width: auto !important;
+  padding: 12px !important;
+}
+.tl-modal-manage-box .modal-header {
+  margin-bottom: 10px;
+}
+.tl-modal-manage-box .modal-header h3 {
+  font-size: 0.72rem;
+}
 .tl-manage-actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
 }
 .tl-manage-btn {
   width: 100%;
   text-align: left;
-  font-size: 0.92rem;
-  padding: 10px 14px;
-}
-.tl-manage-btn-archive {
-  border-color: var(--border) !important;
-  color: var(--text-muted) !important;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: var(--radius);
   background: var(--surface-2) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text-muted) !important;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.tl-manage-btn:hover {
+  color: var(--text) !important;
+  border-color: var(--accent-dim) !important;
+  background: var(--surface-3) !important;
 }
 .tl-manage-btn-archive:hover {
   border-color: #f0b429 !important;
   color: #f0b429 !important;
   background: rgba(240,180,41,0.1) !important;
+}
+
+/* ── Indicateur de position drop ── */
+.tl-img-card.drop-before {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ── Export canvas (caché) ── */
