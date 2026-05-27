@@ -2505,6 +2505,7 @@ function tlMoveTierlistToFolder(tlId, folderId) {
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const tlBtnNew            = document.getElementById('tl-btn-new');
+const tlModalNewFolderSelect = document.getElementById('tl-modal-new-folder-select');
 const tlList              = document.getElementById('tl-list');
 const tlBtnShowArchived   = document.getElementById('tl-btn-show-archived');
 const tlEmptyState        = document.getElementById('tl-empty-state');
@@ -2557,6 +2558,134 @@ let tlModalManageTargetId   = null;
 // ── Drag state ────────────────────────────────────────────────────────────────
 let tlDragImgId = null;
 
+// ── Drag & drop sidebar (tierlists & dossiers) ────────────────────────────────
+let _tlSidebarDragId   = null; // id de la tierlist ou du dossier draggé
+let _tlSidebarDragType = null; // 'tierlist' | 'folder'
+
+function _tlSidebarDragStart(e, id, type) {
+  _tlSidebarDragId   = id;
+  _tlSidebarDragType = type;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', id);
+  setTimeout(() => {
+    const el = e.currentTarget;
+    el.classList.add('tl-dragging');
+  }, 0);
+}
+
+function _tlSidebarDragEnd(e) {
+  _tlSidebarDragId   = null;
+  _tlSidebarDragType = null;
+  e.currentTarget.classList.remove('tl-dragging');
+  // Nettoyer tous les indicateurs
+  document.querySelectorAll('.tl-drag-over-top,.tl-drag-over-bottom,.tl-drag-over-folder')
+    .forEach(el => el.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder'));
+}
+
+function _tlSidebarDragOverItem(e, el, id, type) {
+  if (!_tlSidebarDragId) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  // Nettoyer les autres indicateurs
+  document.querySelectorAll('.tl-drag-over-top,.tl-drag-over-bottom,.tl-drag-over-folder')
+    .forEach(x => x.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder'));
+  if (_tlSidebarDragType === 'tierlist' && type === 'folder-header') {
+    // Déposer une tierlist sur un dossier = la ranger
+    el.classList.add('tl-drag-over-folder');
+    e.dataTransfer.dropEffect = 'move';
+    return;
+  }
+  const rect = el.getBoundingClientRect();
+  const mid  = rect.top + rect.height / 2;
+  if (e.clientY < mid) el.classList.add('tl-drag-over-top');
+  else el.classList.add('tl-drag-over-bottom');
+}
+
+function _tlSidebarDragLeaveItem(e, el) {
+  el.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder');
+}
+
+function _tlSidebarDropOnItem(e, targetId, targetType, targetEl) {
+  e.preventDefault();
+  if (!_tlSidebarDragId || _tlSidebarDragId === targetId) {
+    document.querySelectorAll('.tl-drag-over-top,.tl-drag-over-bottom,.tl-drag-over-folder')
+      .forEach(x => x.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder'));
+    return;
+  }
+
+  const isTop = targetEl.classList.contains('tl-drag-over-top');
+  document.querySelectorAll('.tl-drag-over-top,.tl-drag-over-bottom,.tl-drag-over-folder')
+    .forEach(x => x.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder'));
+
+  if (_tlSidebarDragType === 'tierlist' && targetType === 'folder-header') {
+    // Ranger la tierlist dans ce dossier
+    tlPushUndo();
+    tlMoveTierlistToFolder(_tlSidebarDragId, targetId);
+    return;
+  }
+
+  // Réordonner : construire un tableau plat de références [{ type, id }]
+  tlPushUndo();
+  if (!tlState.folders) tlState.folders = [];
+
+  if (_tlSidebarDragType === 'tierlist') {
+    // Réordonner les tierlists dans leur contexte (même dossier)
+    const dragTl = tlState.tierlists.find(t => t.id === _tlSidebarDragId);
+    if (!dragTl) return;
+
+    if (targetType === 'tierlist') {
+      const targetTl = tlState.tierlists.find(t => t.id === targetId);
+      if (!targetTl) return;
+      // Même contexte ?
+      if (dragTl.folderId === targetTl.folderId) {
+        const arr = tlState.tierlists;
+        const fromIdx = arr.findIndex(t => t.id === _tlSidebarDragId);
+        const toIdx   = arr.findIndex(t => t.id === targetId);
+        if (fromIdx === -1 || toIdx === -1) return;
+        const [moved] = arr.splice(fromIdx, 1);
+        const newIdx  = arr.findIndex(t => t.id === targetId);
+        arr.splice(isTop ? newIdx : newIdx + 1, 0, moved);
+      } else {
+        // Déplacer vers le contexte de la cible
+        dragTl.folderId = targetTl.folderId;
+        const arr = tlState.tierlists;
+        const fromIdx = arr.findIndex(t => t.id === _tlSidebarDragId);
+        const [moved] = arr.splice(fromIdx, 1);
+        const newIdx  = arr.findIndex(t => t.id === targetId);
+        arr.splice(isTop ? newIdx : newIdx + 1, 0, moved);
+      }
+    } else if (targetType === 'folder') {
+      // Déposer avant/après un dossier = sortir du dossier et mettre à cet endroit
+      dragTl.folderId = null;
+      const arr = tlState.tierlists;
+      const fromIdx = arr.findIndex(t => t.id === _tlSidebarDragId);
+      const [moved] = arr.splice(fromIdx, 1);
+      // Insérer avant/après le dossier dans la liste globale
+      // On insère en cherchant la position relative via les dossiers
+      const folders = tlState.folders.filter(f => !f.archived);
+      const folderIdx = folders.findIndex(f => f.id === targetId);
+      // Repositionner dans tlState.tierlists : on insère à une position relative
+      // Pour simplifier : insérer au début ou à la fin de la liste des racines
+      const rootTls = tlState.tierlists.filter(t => !t.archived && !t.folderId);
+      const insertPos = isTop ? 0 : tlState.tierlists.length;
+      tlState.tierlists.splice(isTop ? 0 : tlState.tierlists.length, 0, moved);
+    }
+  } else if (_tlSidebarDragType === 'folder') {
+    if (targetType === 'folder') {
+      const arr = tlState.folders;
+      const fromIdx = arr.findIndex(f => f.id === _tlSidebarDragId);
+      const toIdx   = arr.findIndex(f => f.id === targetId);
+      if (fromIdx === -1 || toIdx === -1) return;
+      const [moved] = arr.splice(fromIdx, 1);
+      const newIdx  = arr.findIndex(f => f.id === targetId);
+      arr.splice(isTop ? newIdx : newIdx + 1, 0, moved);
+    }
+  }
+
+  tlSave();
+  tlRender();
+}
+
 // ── Rendu principal ───────────────────────────────────────────────────────────
 function tlRender() {
   tlUpdateUndoBtn();
@@ -2583,6 +2712,13 @@ function tlBuildTierlistItem(tl) {
   const item = document.createElement('div');
   item.className = 'tl-list-item' + (tl.id === tlState.activeTierlistId ? ' active' : '');
   item.dataset.id = tl.id;
+  item.draggable = true;
+
+  const icon = document.createElement('span');
+  icon.className = 'tl-list-item-icon';
+  icon.textContent = '📜';
+  icon.style.cssText = 'font-size:0.78rem;flex-shrink:0;opacity:0.8;';
+  item.appendChild(icon);
 
   const nameSpan = document.createElement('span');
   nameSpan.className = 'tl-list-item-name';
@@ -2592,6 +2728,14 @@ function tlBuildTierlistItem(tl) {
 
   item.addEventListener('click', () => tlSwitch(tl.id));
   item.addEventListener('dblclick', e => { e.stopPropagation(); tlOpenManageModal(tl.id, item); });
+
+  // Drag & drop sidebar
+  item.addEventListener('dragstart', e => _tlSidebarDragStart(e, tl.id, 'tierlist'));
+  item.addEventListener('dragend', _tlSidebarDragEnd);
+  item.addEventListener('dragover', e => _tlSidebarDragOverItem(e, item, tl.id, 'tierlist'));
+  item.addEventListener('dragleave', e => _tlSidebarDragLeaveItem(e, item));
+  item.addEventListener('drop', e => _tlSidebarDropOnItem(e, tl.id, 'tierlist', item));
+
   return item;
 }
 
@@ -2611,13 +2755,13 @@ function tlRenderList() {
     return;
   }
 
-  // Tierlists sans dossier (en haut)
-  activeToplevel.forEach(tl => tlList.appendChild(tlBuildTierlistItem(tl)));
-
-  // Dossiers
+  // Dossiers d'abord
   activeFolders.forEach(folder => {
     const folderEl = document.createElement('div');
-    folderEl.className = 'tl-folder' + (folder.open ? ' open' : '');
+    // Surbrillance bleue si la tierlist active est dans ce dossier
+    const activeTl = tlState.tierlists.find(t => t.id === tlState.activeTierlistId && !t.archived);
+    const folderIsActive = activeTl && activeTl.folderId === folder.id;
+    folderEl.className = 'tl-folder' + (folder.open ? ' open' : '') + (folderIsActive ? ' active-folder' : '');
     folderEl.dataset.folderId = folder.id;
 
     // Header dossier
@@ -2627,6 +2771,9 @@ function tlRenderList() {
     const arrow = document.createElement('span');
     arrow.className = 'tl-folder-arrow';
     arrow.textContent = '▶';
+    arrow.style.cursor = 'pointer';
+    // Clic sur la flèche uniquement → toggle
+    arrow.addEventListener('click', e => { e.stopPropagation(); tlToggleFolderOpen(folder.id); });
 
     const icon = document.createElement('span');
     icon.className = 'tl-folder-icon';
@@ -2640,10 +2787,40 @@ function tlRenderList() {
     header.appendChild(icon);
     header.appendChild(name);
 
-    header.addEventListener('click', () => tlToggleFolderOpen(folder.id));
+    // Le header lui-même ne toggle plus — seulement la flèche
+    // Mais double-clic sur le header ouvre le menu
     header.addEventListener('dblclick', e => {
       e.stopPropagation();
       tlOpenFolderManageModal(folder.id, header);
+    });
+
+    // Drag & drop sidebar — dossier lui-même
+    folderEl.draggable = true;
+    folderEl.addEventListener('dragstart', e => {
+      if (e.target !== folderEl && e.target.closest('.tl-folder-children')) return;
+      _tlSidebarDragStart(e, folder.id, 'folder');
+    });
+    folderEl.addEventListener('dragend', _tlSidebarDragEnd);
+    folderEl.addEventListener('dragover', e => {
+      if (_tlSidebarDragType === 'tierlist') {
+        // Permettre de déposer une tierlist sur le header du dossier
+        _tlSidebarDragOverItem(e, header, folder.id, 'folder-header');
+      } else if (_tlSidebarDragType === 'folder') {
+        _tlSidebarDragOverItem(e, folderEl, folder.id, 'folder');
+      }
+    });
+    folderEl.addEventListener('dragleave', e => {
+      if (!folderEl.contains(e.relatedTarget)) {
+        _tlSidebarDragLeaveItem(e, header);
+        _tlSidebarDragLeaveItem(e, folderEl);
+      }
+    });
+    folderEl.addEventListener('drop', e => {
+      if (_tlSidebarDragType === 'tierlist') {
+        _tlSidebarDropOnItem(e, folder.id, 'folder-header', header);
+      } else if (_tlSidebarDragType === 'folder') {
+        _tlSidebarDropOnItem(e, folder.id, 'folder', folderEl);
+      }
     });
 
     folderEl.appendChild(header);
@@ -2665,6 +2842,9 @@ function tlRenderList() {
     folderEl.appendChild(children);
     tlList.appendChild(folderEl);
   });
+
+  // Tierlists sans dossier APRÈS les dossiers
+  activeToplevel.forEach(tl => tlList.appendChild(tlBuildTierlistItem(tl)));
 }
 
 function tlRenderTiers(tl) {
@@ -2829,9 +3009,10 @@ function tlFindImage(tl, imgId) {
 }
 
 // ── Actions sur les tierlists ─────────────────────────────────────────────────
-function tlCreate(name) {
+function tlCreate(name, folderId) {
   tlPushUndo();
   const tl = tlDefaultTierlist(name);
+  if (folderId) tl.folderId = folderId;
   tlState.tierlists.push(tl);
   tlState.activeTierlistId = tl.id;
   tlSave();
@@ -3180,77 +3361,168 @@ function tlExport() {
 }
 
 // ── Modal archivées (tierlists + dossiers) ────────────────────────────────────
+function tlBuildArchivedTierlistItem(tl) {
+  const item = document.createElement('div');
+  item.className = 'archived-theme-item';
+
+  const name = document.createElement('span');
+  name.className = 'archived-theme-name';
+  name.textContent = '📜 ' + tl.name;
+  item.appendChild(name);
+
+  const btnRestore = document.createElement('button');
+  btnRestore.className = 'archived-theme-btn restore';
+  btnRestore.textContent = '↩ Restaurer';
+  btnRestore.addEventListener('click', () => {
+    // Restaurer sans dossier (détacher du dossier)
+    tlPushUndo();
+    const t = tlState.tierlists.find(x => x.id === tl.id);
+    if (t) { t.archived = false; t.folderId = null; }
+    if (!tlState.activeTierlistId) tlState.activeTierlistId = tl.id;
+    tlSave(); tlRender(); tlRenderArchivedModal();
+  });
+  item.appendChild(btnRestore);
+
+  const btnDel = document.createElement('button');
+  btnDel.className = 'archived-theme-btn del';
+  btnDel.textContent = '✕ Supprimer';
+  btnDel.addEventListener('click', () => { tlDelete(tl.id); tlRenderArchivedModal(); });
+  item.appendChild(btnDel);
+
+  return item;
+}
+
 function tlRenderArchivedModal() {
   tlArchivedList.innerHTML = '';
   const archivedTL = tlState.tierlists.filter(t => t.archived);
   const archivedFolders = (tlState.folders || []).filter(f => f.archived);
+  // Dossiers non archivés qui contiennent des tierlists archivées
+  const activeFoldersWithArchivedTL = (tlState.folders || []).filter(f => !f.archived &&
+    tlState.tierlists.some(t => t.archived && t.folderId === f.id));
 
   if (archivedTL.length === 0 && archivedFolders.length === 0) {
     tlArchivedList.innerHTML = '<p class="archived-empty">Aucun élément archivé.</p>';
     return;
   }
 
-  // Dossiers archivés
+  // Dossiers archivés (avec expandeur pour voir leurs tierlists archivées)
   if (archivedFolders.length > 0) {
     const sep = document.createElement('p');
     sep.style.cssText = 'font-size:0.72rem;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px;';
-    sep.textContent = '📁 Dossiers';
+    sep.textContent = '📁 Dossiers archivés';
     tlArchivedList.appendChild(sep);
 
     archivedFolders.forEach(folder => {
+      // On affiche toutes les tierlists du dossier archivé (archivées ou non)
+      const tlsInFolder = tlState.tierlists.filter(t => t.folderId === folder.id);
+
+      const folderWrap = document.createElement('div');
+      folderWrap.style.cssText = 'margin-bottom:4px;';
+
       const item = document.createElement('div');
       item.className = 'archived-theme-item';
+      item.style.cssText = 'flex-direction:column;align-items:stretch;gap:6px;';
+
+      const topRow = document.createElement('div');
+      topRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+
+      // Flèche expandeur si le dossier contient des tierlists archivées
+      let childrenDiv = null;
+      if (tlsInFolder.length > 0) {
+        const arrowBtn = document.createElement('button');
+        arrowBtn.style.cssText = 'background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:0.65rem;padding:0 4px;transition:transform 0.15s;flex-shrink:0;';
+        arrowBtn.textContent = '▶';
+        arrowBtn.style.transform = 'rotate(90deg)'; // ouvert par défaut
+        arrowBtn.title = 'Voir les tier lists dans ce dossier';
+        childrenDiv = document.createElement('div');
+        childrenDiv.style.cssText = 'display:flex;flex-direction:column;gap:4px;padding:4px 0 0 14px;border-left:2px solid var(--border);margin-left:6px;'; // visible par défaut
+        arrowBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const open = childrenDiv.style.display !== 'none';
+          childrenDiv.style.display = open ? 'none' : 'flex';
+          arrowBtn.style.transform = open ? '' : 'rotate(90deg)';
+        });
+        topRow.appendChild(arrowBtn);
+      }
 
       const name = document.createElement('span');
       name.className = 'archived-theme-name';
-      name.textContent = '📁 ' + folder.name;
-      item.appendChild(name);
+      name.textContent = '📁 ' + folder.name + (tlsInFolder.length > 0 ? ` (${tlsInFolder.length})` : '');
+      topRow.appendChild(name);
 
       const btnRestore = document.createElement('button');
       btnRestore.className = 'archived-theme-btn restore';
       btnRestore.textContent = '↩ Restaurer';
       btnRestore.addEventListener('click', () => tlUnarchiveFolder(folder.id));
-      item.appendChild(btnRestore);
+      topRow.appendChild(btnRestore);
 
       const btnDel = document.createElement('button');
       btnDel.className = 'archived-theme-btn del';
       btnDel.textContent = '✕ Supprimer';
       btnDel.addEventListener('click', () => { tlDeleteFolder(folder.id); tlRenderArchivedModal(); });
-      item.appendChild(btnDel);
+      topRow.appendChild(btnDel);
 
-      tlArchivedList.appendChild(item);
+      item.appendChild(topRow);
+      if (childrenDiv) {
+        tlsInFolder.forEach(tl => childrenDiv.appendChild(tlBuildArchivedTierlistItem(tl)));
+        item.appendChild(childrenDiv);
+      }
+      folderWrap.appendChild(item);
+      tlArchivedList.appendChild(folderWrap);
     });
   }
 
-  // Tierlists archivées
-  if (archivedTL.length > 0) {
+  // Tierlists archivées sans dossier (ou dont le dossier n'est pas archivé)
+  const orphanArchivedTL = archivedTL.filter(t => !t.folderId || !(tlState.folders || []).find(f => f.id === t.folderId && f.archived));
+  if (orphanArchivedTL.length > 0) {
     const sep = document.createElement('p');
     sep.style.cssText = 'font-size:0.72rem;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;margin:' + (archivedFolders.length > 0 ? '10px 0 6px' : '0 0 6px') + ';';
-    sep.textContent = '📋 Tier lists';
+    sep.textContent = '📋 Tier lists archivées';
     tlArchivedList.appendChild(sep);
 
-    archivedTL.forEach(tl => {
-      const item = document.createElement('div');
-      item.className = 'archived-theme-item';
+    // Grouper par dossier actif
+    const byFolder = {};
+    orphanArchivedTL.forEach(tl => {
+      const key = tl.folderId || '__root__';
+      if (!byFolder[key]) byFolder[key] = [];
+      byFolder[key].push(tl);
+    });
 
-      const name = document.createElement('span');
-      name.className = 'archived-theme-name';
-      name.textContent = tl.name;
-      item.appendChild(name);
+    // Tierlists sans dossier
+    if (byFolder['__root__']) {
+      byFolder['__root__'].forEach(tl => tlArchivedList.appendChild(tlBuildArchivedTierlistItem(tl)));
+    }
 
-      const btnRestore = document.createElement('button');
-      btnRestore.className = 'archived-theme-btn restore';
-      btnRestore.textContent = '↩ Restaurer';
-      btnRestore.addEventListener('click', () => tlUnarchive(tl.id));
-      item.appendChild(btnRestore);
+    // Tierlists dans dossiers actifs
+    (tlState.folders || []).filter(f => !f.archived && byFolder[f.id]).forEach(folder => {
+      const tlsInFolder = byFolder[folder.id];
+      const folderWrap = document.createElement('div');
+      folderWrap.style.cssText = 'margin-bottom:4px;';
 
-      const btnDel = document.createElement('button');
-      btnDel.className = 'archived-theme-btn del';
-      btnDel.textContent = '✕ Supprimer';
-      btnDel.addEventListener('click', () => { tlDelete(tl.id); tlRenderArchivedModal(); });
-      item.appendChild(btnDel);
+      const folderHeader = document.createElement('div');
+      folderHeader.style.cssText = 'display:flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:0.8rem;font-weight:700;color:var(--text-muted);';
 
-      tlArchivedList.appendChild(item);
+      const arrowBtn = document.createElement('button');
+      arrowBtn.style.cssText = 'background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:0.65rem;padding:0 4px;transition:transform 0.15s;flex-shrink:0;';
+      arrowBtn.textContent = '▶';
+      arrowBtn.style.transform = 'rotate(90deg)'; // ouvert par défaut
+      arrowBtn.title = 'Voir les tier lists';
+      const childrenDiv = document.createElement('div');
+      childrenDiv.style.cssText = 'display:flex;flex-direction:column;gap:4px;padding:4px 0 0 14px;border-left:2px solid var(--border);margin-left:6px;'; // visible par défaut
+      arrowBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const open = childrenDiv.style.display !== 'none';
+        childrenDiv.style.display = open ? 'none' : 'flex';
+        arrowBtn.style.transform = open ? '' : 'rotate(90deg)';
+      });
+
+      folderHeader.appendChild(arrowBtn);
+      folderHeader.appendChild(document.createTextNode('📁 ' + folder.name + ' (' + tlsInFolder.length + ')'));
+      folderWrap.appendChild(folderHeader);
+
+      tlsInFolder.forEach(tl => childrenDiv.appendChild(tlBuildArchivedTierlistItem(tl)));
+      folderWrap.appendChild(childrenDiv);
+      tlArchivedList.appendChild(folderWrap);
     });
   }
 }
@@ -3259,11 +3531,29 @@ function tlRenderArchivedModal() {
 let tlModalNewMode = 'create'; // 'create' | 'rename'
 let tlModalNewTargetId = null;
 
+function tlPopulateFolderSelect(selectEl, selectedId) {
+  const activeFolders = (tlState.folders || []).filter(f => !f.archived);
+  selectEl.innerHTML = '<option value="">— Aucun dossier —</option>';
+  activeFolders.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f.id;
+    opt.textContent = '📁 ' + f.name;
+    if (f.id === selectedId) opt.selected = true;
+    selectEl.appendChild(opt);
+  });
+}
+
 function tlOpenNewModal() {
   tlModalNewMode = 'create';
   tlModalNewTargetId = null;
   tlModalNewTitle.textContent = 'Nouvelle tier list';
   tlModalNewInput.value = '';
+  // Afficher/cacher le select dossier selon le mode
+  const wrap = document.getElementById('tl-modal-new-folder-wrap');
+  if (wrap) {
+    wrap.style.display = '';
+    tlPopulateFolderSelect(tlModalNewFolderSelect, '');
+  }
   tlModalNew.classList.remove('hidden');
   setTimeout(() => tlModalNewInput.focus(), 50);
 }
@@ -3275,6 +3565,9 @@ function tlOpenRenameModal(id) {
   tlModalNewTargetId = id;
   tlModalNewTitle.textContent = 'Renommer la tier list';
   tlModalNewInput.value = tl.name;
+  // Cacher le select dossier en mode rename
+  const wrap = document.getElementById('tl-modal-new-folder-wrap');
+  if (wrap) wrap.style.display = 'none';
   tlModalNew.classList.remove('hidden');
   setTimeout(() => { tlModalNewInput.focus(); tlModalNewInput.select(); }, 50);
 }
@@ -3283,8 +3576,12 @@ function tlConfirmNewModal() {
   const val = tlModalNewInput.value.trim();
   if (!val) return;
   tlModalNew.classList.add('hidden');
-  if (tlModalNewMode === 'create') tlCreate(val);
-  else if (tlModalNewMode === 'rename') tlRename(tlModalNewTargetId, val);
+  if (tlModalNewMode === 'create') {
+    const folderId = tlModalNewFolderSelect ? tlModalNewFolderSelect.value || null : null;
+    tlCreate(val, folderId);
+  } else if (tlModalNewMode === 'rename') {
+    tlRename(tlModalNewTargetId, val);
+  }
 }
 
 // ── Modal nouveau/modifier tier ───────────────────────────────────────────────
@@ -3365,28 +3662,30 @@ const _tlFolderManageEl = (() => {
       <button class="tl-manage-btn" id="tl-folder-manage-rename">✏ Renommer</button>
       <button class="tl-manage-btn tl-manage-btn-archive" id="tl-folder-manage-archive">📦 Archiver</button>
     </div>`;
-  document.body.appendChild(el);
+  // L'insérer dans l'overlay
+  document.addEventListener('DOMContentLoaded', () => {});
   return el;
 })();
+
+// Le modal dossier sera inséré dans l'overlay à la première utilisation (dans tlOpenFolderManageModal)
 
 function tlOpenFolderManageModal(id, anchorEl) {
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
   _tlFolderManageId = id;
   _tlFolderManageEl.querySelector('#tl-folder-manage-title').textContent = folder.name;
-  _tlFolderManageEl.classList.remove('hidden');
-  if (anchorEl) {
-    const rect = anchorEl.getBoundingClientRect();
-    _tlFolderManageEl.style.top = (rect.bottom + 4) + 'px';
-    _tlFolderManageEl.style.left = rect.left + 'px';
-    requestAnimationFrame(() => {
-      const mRect = _tlFolderManageEl.getBoundingClientRect();
-      if (mRect.right > window.innerWidth - 8) _tlFolderManageEl.style.left = (rect.right - mRect.width) + 'px';
-    });
-  }
+  // Déplacer dans l'overlay si pas encore dedans
+  const overlay = document.getElementById('tl-ctx-overlay');
+  if (overlay && !overlay.contains(_tlFolderManageEl)) overlay.appendChild(_tlFolderManageEl);
+  if (typeof tlShowCtxOverlay === 'function') tlShowCtxOverlay(_tlFolderManageEl);
+  else { _tlFolderManageEl.classList.remove('hidden'); }
 }
 
-function tlCloseFolderManageModal() { _tlFolderManageEl.classList.add('hidden'); _tlFolderManageId = null; }
+function tlCloseFolderManageModal() {
+  if (typeof tlHideCtxOverlay === 'function') tlHideCtxOverlay();
+  else { _tlFolderManageEl.classList.add('hidden'); }
+  _tlFolderManageId = null;
+}
 
 _tlFolderManageEl.querySelector('#tl-folder-manage-rename').addEventListener('click', () => {
   const id = _tlFolderManageId; tlCloseFolderManageModal();
@@ -3398,11 +3697,6 @@ _tlFolderManageEl.querySelector('#tl-folder-manage-rename').addEventListener('cl
 _tlFolderManageEl.querySelector('#tl-folder-manage-archive').addEventListener('click', () => {
   const id = _tlFolderManageId; tlCloseFolderManageModal();
   if (id) tlArchiveFolder(id);
-});
-document.addEventListener('click', e => {
-  if (!_tlFolderManageEl.classList.contains('hidden') && !_tlFolderManageEl.contains(e.target)) {
-    tlCloseFolderManageModal();
-  }
 });
 
 // ── Modal nouveau/renommer dossier ────────────────────────────────────────────
@@ -3451,23 +3745,32 @@ tlModalFolderInput.addEventListener('keydown', e => {
 // Bouton + Dossier
 document.getElementById('tl-btn-new-folder').addEventListener('click', () => tlOpenFolderModal('create'));
 
-// ── Menu contextuel tierlist (double clic sur onglet) — positionné sous l'onglet ─────────
+// ── Overlay ctx modals ────────────────────────────────────────────────────────
+const tlCtxOverlay = document.getElementById('tl-ctx-overlay');
+
+function tlShowCtxOverlay(modalEl) {
+  // Cacher tous les ctx modals dans l'overlay
+  tlCtxOverlay.querySelectorAll('.tl-ctx-modal').forEach(m => m.classList.add('hidden'));
+  modalEl.classList.remove('hidden');
+  tlCtxOverlay.classList.remove('hidden');
+}
+
+function tlHideCtxOverlay() {
+  tlCtxOverlay.classList.add('hidden');
+  tlCtxOverlay.querySelectorAll('.tl-ctx-modal').forEach(m => m.classList.add('hidden'));
+}
+
+tlCtxOverlay.addEventListener('click', e => {
+  if (e.target === tlCtxOverlay) { tlCloseManageModal(); tlCloseFolderManageModal(); }
+});
+
+// ── Menu contextuel tierlist (double clic sur onglet) — centré ────────────────
 function tlOpenManageModal(id, anchorEl) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
   tlModalManageTargetId = id;
   tlModalManageTitle.textContent = tl.name;
-  tlModalManage.classList.remove('hidden');
-  if (anchorEl) {
-    const rect = anchorEl.getBoundingClientRect();
-    tlModalManage.style.top = (rect.bottom + 4) + 'px';
-    tlModalManage.style.left = rect.left + 'px';
-    requestAnimationFrame(() => {
-      const mRect = tlModalManage.getBoundingClientRect();
-      if (mRect.right > window.innerWidth - 8) tlModalManage.style.left = (rect.right - mRect.width) + 'px';
-      if (mRect.bottom > window.innerHeight - 8) tlModalManage.style.top = (rect.top - mRect.height - 4) + 'px';
-    });
-  }
+  tlShowCtxOverlay(tlModalManage);
 }
 
 // ── Capture Tierlist (presse-papier) ─────────────────────────────────────────
@@ -3600,6 +3903,11 @@ tlSidebarExpand.addEventListener('click', () => {
   tlLayout.classList.remove('sidebar-collapsed');
 });
 
+// Fermer les ctx modals sur Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { tlHideCtxOverlay(); }
+});
+
 // ── Listeners ─────────────────────────────────────────────────────────────────
 tlBtnNew.addEventListener('click', tlOpenNewModal);
 
@@ -3626,13 +3934,7 @@ tlTitleInput.addEventListener('keydown', e => {
 });
 
 // Menu contextuel tierlist — fermeture
-function tlCloseManageModal() { tlModalManage.classList.add('hidden'); tlModalManageTargetId = null; }
-document.addEventListener('click', e => {
-  if (!tlModalManage.classList.contains('hidden') && !tlModalManage.contains(e.target)) {
-    tlCloseManageModal();
-  }
-});
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { tlCloseManageModal(); tlCloseFolderManageModal(); } });
+function tlCloseManageModal() { tlHideCtxOverlay(); tlModalManageTargetId = null; }
 tlModalManageRename.addEventListener('click', () => {
   const id = tlModalManageTargetId;
   tlCloseManageModal();
@@ -3643,11 +3945,46 @@ tlModalManageDuplicate.addEventListener('click', () => {
   tlCloseManageModal();
   if (id) tlCopy(id);
 });
+document.getElementById('tl-modal-manage-move').addEventListener('click', () => {
+  const id = tlModalManageTargetId;
+  tlCloseManageModal();
+  if (id) tlOpenMoveModal(id);
+});
 tlModalManageArchive.addEventListener('click', () => {
   const id = tlModalManageTargetId;
   tlCloseManageModal();
   if (id) tlArchive(id);
 });
+
+// ── Modal "Ranger dans un dossier" ───────────────────────────────────────────
+let _tlMoveTargetId = null;
+const tlModalMove        = document.getElementById('tl-modal-move');
+const tlModalMoveSelect  = document.getElementById('tl-modal-move-select');
+const tlModalMoveConfirm = document.getElementById('tl-modal-move-confirm');
+const tlModalMoveCancel  = document.getElementById('tl-modal-move-cancel');
+const tlModalMoveClose   = document.getElementById('tl-modal-move-close');
+
+function tlOpenMoveModal(id) {
+  const tl = tlState.tierlists.find(t => t.id === id);
+  if (!tl) return;
+  _tlMoveTargetId = id;
+  document.getElementById('tl-modal-move-title').textContent = 'Ranger "' + tl.name + '"';
+  tlPopulateFolderSelect(tlModalMoveSelect, tl.folderId || '');
+  // Ajouter option racine avec libellé clair
+  tlModalMoveSelect.options[0].textContent = '— Aucun dossier (racine) —';
+  tlModalMove.classList.remove('hidden');
+}
+
+tlModalMoveConfirm.addEventListener('click', () => {
+  if (!_tlMoveTargetId) return;
+  const folderId = tlModalMoveSelect.value || null;
+  tlModalMove.classList.add('hidden');
+  tlMoveTierlistToFolder(_tlMoveTargetId, folderId);
+  _tlMoveTargetId = null;
+});
+tlModalMoveCancel.addEventListener('click', () => { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; });
+tlModalMoveClose.addEventListener('click', () => { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; });
+tlModalMove.addEventListener('click', e => { if (e.target === tlModalMove) { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; } });
 
 tlBtnAddTier.addEventListener('click', () => tlOpenTierModal({ mode: 'create' }));
 document.getElementById('tl-btn-undo').addEventListener('click', tlUndo);

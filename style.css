@@ -1305,6 +1305,7 @@ body {
   border-radius: var(--radius);
   color: var(--text);
   font-size: 0.95rem;
+  font-weight: 700;
   padding: 10px 14px;
   outline: none;
   transition: var(--transition);
@@ -1325,6 +1326,7 @@ body {
 .btn-secondary:hover {
   background: var(--surface-3) !important;
   color: var(--text) !important;
+  border-color: var(--text-faint) !important;
 }
 
 .themes-empty-msg {
@@ -1412,19 +1414,18 @@ body {
 
 /* ── Layout principal tierlist ── */
 .tl-layout {
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  gap: 16px;
-  align-items: start;
-  transition: grid-template-columns 0.22s ease, gap 0.22s ease;
+  display: block;
+  position: relative;
+  transition: padding-left 0.22s ease;
+  padding-left: 256px; /* 240px sidebar + 16px gap */
 }
 .tl-layout.sidebar-collapsed {
-  grid-template-columns: 32px 1fr;
-  gap: 8px;
+  padding-left: 40px; /* 32px sidebar + 8px gap */
 }
 
 @media (max-width: 768px) {
-  .tl-layout { grid-template-columns: 1fr; }
+  .tl-layout { padding-left: 0; }
+  .tl-sidebar { position: relative; top: auto; left: auto; width: 100%; height: auto; max-height: 50vh; }
 }
 
 /* ── Sidebar ── */
@@ -1436,16 +1437,21 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  position: sticky;
-  top: 74px;
-  max-height: calc(100vh - 90px);
+  position: fixed;
+  top: 70px;
+  left: 12px; /* padding du main */
+  width: 240px;
+  height: calc(100vh - 70px - 12px);
+  max-height: calc(100vh - 70px - 12px);
   overflow: hidden;
-  transition: padding 0.22s, border-radius 0.22s;
+  transition: padding 0.22s, border-radius 0.22s, width 0.22s;
   min-width: 0;
+  z-index: 10;
 }
 
 /* Quand sidebar est rétractée */
 .tl-layout.sidebar-collapsed .tl-sidebar {
+  width: 32px;
   padding: 6px 4px;
   border-radius: var(--radius);
 }
@@ -1487,7 +1493,7 @@ body {
 .tl-sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
 }
 
 .tl-sidebar-title {
@@ -1499,21 +1505,23 @@ body {
 }
 
 .tl-btn-new {
-  width: 28px;
   height: 28px;
+  padding: 0 10px;
   background: var(--success);
   border: none;
   border-radius: var(--radius);
   color: #111;
-  font-size: 1.3rem;
+  font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   line-height: 1;
   transition: var(--transition);
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .tl-btn-new:hover { background: #2fa96e; }
 
@@ -1718,18 +1726,32 @@ body {
   font-family: Arial, sans-serif;
   font-size: 0.8rem;
   font-weight: 600;
-  padding: 5px 12px;
+  padding: 0 12px;
+  height: 30px;
+  line-height: 30px;
   cursor: pointer;
   transition: var(--transition);
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
 }
 .tl-toolbar-btn:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
 .tl-btn-export { color: var(--text-muted); }
 .tl-btn-export:hover { border-color: var(--success); color: var(--success); background: rgba(71,200,135,0.1); }
 .tl-btn-add-tier { color: var(--success) !important; border-color: var(--success) !important; background: rgba(71,200,135,0.08) !important; font-weight: 700; }
 .tl-btn-add-tier:hover { background: rgba(71,200,135,0.2) !important; }
-/* Capture : même style que les autres boutons gris */
+/* Bouton Annuler actif : orange foncé */
 .tl-btn-undo { color: var(--text-muted); }
+.tl-btn-undo:not(:disabled) {
+  background: #7a3800 !important;
+  color: #ffb87a !important;
+  border-color: #a34a00 !important;
+}
+.tl-btn-undo:not(:disabled):hover {
+  background: #a34a00 !important;
+  color: #ffd0a0 !important;
+  border-color: #c85800 !important;
+}
 .tl-btn-undo:disabled { opacity: 0.4; cursor: not-allowed; }
 .tl-btn-undo:disabled:hover { border-color: var(--border); color: var(--text-muted); background: var(--surface-2); }
 
@@ -2041,13 +2063,18 @@ body {
   border: 1px solid #2d6ad4;
   border-radius: var(--radius);
   color: #c5dbff;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 700;
-  padding: 3px 9px;
+  height: 28px;
+  padding: 0 10px;
   cursor: pointer;
   white-space: nowrap;
   transition: var(--transition);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 .tl-btn-new-folder:hover { background: #2560c4; border-color: #4a8ae8; color: #e0eeff; }
 
@@ -2074,6 +2101,13 @@ body {
   transition: var(--transition);
 }
 .tl-folder-header:hover { border-color: var(--accent-dim); color: var(--text); }
+
+/* Dossier contenant la tierlist active → surbrillance bleue claire */
+.tl-folder.active-folder > .tl-folder-header {
+  background: rgba(100, 180, 255, 0.12);
+  border-color: #5ba8f5;
+  color: #90c8ff;
+}
 
 .tl-folder-arrow {
   font-size: 0.6rem;
@@ -2104,16 +2138,28 @@ body {
 
 .tl-folder-children .tl-list-item { font-size: 0.78rem; padding: 3px 8px; }
 
-/* ── Modal contextuel positionné (tierlist manage) ── */
-.tl-ctx-modal {
+/* ── Overlay pour les ctx modals centrés ── */
+.tl-ctx-overlay {
   position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tl-ctx-overlay.hidden { display: none; }
+
+/* ── Modal contextuel centré (tierlist manage) ── */
+.tl-ctx-modal {
+  position: relative;
   z-index: 2000;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-  min-width: 160px;
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  min-width: 200px;
 }
 .tl-ctx-modal.hidden { display: none; }
 
@@ -2125,11 +2171,11 @@ body {
   letter-spacing: 0.08em;
   padding: 2px 8px 6px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 4px;
+  margin-bottom: 8px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 280px;
 }
 
 /* ── Modal gestion tierlist ── */
@@ -2153,13 +2199,13 @@ body {
 .tl-manage-btn {
   width: 100%;
   text-align: left;
-  font-size: 0.82rem;
-  font-weight: 600;
-  padding: 6px 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 7px 12px;
   border-radius: var(--radius);
   background: var(--surface-2) !important;
   border: 1px solid var(--border) !important;
-  color: var(--text-muted) !important;
+  color: var(--text) !important;
   cursor: pointer;
   transition: var(--transition);
   display: flex;
@@ -2186,3 +2232,62 @@ body {
 
 /* ── Export canvas (caché) ── */
 #tl-export-canvas { display: none; }
+
+/* ── Select dossier dans modal ── */
+.modal-folder-select {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.9rem;
+  padding: 9px 12px;
+  outline: none;
+  cursor: pointer;
+  transition: var(--transition);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%237a7a90' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 30px;
+}
+.modal-folder-select:focus { border-color: var(--accent); }
+.modal-folder-select option { background: var(--surface); color: var(--text); }
+.modal-folder-select-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: -8px;
+}
+
+/* ── Drag & drop sidebar tierlists/dossiers ── */
+.tl-list-item.tl-dragging,
+.tl-folder.tl-dragging { opacity: 0.4; }
+
+.tl-list-item.tl-drag-over-top {
+  box-shadow: 0 -2px 0 var(--accent);
+}
+.tl-list-item.tl-drag-over-bottom {
+  box-shadow: 0 2px 0 var(--accent);
+}
+.tl-folder.tl-drag-over-top .tl-folder-header {
+  box-shadow: 0 -2px 0 var(--accent);
+}
+.tl-folder.tl-drag-over-bottom .tl-folder-header {
+  box-shadow: 0 2px 0 var(--accent);
+}
+.tl-folder-header.tl-drag-over-folder {
+  border-color: var(--accent) !important;
+  background: var(--accent-glow) !important;
+  color: var(--accent) !important;
+}
+
+/* ── Option "Ranger dans un dossier" dans le ctx modal ── */
+.tl-manage-btn-move {
+  /* hérite de .tl-manage-btn */
+}
+.tl-manage-btn-move:hover {
+  color: #7ab8ff !important;
+  border-color: #3a6abf !important;
+  background: rgba(58,106,191,0.12) !important;
+}

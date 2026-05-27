@@ -70,14 +70,15 @@ LesMichels/
 
 ---
 
-### Tier List (v1 — Mai 2026)
+### Tier List (v2 — Mai 2026)
 
 #### Gestion des tier lists
 - [x] Création d'une tier list avec titre (demandé à la création)
+- [x] **Choix du dossier à la création** : sélecteur optionnel pour ranger directement la nouvelle tier list dans un dossier existant
 - [x] Renommage du titre à tout moment via le bouton ✏
 - [x] Copie d'une tier list existante (clone complet)
 - [x] Archivage d'une tier list (disparaît de la liste principale)
-- [x] **Modal "Archivées"** : restaurer ou supprimer définitivement
+- [x] **Modal "Archives"** : restaurer ou supprimer définitivement
 - [x] Suppression définitive d'une tier list
 - [x] Sauvegarde automatique en **LocalStorage** (locale, non partagée)
 
@@ -89,8 +90,18 @@ LesMichels/
 - [x] Déplacement d'un tier (▲ / ▼)
 - [x] Suppression d'un tier (les images retournent dans "non placées")
 
+#### Dossiers (sidebar)
+- [x] **Création de dossiers** pour organiser les tier lists (bouton `+ dossier`)
+- [x] **Drag & drop dans la sidebar** : réordonner les tier lists et les dossiers par glisser-déposer
+- [x] **Déposer une tier list sur un dossier** pour la ranger automatiquement dedans
+- [x] **Double-clic sur une tier list** → menu contextuel : Renommer / Dupliquer / Ranger / Archiver
+- [x] **Double-clic sur un dossier** → menu contextuel : Renommer / Archiver
+- [x] **Modal "Ranger"** : sélectionner ou retirer d'un dossier depuis le menu contextuel
+- [x] **Surbrillance bleue** du dossier contenant la tier list active dans la sidebar
+- [x] **Archives** : tierlists dans les dossiers visibles directement à l'ouverture
+
 #### Images
-- [x] **Import via bouton "📁 Images"** (multi-fichiers, tous formats image)
+- [x] **Import via bouton "📁 Importer images"** (multi-fichiers, tous formats image)
 - [x] **Glisser-déposer depuis le bureau** directement dans la zone "non placées"
 - [x] **Coller depuis le presse-papier** (`Ctrl+V` sur la page) — colle l'image capturée
 - [x] **Glisser-déposer** des images entre les tiers et la zone "non placées"
@@ -238,7 +249,7 @@ LesMichels/
 - Synchronisation temps réel via WebSocket (Firebase `onValue`)
 - Pas de boucle infinie : flag `_bingoRemoteUpdate` bloque la ré-écriture lors d'une mise à jour distante (Bingo uniquement)
 - Thème actif, sous-thème actif et zoom texte sont **locaux** (par navigateur) et non synchronisés
-- Versionnement des assets via query string (`style.css?v=11`, `app.js?v=10`)
+- Versionnement des assets via query string (`style.css?v=17`, `app.js?v=16`)
 
 ---
 
