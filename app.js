@@ -2366,6 +2366,7 @@ let tlState = (() => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
+      if (!Array.isArray(parsed.folders)) parsed.folders = [];
       const active = parsed.tierlists.find(t => t.id === parsed.activeTierlistId && !t.archived);
       if (!active) {
         const first = parsed.tierlists.find(t => !t.archived);
@@ -2374,7 +2375,7 @@ let tlState = (() => {
       return parsed;
     }
   } catch (e) {}
-  return { tierlists: [], activeTierlistId: null };
+  return { tierlists: [], folders: [], activeTierlistId: null };
 })();
 
 function tlSave() {
@@ -2383,6 +2384,39 @@ function tlSave() {
   } catch (e) {
     console.warn('TL save error (localStorage plein ?):', e);
   }
+}
+
+// ── Stack Undo ─────────────────────────────────────────────────────────────────
+const _TL_UNDO_MAX = 30;
+let _tlUndoStack = []; // chaque entrée = snapshot JSON de tlState
+
+function tlPushUndo() {
+  // Pousser un snapshot de l'état actuel avant toute action
+  _tlUndoStack.push(JSON.stringify(tlState));
+  if (_tlUndoStack.length > _TL_UNDO_MAX) _tlUndoStack.shift();
+  tlUpdateUndoBtn();
+}
+
+function tlUndo() {
+  if (_tlUndoStack.length === 0) return;
+  const snapshot = _tlUndoStack.pop();
+  try {
+    tlState = JSON.parse(snapshot);
+  } catch (e) { return; }
+  tlSave();
+  tlRender();
+  tlUpdateUndoBtn();
+}
+
+function tlUpdateUndoBtn() {
+  const btn = document.getElementById('tl-btn-undo');
+  if (btn) btn.disabled = _tlUndoStack.length === 0;
+}
+
+// Wrapper : pousser undo avant toute action modifiante
+function tlWithUndo(fn) {
+  tlPushUndo();
+  fn();
 }
 
 function tlActiveTierlist() {
@@ -2400,6 +2434,73 @@ function tlDefaultTierlist(name) {
     unplaced: [],
     images: [],
   };
+}
+
+// ── Dossiers ──────────────────────────────────────────────────────────────────
+// Structure : folders = [{ id, name, archived, open }]
+// tierlists[].folderId = id du dossier parent (ou null)
+
+function tlDefaultFolder(name) {
+  return { id: uid(), name, archived: false, open: true };
+}
+
+function tlCreateFolder(name) {
+  tlPushUndo();
+  if (!tlState.folders) tlState.folders = [];
+  const folder = tlDefaultFolder(name);
+  tlState.folders.push(folder);
+  tlSave();
+  tlRender();
+}
+
+function tlRenameFolder(id, newName) {
+  tlPushUndo();
+  const folder = (tlState.folders || []).find(f => f.id === id);
+  if (folder && newName.trim()) folder.name = newName.trim();
+  tlSave();
+  tlRender();
+}
+
+function tlArchiveFolder(id) {
+  tlPushUndo();
+  const folder = (tlState.folders || []).find(f => f.id === id);
+  if (!folder) return;
+  folder.archived = true;
+  // Les tierlists dans ce dossier restent mais sont détachées du dossier visible
+  tlSave();
+  tlRender();
+}
+
+function tlUnarchiveFolder(id) {
+  tlPushUndo();
+  const folder = (tlState.folders || []).find(f => f.id === id);
+  if (folder) folder.archived = false;
+  tlSave();
+  tlRender();
+  tlRenderArchivedModal();
+}
+
+function tlDeleteFolder(id) {
+  tlPushUndo();
+  // Détacher les tierlists de ce dossier
+  (tlState.tierlists || []).forEach(tl => { if (tl.folderId === id) tl.folderId = null; });
+  tlState.folders = (tlState.folders || []).filter(f => f.id !== id);
+  tlSave();
+  tlRender();
+  tlRenderArchivedModal();
+}
+
+function tlToggleFolderOpen(id) {
+  const folder = (tlState.folders || []).find(f => f.id === id);
+  if (folder) { folder.open = !folder.open; tlSave(); tlRender(); }
+}
+
+function tlMoveTierlistToFolder(tlId, folderId) {
+  tlPushUndo();
+  const tl = tlState.tierlists.find(t => t.id === tlId);
+  if (tl) tl.folderId = folderId || null;
+  tlSave();
+  tlRender();
 }
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
@@ -2448,7 +2549,6 @@ const tlModalImgNameClose   = document.getElementById('tl-modal-imgname-close');
 
 const tlModalManage         = document.getElementById('tl-modal-manage');
 const tlModalManageTitle    = document.getElementById('tl-modal-manage-title');
-const tlModalManageClose    = document.getElementById('tl-modal-manage-close');
 const tlModalManageRename   = document.getElementById('tl-modal-manage-rename');
 const tlModalManageDuplicate= document.getElementById('tl-modal-manage-duplicate');
 const tlModalManageArchive  = document.getElementById('tl-modal-manage-archive');
@@ -2459,6 +2559,7 @@ let tlDragImgId = null;
 
 // ── Rendu principal ───────────────────────────────────────────────────────────
 function tlRender() {
+  tlUpdateUndoBtn();
   tlRenderList();
   const tl = tlActiveTierlist();
   if (!tl || tl.archived) {
@@ -2478,10 +2579,30 @@ function tlRender() {
   tlRenderUnplaced(tl);
 }
 
+function tlBuildTierlistItem(tl) {
+  const item = document.createElement('div');
+  item.className = 'tl-list-item' + (tl.id === tlState.activeTierlistId ? ' active' : '');
+  item.dataset.id = tl.id;
+
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'tl-list-item-name';
+  nameSpan.textContent = tl.name;
+  nameSpan.title = tl.name + '\nDouble-clic pour renommer, dupliquer ou archiver';
+  item.appendChild(nameSpan);
+
+  item.addEventListener('click', () => tlSwitch(tl.id));
+  item.addEventListener('dblclick', e => { e.stopPropagation(); tlOpenManageModal(tl.id, item); });
+  return item;
+}
+
 function tlRenderList() {
   tlList.innerHTML = '';
-  const active = tlState.tierlists.filter(tl => !tl.archived);
-  if (active.length === 0) {
+  if (!tlState.folders) tlState.folders = [];
+  const activeFolders = tlState.folders.filter(f => !f.archived);
+  const activeToplevel = tlState.tierlists.filter(tl => !tl.archived && !tl.folderId);
+  const hasContent = activeFolders.length > 0 || activeToplevel.length > 0;
+
+  if (!hasContent) {
     const msg = document.createElement('div');
     msg.className = 'tl-list-empty';
     msg.style.cssText = 'color:var(--text-faint);font-style:italic;font-size:0.82rem;padding:8px 4px;';
@@ -2489,20 +2610,60 @@ function tlRenderList() {
     tlList.appendChild(msg);
     return;
   }
-  active.forEach(tl => {
-    const item = document.createElement('div');
-    item.className = 'tl-list-item' + (tl.id === tlState.activeTierlistId ? ' active' : '');
-    item.dataset.id = tl.id;
 
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'tl-list-item-name';
-    nameSpan.textContent = tl.name;
-    nameSpan.title = tl.name + '\nDouble-clic pour renommer, dupliquer ou archiver';
-    item.appendChild(nameSpan);
+  // Tierlists sans dossier (en haut)
+  activeToplevel.forEach(tl => tlList.appendChild(tlBuildTierlistItem(tl)));
 
-    item.addEventListener('click', () => tlSwitch(tl.id));
-    item.addEventListener('dblclick', e => { e.stopPropagation(); tlOpenManageModal(tl.id); });
-    tlList.appendChild(item);
+  // Dossiers
+  activeFolders.forEach(folder => {
+    const folderEl = document.createElement('div');
+    folderEl.className = 'tl-folder' + (folder.open ? ' open' : '');
+    folderEl.dataset.folderId = folder.id;
+
+    // Header dossier
+    const header = document.createElement('div');
+    header.className = 'tl-folder-header';
+
+    const arrow = document.createElement('span');
+    arrow.className = 'tl-folder-arrow';
+    arrow.textContent = '▶';
+
+    const icon = document.createElement('span');
+    icon.className = 'tl-folder-icon';
+    icon.textContent = '📁';
+
+    const name = document.createElement('span');
+    name.className = 'tl-folder-name';
+    name.textContent = folder.name;
+
+    header.appendChild(arrow);
+    header.appendChild(icon);
+    header.appendChild(name);
+
+    header.addEventListener('click', () => tlToggleFolderOpen(folder.id));
+    header.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      tlOpenFolderManageModal(folder.id, header);
+    });
+
+    folderEl.appendChild(header);
+
+    // Enfants
+    const children = document.createElement('div');
+    children.className = 'tl-folder-children';
+
+    const folderTierlists = tlState.tierlists.filter(tl => !tl.archived && tl.folderId === folder.id);
+    if (folderTierlists.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--text-faint);font-style:italic;font-size:0.75rem;padding:3px 4px;';
+      empty.textContent = 'Vide';
+      children.appendChild(empty);
+    } else {
+      folderTierlists.forEach(tl => children.appendChild(tlBuildTierlistItem(tl)));
+    }
+
+    folderEl.appendChild(children);
+    tlList.appendChild(folderEl);
   });
 }
 
@@ -2524,6 +2685,9 @@ function tlRenderTiers(tl) {
     labelText.className = 'tl-tier-label-text';
     labelText.textContent = tier.label;
     labelCell.appendChild(labelText);
+
+    // Double-clic sur la cellule label → modifier le tier
+    labelCell.addEventListener('dblclick', e => { e.stopPropagation(); tlEditTier(tl, tier); });
 
     // Contrôles du tier (au hover)
     const controls = document.createElement('div');
@@ -2666,6 +2830,7 @@ function tlFindImage(tl, imgId) {
 
 // ── Actions sur les tierlists ─────────────────────────────────────────────────
 function tlCreate(name) {
+  tlPushUndo();
   const tl = tlDefaultTierlist(name);
   tlState.tierlists.push(tl);
   tlState.activeTierlistId = tl.id;
@@ -2680,6 +2845,7 @@ function tlSwitch(id) {
 }
 
 function tlDelete(id) {
+  tlPushUndo();
   tlState.tierlists = tlState.tierlists.filter(t => t.id !== id);
   if (tlState.activeTierlistId === id) {
     const remaining = tlState.tierlists.filter(t => !t.archived);
@@ -2690,6 +2856,7 @@ function tlDelete(id) {
 }
 
 function tlArchive(id) {
+  tlPushUndo();
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
   tl.archived = true;
@@ -2702,6 +2869,7 @@ function tlArchive(id) {
 }
 
 function tlUnarchive(id) {
+  tlPushUndo();
   const tl = tlState.tierlists.find(t => t.id === id);
   if (tl) tl.archived = false;
   tlSave();
@@ -2710,6 +2878,7 @@ function tlUnarchive(id) {
 }
 
 function tlCopy(id) {
+  tlPushUndo();
   const src = tlState.tierlists.find(t => t.id === id);
   if (!src) return;
   const copy = JSON.parse(JSON.stringify(src));
@@ -2737,6 +2906,7 @@ function tlCopy(id) {
 }
 
 function tlRename(id, newName) {
+  tlPushUndo();
   const tl = tlState.tierlists.find(t => t.id === id);
   if (tl && newName.trim()) tl.name = newName.trim();
   tlSave();
@@ -2745,6 +2915,7 @@ function tlRename(id, newName) {
 
 // ── Actions sur les tiers ─────────────────────────────────────────────────────
 function tlAddTier(label, color) {
+  tlPushUndo();
   const tl = tlActiveTierlist();
   if (!tl) return;
   tl.tiers.push({ id: uid(), label, color, items: [] });
@@ -2753,6 +2924,7 @@ function tlAddTier(label, color) {
 }
 
 function tlDeleteTier(tl, tierId) {
+  tlPushUndo();
   const tier = tl.tiers.find(t => t.id === tierId);
   if (tier) {
     tier.items.forEach(imgId => {
@@ -2767,6 +2939,7 @@ function tlDeleteTier(tl, tierId) {
 function tlMoveTier(tl, idx, delta) {
   const newIdx = idx + delta;
   if (newIdx < 0 || newIdx >= tl.tiers.length) return;
+  tlPushUndo();
   [tl.tiers[idx], tl.tiers[newIdx]] = [tl.tiers[newIdx], tl.tiers[idx]];
   tlSave();
   tlRender();
@@ -2782,6 +2955,7 @@ function tlEditTier(tl, tier) {
 // tier.items  = [id, id, ...] — ids des images dans ce tier
 
 function tlImportImages(files) {
+  tlPushUndo();
   const tl = tlActiveTierlist();
   if (!tl) return;
   if (!tl.images) tl.images = [];
@@ -2804,6 +2978,7 @@ function tlImportImages(files) {
 }
 
 function tlDeleteImage(tl, imgId) {
+  tlPushUndo();
   tl.unplaced = tl.unplaced.filter(id => id !== imgId);
   tl.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
   if (tl.images) tl.images = tl.images.filter(i => i.id !== imgId);
@@ -2856,6 +3031,7 @@ function tlDrop(e, targetZoneId) {
   if (!imgId) return;
   const tl = tlActiveTierlist();
   if (!tl) return;
+  tlPushUndo();
 
   // Retirer de partout
   tl.unplaced = tl.unplaced.filter(id => id !== imgId);
@@ -2898,7 +3074,10 @@ function tlConfirmRenameImg() {
   if (!tlRenameImgContext) return;
   const { img } = tlRenameImgContext;
   const newName = tlModalImgNameInput.value.trim();
-  if (newName) img.name = newName;
+  if (newName) {
+    tlPushUndo();
+    img.name = newName;
+  }
   tlModalImgName.classList.add('hidden');
   tlRenameImgContext = null;
   tlSave();
@@ -3000,37 +3179,80 @@ function tlExport() {
   })();
 }
 
-// ── Modal archivées ───────────────────────────────────────────────────────────
+// ── Modal archivées (tierlists + dossiers) ────────────────────────────────────
 function tlRenderArchivedModal() {
   tlArchivedList.innerHTML = '';
-  const archived = tlState.tierlists.filter(t => t.archived);
-  if (archived.length === 0) {
-    tlArchivedList.innerHTML = '<p class="archived-empty">Aucune tier list archivée.</p>';
+  const archivedTL = tlState.tierlists.filter(t => t.archived);
+  const archivedFolders = (tlState.folders || []).filter(f => f.archived);
+
+  if (archivedTL.length === 0 && archivedFolders.length === 0) {
+    tlArchivedList.innerHTML = '<p class="archived-empty">Aucun élément archivé.</p>';
     return;
   }
-  archived.forEach(tl => {
-    const item = document.createElement('div');
-    item.className = 'archived-theme-item';
 
-    const name = document.createElement('span');
-    name.className = 'archived-theme-name';
-    name.textContent = tl.name;
-    item.appendChild(name);
+  // Dossiers archivés
+  if (archivedFolders.length > 0) {
+    const sep = document.createElement('p');
+    sep.style.cssText = 'font-size:0.72rem;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px;';
+    sep.textContent = '📁 Dossiers';
+    tlArchivedList.appendChild(sep);
 
-    const btnRestore = document.createElement('button');
-    btnRestore.className = 'archived-theme-btn restore';
-    btnRestore.textContent = '↩ Restaurer';
-    btnRestore.addEventListener('click', () => tlUnarchive(tl.id));
-    item.appendChild(btnRestore);
+    archivedFolders.forEach(folder => {
+      const item = document.createElement('div');
+      item.className = 'archived-theme-item';
 
-    const btnDel = document.createElement('button');
-    btnDel.className = 'archived-theme-btn del';
-    btnDel.textContent = '✕ Supprimer';
-    btnDel.addEventListener('click', () => { tlDelete(tl.id); tlRenderArchivedModal(); });
-    item.appendChild(btnDel);
+      const name = document.createElement('span');
+      name.className = 'archived-theme-name';
+      name.textContent = '📁 ' + folder.name;
+      item.appendChild(name);
 
-    tlArchivedList.appendChild(item);
-  });
+      const btnRestore = document.createElement('button');
+      btnRestore.className = 'archived-theme-btn restore';
+      btnRestore.textContent = '↩ Restaurer';
+      btnRestore.addEventListener('click', () => tlUnarchiveFolder(folder.id));
+      item.appendChild(btnRestore);
+
+      const btnDel = document.createElement('button');
+      btnDel.className = 'archived-theme-btn del';
+      btnDel.textContent = '✕ Supprimer';
+      btnDel.addEventListener('click', () => { tlDeleteFolder(folder.id); tlRenderArchivedModal(); });
+      item.appendChild(btnDel);
+
+      tlArchivedList.appendChild(item);
+    });
+  }
+
+  // Tierlists archivées
+  if (archivedTL.length > 0) {
+    const sep = document.createElement('p');
+    sep.style.cssText = 'font-size:0.72rem;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;margin:' + (archivedFolders.length > 0 ? '10px 0 6px' : '0 0 6px') + ';';
+    sep.textContent = '📋 Tier lists';
+    tlArchivedList.appendChild(sep);
+
+    archivedTL.forEach(tl => {
+      const item = document.createElement('div');
+      item.className = 'archived-theme-item';
+
+      const name = document.createElement('span');
+      name.className = 'archived-theme-name';
+      name.textContent = tl.name;
+      item.appendChild(name);
+
+      const btnRestore = document.createElement('button');
+      btnRestore.className = 'archived-theme-btn restore';
+      btnRestore.textContent = '↩ Restaurer';
+      btnRestore.addEventListener('click', () => tlUnarchive(tl.id));
+      item.appendChild(btnRestore);
+
+      const btnDel = document.createElement('button');
+      btnDel.className = 'archived-theme-btn del';
+      btnDel.textContent = '✕ Supprimer';
+      btnDel.addEventListener('click', () => { tlDelete(tl.id); tlRenderArchivedModal(); });
+      item.appendChild(btnDel);
+
+      tlArchivedList.appendChild(item);
+    });
+  }
 }
 
 // ── Modal nouvelle tierlist ───────────────────────────────────────────────────
@@ -3121,6 +3343,7 @@ function tlConfirmTierModal() {
   const color = tlTierSelectedColor;
   tlModalTier.classList.add('hidden');
   if (tlTierModalCtx && tlTierModalCtx.mode === 'edit') {
+    tlPushUndo();
     tlTierModalCtx.tier.label = label;
     tlTierModalCtx.tier.color = color;
     tlSave();
@@ -3131,13 +3354,120 @@ function tlConfirmTierModal() {
   tlTierModalCtx = null;
 }
 
-// ── Modal gestion (double clic sur onglet) ────────────────────────────────────
-function tlOpenManageModal(id) {
+// ── Modal gestion dossier (double clic sur header) ────────────────────────────
+let _tlFolderManageId = null;
+const _tlFolderManageEl = (() => {
+  const el = document.createElement('div');
+  el.className = 'tl-ctx-modal hidden';
+  el.innerHTML = `
+    <div class="tl-ctx-modal-title" id="tl-folder-manage-title">Dossier</div>
+    <div class="tl-manage-actions">
+      <button class="tl-manage-btn" id="tl-folder-manage-rename">✏ Renommer</button>
+      <button class="tl-manage-btn tl-manage-btn-archive" id="tl-folder-manage-archive">📦 Archiver</button>
+    </div>`;
+  document.body.appendChild(el);
+  return el;
+})();
+
+function tlOpenFolderManageModal(id, anchorEl) {
+  const folder = (tlState.folders || []).find(f => f.id === id);
+  if (!folder) return;
+  _tlFolderManageId = id;
+  _tlFolderManageEl.querySelector('#tl-folder-manage-title').textContent = folder.name;
+  _tlFolderManageEl.classList.remove('hidden');
+  if (anchorEl) {
+    const rect = anchorEl.getBoundingClientRect();
+    _tlFolderManageEl.style.top = (rect.bottom + 4) + 'px';
+    _tlFolderManageEl.style.left = rect.left + 'px';
+    requestAnimationFrame(() => {
+      const mRect = _tlFolderManageEl.getBoundingClientRect();
+      if (mRect.right > window.innerWidth - 8) _tlFolderManageEl.style.left = (rect.right - mRect.width) + 'px';
+    });
+  }
+}
+
+function tlCloseFolderManageModal() { _tlFolderManageEl.classList.add('hidden'); _tlFolderManageId = null; }
+
+_tlFolderManageEl.querySelector('#tl-folder-manage-rename').addEventListener('click', () => {
+  const id = _tlFolderManageId; tlCloseFolderManageModal();
+  if (!id) return;
+  const folder = (tlState.folders || []).find(f => f.id === id);
+  if (!folder) return;
+  tlOpenFolderModal('rename', id, folder.name);
+});
+_tlFolderManageEl.querySelector('#tl-folder-manage-archive').addEventListener('click', () => {
+  const id = _tlFolderManageId; tlCloseFolderManageModal();
+  if (id) tlArchiveFolder(id);
+});
+document.addEventListener('click', e => {
+  if (!_tlFolderManageEl.classList.contains('hidden') && !_tlFolderManageEl.contains(e.target)) {
+    tlCloseFolderManageModal();
+  }
+});
+
+// ── Modal nouveau/renommer dossier ────────────────────────────────────────────
+let _tlFolderModalMode = 'create'; // 'create' | 'rename'
+let _tlFolderModalTargetId = null;
+const tlModalFolder       = document.getElementById('tl-modal-folder');
+const tlModalFolderTitle  = document.getElementById('tl-modal-folder-title');
+const tlModalFolderInput  = document.getElementById('tl-modal-folder-input');
+const tlModalFolderConfirm = document.getElementById('tl-modal-folder-confirm');
+const tlModalFolderCancel  = document.getElementById('tl-modal-folder-cancel');
+const tlModalFolderClose   = document.getElementById('tl-modal-folder-close');
+
+function tlOpenFolderModal(mode = 'create', id = null, currentName = '') {
+  _tlFolderModalMode = mode;
+  _tlFolderModalTargetId = id;
+  if (mode === 'rename') {
+    tlModalFolderTitle.textContent = 'Renommer le dossier';
+    tlModalFolderConfirm.textContent = 'Renommer';
+    tlModalFolderInput.value = currentName;
+  } else {
+    tlModalFolderTitle.textContent = 'Nouveau dossier';
+    tlModalFolderConfirm.textContent = 'Créer';
+    tlModalFolderInput.value = '';
+  }
+  tlModalFolder.classList.remove('hidden');
+  setTimeout(() => { tlModalFolderInput.focus(); tlModalFolderInput.select(); }, 50);
+}
+
+function tlConfirmFolderModal() {
+  const val = tlModalFolderInput.value.trim();
+  if (!val) return;
+  tlModalFolder.classList.add('hidden');
+  if (_tlFolderModalMode === 'create') tlCreateFolder(val);
+  else if (_tlFolderModalMode === 'rename' && _tlFolderModalTargetId) tlRenameFolder(_tlFolderModalTargetId, val);
+}
+
+tlModalFolderConfirm.addEventListener('click', tlConfirmFolderModal);
+tlModalFolderCancel.addEventListener('click', () => tlModalFolder.classList.add('hidden'));
+tlModalFolderClose.addEventListener('click', () => tlModalFolder.classList.add('hidden'));
+tlModalFolder.addEventListener('click', e => { if (e.target === tlModalFolder) tlModalFolder.classList.add('hidden'); });
+tlModalFolderInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') tlConfirmFolderModal();
+  if (e.key === 'Escape') tlModalFolder.classList.add('hidden');
+});
+
+// Bouton + Dossier
+document.getElementById('tl-btn-new-folder').addEventListener('click', () => tlOpenFolderModal('create'));
+
+// ── Menu contextuel tierlist (double clic sur onglet) — positionné sous l'onglet ─────────
+function tlOpenManageModal(id, anchorEl) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
   tlModalManageTargetId = id;
   tlModalManageTitle.textContent = tl.name;
   tlModalManage.classList.remove('hidden');
+  if (anchorEl) {
+    const rect = anchorEl.getBoundingClientRect();
+    tlModalManage.style.top = (rect.bottom + 4) + 'px';
+    tlModalManage.style.left = rect.left + 'px';
+    requestAnimationFrame(() => {
+      const mRect = tlModalManage.getBoundingClientRect();
+      if (mRect.right > window.innerWidth - 8) tlModalManage.style.left = (rect.right - mRect.width) + 'px';
+      if (mRect.bottom > window.innerHeight - 8) tlModalManage.style.top = (rect.top - mRect.height - 4) + 'px';
+    });
+  }
 }
 
 // ── Capture Tierlist (presse-papier) ─────────────────────────────────────────
@@ -3295,29 +3625,32 @@ tlTitleInput.addEventListener('keydown', e => {
   }
 });
 
-// Modal gestion (double-clic onglet)
-tlModalManageClose.addEventListener('click', () => { tlModalManage.classList.add('hidden'); tlModalManageTargetId = null; });
-tlModalManage.addEventListener('click', e => { if (e.target === tlModalManage) { tlModalManage.classList.add('hidden'); tlModalManageTargetId = null; } });
+// Menu contextuel tierlist — fermeture
+function tlCloseManageModal() { tlModalManage.classList.add('hidden'); tlModalManageTargetId = null; }
+document.addEventListener('click', e => {
+  if (!tlModalManage.classList.contains('hidden') && !tlModalManage.contains(e.target)) {
+    tlCloseManageModal();
+  }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { tlCloseManageModal(); tlCloseFolderManageModal(); } });
 tlModalManageRename.addEventListener('click', () => {
   const id = tlModalManageTargetId;
-  tlModalManage.classList.add('hidden');
-  tlModalManageTargetId = null;
+  tlCloseManageModal();
   if (id) tlOpenRenameModal(id);
 });
 tlModalManageDuplicate.addEventListener('click', () => {
   const id = tlModalManageTargetId;
-  tlModalManage.classList.add('hidden');
-  tlModalManageTargetId = null;
+  tlCloseManageModal();
   if (id) tlCopy(id);
 });
 tlModalManageArchive.addEventListener('click', () => {
   const id = tlModalManageTargetId;
-  tlModalManage.classList.add('hidden');
-  tlModalManageTargetId = null;
+  tlCloseManageModal();
   if (id) tlArchive(id);
 });
 
 tlBtnAddTier.addEventListener('click', () => tlOpenTierModal({ mode: 'create' }));
+document.getElementById('tl-btn-undo').addEventListener('click', tlUndo);
 tlModalTierConfirm.addEventListener('click', tlConfirmTierModal);
 tlModalTierCancel.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
 tlModalTierClose.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
@@ -3402,6 +3735,7 @@ document.addEventListener('paste', e => {
   const imageItems = Array.from(items).filter(it => it.type.startsWith('image/'));
   if (imageItems.length === 0) return;
 
+  tlPushUndo();
   if (!tl.images) tl.images = [];
   const promises = imageItems.map(it => new Promise(resolve => {
     const file = it.getAsFile();
@@ -3418,7 +3752,7 @@ document.addEventListener('paste', e => {
     reader.readAsDataURL(file);
   }));
 
-  Promise.all(promises).then(() => { tlSave(); tlRender(); });
+  Promise.all(promises).then(() => { tlSave(); tlRender(); tlUpdateUndoBtn(); });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

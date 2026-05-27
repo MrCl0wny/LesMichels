@@ -1453,7 +1453,8 @@ body {
 .tl-layout.sidebar-collapsed .tl-sidebar-header,
 .tl-layout.sidebar-collapsed .tl-list,
 .tl-layout.sidebar-collapsed .tl-btn-archived-toggle,
-.tl-layout.sidebar-collapsed .tl-sidebar-collapse-btn {
+.tl-layout.sidebar-collapsed .tl-sidebar-collapse-btn,
+.tl-layout.sidebar-collapsed .tl-folder {
   display: none;
 }
 .tl-layout.sidebar-collapsed .tl-sidebar-expand-btn {
@@ -1727,8 +1728,10 @@ body {
 .tl-btn-export:hover { border-color: var(--success); color: var(--success); background: rgba(71,200,135,0.1); }
 .tl-btn-add-tier { color: var(--success) !important; border-color: var(--success) !important; background: rgba(71,200,135,0.08) !important; font-weight: 700; }
 .tl-btn-add-tier:hover { background: rgba(71,200,135,0.2) !important; }
-.tl-btn-capture { color: #f0b429; border-color: #b07e10; background: rgba(240,180,41,0.07); }
-.tl-btn-capture:hover { border-color: #f0b429; color: #f0b429; background: rgba(240,180,41,0.18); }
+/* Capture : même style que les autres boutons gris */
+.tl-btn-undo { color: var(--text-muted); }
+.tl-btn-undo:disabled { opacity: 0.4; cursor: not-allowed; }
+.tl-btn-undo:disabled:hover { border-color: var(--border); color: var(--text-muted); background: var(--surface-2); }
 
 /* ── Zone des tiers ── */
 .tl-tiers-zone {
@@ -2024,6 +2027,109 @@ body {
   width: 120px;
   padding: 2px 4px;
   outline: none;
+}
+
+/* ── Sidebar header btns ── */
+.tl-sidebar-header-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tl-btn-new-folder {
+  background: #1e4fa3;
+  border: 1px solid #2d6ad4;
+  border-radius: var(--radius);
+  color: #c5dbff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.tl-btn-new-folder:hover { background: #2560c4; border-color: #4a8ae8; color: #e0eeff; }
+
+/* ── Dossiers dans la sidebar ── */
+.tl-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.tl-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  transition: var(--transition);
+}
+.tl-folder-header:hover { border-color: var(--accent-dim); color: var(--text); }
+
+.tl-folder-arrow {
+  font-size: 0.6rem;
+  color: var(--text-faint);
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.tl-folder.open .tl-folder-arrow { transform: rotate(90deg); }
+
+.tl-folder-icon { font-size: 0.85rem; flex-shrink: 0; }
+
+.tl-folder-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-folder-children {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 0 3px 14px;
+  border-left: 2px solid var(--border);
+  margin-left: 10px;
+}
+.tl-folder.open .tl-folder-children { display: flex; }
+
+.tl-folder-children .tl-list-item { font-size: 0.78rem; padding: 3px 8px; }
+
+/* ── Modal contextuel positionné (tierlist manage) ── */
+.tl-ctx-modal {
+  position: fixed;
+  z-index: 2000;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  min-width: 160px;
+}
+.tl-ctx-modal.hidden { display: none; }
+
+.tl-ctx-modal-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
 }
 
 /* ── Modal gestion tierlist ── */

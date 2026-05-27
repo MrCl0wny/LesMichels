@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=13" />
+  <link rel="stylesheet" href="style.css?v=14" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -50,7 +50,10 @@
         <aside class="tl-sidebar" id="tl-sidebar">
           <div class="tl-sidebar-header">
             <span class="tl-sidebar-title">Tier Lists</span>
-            <button id="tl-btn-new" class="tl-btn-new" title="Nouvelle tier list">+</button>
+            <div class="tl-sidebar-header-btns">
+              <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Nouveau dossier">+ dossier</button>
+              <button id="tl-btn-new" class="tl-btn-new" title="Nouvelle tier list">+</button>
+            </div>
           </div>
           <div id="tl-list" class="tl-list"></div>
           <button id="tl-btn-show-archived" class="tl-btn-archived-toggle">📦 Archivées</button>
@@ -83,6 +86,7 @@
                   <input type="range" id="tl-img-size-slider" min="48" max="180" value="80" class="tl-slider" />
                 </label>
                 <button class="tl-toolbar-btn tl-btn-add-tier" id="tl-btn-add-tier">+ Tier</button>
+                <button class="tl-toolbar-btn tl-btn-undo" id="tl-btn-undo" title="Annuler la dernière action" disabled>↩ Annuler</button>
                 <button class="tl-toolbar-btn" id="tl-btn-import-images">📁 Images</button>
                 <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
                 <button class="tl-toolbar-btn tl-btn-export" id="tl-btn-export">⬇ Export PNG</button>
@@ -246,7 +250,7 @@
         <button class="modal-close" id="tl-modal-tier-close">✕</button>
       </div>
       <div class="modal-body">
-        <input type="text" id="tl-modal-tier-label" class="modal-text-input" placeholder="Label du tier (ex: S, A, B...)" maxlength="20" />
+        <input type="text" id="tl-modal-tier-label" class="modal-text-input" placeholder="Label du tier (ex: S, A, B...)" />
         <div class="tl-color-picker">
           <span class="tl-color-picker-label">Couleur</span>
           <div class="tl-color-swatches" id="tl-color-swatches"></div>
@@ -263,28 +267,38 @@
     </div>
   </div>
 
-  <!-- Modal gestion tierlist (double clic sur onglet) -->
-  <div id="tl-modal-manage" class="modal-overlay hidden">
-    <div class="modal-box tl-modal-manage-box">
+  <!-- Menu contextuel tierlist (double clic sur onglet) -->
+  <div id="tl-modal-manage" class="tl-ctx-modal hidden">
+    <div class="tl-ctx-modal-title" id="tl-modal-manage-title">Options</div>
+    <div class="tl-manage-actions" id="tl-manage-actions">
+      <button class="tl-manage-btn" id="tl-modal-manage-rename">✏ Renommer</button>
+      <button class="tl-manage-btn" id="tl-modal-manage-duplicate">⎘ Dupliquer</button>
+      <button class="tl-manage-btn tl-manage-btn-archive" id="tl-modal-manage-archive">📦 Archiver</button>
+    </div>
+  </div>
+
+  <!-- Modal nouveau/renommer dossier -->
+  <div id="tl-modal-folder" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
       <div class="modal-header">
-        <h3 id="tl-modal-manage-title">Options</h3>
-        <button class="modal-close" id="tl-modal-manage-close">✕</button>
+        <h3 id="tl-modal-folder-title">Nouveau dossier</h3>
+        <button class="modal-close" id="tl-modal-folder-close">✕</button>
       </div>
-      <div class="modal-body" style="gap:0">
-        <div class="tl-manage-actions">
-          <button class="tl-manage-btn" id="tl-modal-manage-rename">✏ Renommer</button>
-          <button class="tl-manage-btn" id="tl-modal-manage-duplicate">⎘ Dupliquer</button>
-          <button class="tl-manage-btn tl-manage-btn-archive" id="tl-modal-manage-archive">📦 Archiver</button>
+      <div class="modal-body">
+        <input type="text" id="tl-modal-folder-input" class="modal-text-input" placeholder="Nom du dossier..." maxlength="60" />
+        <div class="modal-actions">
+          <button class="btn-action" id="tl-modal-folder-confirm">Créer</button>
+          <button class="btn-action btn-secondary" id="tl-modal-folder-cancel">Annuler</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Modal tierlists archivées -->
+  <!-- Modal archives (tierlists + dossiers) -->
   <div id="tl-modal-archived" class="modal-overlay hidden">
     <div class="modal-box">
       <div class="modal-header">
-        <h3>Tier lists archivées</h3>
+        <h3>Archives</h3>
         <button class="modal-close" id="tl-modal-archived-close">✕</button>
       </div>
       <div id="tl-archived-list" class="archived-themes-list"></div>
@@ -516,6 +530,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>
