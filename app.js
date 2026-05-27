@@ -192,6 +192,10 @@ function migrateState(raw) {
         if (g.title === undefined) g.title = '';
         if (g.locked === undefined) g.locked = false;
         if (g.textColor === undefined) g.textColor = '';
+        // Migration : s'assurer que le tableau de cases est toujours de taille MAX_SIZE²
+        // pour permettre la restauration des cases lors d'un ré-agrandissement
+        if (!g.grid) g.grid = [];
+        while (g.grid.length < 25) g.grid.push({ elementId: null, checked: false });
       });
     });
   });
@@ -958,7 +962,7 @@ function renderGridToCanvas(t, g) {
   ctx.textBaseline = 'middle';
   ctx.fillText(`${t.name}  —  ${g.name}`, 8, offsetY + headerH / 2);
 
-  const { indices: bingoIdx } = getBingoResult(n, g.grid);
+  const { indices: bingoIdx } = getBingoResult(n, g.grid.slice(0, n * n));
   const scale = _localFontScale;
 
   for (let i = 0; i < n * n; i++) {
@@ -1180,8 +1184,8 @@ function createGrid(name) {
   const s = activeSubtheme();
   if (!s) return;
   const g = defaultGrid(name);
-  const n = g.gridSize;
-  g.grid  = Array.from({ length: n * n }, () => ({ elementId: null, checked: false }));
+  // Initialiser toujours MAX_SIZE² cases pour permettre la restauration lors d'un ré-agrandissement
+  g.grid  = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false }));
   s.grids.push(g);
   s.activeGridId = g.id;
   // Sélectionner automatiquement la nouvelle grille
@@ -1448,10 +1452,16 @@ function generateOneGrid(t, g) {
   const pool = shuffle(active).slice(0, cellCount);
   // Utiliser les cases cochées de toutes les grilles (état partagé)
   const globalChecked = getGlobalCheckedElementIds(t);
-  g.grid = Array.from({ length: cellCount }, (_, i) => ({
-    elementId: pool[i] ? pool[i].id : null,
-    checked: pool[i] ? globalChecked.has(pool[i].id) : false,
-  }));
+  // S'assurer que le tableau est au moins de taille MAX_SIZE² pour préserver les cases cachées
+  const maxCells = MAX_SIZE * MAX_SIZE;
+  while (g.grid.length < maxCells) g.grid.push({ elementId: null, checked: false });
+  // Ne remplacer que les n×n premières cases, les suivantes sont conservées
+  for (let i = 0; i < cellCount; i++) {
+    g.grid[i] = {
+      elementId: pool[i] ? pool[i].id : null,
+      checked: pool[i] ? globalChecked.has(pool[i].id) : false,
+    };
+  }
   return true;
 }
 
@@ -1480,7 +1490,11 @@ function generateGrid() {
 function resetGrid() {
   const g = activeGrid();
   if (!g) return;
-  g.grid = g.grid.map(cell => ({ ...cell, checked: false }));
+  // Ne réinitialiser que les cases visibles (n×n), pas les cases mémorisées hors grille
+  const cellCount = g.gridSize * g.gridSize;
+  for (let i = 0; i < cellCount; i++) {
+    if (g.grid[i]) g.grid[i] = { ...g.grid[i], checked: false };
+  }
   saveState();
   renderGrid();
 }
@@ -1493,14 +1507,9 @@ function changeSize(delta) {
   if (newSize < MIN_SIZE || newSize > MAX_SIZE) return;
 
   g.gridSize = newSize;
-  const cellCount = newSize * newSize;
-
-  if (g.grid.length < cellCount) {
-    while (g.grid.length < cellCount) {
-      g.grid.push({ elementId: null, checked: false });
-    }
-  } else {
-    g.grid = g.grid.slice(0, cellCount);
+  // S'assurer que le tableau est toujours de taille MAX_SIZE² — on ne tronque jamais
+  while (g.grid.length < MAX_SIZE * MAX_SIZE) {
+    g.grid.push({ elementId: null, checked: false });
   }
 
   saveState();
@@ -1551,7 +1560,7 @@ const manualMode = false;
 function buildSingleGrid(t, g, isActive) {
   const n = g.gridSize;
   const scale = _localFontScale;
-  const { indices: bingoIndices, lines: bingoLines } = getBingoResult(n, g.grid);
+  const { indices: bingoIndices, lines: bingoLines } = getBingoResult(n, g.grid.slice(0, n * n));
 
   const wrapper = document.createElement('div');
   wrapper.className = 'grid-view-wrapper';
@@ -1619,15 +1628,16 @@ function buildSingleGrid(t, g, isActive) {
     const newSize = gNow.gridSize + delta;
     if (newSize < MIN_SIZE || newSize > MAX_SIZE) return;
     gNow.gridSize = newSize;
-    const cellCount = newSize * newSize;
-    if (gNow.grid.length < cellCount) {
-      while (gNow.grid.length < cellCount) gNow.grid.push({ elementId: null, checked: false });
-    } else {
-      gNow.grid = gNow.grid.slice(0, cellCount);
-    }
+    const maxCells = MAX_SIZE * MAX_SIZE;
+    // On s'assure que le tableau a toujours MAX_SIZE² cases pour pouvoir restaurer
+    // les cases lors d'un ré-agrandissement — on ne tronque jamais
+    while (gNow.grid.length < maxCells) gNow.grid.push({ elementId: null, checked: false });
     saveState();
     renderGrid();
   };
+
+  const globalLocked = !!t.locked;
+  const gridLocked = g.locked || globalLocked;
 
   btnSzMinus.addEventListener('click', () => doResize(-1));
   btnSzPlus.addEventListener('click', () => doResize(+1));
@@ -1635,9 +1645,6 @@ function buildSingleGrid(t, g, isActive) {
   sizeCtrl.appendChild(szDisplay);
   sizeCtrl.appendChild(btnSzPlus);
   subCtrl.appendChild(sizeCtrl);
-
-  const globalLocked = !!t.locked;
-  const gridLocked = g.locked || globalLocked;
 
   const lblLock = document.createElement('label');
   lblLock.className = 'subgrid-lock-label';
@@ -1707,7 +1714,10 @@ function buildSingleGrid(t, g, isActive) {
   gridEl.className = 'bingo-grid';
   gridEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
 
-  g.grid.forEach((cell, i) => {
+  // On n'itère que sur les n×n premières cases (le tableau peut être plus grand
+  // pour préserver les cases cachées lors d'une réduction temporaire de taille)
+  const visibleCells = g.grid.slice(0, n * n);
+  visibleCells.forEach((cell, i) => {
     const div = document.createElement('div');
     div.className = 'bingo-cell';
     div.dataset.index = i;
@@ -1995,9 +2005,52 @@ tabBtns.forEach(btn => {
 });
 
 // ──────────────────────────────────────────────
+// Modale — ajout en lot de cases
+// ──────────────────────────────────────────────
+const modalBulkAdd       = document.getElementById('modal-bulk-add-elements');
+const bulkAddCountInput  = document.getElementById('bulk-add-count-input');
+const btnConfirmBulkAdd  = document.getElementById('btn-confirm-bulk-add');
+const btnCancelBulkAdd   = document.getElementById('btn-cancel-bulk-add');
+const btnCloseBulkAdd    = document.getElementById('btn-close-bulk-add-modal');
+
+function openBulkAddModal() {
+  if (!activeTheme()) return;
+  bulkAddCountInput.value = '16';
+  modalBulkAdd.classList.remove('hidden');
+  setTimeout(() => { bulkAddCountInput.focus(); bulkAddCountInput.select(); }, 50);
+}
+
+function closeBulkAddModal() {
+  modalBulkAdd.classList.add('hidden');
+}
+
+function confirmBulkAdd() {
+  const t = activeTheme();
+  if (!t) return;
+  const count = Math.max(1, Math.min(100, parseInt(bulkAddCountInput.value) || 1));
+  const startN = t.elements.filter(e => !e.archived).length + 1;
+  for (let i = 0; i < count; i++) {
+    t.elements.push({ id: uid(), text: `case ${startN + i}`, archived: false });
+  }
+  closeBulkAddModal();
+  saveState();
+  renderElements();
+  renderGrid();
+}
+
+btnConfirmBulkAdd.addEventListener('click', confirmBulkAdd);
+btnCancelBulkAdd.addEventListener('click', closeBulkAddModal);
+btnCloseBulkAdd.addEventListener('click', closeBulkAddModal);
+modalBulkAdd.addEventListener('click', e => { if (e.target === modalBulkAdd) closeBulkAddModal(); });
+bulkAddCountInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmBulkAdd();
+  if (e.key === 'Escape') closeBulkAddModal();
+});
+
+// ──────────────────────────────────────────────
 // Écouteurs d'événements
 // ──────────────────────────────────────────────
-btnAdd.addEventListener('click', addElement);
+btnAdd.addEventListener('click', openBulkAddModal);
 inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') addElement(); });
 
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
@@ -3211,9 +3264,14 @@ _dbBingo.on('value', snapshot => {
         if (g.hidden === undefined)   g.hidden   = false;
         if (g.title === undefined)    g.title    = '';
         if (g.locked === undefined)   g.locked   = false;
+        // Le tableau doit avoir au moins gridSize² cases (il peut en avoir plus pour mémoriser
+        // les cases cachées lors d'une réduction de taille — on ne le réinitialise que si vide)
         const expected = g.gridSize * g.gridSize;
-        if (!g.grid || g.grid.length !== expected) {
-          g.grid = Array.from({ length: expected }, () => ({ elementId: null, checked: false }));
+        if (!g.grid || g.grid.length === 0) {
+          g.grid = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false }));
+        } else {
+          // Compléter jusqu'à MAX_SIZE² sans écraser les cases existantes
+          while (g.grid.length < MAX_SIZE * MAX_SIZE) g.grid.push({ elementId: null, checked: false });
         }
       });
       const nonArchivedGrids = s.grids.filter(g => !g.archived);

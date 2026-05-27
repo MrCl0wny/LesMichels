@@ -374,6 +374,24 @@
     </div>
   </div>
 
+  <!-- Modal ajout en lot de cases -->
+  <div id="modal-bulk-add-elements" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Ajouter des cases</h3>
+        <button class="modal-close" id="btn-close-bulk-add-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <label for="bulk-add-count-input" style="display:block;margin-bottom:8px;color:var(--text-dim);font-size:0.9rem;">Combien de cases à ajouter ?</label>
+        <input type="number" id="bulk-add-count-input" class="modal-text-input" min="1" max="100" value="1" />
+        <div class="modal-actions">
+          <button class="btn-action" id="btn-confirm-bulk-add">Ajouter</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-bulk-add">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal nouveau sous-thème -->
   <div id="modal-new-subtheme" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
