@@ -171,9 +171,10 @@ body {
   min-width: 38px;
 }
 
-.ctrl-row-themes { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-.ctrl-row-grids  { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-.ctrl-row-toolbar { padding-bottom: 4px; }
+.ctrl-row-themes    { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.ctrl-row-subthemes { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.ctrl-row-grids     { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.ctrl-row-toolbar   { padding-bottom: 4px; }
 
 /* Bouton collapse du panneau */
 .btn-control-panel-collapse {
@@ -268,6 +269,69 @@ body {
   flex-shrink: 0;
 }
 .btn-archived-themes:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
+
+/* ── Sous-thèmes ── */
+.subthemes-list {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+}
+.subtheme-tab {
+  font-size: 0.78rem !important;
+  opacity: 0.88;
+}
+.subtheme-tab.active {
+  background: rgba(93,160,232,0.15);
+  border-color: #5da0e8;
+  color: #8ec8f8;
+}
+.subtheme-tab:hover { border-color: #5da0e8 !important; }
+
+.btn-new-subtheme {
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: #5da0e8;
+  font-family: Arial, sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.btn-new-subtheme:hover { border-color: #5da0e8; background: rgba(93,160,232,0.1); }
+
+.btn-archived-subthemes {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-family: Arial, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-archived-subthemes:hover { border-color: #5da0e8; color: #8ec8f8; background: rgba(93,160,232,0.1); }
+
+/* ── Boutons de réordonnancement des grilles ── */
+.btn-grid-move {
+  opacity: 0.55;
+  font-size: 0.65rem !important;
+  padding: 3px 6px !important;
+}
+.btn-grid-move:hover { opacity: 1; }
 
 /* ── Bingo layout ── */
 .bingo-layout {
@@ -461,11 +525,8 @@ body {
   padding: 7px 10px;
   transition: var(--transition);
   animation: slide-in 0.2s ease;
-  cursor: grab;
 }
-.element-item:active { cursor: grabbing; }
 .element-item:hover { border-color: var(--surface-3); background: var(--surface-3); }
-.element-item.dragging { opacity: 0.5; }
 
 @keyframes slide-in {
   from { opacity: 0; transform: translateY(-6px); }
@@ -485,6 +546,13 @@ body {
   border-color: transparent;
 }
 .element-item.placed .element-text { color: var(--text-faint); }
+
+/* Case cochée dans une grille du sous-thème */
+.element-item.elem-checked {
+  background: rgba(232, 197, 71, 0.14);
+  border-color: var(--accent-dim);
+}
+.element-item.elem-checked .element-text { color: var(--accent); }
 
 .element-edit-input {
   flex: 1;
@@ -560,10 +628,6 @@ body {
   margin: 0;
 }
 
-.grid-tab-selected {
-  border-color: var(--accent-dim);
-  background: var(--accent-glow);
-}
 
 .grid-tab.dragging { opacity: 0.4; }
 .grid-tab.drag-over-tab { border-color: var(--accent); background: var(--accent-glow); }
@@ -712,11 +776,11 @@ body {
 }
 .btn-action:hover { opacity: 0.85; }
 .btn-action.btn-reset {
-  background: var(--surface-2);
-  color: var(--text-muted);
-  border: 1px solid var(--border);
+  background: #8b1a0f;
+  color: #f5c0bb;
+  border: 1px solid #a82015;
 }
-.btn-action.btn-reset:hover { border-color: var(--danger); color: var(--danger); background: var(--surface-3); }
+.btn-action.btn-reset:hover { background: #a82015; color: #fff; border-color: #c42a1a; }
 .btn-action.btn-disabled,
 .btn-action:disabled {
   opacity: 0.4;
@@ -724,12 +788,39 @@ body {
   pointer-events: none;
 }
 
+/* Bouton Générer global */
+.btn-action.btn-generate-global {
+  background: #1a4f8b;
+  color: #b8d4f5;
+  border: 1px solid #2060a8;
+}
+.btn-action.btn-generate-global:hover { background: #2060a8; color: #fff; border-color: #2a72c4; }
+
+/* Bouton Générer sous-grille (🎲) */
+.btn-action.btn-subgrid-gen {
+  background: #1a4f8b;
+  color: #b8d4f5;
+  border: 1px solid #2060a8;
+}
+.btn-action.btn-subgrid-gen:hover { background: #2060a8; color: #fff; border-color: #2a72c4; }
+
 .btn-action.btn-screenshot-bingo {
   background: var(--surface-2);
   color: var(--text-muted);
   border: 1px solid var(--border);
 }
 .btn-action.btn-screenshot-bingo:hover { border-color: var(--success); color: var(--success); background: rgba(71,200,135,0.1); }
+
+/* ── Groupe Bloquer / Générer / Reset ── */
+.lock-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px 4px 8px;
+  background: rgba(255,255,255,0.025);
+}
 
 /* ── Checkbox bloquer génération ── */
 .lock-generate-label {
@@ -777,8 +868,8 @@ body {
   gap: 16px;
 }
 
-.grid-views-2 { gap: 0; }
-.grid-views-3 { gap: 0; }
+.grid-views-2 { gap: 12px; }
+.grid-views-3 { gap: 8px; }
 
 .grid-view-wrapper {
   display: flex;
@@ -788,20 +879,21 @@ body {
   flex: 1;
   min-width: 0;
   padding: 12px 16px;
-  border-radius: var(--radius);
-}
-
-.grid-views-2 .grid-view-wrapper,
-.grid-views-3 .grid-view-wrapper {
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.22);
+  transition: opacity 0.15s, border-color 0.15s;
 }
 
-.grid-views-2 .grid-view-wrapper + .grid-view-wrapper,
-.grid-views-3 .grid-view-wrapper + .grid-view-wrapper {
-  border-left: 2px solid var(--accent-dim, #5a4fcf);
-  margin-left: 2px;
+.grid-view-wrapper.grid-wrapper-dragging {
+  opacity: 0.45;
+  cursor: grabbing !important;
+}
+
+.grid-view-wrapper.grid-wrapper-drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
 .grid-view-title-row {
@@ -868,18 +960,59 @@ body {
   cursor: pointer;
 }
 
+/* Cadre discret autour de Bloquer + Générer (par grille) */
+.subgrid-lock-gen-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  background: rgba(255,255,255,0.02);
+}
+
+/* Contrôle taille par grille */
+.subgrid-size-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-family: 'Space Mono', monospace;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 6px;
+}
+
+.subgrid-size-display {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text);
+  min-width: 28px;
+  text-align: center;
+}
+
+.size-btn-sm {
+  width: 22px !important;
+  height: 22px !important;
+  font-size: 0.9rem !important;
+}
+
+
 .bingo-grid {
   display: grid;
   gap: 6px;
   aspect-ratio: 1 / 1;
-  height: 60vh;
+  height: 70vh;
   width: auto;
   flex-shrink: 0;
   overflow: hidden;
 }
 
-.grid-views-2 .bingo-grid { height: 50vh; }
-.grid-views-3 .bingo-grid { height: 42vh; }
+.grid-views-2 .bingo-grid { height: 58vh; }
+.grid-views-3 .bingo-grid { height: 48vh; }
 
 .bingo-cell {
   aspect-ratio: 1;
@@ -1198,11 +1331,11 @@ body {
   right: 16px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 6px 12px 6px 6px;
+  padding: 5px 8px 5px 5px;
   z-index: 100;
   box-shadow: 0 2px 12px rgba(0,0,0,0.4);
 }
@@ -1212,14 +1345,7 @@ body {
   border-radius: 50%;
   object-fit: cover;
 }
-.user-name {
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.user-name { display: none; }
 .btn-signout {
   background: none;
   border: none;

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=6" />
+  <link rel="stylesheet" href="style.css?v=8" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -115,6 +115,14 @@
             <button class="btn-archived-themes" id="btn-archived-themes" title="Thèmes archivés">📦</button>
           </div>
 
+          <!-- Ligne 1b : Sous-thèmes -->
+          <div class="ctrl-row ctrl-row-subthemes">
+            <span class="ctrl-row-label">Sous-thème</span>
+            <div id="subthemes-list" class="subthemes-list"></div>
+            <button class="btn-new-subtheme" id="btn-new-subtheme" title="Nouveau sous-thème"><span class="btn-plus-green">+</span></button>
+            <button class="btn-archived-subthemes" id="btn-archived-subthemes" title="Sous-thèmes archivés">📦</button>
+          </div>
+
           <!-- Ligne 2 : Grilles -->
           <div class="ctrl-row ctrl-row-grids">
             <span class="ctrl-row-label">Grille</span>
@@ -126,25 +134,25 @@
           <!-- Ligne 3 : Toolbar -->
           <div class="ctrl-row ctrl-row-toolbar">
             <div class="grid-size-control">
-              <label>Taille</label>
-              <button class="size-btn" id="btn-size-minus">−</button>
-              <span id="grid-size-display">4×4</span>
-              <button class="size-btn" id="btn-size-plus">+</button>
-            </div>
-            <div class="grid-size-control">
               <label>Texte</label>
               <button class="size-btn" id="btn-font-minus">−</button>
               <input type="number" id="font-scale-input" class="scale-input" min="50" max="300" step="10" value="100" title="Taille du texte en %" />
               <span class="scale-unit">%</span>
               <button class="size-btn" id="btn-font-plus">+</button>
             </div>
+            <!-- Champ caché pour compatibilité JS (sizeDisplay toujours référencé) -->
+            <span id="grid-size-display" style="display:none">4×4</span>
+            <button class="size-btn" id="btn-size-minus" style="display:none">−</button>
+            <button class="size-btn" id="btn-size-plus" style="display:none">+</button>
             <div class="grid-toolbar-sep"></div>
-            <label class="lock-generate-label" title="Bloquer la génération et le reset de toutes les grilles">
-              <input type="checkbox" id="chk-lock-generate" />
-              Bloquer
-            </label>
-            <button class="btn-action" id="btn-generate">🎲 Générer</button>
-            <button class="btn-action btn-reset" id="btn-reset">↺ Reset</button>
+            <div class="lock-group">
+              <label class="lock-generate-label" title="Bloquer la génération et le reset de toutes les grilles">
+                <input type="checkbox" id="chk-lock-generate" />
+                Bloquer
+              </label>
+              <button class="btn-action btn-generate-global" id="btn-generate">🎲 Générer</button>
+              <button class="btn-action btn-reset" id="btn-reset">↺ Reset</button>
+            </div>
             <button class="btn-action btn-screenshot-bingo" id="btn-screenshot-bingo" title="Copier la grille dans le presse-papier">📷 Capture</button>
           </div>
 
@@ -356,6 +364,58 @@
     </div>
   </div>
 
+  <!-- Modal nouveau sous-thème -->
+  <div id="modal-new-subtheme" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Nouveau sous-thème</h3>
+        <button class="modal-close" id="btn-close-new-subtheme-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="new-subtheme-name-input" class="modal-text-input" placeholder="Nom du sous-thème..." maxlength="40" />
+        <div class="modal-actions">
+          <button class="btn-action" id="btn-confirm-new-subtheme">Créer</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-new-subtheme">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal sous-thèmes archivés -->
+  <div id="modal-archived-subthemes" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Sous-thèmes archivés</h3>
+        <button class="modal-close" id="btn-close-archived-subthemes-modal">✕</button>
+      </div>
+      <div id="archived-subthemes-list" class="archived-themes-list"></div>
+    </div>
+  </div>
+
+  <!-- Modal renommer sous-thème -->
+  <div id="modal-rename-subtheme" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Renommer le sous-thème</h3>
+        <button class="modal-close" id="btn-close-rename-subtheme-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="rename-subtheme-input" class="modal-text-input modal-rename-input" placeholder="Nom du sous-thème..." maxlength="40" />
+        <div class="modal-actions">
+          <button class="btn-action" id="btn-confirm-rename-subtheme">Renommer</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-rename-subtheme">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Menu contextuel sous-thème (double-clic) -->
+  <div id="ctx-menu-subtheme" class="ctx-menu hidden">
+    <button class="ctx-menu-item" id="ctx-subtheme-rename">✎ Renommer</button>
+    <button class="ctx-menu-item" id="ctx-subtheme-duplicate">❐ Dupliquer</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-archive">📦 Archiver</button>
+  </div>
+
   <!-- Modal nouvelle grille -->
   <div id="modal-new-grid" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -394,7 +454,6 @@
   <!-- Bouton utilisateur connecté (header) -->
   <div id="user-badge" class="user-badge hidden">
     <img id="user-avatar" class="user-avatar" src="" alt="" />
-    <span id="user-name" class="user-name"></span>
     <button id="btn-signout" class="btn-signout" title="Se déconnecter">↪</button>
   </div>
 
@@ -412,6 +471,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>

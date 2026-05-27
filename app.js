@@ -15,7 +15,6 @@ function setupAuth() {
   const btnGoogle    = document.getElementById('btn-google-signin');
   const userBadge    = document.getElementById('user-badge');
   const userAvatar   = document.getElementById('user-avatar');
-  const userName     = document.getElementById('user-name');
   const btnSignout   = document.getElementById('btn-signout');
 
   btnGoogle.addEventListener('click', () => {
@@ -38,7 +37,7 @@ function setupAuth() {
       userBadge.classList.remove('hidden');
       userAvatar.src = user.photoURL || '';
       userAvatar.style.display = user.photoURL ? 'block' : 'none';
-      userName.textContent = user.displayName || user.email;
+      // userName masqué — on n'affiche plus le texte
     } else {
       currentUser   = null;
       currentPseudo = null;
@@ -63,18 +62,26 @@ const _dbBingo = window._db.ref('bingo');
 const _LOCAL_FONT_SCALE_KEY = 'lesmichels_bingo_fontscale';
 let _localFontScale = parseFloat(localStorage.getItem(_LOCAL_FONT_SCALE_KEY)) || 1;
 
+// Le thème actif et le sous-thème actif sont locaux (par navigateur), pas partagés via Firebase
+const _LOCAL_ACTIVE_THEME_KEY    = 'lesmichels_bingo_activetheme';
+const _LOCAL_ACTIVE_SUBTHEME_KEY = 'lesmichels_bingo_activesubtheme';
+function _loadLocalActiveThemeId()    { return localStorage.getItem(_LOCAL_ACTIVE_THEME_KEY) || null; }
+function _loadLocalActiveSubthemeId() { return localStorage.getItem(_LOCAL_ACTIVE_SUBTHEME_KEY) || null; }
+function _saveLocalActiveThemeId(id)  { if (id) localStorage.setItem(_LOCAL_ACTIVE_THEME_KEY, id); else localStorage.removeItem(_LOCAL_ACTIVE_THEME_KEY); }
+function _saveLocalActiveSubthemeId(id) { if (id) localStorage.setItem(_LOCAL_ACTIVE_SUBTHEME_KEY, id); else localStorage.removeItem(_LOCAL_ACTIVE_SUBTHEME_KEY); }
+
 function saveLocalFontScale(scale) {
   _localFontScale = Math.max(0.5, Math.min(3, scale));
   localStorage.setItem(_LOCAL_FONT_SCALE_KEY, _localFontScale);
 }
 
 // IDs des grilles sélectionnées (affichées simultanément, max 3, local non partagé)
-// Stocké par thème : { [themeId]: [gridId, ...] }
-const _LOCAL_SELECTED_GRIDS_KEY = 'lesmichels_bingo_selectedgrids_v2';
+// Stocké par sous-thème : { [subthemeId]: [gridId, ...] }
+const _LOCAL_SELECTED_GRIDS_KEY = 'lesmichels_bingo_selectedgrids_v3';
 let _selectedGridIds = [];
-let _selectedGridsByTheme = {};
+let _selectedGridsBySubtheme = {};
 
-function _loadSelectedGridsByTheme() {
+function _loadSelectedGridsBySubtheme() {
   try {
     const raw = localStorage.getItem(_LOCAL_SELECTED_GRIDS_KEY);
     return raw ? JSON.parse(raw) : {};
@@ -83,30 +90,37 @@ function _loadSelectedGridsByTheme() {
 
 function saveLocalSelectedGrids(ids) {
   _selectedGridIds = ids.slice(0, 3);
-  const themeId = state && state.activeThemeId;
-  if (themeId) _selectedGridsByTheme[themeId] = _selectedGridIds.slice();
-  localStorage.setItem(_LOCAL_SELECTED_GRIDS_KEY, JSON.stringify(_selectedGridsByTheme));
+  const sub = activeSubtheme();
+  if (sub) _selectedGridsBySubtheme[sub.id] = _selectedGridIds.slice();
+  localStorage.setItem(_LOCAL_SELECTED_GRIDS_KEY, JSON.stringify(_selectedGridsBySubtheme));
 }
 
-function loadLocalSelectedGridsForTheme(themeId) {
-  return (_selectedGridsByTheme[themeId] || []).slice();
+function loadLocalSelectedGridsForSubtheme(subthemeId) {
+  return (_selectedGridsBySubtheme[subthemeId] || []).slice();
 }
 
-_selectedGridsByTheme = _loadSelectedGridsByTheme();
+_selectedGridsBySubtheme = _loadSelectedGridsBySubtheme();
+
+function defaultSubtheme(name) {
+  return { id: uid(), name, grids: [], activeGridId: null, archived: false };
+}
 
 function defaultTheme(name) {
+  const subtheme = defaultSubtheme('Principal');
   return {
     id: uid(),
     name,
     elements: [],
-    grids: [],
+    subthemes: [subtheme],
+    activeSubthemeId: subtheme.id,
+    grids: [],        // gardé pour compatibilité migration
     activeGridId: null,
     locked: false,
   };
 }
 
 function defaultGrid(name) {
-  return { id: uid(), name, gridSize: 4, grid: [], archived: false, hidden: false, title: '' };
+  return { id: uid(), name, gridSize: 4, grid: [], archived: false, hidden: false, title: '', textColor: '' };
 }
 
 function migrateState(raw) {
@@ -116,9 +130,13 @@ function migrateState(raw) {
   if (raw.elements && raw.grids && !raw.themes) {
     const theme = defaultTheme('Soirée 1');
     theme.elements = raw.elements || [];
-    theme.grids    = raw.grids || [];
-    theme.activeGridId = raw.activeGridId || null;
-    return { themes: [theme], activeThemeId: theme.id };
+    // Migrer les grilles dans le sous-thème par défaut
+    const sub = theme.subthemes[0];
+    sub.grids = raw.grids || [];
+    sub.activeGridId = raw.activeGridId || null;
+    theme.grids = [];
+    theme.activeGridId = null;
+    return { themes: [theme] };
   }
 
   if (!raw.themes || raw.themes.length === 0) return null;
@@ -128,15 +146,46 @@ function migrateState(raw) {
     delete t.cellFont;
     delete t.cellFontScale;
     if (t.locked === undefined) t.locked = false;
-    if (t.grids) {
-      t.grids.forEach(g => {
+
+    // Migration : si le thème n'a pas encore de sous-thèmes, créer un sous-thème par défaut
+    // avec les grilles existantes
+    if (!t.subthemes || t.subthemes.length === 0) {
+      const sub = defaultSubtheme('Principal');
+      sub.grids = t.grids || [];
+      sub.activeGridId = t.activeGridId || null;
+      t.subthemes = [sub];
+      t.activeSubthemeId = sub.id;
+      t.grids = [];
+      t.activeGridId = null;
+    } else {
+      t.subthemes.forEach(s => {
+        if (s.archived === undefined) s.archived = false;
+        if (!s.grids) s.grids = [];
+        if (!s.activeGridId) s.activeGridId = null;
+        s.grids.forEach(g => {
+          if (g.archived === undefined) g.archived = false;
+          if (g.hidden === undefined) g.hidden = false;
+          if (g.title === undefined) g.title = '';
+          if (g.locked === undefined) g.locked = false;
+          if (g.textColor === undefined) g.textColor = '';
+        });
+      });
+    }
+
+    // Normaliser les grilles dans chaque sous-thème
+    t.subthemes.forEach(s => {
+      s.grids.forEach(g => {
         if (g.archived === undefined) g.archived = false;
         if (g.hidden === undefined) g.hidden = false;
         if (g.title === undefined) g.title = '';
         if (g.locked === undefined) g.locked = false;
+        if (g.textColor === undefined) g.textColor = '';
       });
-    }
+    });
   });
+
+  // Supprimer activeThemeId de Firebase (il est désormais local)
+  delete raw.activeThemeId;
 
   return raw;
 }
@@ -144,22 +193,31 @@ function migrateState(raw) {
 let state = initState();
 let _bingoRemoteUpdate = false;
 let _firebaseReady = false;
+// activeThemeId et activeSubthemeId sont locaux (par navigateur)
+let _localActiveThemeId    = _loadLocalActiveThemeId();
+let _localActiveSubthemeId = _loadLocalActiveSubthemeId();
 
 function initState() {
-  return { themes: [], activeThemeId: null };
+  return { themes: [] };
 }
 
 function activeTheme() {
   if (!state.themes || state.themes.length === 0) return null;
-  return state.themes.find(t => t.id === state.activeThemeId) || null;
+  return state.themes.find(t => t.id === _localActiveThemeId) || null;
+}
+
+function activeSubtheme() {
+  const t = activeTheme();
+  if (!t || !t.subthemes || t.subthemes.length === 0) return null;
+  return t.subthemes.find(s => s.id === _localActiveSubthemeId) || null;
 }
 
 function activeGrid() {
-  const t = activeTheme();
-  if (!t) return null;
-  if (t.activeGridId) return t.grids.find(g => g.id === t.activeGridId) || null;
+  const s = activeSubtheme();
+  if (!s) return null;
+  if (s.activeGridId) return s.grids.find(g => g.id === s.activeGridId) || null;
   return _selectedGridIds.length > 0
-    ? t.grids.find(g => g.id === _selectedGridIds[0]) || null
+    ? s.grids.find(g => g.id === _selectedGridIds[0]) || null
     : null;
 }
 
@@ -186,7 +244,10 @@ function sanitizeForFirebase(obj) {
 
 function saveState() {
   if (_bingoRemoteUpdate || !_firebaseReady) return;
-  _dbBingo.set(sanitizeForFirebase(state)).catch(e => console.warn('Bingo save error:', e));
+  // activeThemeId et activeSubthemeId sont locaux → ne pas les écrire dans Firebase
+  const toSave = sanitizeForFirebase(state);
+  delete toSave.activeThemeId;
+  _dbBingo.set(toSave).catch(e => console.warn('Bingo save error:', e));
 }
 
 // ──────────────────────────────────────────────
@@ -277,8 +338,16 @@ function buildElementItem(el, isArchived) {
   // En mode manuel, griser les éléments déjà placés sur la grille
   const g = activeGrid();
   const isPlaced = manualMode && g && g.grid.some(cell => cell.elementId === el.id);
-  li.className = 'element-item' + (isArchived ? ' archived' : '') + (isPlaced ? ' placed' : '');
+
+  // Vérifier si cet élément est coché dans au moins une grille du sous-thème actif
+  const s = activeSubtheme();
+  const isChecked = !isArchived && s && (s.grids || []).filter(gx => !gx.archived).some(
+    gx => gx.grid.some(c => c.elementId === el.id && c.checked)
+  );
+
+  li.className = 'element-item' + (isArchived ? ' archived' : '') + (isPlaced ? ' placed' : '') + (isChecked ? ' elem-checked' : '');
   li.dataset.id = el.id;
+  // Pas de drag & drop sur les cases
 
   const span = document.createElement('span');
   span.className = 'element-text';
@@ -286,13 +355,6 @@ function buildElementItem(el, isArchived) {
   li.appendChild(span);
 
   if (!isArchived) {
-    li.draggable = true;
-    li.addEventListener('dragstart', e => {
-      e.dataTransfer.setData('text/plain', el.id);
-      li.classList.add('dragging');
-    });
-    li.addEventListener('dragend', () => li.classList.remove('dragging'));
-
     span.title = 'Double-clic pour modifier';
     span.style.cursor = 'text';
     span.addEventListener('dblclick', e => { e.stopPropagation(); startEditElement(el.id, span); });
@@ -372,10 +434,13 @@ function deleteElement(id) {
   const t = activeTheme();
   if (!t) return;
   t.elements = t.elements.filter(e => e.id !== id);
-  t.grids.forEach(g => {
-    g.grid = g.grid.map(cell =>
-      cell.elementId === id ? { elementId: null, checked: false } : cell
-    );
+  // Vider cet élément dans toutes les grilles de tous les sous-thèmes
+  (t.subthemes || []).forEach(s => {
+    (s.grids || []).forEach(g => {
+      g.grid = g.grid.map(cell =>
+        cell.elementId === id ? { elementId: null, checked: false } : cell
+      );
+    });
   });
   saveState();
   renderElements();
@@ -406,26 +471,44 @@ function restoreElement(id) {
 function createTheme(name) {
   const t = defaultTheme(name);
   state.themes.push(t);
-  state.activeThemeId = t.id;
+  _localActiveThemeId = t.id;
+  _saveLocalActiveThemeId(t.id);
+  // Activer le premier sous-thème
+  const firstSub = t.subthemes[0];
+  _localActiveSubthemeId = firstSub.id;
+  _saveLocalActiveSubthemeId(firstSub.id);
+  _selectedGridIds = [];
   saveState();
   renderThemesList();
+  renderSubthemesList();
   renderElements();
   renderGridsList();
   renderGrid();
 }
 
 function switchTheme(id) {
-  state.activeThemeId = id;
-  _selectedGridIds = loadLocalSelectedGridsForTheme(id);
-  if (_selectedGridIds.length === 0) {
-    const t = state.themes.find(th => th.id === id);
-    if (t) {
-      const firstGrid = t.grids.find(g => !g.archived);
+  _localActiveThemeId = id;
+  _saveLocalActiveThemeId(id);
+  // Restaurer ou initialiser le sous-thème actif
+  const t = state.themes.find(th => th.id === id);
+  if (t && t.subthemes && t.subthemes.length > 0) {
+    const savedSubId = _loadLocalActiveSubthemeId();
+    const validSub = t.subthemes.find(s => s.id === savedSubId && !s.archived);
+    const sub = validSub || t.subthemes.find(s => !s.archived) || t.subthemes[0];
+    _localActiveSubthemeId = sub.id;
+    _saveLocalActiveSubthemeId(sub.id);
+    _selectedGridIds = loadLocalSelectedGridsForSubtheme(sub.id);
+    if (_selectedGridIds.length === 0) {
+      const firstGrid = sub.grids.find(g => !g.archived);
       if (firstGrid) _selectedGridIds = [firstGrid.id];
     }
+  } else {
+    _localActiveSubthemeId = null;
+    _saveLocalActiveSubthemeId(null);
+    _selectedGridIds = [];
   }
-  saveState();
   renderThemesList();
+  renderSubthemesList();
   renderElements();
   renderGridsList();
   renderGrid();
@@ -433,12 +516,18 @@ function switchTheme(id) {
 
 function deleteTheme(id) {
   state.themes = state.themes.filter(t => t.id !== id);
-  if (state.activeThemeId === id) {
+  if (_localActiveThemeId === id) {
     const remaining = state.themes.filter(t => !t.archived);
-    state.activeThemeId = remaining.length > 0 ? remaining[0].id : (state.themes[0]?.id || null);
+    const newActive = remaining.length > 0 ? remaining[0] : state.themes[0] || null;
+    _localActiveThemeId = newActive?.id || null;
+    _saveLocalActiveThemeId(_localActiveThemeId);
+    _localActiveSubthemeId = null;
+    _saveLocalActiveSubthemeId(null);
+    _selectedGridIds = [];
   }
   saveState();
   renderThemesList();
+  renderSubthemesList();
   renderElements();
   renderGridsList();
   renderGrid();
@@ -448,12 +537,17 @@ function archiveTheme(id) {
   const t = state.themes.find(t => t.id === id);
   if (!t) return;
   t.archived = !t.archived;
-  if (t.archived && state.activeThemeId === id) {
+  if (t.archived && _localActiveThemeId === id) {
     const remaining = state.themes.filter(x => !x.archived);
-    state.activeThemeId = remaining.length > 0 ? remaining[0].id : null;
+    _localActiveThemeId = remaining.length > 0 ? remaining[0].id : null;
+    _saveLocalActiveThemeId(_localActiveThemeId);
+    _localActiveSubthemeId = null;
+    _saveLocalActiveSubthemeId(null);
+    _selectedGridIds = [];
   }
   saveState();
   renderThemesList();
+  renderSubthemesList();
   renderElements();
   renderGridsList();
   renderGrid();
@@ -473,12 +567,23 @@ function duplicateTheme(id) {
   copy.id = uid();
   copy.name = src.name + ' (copie)';
   copy.archived = false;
-  copy.grids = copy.grids.map(g => ({ ...g, id: uid() }));
-  copy.activeGridId = copy.grids.find(g => !g.archived)?.id || null;
+  // Remap sous-thèmes et grilles
+  copy.subthemes = (copy.subthemes || []).map(s => {
+    const newSub = { ...s, id: uid(), grids: (s.grids || []).map(g => ({ ...g, id: uid() })) };
+    newSub.activeGridId = newSub.grids.find(g => !g.archived)?.id || null;
+    return newSub;
+  });
+  copy.activeSubthemeId = copy.subthemes[0]?.id || null;
   state.themes.push(copy);
-  state.activeThemeId = copy.id;
+  _localActiveThemeId = copy.id;
+  _saveLocalActiveThemeId(copy.id);
+  const firstSub = copy.subthemes.find(s => !s.archived) || copy.subthemes[0];
+  _localActiveSubthemeId = firstSub?.id || null;
+  _saveLocalActiveSubthemeId(_localActiveSubthemeId);
+  _selectedGridIds = [];
   saveState();
   renderThemesList();
+  renderSubthemesList();
   renderElements();
   renderGridsList();
   renderGrid();
@@ -498,7 +603,7 @@ function renderThemesList() {
 
   activeThemes.forEach(t => {
     const item = document.createElement('div');
-    item.className = 'theme-tab' + (t.id === state.activeThemeId ? ' active' : '');
+    item.className = 'theme-tab' + (t.id === _localActiveThemeId ? ' active' : '');
     item.dataset.id = t.id;
     item.draggable = true;
 
@@ -539,6 +644,269 @@ function renderThemesList() {
     themesList.appendChild(item);
   });
 }
+
+// ──────────────────────────────────────────────
+// Sous-thèmes
+// ──────────────────────────────────────────────
+const subthemesList       = document.getElementById('subthemes-list');
+const btnNewSubtheme      = document.getElementById('btn-new-subtheme');
+const btnArchivedSubthemes = document.getElementById('btn-archived-subthemes');
+
+function createSubtheme(name) {
+  const t = activeTheme();
+  if (!t) return;
+  if (!t.subthemes) t.subthemes = [];
+  const sub = defaultSubtheme(name);
+  t.subthemes.push(sub);
+  _localActiveSubthemeId = sub.id;
+  _saveLocalActiveSubthemeId(sub.id);
+  _selectedGridIds = [];
+  saveState();
+  renderSubthemesList();
+  renderGridsList();
+  renderGrid();
+}
+
+function switchSubtheme(id) {
+  _localActiveSubthemeId = id;
+  _saveLocalActiveSubthemeId(id);
+  _selectedGridIds = loadLocalSelectedGridsForSubtheme(id);
+  if (_selectedGridIds.length === 0) {
+    const t = activeTheme();
+    const sub = t && t.subthemes ? t.subthemes.find(s => s.id === id) : null;
+    if (sub) {
+      const firstGrid = sub.grids.find(g => !g.archived);
+      if (firstGrid) _selectedGridIds = [firstGrid.id];
+    }
+  }
+  renderSubthemesList();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
+function deleteSubtheme(id) {
+  const t = activeTheme();
+  if (!t || !t.subthemes) return;
+  t.subthemes = t.subthemes.filter(s => s.id !== id);
+  if (_localActiveSubthemeId === id) {
+    const remaining = t.subthemes.filter(s => !s.archived);
+    _localActiveSubthemeId = remaining.length > 0 ? remaining[0].id : (t.subthemes[0]?.id || null);
+    _saveLocalActiveSubthemeId(_localActiveSubthemeId);
+    _selectedGridIds = [];
+  }
+  saveState();
+  renderSubthemesList();
+  renderGridsList();
+  renderGrid();
+}
+
+function archiveSubtheme(id) {
+  const t = activeTheme();
+  if (!t || !t.subthemes) return;
+  const sub = t.subthemes.find(s => s.id === id);
+  if (!sub) return;
+  sub.archived = !sub.archived;
+  if (sub.archived && _localActiveSubthemeId === id) {
+    const remaining = t.subthemes.filter(s => !s.archived);
+    _localActiveSubthemeId = remaining.length > 0 ? remaining[0].id : null;
+    _saveLocalActiveSubthemeId(_localActiveSubthemeId);
+    _selectedGridIds = [];
+  }
+  saveState();
+  renderSubthemesList();
+  renderGridsList();
+  renderGrid();
+}
+
+function renameSubtheme(id, newName) {
+  const t = activeTheme();
+  if (!t || !t.subthemes) return;
+  const sub = t.subthemes.find(s => s.id === id);
+  if (sub && newName.trim()) sub.name = newName.trim();
+  saveState();
+  renderSubthemesList();
+}
+
+function duplicateSubtheme(id) {
+  const t = activeTheme();
+  if (!t || !t.subthemes) return;
+  const src = t.subthemes.find(s => s.id === id);
+  if (!src) return;
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = uid();
+  copy.name = src.name + ' (copie)';
+  copy.archived = false;
+  copy.grids = (copy.grids || []).map(g => ({ ...g, id: uid() }));
+  copy.activeGridId = copy.grids.find(g => !g.archived)?.id || null;
+  t.subthemes.push(copy);
+  _localActiveSubthemeId = copy.id;
+  _saveLocalActiveSubthemeId(copy.id);
+  _selectedGridIds = [];
+  saveState();
+  renderSubthemesList();
+  renderGridsList();
+  renderGrid();
+}
+
+function renderSubthemesList() {
+  subthemesList.innerHTML = '';
+  const t = activeTheme();
+  if (!t || !t.subthemes) return;
+  const activeSubs = t.subthemes.filter(s => !s.archived);
+
+  if (activeSubs.length === 0) {
+    const msg = document.createElement('span');
+    msg.className = 'themes-empty-msg';
+    msg.textContent = 'Aucun sous-thème';
+    subthemesList.appendChild(msg);
+    return;
+  }
+
+  activeSubs.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'theme-tab subtheme-tab' + (s.id === _localActiveSubthemeId ? ' active' : '');
+    item.dataset.id = s.id;
+    item.draggable = true;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'theme-tab-name';
+    nameSpan.textContent = s.name;
+    item.appendChild(nameSpan);
+
+    item.addEventListener('click', () => switchSubtheme(s.id));
+    item.addEventListener('dblclick', e => { e.stopPropagation(); openCtxMenuSubtheme(s.id, e); });
+
+    // Drag & drop réordonnancement
+    item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', s.id); item.classList.add('dragging'); });
+    item.addEventListener('dragend', () => item.classList.remove('dragging'));
+    item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over-tab'); });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over-tab'));
+    item.addEventListener('drop', e => {
+      e.preventDefault();
+      item.classList.remove('drag-over-tab');
+      const srcId = e.dataTransfer.getData('text/plain');
+      if (srcId === s.id) return;
+      const tNow = activeTheme();
+      if (!tNow || !tNow.subthemes) return;
+      const srcIdx = tNow.subthemes.findIndex(x => x.id === srcId);
+      const dstIdx = tNow.subthemes.findIndex(x => x.id === s.id);
+      if (srcIdx === -1 || dstIdx === -1) return;
+      const [moved] = tNow.subthemes.splice(srcIdx, 1);
+      tNow.subthemes.splice(dstIdx, 0, moved);
+      saveState();
+      renderSubthemesList();
+    });
+
+    subthemesList.appendChild(item);
+  });
+}
+
+function renderArchivedSubthemesModal() {
+  const listEl = document.getElementById('archived-subthemes-list');
+  listEl.innerHTML = '';
+  const t = activeTheme();
+  if (!t || !t.subthemes) { listEl.innerHTML = '<p class="archived-empty">Aucun thème actif.</p>'; return; }
+  const archived = t.subthemes.filter(s => s.archived);
+  if (archived.length === 0) { listEl.innerHTML = '<p class="archived-empty">Aucun sous-thème archivé.</p>'; return; }
+  archived.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'archived-theme-item';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'archived-theme-name';
+    nameSpan.textContent = s.name;
+    item.appendChild(nameSpan);
+    const btnRestore = document.createElement('button');
+    btnRestore.className = 'archived-theme-btn restore';
+    btnRestore.textContent = '↩ Restaurer';
+    btnRestore.addEventListener('click', () => { archiveSubtheme(s.id); renderArchivedSubthemesModal(); });
+    item.appendChild(btnRestore);
+    const btnDel = document.createElement('button');
+    btnDel.className = 'archived-theme-btn del';
+    btnDel.textContent = '✕ Supprimer';
+    btnDel.addEventListener('click', () => { deleteSubtheme(s.id); renderArchivedSubthemesModal(); });
+    item.appendChild(btnDel);
+    listEl.appendChild(item);
+  });
+}
+
+// Modales renommage sous-thème
+const modalRenameSubtheme      = document.getElementById('modal-rename-subtheme');
+const renameSubthemeInput      = document.getElementById('rename-subtheme-input');
+const btnConfirmRenameSubtheme = document.getElementById('btn-confirm-rename-subtheme');
+const btnCancelRenameSubtheme  = document.getElementById('btn-cancel-rename-subtheme');
+const btnCloseRenameSubthemeModal = document.getElementById('btn-close-rename-subtheme-modal');
+let _renameSubthemeId = null;
+
+function openRenameSubthemeModal(id) {
+  const t = activeTheme();
+  if (!t || !t.subthemes) return;
+  const sub = t.subthemes.find(s => s.id === id);
+  if (!sub) return;
+  _renameSubthemeId = id;
+  renameSubthemeInput.value = sub.name;
+  modalRenameSubtheme.classList.remove('hidden');
+  setTimeout(() => { renameSubthemeInput.focus(); renameSubthemeInput.select(); }, 50);
+}
+
+function closeRenameSubthemeModal() { modalRenameSubtheme.classList.add('hidden'); _renameSubthemeId = null; }
+function confirmRenameSubtheme() { if (!_renameSubthemeId) return; renameSubtheme(_renameSubthemeId, renameSubthemeInput.value); closeRenameSubthemeModal(); }
+
+btnConfirmRenameSubtheme.addEventListener('click', confirmRenameSubtheme);
+btnCancelRenameSubtheme.addEventListener('click', closeRenameSubthemeModal);
+btnCloseRenameSubthemeModal.addEventListener('click', closeRenameSubthemeModal);
+modalRenameSubtheme.addEventListener('click', e => { if (e.target === modalRenameSubtheme) closeRenameSubthemeModal(); });
+renameSubthemeInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmRenameSubtheme(); if (e.key === 'Escape') closeRenameSubthemeModal(); });
+
+// Modale nouveau sous-thème
+const modalNewSubtheme        = document.getElementById('modal-new-subtheme');
+const newSubthemeNameInput    = document.getElementById('new-subtheme-name-input');
+const btnConfirmNewSubtheme   = document.getElementById('btn-confirm-new-subtheme');
+const btnCancelNewSubtheme    = document.getElementById('btn-cancel-new-subtheme');
+const btnCloseNewSubthemeModal = document.getElementById('btn-close-new-subtheme-modal');
+
+function openNewSubthemeModal() {
+  const t = activeTheme();
+  if (!t) return;
+  const n = (t.subthemes || []).length + 1;
+  newSubthemeNameInput.value = `Sous-thème ${n}`;
+  modalNewSubtheme.classList.remove('hidden');
+  setTimeout(() => { newSubthemeNameInput.focus(); newSubthemeNameInput.select(); }, 50);
+}
+function closeNewSubthemeModal() { modalNewSubtheme.classList.add('hidden'); }
+function confirmNewSubtheme() { const name = newSubthemeNameInput.value.trim(); if (!name) return; closeNewSubthemeModal(); createSubtheme(name); }
+
+btnConfirmNewSubtheme.addEventListener('click', confirmNewSubtheme);
+btnCancelNewSubtheme.addEventListener('click', closeNewSubthemeModal);
+btnCloseNewSubthemeModal.addEventListener('click', closeNewSubthemeModal);
+modalNewSubtheme.addEventListener('click', e => { if (e.target === modalNewSubtheme) closeNewSubthemeModal(); });
+newSubthemeNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmNewSubtheme(); if (e.key === 'Escape') closeNewSubthemeModal(); });
+
+btnNewSubtheme.addEventListener('click', () => { if (activeTheme()) openNewSubthemeModal(); });
+btnArchivedSubthemes.addEventListener('click', () => {
+  renderArchivedSubthemesModal();
+  document.getElementById('modal-archived-subthemes').classList.remove('hidden');
+});
+document.getElementById('btn-close-archived-subthemes-modal').addEventListener('click', () => {
+  document.getElementById('modal-archived-subthemes').classList.add('hidden');
+});
+document.getElementById('modal-archived-subthemes').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-archived-subthemes')) document.getElementById('modal-archived-subthemes').classList.add('hidden');
+});
+
+// Menu contextuel sous-thème
+const ctxMenuSubtheme    = document.getElementById('ctx-menu-subtheme');
+const ctxSubthemeRename    = document.getElementById('ctx-subtheme-rename');
+const ctxSubthemeDuplicate = document.getElementById('ctx-subtheme-duplicate');
+const ctxSubthemeArchive   = document.getElementById('ctx-subtheme-archive');
+let _ctxSubthemeId = null;
+
+function openCtxMenuSubtheme(id, e) { _ctxSubthemeId = id; positionCtxMenu(ctxMenuSubtheme, e); ctxMenuSubtheme.classList.remove('hidden'); }
+function closeCtxMenuSubtheme() { ctxMenuSubtheme.classList.add('hidden'); _ctxSubthemeId = null; }
+
+ctxSubthemeRename.addEventListener('click', () => { if (_ctxSubthemeId) openRenameSubthemeModal(_ctxSubthemeId); closeCtxMenuSubtheme(); });
+ctxSubthemeDuplicate.addEventListener('click', () => { if (_ctxSubthemeId) duplicateSubtheme(_ctxSubthemeId); closeCtxMenuSubtheme(); });
+ctxSubthemeArchive.addEventListener('click', () => { if (_ctxSubthemeId) archiveSubtheme(_ctxSubthemeId); closeCtxMenuSubtheme(); });
 
 // ──────────────────────────────────────────────
 // Export PNG de la grille bingo
@@ -647,9 +1015,9 @@ function renderGridToCanvas(t, g) {
 }
 
 function getVisibleGrids() {
-  const t = activeTheme();
-  if (!t) return [];
-  const activeGrids = t.grids.filter(x => !x.archived);
+  const s = activeSubtheme();
+  if (!s) return [];
+  const activeGrids = s.grids.filter(x => !x.archived);
   if (activeGrids.length === 0) return [];
 
   // Nettoyer les ids sélectionnés qui n'existent plus
@@ -723,9 +1091,9 @@ function bingoScreenshot() {
 }
 
 function bingoScreenshotOne(gId) {
-  const t = activeTheme();
-  if (!t) return;
-  const g = t.grids.find(x => x.id === gId);
+  const s = activeSubtheme();
+  if (!s) return;
+  const g = s.grids.find(x => x.id === gId);
   if (!g) return;
   copyGridToClipboard([g]);
 }
@@ -797,12 +1165,13 @@ const MIN_SIZE = 3;
 const MAX_SIZE = 5;
 
 function createGrid(name) {
-  const t = activeTheme();
+  const s = activeSubtheme();
+  if (!s) return;
   const g = defaultGrid(name);
   const n = g.gridSize;
   g.grid  = Array.from({ length: n * n }, () => ({ elementId: null, checked: false }));
-  t.grids.push(g);
-  t.activeGridId = g.id;
+  s.grids.push(g);
+  s.activeGridId = g.id;
   // Sélectionner automatiquement la nouvelle grille
   if (!_selectedGridIds.includes(g.id)) {
     if (_selectedGridIds.length >= 3) _selectedGridIds.pop();
@@ -815,17 +1184,20 @@ function createGrid(name) {
 }
 
 function getGlobalCheckedElementIds(t) {
+  // Parcourir uniquement les grilles du sous-thème actif (validation par sous-thème)
   const checked = new Set();
-  t.grids.filter(gx => !gx.archived).forEach(gx => {
+  const s = activeSubtheme();
+  if (!s) return checked;
+  (s.grids || []).filter(gx => !gx.archived).forEach(gx => {
     gx.grid.forEach(c => { if (c.checked && c.elementId) checked.add(c.elementId); });
   });
   return checked;
 }
 
 function switchGrid(id) {
-  const t = activeTheme();
-  if (!t) return;
-  t.activeGridId = id;
+  const s = activeSubtheme();
+  if (!s) return;
+  s.activeGridId = id;
   // Ajouter à la sélection si pas déjà dedans (max 3)
   if (!_selectedGridIds.includes(id)) {
     if (_selectedGridIds.length >= 3) _selectedGridIds.pop();
@@ -838,12 +1210,12 @@ function switchGrid(id) {
 }
 
 function deleteGrid(id) {
-  const t = activeTheme();
-  if (!t) return;
-  t.grids = t.grids.filter(g => g.id !== id);
-  if (t.activeGridId === id) {
-    const remaining = t.grids.filter(g => !g.archived);
-    t.activeGridId = remaining.length > 0 ? remaining[0].id : null;
+  const s = activeSubtheme();
+  if (!s) return;
+  s.grids = s.grids.filter(g => g.id !== id);
+  if (s.activeGridId === id) {
+    const remaining = s.grids.filter(g => !g.archived);
+    s.activeGridId = remaining.length > 0 ? remaining[0].id : null;
   }
   saveState();
   renderGridsList();
@@ -851,8 +1223,8 @@ function deleteGrid(id) {
 }
 
 function renameGrid(id, newName) {
-  const t = activeTheme();
-  const g = t?.grids.find(g => g.id === id);
+  const s = activeSubtheme();
+  const g = s?.grids.find(g => g.id === id);
   if (g && newName.trim()) { g.name = newName.trim(); g.title = newName.trim(); }
   saveState();
   renderGridsList();
@@ -860,26 +1232,26 @@ function renameGrid(id, newName) {
 }
 
 function duplicateGrid(id) {
-  const t = activeTheme();
-  if (!t) return;
-  const src = t.grids.find(g => g.id === id);
+  const s = activeSubtheme();
+  if (!s) return;
+  const src = s.grids.find(g => g.id === id);
   if (!src) return;
   const copy = JSON.parse(JSON.stringify(src));
   copy.id = uid();
   copy.name = src.name + ' (copie)';
   copy.archived = false;
   copy.hidden = false;
-  t.grids.push(copy);
-  t.activeGridId = copy.id;
+  s.grids.push(copy);
+  s.activeGridId = copy.id;
   saveState();
   renderGridsList();
   renderGrid();
 }
 
 function toggleHideGrid(id) {
-  const t = activeTheme();
-  if (!t) return;
-  const g = t.grids.find(g => g.id === id);
+  const s = activeSubtheme();
+  if (!s) return;
+  const g = s.grids.find(g => g.id === id);
   if (!g) return;
   g.hidden = !g.hidden;
   saveState();
@@ -889,18 +1261,18 @@ function toggleHideGrid(id) {
 
 function renderGridsList() {
   gridsList.innerHTML = '';
-  const t = activeTheme();
-  if (!t) return;
-  const activeGrids = t.grids.filter(g => !g.archived);
+  const s = activeSubtheme();
+  if (!s) return;
+  const activeGrids = s.grids.filter(g => !g.archived);
 
   // Nettoyer les ids sélectionnés obsolètes (grilles supprimées/archivées)
   _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id));
 
   activeGrids.forEach(g => {
     const isSelected = _selectedGridIds.includes(g.id);
-    const isActive = g.id === t.activeGridId;
+    const isActive = g.id === s.activeGridId;
     const item = document.createElement('div');
-    item.className = 'grid-tab' + (isActive && isSelected ? ' active' : '') + (isSelected ? ' grid-tab-selected' : '');
+    item.className = 'grid-tab' + (isSelected ? ' active' : '');
     item.dataset.id = g.id;
     item.draggable = true;
     item.title = isSelected ? 'Cliquer pour masquer cette grille' : 'Cliquer pour afficher cette grille (max 3)';
@@ -923,13 +1295,13 @@ function renderGridsList() {
       item.classList.remove('drag-over-tab');
       const srcId = e.dataTransfer.getData('text/plain');
       if (srcId === g.id) return;
-      const tNow = activeTheme();
-      if (!tNow) return;
-      const srcIdx = tNow.grids.findIndex(x => x.id === srcId);
-      const dstIdx = tNow.grids.findIndex(x => x.id === g.id);
+      const sNow = activeSubtheme();
+      if (!sNow) return;
+      const srcIdx = sNow.grids.findIndex(x => x.id === srcId);
+      const dstIdx = sNow.grids.findIndex(x => x.id === g.id);
       if (srcIdx === -1 || dstIdx === -1) return;
-      const [moved] = tNow.grids.splice(srcIdx, 1);
-      tNow.grids.splice(dstIdx, 0, moved);
+      const [moved] = sNow.grids.splice(srcIdx, 1);
+      sNow.grids.splice(dstIdx, 0, moved);
       saveState();
       renderGridsList();
       renderGrid();
@@ -940,18 +1312,18 @@ function renderGridsList() {
       if (_clickTimer) { clearTimeout(_clickTimer); _clickTimer = null; return; }
       _clickTimer = setTimeout(() => {
         _clickTimer = null;
-        const tNow = activeTheme();
-        if (!tNow) return;
+        const sNow = activeSubtheme();
+        if (!sNow) return;
         const nowSelected = _selectedGridIds.includes(g.id);
         if (nowSelected) {
           _selectedGridIds = _selectedGridIds.filter(id => id !== g.id);
-          if (tNow.activeGridId === g.id) {
-            tNow.activeGridId = _selectedGridIds.length > 0 ? _selectedGridIds[0] : null;
+          if (sNow.activeGridId === g.id) {
+            sNow.activeGridId = _selectedGridIds.length > 0 ? _selectedGridIds[0] : null;
           }
         } else {
           if (_selectedGridIds.length >= 3) return;
           _selectedGridIds.push(g.id);
-          tNow.activeGridId = g.id;
+          sNow.activeGridId = g.id;
         }
         saveLocalSelectedGrids(_selectedGridIds);
         saveState();
@@ -971,9 +1343,9 @@ function renderGridsList() {
 }
 
 function openRenameGridModal(id) {
-  const t = activeTheme();
-  if (!t) return;
-  const g = t.grids.find(g => g.id === id);
+  const s = activeSubtheme();
+  if (!s) return;
+  const g = s.grids.find(g => g.id === id);
   if (!g) return;
   _renameGridId = id;
   renameGridInput.value = g.name;
@@ -993,14 +1365,14 @@ function confirmRenameGrid() {
 }
 
 function archiveGrid(id) {
-  const t = activeTheme();
-  if (!t) return;
-  const g = t.grids.find(g => g.id === id);
+  const s = activeSubtheme();
+  if (!s) return;
+  const g = s.grids.find(g => g.id === id);
   if (!g) return;
   g.archived = true;
-  if (t.activeGridId === id) {
-    const remaining = t.grids.filter(x => !x.archived);
-    t.activeGridId = remaining.length > 0 ? remaining[0].id : null;
+  if (s.activeGridId === id) {
+    const remaining = s.grids.filter(x => !x.archived);
+    s.activeGridId = remaining.length > 0 ? remaining[0].id : null;
   }
   saveState();
   renderGridsList();
@@ -1009,12 +1381,12 @@ function archiveGrid(id) {
 
 function renderArchivedGridsModal() {
   archivedGridsList.innerHTML = '';
-  const t = activeTheme();
-  if (!t) {
-    archivedGridsList.innerHTML = '<p class="archived-empty">Aucun thème actif.</p>';
+  const s = activeSubtheme();
+  if (!s) {
+    archivedGridsList.innerHTML = '<p class="archived-empty">Aucun sous-thème actif.</p>';
     return;
   }
-  const archived = t.grids.filter(g => g.archived);
+  const archived = s.grids.filter(g => g.archived);
   if (archived.length === 0) {
     archivedGridsList.innerHTML = '<p class="archived-empty">Aucune grille archivée.</p>';
     return;
@@ -1135,12 +1507,13 @@ function applyFontScale() {
   fontScaleInput.value = pct;
 
   const t = activeTheme();
-  if (!t) return;
+  const s = activeSubtheme();
+  if (!t || !s) return;
   gridWrapper.querySelectorAll('.bingo-cell:not(.empty)').forEach(div => {
     const idx = parseInt(div.dataset.index);
     if (isNaN(idx)) return;
     const gridId = div.closest('[data-grid-id]')?.dataset.gridId;
-    const g = gridId ? t.grids.find(x => x.id === gridId) : activeGrid();
+    const g = gridId ? s.grids.find(x => x.id === gridId) : activeGrid();
     if (!g) return;
     const cell = g.grid[idx];
     if (!cell || !cell.elementId) return;
@@ -1182,9 +1555,9 @@ function buildSingleGrid(t, g, isActive) {
   titleInput.value = g.title || g.name;
   titleInput.maxLength = 60;
   titleInput.addEventListener('input', () => {
-    const tNow = activeTheme();
-    if (!tNow) return;
-    const gNow = tNow.grids.find(x => x.id === g.id);
+    const sNow = activeSubtheme();
+    if (!sNow) return;
+    const gNow = sNow.grids.find(x => x.id === g.id);
     if (!gNow) return;
     const val = titleInput.value.trim();
     gNow.title = val;
@@ -1194,9 +1567,9 @@ function buildSingleGrid(t, g, isActive) {
     if (tabEl && val) tabEl.textContent = val;
   });
   titleInput.addEventListener('change', () => {
-    const tNow = activeTheme();
-    if (!tNow) return;
-    const gNow = tNow.grids.find(x => x.id === g.id);
+    const sNow = activeSubtheme();
+    if (!sNow) return;
+    const gNow = sNow.grids.find(x => x.id === g.id);
     if (!gNow) return;
     const val = titleInput.value.trim();
     if (val) { gNow.title = val; gNow.name = val; }
@@ -1206,9 +1579,50 @@ function buildSingleGrid(t, g, isActive) {
   titleRow.appendChild(titleInput);
   wrapper.appendChild(titleRow);
 
-  // Contrôles par grille (ordre : Bloquer | Générer | Reset | Capture)
+  // Contrôles par grille (ordre : Taille | Bloquer | Générer | Capture)
   const subCtrl = document.createElement('div');
   subCtrl.className = 'subgrid-controls';
+
+  // Contrôle de taille propre à cette grille
+  const sizeCtrl = document.createElement('div');
+  sizeCtrl.className = 'subgrid-size-control';
+  const btnSzMinus = document.createElement('button');
+  btnSzMinus.className = 'size-btn size-btn-sm';
+  btnSzMinus.textContent = '−';
+  btnSzMinus.title = 'Réduire la grille';
+  const szDisplay = document.createElement('span');
+  szDisplay.className = 'subgrid-size-display';
+  szDisplay.textContent = `${g.gridSize}×${g.gridSize}`;
+  const btnSzPlus = document.createElement('button');
+  btnSzPlus.className = 'size-btn size-btn-sm';
+  btnSzPlus.textContent = '+';
+  btnSzPlus.title = 'Agrandir la grille';
+
+  const doResize = (delta) => {
+    const tNow = activeTheme();
+    const sNow = activeSubtheme();
+    if (!tNow || !sNow) return;
+    const gNow = sNow.grids.find(x => x.id === g.id);
+    if (!gNow) return;
+    const newSize = gNow.gridSize + delta;
+    if (newSize < MIN_SIZE || newSize > MAX_SIZE) return;
+    gNow.gridSize = newSize;
+    const cellCount = newSize * newSize;
+    if (gNow.grid.length < cellCount) {
+      while (gNow.grid.length < cellCount) gNow.grid.push({ elementId: null, checked: false });
+    } else {
+      gNow.grid = gNow.grid.slice(0, cellCount);
+    }
+    saveState();
+    renderGrid();
+  };
+
+  btnSzMinus.addEventListener('click', () => doResize(-1));
+  btnSzPlus.addEventListener('click', () => doResize(+1));
+  sizeCtrl.appendChild(btnSzMinus);
+  sizeCtrl.appendChild(szDisplay);
+  sizeCtrl.appendChild(btnSzPlus);
+  subCtrl.appendChild(sizeCtrl);
 
   const globalLocked = !!t.locked;
   const gridLocked = g.locked || globalLocked;
@@ -1222,23 +1636,32 @@ function buildSingleGrid(t, g, isActive) {
   chkLock.disabled = globalLocked;
   chkLock.addEventListener('change', () => {
     const tNow = activeTheme();
-    if (!tNow || tNow.locked) return;
-    const gNow = tNow.grids.find(x => x.id === g.id);
+    const sNow = activeSubtheme();
+    if (!tNow || tNow.locked || !sNow) return;
+    const gNow = sNow.grids.find(x => x.id === g.id);
     if (gNow) { gNow.locked = chkLock.checked; saveState(); renderGrid(); }
   });
   lblLock.appendChild(chkLock);
   lblLock.appendChild(document.createTextNode('🔒'));
-  subCtrl.appendChild(lblLock);
+
+  // Vérifier si assez d'éléments pour cette grille
+  const activeElemCount = t.elements.filter(e => !e.archived).length;
+  const cellCount = g.gridSize * g.gridSize;
+  const enoughForThis = activeElemCount >= cellCount;
+  const genDisabled = gridLocked || !enoughForThis;
 
   const btnSubGen = document.createElement('button');
-  btnSubGen.className = 'btn-action btn-subgrid' + (gridLocked ? ' btn-disabled' : '');
-  btnSubGen.disabled = gridLocked || manualMode;
+  btnSubGen.className = 'btn-action btn-subgrid btn-subgrid-gen' + (genDisabled ? ' btn-disabled' : '');
+  btnSubGen.disabled = genDisabled;
   btnSubGen.textContent = '🎲';
-  btnSubGen.title = 'Générer cette grille';
+  btnSubGen.title = genDisabled && !gridLocked
+    ? `Pas assez d'éléments (${activeElemCount}/${cellCount})`
+    : 'Générer cette grille';
   btnSubGen.addEventListener('click', () => {
     const tNow = activeTheme();
-    if (!tNow || tNow.locked) return;
-    const gNow = tNow.grids.find(x => x.id === g.id);
+    const sNow = activeSubtheme();
+    if (!tNow || tNow.locked || !sNow) return;
+    const gNow = sNow.grids.find(x => x.id === g.id);
     if (!gNow || gNow.locked) return;
     const ok = generateOneGrid(tNow, gNow);
     if (!ok) {
@@ -1250,7 +1673,13 @@ function buildSingleGrid(t, g, isActive) {
     saveState();
     renderGrid();
   });
-  subCtrl.appendChild(btnSubGen);
+
+  // Cadre discret autour de Bloquer + Générer
+  const lockGenGroup = document.createElement('div');
+  lockGenGroup.className = 'subgrid-lock-gen-group';
+  lockGenGroup.appendChild(lblLock);
+  lockGenGroup.appendChild(btnSubGen);
+  subCtrl.appendChild(lockGenGroup);
 
 
   const btnSubCapture = document.createElement('button');
@@ -1298,7 +1727,6 @@ function buildSingleGrid(t, g, isActive) {
       const cellText = el ? el.text : '?';
       div.textContent = cellText;
       div.style.fontSize = getCellFontSize(cellText, scale);
-
       if (cell.checked)        div.classList.add('checked');
       if (bingoIndices.has(i)) div.classList.add('bingo-line');
 
@@ -1306,16 +1734,18 @@ function buildSingleGrid(t, g, isActive) {
         div.addEventListener('click', () => {
           if (!cell.elementId) return;
           const newChecked = !cell.checked;
-          // Appliquer le même état à toutes les grilles non-archivées contenant cet élément
+          // Appliquer le même état à toutes les grilles non-archivées du sous-thème actif uniquement
           const tNow = activeTheme();
-          if (tNow) {
-            tNow.grids.filter(gx => !gx.archived).forEach(gx => {
+          const sNow = activeSubtheme();
+          if (tNow && sNow) {
+            (sNow.grids || []).filter(gx => !gx.archived).forEach(gx => {
               const matchCell = gx.grid.find(c => c.elementId === cell.elementId);
               if (matchCell) matchCell.checked = newChecked;
             });
           }
           saveState();
           renderGrid();
+          renderElements();
         });
       } else {
         div.addEventListener('click', () => {
@@ -1349,6 +1779,7 @@ function buildSingleGrid(t, g, isActive) {
 
 function renderGrid() {
   const t = activeTheme();
+  const s = activeSubtheme();
   const g = activeGrid();
 
   gridWrapper.innerHTML = '';
@@ -1365,7 +1796,19 @@ function renderGrid() {
     return;
   }
 
-  const hasAnyGrid = t.grids.some(x => !x.archived);
+  if (!s) {
+    gridWrapper.innerHTML = '<div class="no-grid-msg">Crée un sous-thème pour commencer.</div>';
+    sizeDisplay.textContent = '—';
+    bingoMsg.classList.add('hidden');
+    btnGenerate.disabled = true;
+    btnGenerate.classList.add('btn-disabled');
+    btnReset.disabled = false;
+    btnReset.classList.remove('btn-disabled');
+    chkLockGenerate.checked = false;
+    return;
+  }
+
+  const hasAnyGrid = s.grids.some(x => !x.archived);
   if (!g && !hasAnyGrid) {
     gridWrapper.innerHTML = '<div class="no-grid-msg">Crée une grille pour commencer.</div>';
     sizeDisplay.textContent = '—';
@@ -1377,10 +1820,10 @@ function renderGrid() {
     return;
   }
 
-  const n = (g || t.grids.find(x => !x.archived)).gridSize;
+  const n = (g || s.grids.find(x => !x.archived)).gridSize;
   sizeDisplay.textContent = `${n}×${n}`;
 
-  // Synchroniser le checkbox avec l'état Firebase du thème
+  // Synchroniser le checkbox avec l'état du thème
   const locked = !!t.locked;
   chkLockGenerate.checked = locked;
 
@@ -1407,8 +1850,38 @@ function renderGrid() {
   bingoMsg.classList.add('hidden');
 
   gridsToShow.forEach(gridItem => {
-    const isActive = gridItem.id === g.id;
+    const isActive = gridItem.id === (g?.id);
     const { wrapper } = buildSingleGrid(t, gridItem, isActive);
+
+    // Drag & drop pour réordonner les grilles affichées
+    if (gridsToShow.length > 1) {
+      wrapper.draggable = true;
+      wrapper.style.cursor = 'grab';
+      wrapper.title = 'Glisser pour réordonner';
+      wrapper.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', gridItem.id);
+        wrapper.classList.add('grid-wrapper-dragging');
+      });
+      wrapper.addEventListener('dragend', () => wrapper.classList.remove('grid-wrapper-dragging'));
+      wrapper.addEventListener('dragover', e => {
+        e.preventDefault();
+        wrapper.classList.add('grid-wrapper-drag-over');
+      });
+      wrapper.addEventListener('dragleave', () => wrapper.classList.remove('grid-wrapper-drag-over'));
+      wrapper.addEventListener('drop', e => {
+        e.preventDefault();
+        wrapper.classList.remove('grid-wrapper-drag-over');
+        const srcId = e.dataTransfer.getData('text/plain');
+        if (srcId === gridItem.id) return;
+        const srcIdx = _selectedGridIds.indexOf(srcId);
+        const dstIdx = _selectedGridIds.indexOf(gridItem.id);
+        if (srcIdx === -1 || dstIdx === -1) return;
+        [_selectedGridIds[srcIdx], _selectedGridIds[dstIdx]] = [_selectedGridIds[dstIdx], _selectedGridIds[srcIdx]];
+        saveLocalSelectedGrids(_selectedGridIds);
+        renderGrid();
+      });
+    }
+
     gridWrapper.appendChild(wrapper);
   });
 
@@ -1628,15 +2101,17 @@ function positionCtxMenu(menu, e) {
 document.addEventListener('click', () => {
   closeCtxMenuTheme();
   closeCtxMenuGrid();
+  closeCtxMenuSubtheme();
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeCtxMenuTheme(); closeCtxMenuGrid(); }
+  if (e.key === 'Escape') { closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuSubtheme(); }
 });
 
 btnGenerate.addEventListener('click', () => {
   if (manualMode) return;
   const t = activeTheme();
-  if (!t || t.locked) return;
+  const s = activeSubtheme();
+  if (!t || t.locked || !s) return;
   if (!activeGrid()) createGrid('Grille 1');
   const grids = getVisibleGrids();
   const n = activeGrid()?.gridSize || 4;
@@ -1656,11 +2131,16 @@ btnGenerate.addEventListener('click', () => {
 
 btnReset.addEventListener('click', () => {
   const t = activeTheme();
-  if (!t || t.locked) return;
-  if (!confirm('Décocher toutes les cases de toutes les grilles ?')) return;
-  t.grids.filter(gx => !gx.archived).forEach(gx => { if (!gx.locked) gx.grid = gx.grid.map(c => ({ ...c, checked: false })); });
+  const s = activeSubtheme();
+  if (!t || t.locked || !s) return;
+  if (!confirm('Décocher toutes les cases des grilles de ce sous-thème ?')) return;
+  // Reset uniquement les grilles du sous-thème actif
+  (s.grids || []).filter(gx => !gx.archived).forEach(gx => {
+    if (!gx.locked) gx.grid = gx.grid.map(c => ({ ...c, checked: false }));
+  });
   saveState();
   renderGrid();
+  renderElements();
 });
 btnScreenshot.addEventListener('click', bingoScreenshot);
 
@@ -1672,9 +2152,9 @@ const btnCancelNewGrid   = document.getElementById('btn-cancel-new-grid');
 const btnCloseNewGridModal = document.getElementById('btn-close-new-grid-modal');
 
 function openNewGridModal() {
-  const t = activeTheme();
-  if (!t) return;
-  const count = t.grids.filter(g => !g.archived).length + 1;
+  const s = activeSubtheme();
+  if (!s) return;
+  const count = s.grids.filter(g => !g.archived).length + 1;
   newGridNameInput.value = `Grille ${count}`;
   modalNewGrid.classList.remove('hidden');
   setTimeout(() => { newGridNameInput.focus(); newGridNameInput.select(); }, 50);
@@ -1701,7 +2181,7 @@ newGridNameInput.addEventListener('keydown', e => {
 });
 
 btnNewGrid.addEventListener('click', () => {
-  if (!activeTheme()) return;
+  if (!activeSubtheme()) return;
   openNewGridModal();
 });
 
@@ -2697,52 +3177,79 @@ _dbBingo.on('value', snapshot => {
   // Normaliser l'état
   if (!state.themes) state.themes = [];
   state.themes.forEach(t => {
-    if (!t.elements) t.elements = [];
-    if (!t.grids)    t.grids    = [];
+    if (!t.elements)  t.elements  = [];
+    if (!t.subthemes) t.subthemes = [];
     if (t.locked === undefined) t.locked = false;
-    // Nettoyer les champs locaux qui n'ont pas leur place en Firebase
     delete t.cellFont;
     delete t.cellFontScale;
-    t.grids.forEach(g => {
-      if (g.archived === undefined) g.archived = false;
-      if (g.hidden === undefined)   g.hidden   = false;
-      if (g.title === undefined)    g.title    = '';
-      if (g.locked === undefined)   g.locked   = false;
-      const expected = g.gridSize * g.gridSize;
-      if (!g.grid || g.grid.length !== expected) {
-        g.grid = Array.from({ length: expected }, () => ({ elementId: null, checked: false }));
+
+    // S'assurer qu'il y a au moins un sous-thème
+    if (t.subthemes.length === 0) {
+      const sub = defaultSubtheme('Principal');
+      sub.grids = t.grids || [];
+      sub.activeGridId = t.activeGridId || null;
+      t.subthemes = [sub];
+    }
+
+    t.subthemes.forEach(s => {
+      if (!s.grids) s.grids = [];
+      if (s.archived === undefined) s.archived = false;
+      s.grids.forEach(g => {
+        if (g.archived === undefined) g.archived = false;
+        if (g.hidden === undefined)   g.hidden   = false;
+        if (g.title === undefined)    g.title    = '';
+        if (g.locked === undefined)   g.locked   = false;
+        const expected = g.gridSize * g.gridSize;
+        if (!g.grid || g.grid.length !== expected) {
+          g.grid = Array.from({ length: expected }, () => ({ elementId: null, checked: false }));
+        }
+      });
+      const nonArchivedGrids = s.grids.filter(g => !g.archived);
+      if (nonArchivedGrids.length === 0) {
+        s.activeGridId = null;
+      } else if (s.activeGridId && !nonArchivedGrids.find(g => g.id === s.activeGridId)) {
+        s.activeGridId = nonArchivedGrids[0].id;
       }
     });
-    const nonArchivedGrids = t.grids.filter(g => !g.archived);
-    if (nonArchivedGrids.length === 0) {
-      t.activeGridId = null;
-    } else if (t.activeGridId && !nonArchivedGrids.find(g => g.id === t.activeGridId)) {
-      // activeGridId pointe vers une grille qui n'existe plus, corriger
-      t.activeGridId = nonArchivedGrids[0].id;
-    }
-    // Si activeGridId est null, on le laisse null (désélection volontaire)
   });
-  if (state.themes.length > 0 && !state.themes.find(t => t.id === state.activeThemeId)) {
-    const nonArchived = state.themes.filter(t => !t.archived);
-    state.activeThemeId = nonArchived.length > 0 ? nonArchived[0].id : state.themes[0].id;
+
+  // Résoudre le thème actif local
+  if (state.themes.length > 0) {
+    const themeExists = state.themes.find(t => t.id === _localActiveThemeId && !t.archived);
+    if (!themeExists) {
+      const nonArchived = state.themes.filter(t => !t.archived);
+      _localActiveThemeId = nonArchived.length > 0 ? nonArchived[0].id : state.themes[0].id;
+      _saveLocalActiveThemeId(_localActiveThemeId);
+    }
+  }
+
+  // Résoudre le sous-thème actif local
+  const _tNow = activeTheme();
+  if (_tNow && _tNow.subthemes.length > 0) {
+    const subExists = _tNow.subthemes.find(s => s.id === _localActiveSubthemeId && !s.archived);
+    if (!subExists) {
+      const nonArchived = _tNow.subthemes.filter(s => !s.archived);
+      _localActiveSubthemeId = nonArchived.length > 0 ? nonArchived[0].id : _tNow.subthemes[0].id;
+      _saveLocalActiveSubthemeId(_localActiveSubthemeId);
+    }
   }
 
   // Init affichage de la taille de texte locale
   fontScaleInput.value = Math.round(_localFontScale * 100);
 
-  // Charger les grilles sélectionnées pour le thème actif
-  // Le fallback vers la première grille ne s'applique que si aucune entrée n'a jamais été sauvegardée
-  const _themeHasSavedSelection = state.activeThemeId in _selectedGridsByTheme;
-  _selectedGridIds = loadLocalSelectedGridsForTheme(state.activeThemeId);
-  if (_selectedGridIds.length === 0 && !_themeHasSavedSelection) {
-    const t = activeTheme();
-    if (t) {
-      const firstGrid = t.grids.find(g => !g.archived);
+  // Charger les grilles sélectionnées pour le sous-thème actif
+  const sub = activeSubtheme();
+  if (sub) {
+    const hasSavedSelection = sub.id in _selectedGridsBySubtheme;
+    _selectedGridIds = loadLocalSelectedGridsForSubtheme(sub.id);
+    if (_selectedGridIds.length === 0 && !hasSavedSelection) {
+      const firstGrid = sub.grids.find(g => !g.archived);
       if (firstGrid) _selectedGridIds = [firstGrid.id];
     }
   }
 
   renderThemesList();
+  renderSubthemesList();
   renderElements();
   renderGridsList();
   renderGrid();

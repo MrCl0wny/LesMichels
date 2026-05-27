@@ -103,14 +103,14 @@ LesMichels/
 
 ---
 
-### Bingo (v10 — Mai 2026)
+### Bingo (v11 — Mai 2026)
 
 #### Panneau de contrôle unifié
-- [x] **Thèmes, grilles et barre d'outils regroupés** dans un seul panneau en haut — rétractable d'un clic (▲/▼)
-- [x] Trois lignes : Thème / Grille / contrôles (Taille, Texte, Bloquer, Générer, Reset, Capture)
+- [x] **Thèmes, sous-thèmes, grilles et barre d'outils regroupés** dans un seul panneau en haut — rétractable d'un clic (▲/▼)
+- [x] Quatre lignes : Thème / Sous-thème / Grille / contrôles (Texte, Bloquer+Générer+Reset encadrés, Capture)
 
 #### Thèmes
-- [x] **Thèmes de soirée** : l'utilisateur crée autant de thèmes qu'il veut — nom par défaut "Thème N" (modifiable), chacun avec ses propres cases et grilles
+- [x] **Thèmes de soirée** : l'utilisateur crée autant de thèmes qu'il veut — nom par défaut "Thème N" (modifiable), chacun avec ses propres cases et sous-thèmes
 - [x] Onglets de thèmes épurés (nom uniquement, sans icônes)
 - [x] **Double-clic sur un thème** → menu contextuel clair : Renommer / Dupliquer / Archiver
 - [x] **Réordonner les thèmes par glisser-déposer** : faire glisser un onglet de thème pour changer son ordre
@@ -119,7 +119,7 @@ LesMichels/
 - [x] Suppression définitive d'un thème uniquement depuis la modal "Thèmes archivés" (sécurité anti-missclic)
 - [x] Sauvegarde automatique dans Firebase
 
-#### Cases (propres au thème actif)
+#### Cases (communes au thème, validation par sous-thème)
 - [x] Ajout d'une case (bouton ou touche Entrée)
 - [x] **Double-clic sur une case** → édition inline directe (plus besoin du bouton ✏)
 - [x] Archivage d'une case active (bouton 📦) — disparaît de la liste active
@@ -128,10 +128,17 @@ LesMichels/
 - [x] Onglets **Actives** / **Archivées**
 - [x] Compteur de cases actives
 - [x] **Panneau Cases rétractable** : bouton ◀/▶ toujours accessible même panneau réduit, libérant l'espace pour la grille
+- [x] **Cases cochées colorées** : quand une case est cochée dans une grille du sous-thème actif, son item dans le panneau Cases prend la même couleur de fond (jaune doré)
 
-#### Grilles (propres au thème actif)
-- [x] Plusieurs grilles par thème (onglets) — **nom demandé à la création** via modal
-- [x] Taille variable de **3×3 à 5×5**, modifiable à tout moment — **taille par défaut : 4×4**
+#### Sous-thèmes
+- [x] Chaque thème peut avoir plusieurs sous-thèmes (ex : épisodes d'une émission)
+- [x] Les **cases sont communes** à tout le thème, mais la **validation est propre à chaque sous-thème**
+- [x] **Double-clic sur un sous-thème** → menu contextuel : Renommer / Dupliquer / Archiver
+- [x] **Réordonner les sous-thèmes par glisser-déposer**
+
+#### Grilles (propres au sous-thème actif)
+- [x] Plusieurs grilles par sous-thème (onglets) — **nom demandé à la création** via modal
+- [x] **Taille individuelle par grille** de **3×3 à 5×5** — contrôle −/+ au-dessus de chaque grille — **taille par défaut : 4×4**
 - [x] **Titre de grille = nom de l'onglet** : modifier le titre dans la grille met à jour l'onglet automatiquement (et vice-versa via renommage modal)
 - [x] Onglets de grilles épurés (nom uniquement, sans icônes)
 - [x] **Double-clic sur une grille** → menu contextuel clair : Renommer / Dupliquer / Archiver
@@ -144,26 +151,31 @@ LesMichels/
 #### Mode de jeu
 - [x] **Sélection multi-grilles (max 3)** : cliquer sur un onglet met la grille en surbrillance et l'affiche — recliquer la masque (max 3 simultanément)
 - [x] **Possibilité de n'afficher aucune grille** : retirer la surbrillance de tous les onglets pour masquer toutes les grilles
-- [x] **Barre d'outils sur une seule ligne** : Taille, Texte, séparateur, puis Bloquer / Générer / Reset / Capture
+- [x] **Barre d'outils sur une seule ligne** : Texte, séparateur, puis **cadre discret Bloquer / Générer / Reset**, Capture
 - [x] **Bloquer** (toolbar) : empêche la génération **et le reset** global — chaque grille a aussi son propre verrou
-- [x] **Bouton Générer** : placement aléatoire depuis les cases actives du thème
+- [x] **Bouton Générer** (bleu foncé) : placement aléatoire depuis les cases actives du thème
 - [x] **Cases cochées persistantes** : les cases déjà cochées conservent leur état lors d'une regénération (même sur les nouvelles grilles générées entre temps)
-- [x] **Bouton Reset** : décoche toutes les cases de toutes les grilles (y compris non affichées) — demande confirmation avant d'agir
-- [x] **Valider une case = valider pour toutes les grilles** : cocher/décocher un élément l'applique à toutes les grilles non archivées, qu'elles soient affichées ou non
+- [x] **Bouton Reset** (rouge foncé) : décoche toutes les cases des grilles **du sous-thème actif uniquement** (y compris non affichées) — demande confirmation avant d'agir
+- [x] **Valider une case = valider pour toutes les grilles du sous-thème actif** : cocher/décocher un élément l'applique à toutes les grilles non archivées du sous-thème courant
 - [x] Clic sur une case = coche / décoche
 
 #### Contrôles par grille (multi-grilles)
-- [x] **Contrôles indépendants par grille** (ordre : Bloquer | Générer | Capture) :
+- [x] **Contrôles indépendants par grille** (ordre : Taille | Cadre Bloquer+Générer | Capture | Couleur texte) :
+  - −/+ Modifier la taille de la grille individuellement
   - 🔒 Bloquer/débloquer la génération de cette grille
-  - 🎲 Générer uniquement cette grille
+  - 🎲 Générer uniquement cette grille (bleu foncé)
   - 📷 Copier cette grille dans le presse-papier
-- [x] **Boutons globaux** (toolbar principale) agissent sur **toutes** les grilles non archivées :
-  - Bloquer toutes, Générer toutes, Reset toutes (avec confirmation), Capturer toutes (presse-papier)
+  - **A🎨** Color picker pour la couleur de base du texte de cette grille
+- [x] **Cadre discret** autour de Bloquer + Générer (global et par grille) pour signaler visuellement qu'ils sont liés
+- [x] **Boutons globaux** (toolbar principale) agissent sur toutes les grilles non archivées du sous-thème actif :
+  - Bloquer toutes, Générer toutes, Reset (sous-thème actif, avec confirmation), Capturer toutes (presse-papier)
 
 #### Affichage de la grille
-- [x] **Hauteur fixe à 60% de la hauteur de l'écran**
-- [x] **Séparation visuelle distincte** : en mode multi-grilles, chaque grille est encadrée indépendamment (fond, bordure, ombre) pour les distinguer clairement
+- [x] **Hauteur fixe à 70% de la hauteur de l'écran** (58% en mode 2 grilles, 48% en mode 3 grilles)
+- [x] **Déplacer les grilles par glisser-déposer** : en mode multi-grilles, faire glisser un wrapper de grille pour changer son ordre d'affichage
+- [x] **Séparation visuelle distincte** : en mode multi-grilles, chaque grille est encadrée indépendamment (fond, bordure, ombre)
 - [x] **Titre personnalisé par grille** : champ de saisie au-dessus de chaque grille — synchronisé avec le nom de l'onglet
+- [x] **Couleur de texte personnalisée par grille** : color picker dans les contrôles de chaque grille — s'applique aux cellules non cochées et au titre
 - [x] **Zoom texte local** : boutons +/- pour agrandir ou réduire la taille du texte — réglage propre à chaque navigateur
 - [x] Police fixée à **Arial** pour tous les textes des cases
 - [x] Taille de texte adaptative selon la longueur du texte
