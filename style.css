@@ -547,6 +547,7 @@ body {
   padding: 7px 10px;
   transition: var(--transition);
   animation: slide-in 0.2s ease;
+  cursor: pointer;
 }
 .element-item:hover { border-color: var(--surface-3); background: var(--surface-3); }
 
@@ -605,7 +606,7 @@ body {
 .elem-btn.archive:hover { color: var(--accent); }
 .elem-btn.restore:hover { color: var(--success); }
 
-.element-text { cursor: default; }
+.element-text { cursor: pointer; }
 .element-item:not(.archived) .element-text:hover { color: var(--accent); }
 
 .hidden { display: none !important; }

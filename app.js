@@ -371,30 +371,9 @@ function buildElementItem(el, isArchived) {
   li.appendChild(span);
 
   if (!isArchived) {
-    span.title = 'Double-clic pour modifier';
-    span.style.cursor = 'text';
-    span.addEventListener('dblclick', e => { e.stopPropagation(); startEditElement(el.id, span); });
-
-    const btnArch = document.createElement('button');
-    btnArch.className = 'elem-btn archive';
-    btnArch.title = 'Archiver';
-    btnArch.textContent = '📦';
-    btnArch.addEventListener('click', () => archiveElement(el.id));
-    li.appendChild(btnArch);
+    li.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuElement(el.id, span, e); });
   } else {
-    const btnRestore = document.createElement('button');
-    btnRestore.className = 'elem-btn restore';
-    btnRestore.title = 'Restaurer';
-    btnRestore.textContent = '↩';
-    btnRestore.addEventListener('click', () => restoreElement(el.id));
-    li.appendChild(btnRestore);
-
-    const btnDel = document.createElement('button');
-    btnDel.className = 'elem-btn delete';
-    btnDel.title = 'Supprimer';
-    btnDel.textContent = '✕';
-    btnDel.addEventListener('click', () => deleteElement(el.id));
-    li.appendChild(btnDel);
+    li.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuElementArchived(el.id, e); });
   }
 
   return li;
@@ -630,7 +609,8 @@ function renderThemesList() {
 
     item.addEventListener('click', () => switchTheme(t.id));
 
-    item.addEventListener('dblclick', e => {
+    item.addEventListener('contextmenu', e => {
+      e.preventDefault();
       e.stopPropagation();
       openCtxMenuTheme(t.id, e);
     });
@@ -791,7 +771,7 @@ function renderSubthemesList() {
     item.appendChild(nameSpan);
 
     item.addEventListener('click', () => switchSubtheme(s.id));
-    item.addEventListener('dblclick', e => { e.stopPropagation(); openCtxMenuSubtheme(s.id, e); });
+    item.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuSubtheme(s.id, e); });
 
     // Drag & drop réordonnancement
     item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', s.id); item.classList.add('dragging'); });
@@ -917,7 +897,7 @@ const ctxSubthemeDuplicate = document.getElementById('ctx-subtheme-duplicate');
 const ctxSubthemeArchive   = document.getElementById('ctx-subtheme-archive');
 let _ctxSubthemeId = null;
 
-function openCtxMenuSubtheme(id, e) { _ctxSubthemeId = id; positionCtxMenu(ctxMenuSubtheme, e); ctxMenuSubtheme.classList.remove('hidden'); }
+function openCtxMenuSubtheme(id, e) { closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuElement(); _ctxSubthemeId = id; positionCtxMenu(ctxMenuSubtheme, e); ctxMenuSubtheme.classList.remove('hidden'); }
 function closeCtxMenuSubtheme() { ctxMenuSubtheme.classList.add('hidden'); _ctxSubthemeId = null; }
 
 ctxSubthemeRename.addEventListener('click', () => { if (_ctxSubthemeId) openRenameSubthemeModal(_ctxSubthemeId); closeCtxMenuSubtheme(); });
@@ -1348,7 +1328,8 @@ function renderGridsList() {
       }, 220);
     });
 
-    item.addEventListener('dblclick', e => {
+    item.addEventListener('contextmenu', e => {
+      e.preventDefault();
       e.stopPropagation();
       if (_clickTimer) { clearTimeout(_clickTimer); _clickTimer = null; }
       openCtxMenuGrid(g.id, e);
@@ -2050,7 +2031,7 @@ bulkAddCountInput.addEventListener('keydown', e => {
 // ──────────────────────────────────────────────
 // Écouteurs d'événements
 // ──────────────────────────────────────────────
-btnAdd.addEventListener('click', openBulkAddModal);
+btnAdd.addEventListener('click', addElement);
 inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') addElement(); });
 
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
@@ -2096,6 +2077,7 @@ const ctxThemeArchive   = document.getElementById('ctx-theme-archive');
 let _ctxThemeId = null;
 
 function openCtxMenuTheme(id, e) {
+  closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
   _ctxThemeId = id;
   positionCtxMenu(ctxMenuTheme, e);
   ctxMenuTheme.classList.remove('hidden');
@@ -2129,6 +2111,7 @@ const ctxGridArchive   = document.getElementById('ctx-grid-archive');
 let _ctxGridId = null;
 
 function openCtxMenuGrid(id, e) {
+  closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuElement();
   _ctxGridId = id;
   positionCtxMenu(ctxMenuGrid, e);
   ctxMenuGrid.classList.remove('hidden');
@@ -2152,6 +2135,54 @@ ctxGridArchive.addEventListener('click', () => {
   closeCtxMenuGrid();
 });
 
+// ── Menu contextuel cases ──
+const ctxMenuElement  = document.getElementById('ctx-menu-element');
+const ctxElEdit       = document.getElementById('ctx-element-edit');
+const ctxElArchive    = document.getElementById('ctx-element-archive');
+let _ctxElementId     = null;
+let _ctxElementSpan   = null;
+
+function openCtxMenuElement(id, span, e) {
+  closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuGrid();
+  _ctxElementId = id;
+  _ctxElementSpan = span;
+  positionCtxMenu(ctxMenuElement, e);
+  ctxMenuElement.classList.remove('hidden');
+}
+function closeCtxMenuElement() { ctxMenuElement.classList.add('hidden'); _ctxElementId = null; _ctxElementSpan = null; }
+
+ctxElEdit.addEventListener('click', () => {
+  if (_ctxElementId && _ctxElementSpan) startEditElement(_ctxElementId, _ctxElementSpan);
+  closeCtxMenuElement();
+});
+ctxElArchive.addEventListener('click', () => {
+  if (_ctxElementId) archiveElement(_ctxElementId);
+  closeCtxMenuElement();
+});
+
+// ── Menu contextuel cases archivées ──
+const ctxMenuElementArchived = document.getElementById('ctx-menu-element-archived');
+const ctxElRestore           = document.getElementById('ctx-element-restore');
+const ctxElDelete            = document.getElementById('ctx-element-delete');
+let _ctxElementArchivedId    = null;
+
+function openCtxMenuElementArchived(id, e) {
+  closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
+  _ctxElementArchivedId = id;
+  positionCtxMenu(ctxMenuElementArchived, e);
+  ctxMenuElementArchived.classList.remove('hidden');
+}
+function closeCtxMenuElementArchived() { ctxMenuElementArchived.classList.add('hidden'); _ctxElementArchivedId = null; }
+
+ctxElRestore.addEventListener('click', () => {
+  if (_ctxElementArchivedId) restoreElement(_ctxElementArchivedId);
+  closeCtxMenuElementArchived();
+});
+ctxElDelete.addEventListener('click', () => {
+  if (_ctxElementArchivedId) deleteElement(_ctxElementArchivedId);
+  closeCtxMenuElementArchived();
+});
+
 function positionCtxMenu(menu, e) {
   menu.style.left = e.pageX + 'px';
   menu.style.top  = e.pageY + 'px';
@@ -2167,9 +2198,11 @@ document.addEventListener('click', () => {
   closeCtxMenuTheme();
   closeCtxMenuGrid();
   closeCtxMenuSubtheme();
+  closeCtxMenuElement();
+  closeCtxMenuElementArchived();
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuSubtheme(); }
+  if (e.key === 'Escape') { closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuSubtheme(); closeCtxMenuElement(); closeCtxMenuElementArchived(); }
 });
 
 btnGenerate.addEventListener('click', () => {
@@ -2727,7 +2760,7 @@ function tlBuildTierlistItem(tl) {
   item.appendChild(nameSpan);
 
   item.addEventListener('click', () => tlSwitch(tl.id));
-  item.addEventListener('dblclick', e => { e.stopPropagation(); tlOpenManageModal(tl.id, item); });
+  item.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); tlOpenManageModal(tl.id, item); });
 
   // Drag & drop sidebar
   item.addEventListener('dragstart', e => _tlSidebarDragStart(e, tl.id, 'tierlist'));
@@ -2788,8 +2821,9 @@ function tlRenderList() {
     header.appendChild(name);
 
     // Le header lui-même ne toggle plus — seulement la flèche
-    // Mais double-clic sur le header ouvre le menu
-    header.addEventListener('dblclick', e => {
+    // Clic droit sur le header ouvre le menu
+    header.addEventListener('contextmenu', e => {
+      e.preventDefault();
       e.stopPropagation();
       tlOpenFolderManageModal(folder.id, header);
     });
@@ -2866,8 +2900,8 @@ function tlRenderTiers(tl) {
     labelText.textContent = tier.label;
     labelCell.appendChild(labelText);
 
-    // Double-clic sur la cellule label → modifier le tier
-    labelCell.addEventListener('dblclick', e => { e.stopPropagation(); tlEditTier(tl, tier); });
+    // Clic droit sur la cellule label → modifier le tier
+    labelCell.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); tlEditTier(tl, tier); });
 
     // Contrôles du tier (au hover)
     const controls = document.createElement('div');
@@ -2977,8 +3011,8 @@ function tlBuildImgCard(tl, img, size) {
     label.className = 'tl-img-label';
     label.style.width = size + 'px';
     label.textContent = img.name;
-    label.title = 'Double-clic pour renommer';
-    label.addEventListener('dblclick', e => { e.stopPropagation(); tlOpenRenameImg(tl, img); });
+    label.title = 'Clic droit pour renommer';
+    label.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); tlOpenRenameImg(tl, img); });
     card.appendChild(label);
   }
 

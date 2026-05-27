@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=19" />
+  <link rel="stylesheet" href="style.css?v=23" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -24,7 +24,6 @@
       <nav class="nav">
         <button class="nav-btn active" data-page="bingo">Bingo</button>
         <button class="nav-btn" data-page="tierlist">Tier List</button>
-        <button class="nav-btn disabled" title="Bientôt disponible">Planning</button>
       </nav>
 
       <!-- Badge profil dans le header -->
@@ -364,6 +363,16 @@
     <button class="ctx-menu-item ctx-danger" id="ctx-grid-archive">📦 Archiver</button>
   </div>
 
+  <div id="ctx-menu-element" class="ctx-menu hidden">
+    <button class="ctx-menu-item" id="ctx-element-edit">✎ Modifier</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-element-archive">📦 Archiver</button>
+  </div>
+
+  <div id="ctx-menu-element-archived" class="ctx-menu hidden">
+    <button class="ctx-menu-item" id="ctx-element-restore">↩ Restaurer</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-element-delete">✕ Supprimer</button>
+  </div>
+
   <!-- Modal nouveau thème -->
   <div id="modal-new-theme" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -558,6 +567,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=18"></script>
+  <script src="app.js?v=23"></script>
 </body>
 </html>
