@@ -31,11 +31,11 @@ la partie technique du projet. Tu dois :
 
 ```
 LesMichels/
-├── index.html          → Structure de la page + modal connexion Google + scripts Firebase
-├── style.css           → Thème sombre, mise en forme, badge utilisateur
-├── app.js              → Logique complète (auth, bingo, tierlist, Firebase temps réel)
+├── index.html          → Structure de la page + modals + scripts Firebase
+├── style.css           → Thème sombre, mise en forme (version 11)
+├── app.js              → Logique complète (auth, bingo, tierlist, Firebase) (version 10)
 ├── 404.html            → Page d'erreur Firebase Hosting
-├── firebase.json       → Configuration Firebase Hosting
+├── firebase.json       → Configuration Firebase Hosting + cache headers
 ├── .firebaserc         → Projet Firebase cible (lesmichels-bf146)
 ├── database.rules.json → Règles d'accès Firebase (authentifiés uniquement)
 └── README.md           → Ce fichier
@@ -49,8 +49,9 @@ LesMichels/
 - **Base de données** : Firebase Realtime Database — synchronisation en temps réel via WebSocket
 - **Accès** : uniquement via le lien fourni — `noindex` actif (invisible des moteurs de recherche)
 - **Authentification** : connexion Google obligatoire (Firebase Auth) — pas d'accès sans compte Google
-- **Badge utilisateur** : affiché en bas à droite avec photo de profil, nom et bouton de déconnexion
-- **Synchronisation** : toutes les modifications sont répercutées instantanément sur tous les appareils connectés, sans refresh
+- **Badge utilisateur** : affiché dans le header (en haut à droite) avec photo de profil et menu déroulant de déconnexion
+- **Synchronisation** : toutes les modifications Bingo sont répercutées instantanément sur tous les appareils connectés, sans refresh
+- **Cache HTTP** : fichiers `.html` servis sans cache ; fichiers `.js` et `.css` mis en cache 1 an (versionnés via `?v=N`)
 
 ---
 
@@ -58,12 +59,13 @@ LesMichels/
 
 ### Temps réel & multi-utilisateurs (Mai 2026)
 
-- [x] **Synchronisation Firebase** : toutes les modifications de bingo sont enregistrées dans Firebase Realtime Database, les modifications de tierlist sont pour le moment enregistrées en LocalStorage
-- [x] **Temps réel** : les changements apparaissent instantanément sur tous les appareils sans refresh
-- [x] **Multi-utilisateurs** : tous les participants peuvent interagir et modifier simultanément
-- [x] **Invisible des moteurs de recherche** : balise `noindex` + header HTTP `X-Robots-Tag`
+- [x] **Synchronisation Firebase (Bingo)** : toutes les modifications de bingo sont enregistrées dans Firebase Realtime Database — chemin `/bingo`
+- [x] **Tier List en LocalStorage** : les données de tier list sont sauvegardées localement (pas partagées en temps réel)
+- [x] **Temps réel (Bingo)** : les changements apparaissent instantanément sur tous les appareils sans refresh
+- [x] **Multi-utilisateurs (Bingo)** : tous les participants peuvent interagir et modifier simultanément
+- [x] **Invisible des moteurs de recherche** : balise `noindex, nofollow` + header HTTP `X-Robots-Tag`
 - [x] **Authentification Google** : connexion obligatoire via compte Google (Firebase Auth) — modal de connexion bloque l'accès si non connecté
-- [x] **Badge utilisateur** : affiché en bas à droite avec photo de profil Google, nom et bouton déconnexion
+- [x] **Badge utilisateur** : affiché dans le header avec photo de profil Google et menu déroulant de déconnexion
 - [x] **Accès sécurisé** : règles Firebase Realtime Database limitées aux utilisateurs authentifiés uniquement
 
 ---
@@ -77,7 +79,7 @@ LesMichels/
 - [x] Archivage d'une tier list (disparaît de la liste principale)
 - [x] **Modal "Archivées"** : restaurer ou supprimer définitivement
 - [x] Suppression définitive d'une tier list
-- [x] Sauvegarde automatique en temps réel dans Firebase
+- [x] Sauvegarde automatique en **LocalStorage** (locale, non partagée)
 
 #### Tiers
 - [x] 5 tiers par défaut à la création : S (rouge), A (orange), B (jaune), C (vert), D (bleu)
@@ -117,7 +119,7 @@ LesMichels/
 - [x] Archivage d'un thème (disparaît de la barre principale)
 - [x] **Bouton "📦 Thèmes archivés"** : affiche un modal listant les thèmes archivés avec options restaurer / supprimer
 - [x] Suppression définitive d'un thème uniquement depuis la modal "Thèmes archivés" (sécurité anti-missclic)
-- [x] Sauvegarde automatique dans Firebase
+- [x] Sauvegarde automatique dans Firebase (chemin `/bingo`)
 
 #### Cases (communes au thème, validation par sous-thème)
 - [x] Ajout d'une case (bouton ou touche Entrée)
@@ -135,6 +137,7 @@ LesMichels/
 - [x] Les **cases sont communes** à tout le thème, mais la **validation est propre à chaque sous-thème**
 - [x] **Double-clic sur un sous-thème** → menu contextuel : Renommer / Dupliquer / Archiver
 - [x] **Réordonner les sous-thèmes par glisser-déposer**
+- [x] **Modal "Sous-thèmes archivés"** : restaurer ou supprimer définitivement
 
 #### Grilles (propres au sous-thème actif)
 - [x] Plusieurs grilles par sous-thème (onglets) — **nom demandé à la création** via modal
@@ -176,7 +179,7 @@ LesMichels/
 - [x] **Séparation visuelle distincte** : en mode multi-grilles, chaque grille est encadrée indépendamment (fond, bordure, ombre)
 - [x] **Titre personnalisé par grille** : champ de saisie au-dessus de chaque grille — synchronisé avec le nom de l'onglet
 - [x] **Couleur de texte personnalisée par grille** : color picker dans les contrôles de chaque grille — s'applique aux cellules non cochées et au titre
-- [x] **Zoom texte local** : boutons +/- pour agrandir ou réduire la taille du texte — réglage propre à chaque navigateur
+- [x] **Zoom texte local** : boutons +/- pour agrandir ou réduire la taille du texte — réglage propre à chaque navigateur (stocké en LocalStorage)
 - [x] Police fixée à **Arial** pour tous les textes des cases
 - [x] Taille de texte adaptative selon la longueur du texte
 - [x] **Détection bingo** sur lignes, colonnes et les deux diagonales
@@ -190,46 +193,52 @@ LesMichels/
 
 ### Tierlist
 
-- Augmenter la largeur des tiers
-- Sauvegarde en temps réel pour tous
-- Possibilité de faire une capture d'écran de la tierlist
+- [ ] Sauvegarde en temps réel Firebase (chemin `/tierlist`) partagée entre tous les utilisateurs
+- [ ] Augmenter la largeur des tiers
 
 ### Planning
 
-- Affichage du calendrier, semaine en cours en haut suivi des 3 prochaines semaines
-- Création d'une soirée (ex : une émission TV)
-- Possibilité de créer des sous-soirées (ex : une saison)
-- Possibilité de créer des épisodes
-- Possibilité d'archiver des soirées, des épisodes
-- Possibilité d'écrire un sous-titre pour les soirées (ex : saison + numéro de l'épisode)
-- Possibilité de mettre un lien URL à une soirée
-- Glisser-Déposer des soirées dans le calendrier
-- Bouton "vu" à cocher qui archive automatiquement l'épisode
-- Boutons "Live" et "Replay" qui indiquent lorsque l'émission est diffusée en direct ou non.
-- Bouton Export PNG qui génère le planning en image
-- Possibilité de créer la soirée en cliquant directement sur le calendrier
-- Ajouter des participants et indiquer leur disponibilité
-- Pastille de couleur avec initiale du participant en gros dans le calendrier, possibilité de cocher/décocher un jour spécifique
-- Possibilité de faire une capture d'écran du planning
+- [ ] Affichage du calendrier, semaine en cours en haut suivi des 3 prochaines semaines
+- [ ] Création d'une soirée (ex : une émission TV)
+- [ ] Possibilité de créer des sous-soirées (ex : une saison)
+- [ ] Possibilité de créer des épisodes
+- [ ] Possibilité d'archiver des soirées, des épisodes
+- [ ] Possibilité d'écrire un sous-titre pour les soirées (ex : saison + numéro de l'épisode)
+- [ ] Possibilité de mettre un lien URL à une soirée
+- [ ] Glisser-Déposer des soirées dans le calendrier
+- [ ] Bouton "vu" à cocher qui archive automatiquement l'épisode
+- [ ] Boutons "Live" et "Replay" qui indiquent lorsque l'émission est diffusée en direct ou non
+- [ ] Bouton Export PNG qui génère le planning en image
+- [ ] Possibilité de créer la soirée en cliquant directement sur le calendrier
+- [ ] Ajouter des participants et indiquer leur disponibilité
+- [ ] Pastille de couleur avec initiale du participant en gros dans le calendrier, possibilité de cocher/décocher un jour spécifique
+- [ ] Possibilité de faire une capture d'écran du planning
 
 ---
 
 ## 💾 Sauvegarde des données
 
-Les données sont sauvegardées automatiquement dans **Firebase Realtime Database** :
-- Bingo : chemin `/bingo`
-- Tier List : LocalStorage pour le moment, chemin `/tierlist` à l'avenir
+| Module   | Stockage           | Chemin / Clé                        | Partagé |
+|----------|--------------------|-------------------------------------|---------|
+| Bingo    | Firebase Realtime  | `/bingo`                            | ✅ Oui  |
+| Tier List | LocalStorage      | `lesmichels_tierlist`               | ❌ Non  |
+| Zoom texte (Bingo) | LocalStorage | `lesmichels_bingo_fontscale`    | ❌ Non  |
+| Thème actif (Bingo) | LocalStorage | `lesmichels_bingo_activetheme`  | ❌ Non  |
+| Sous-thème actif (Bingo) | LocalStorage | `lesmichels_bingo_activesubtheme` | ❌ Non |
+| Grilles sélectionnées (Bingo) | LocalStorage | `lesmichels_bingo_selectedgrids_v3` | ❌ Non |
 
 ---
 
 ## 📝 Notes techniques
 
 - Aucune dépendance locale (pas de framework, pas de build tool, pas d'installation)
-- Firebase SDK chargé via CDN (version 10.12.2 compat) — modules `app`, `database`, `auth`
+- Firebase SDK chargé via CDN (version **10.12.2** compat) — modules `app`, `database`, `auth`
 - Compatible avec tous les navigateurs modernes
-- Polices chargées depuis Google Fonts (Space Mono) + Arial système
+- Polices chargées depuis Google Fonts : **Space Mono** (logo, éléments mono) — **Syne** chargée mais non utilisée dans le CSS
 - Synchronisation temps réel via WebSocket (Firebase `onValue`)
-- Pas de boucle infinie : flag `_bingoRemoteUpdate` / `_tlRemoteUpdate` bloque la ré-écriture lors d'une mise à jour distante
+- Pas de boucle infinie : flag `_bingoRemoteUpdate` bloque la ré-écriture lors d'une mise à jour distante (Bingo uniquement)
+- Thème actif, sous-thème actif et zoom texte sont **locaux** (par navigateur) et non synchronisés
+- Versionnement des assets via query string (`style.css?v=11`, `app.js?v=10`)
 
 ---
 

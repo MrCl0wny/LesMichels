@@ -2409,13 +2409,14 @@ const tlBtnShowArchived   = document.getElementById('tl-btn-show-archived');
 const tlEmptyState        = document.getElementById('tl-empty-state');
 const tlEditor            = document.getElementById('tl-editor');
 const tlTitleDisplay      = document.getElementById('tl-title-display');
-const tlBtnRenameTl       = document.getElementById('tl-btn-rename-tl');
+const tlTitleInput        = document.getElementById('tl-title-input');
 const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
 const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
 const tlBtnImportImages   = document.getElementById('tl-btn-import-images');
 const tlFileInput         = document.getElementById('tl-file-input');
 const tlBtnExport         = document.getElementById('tl-btn-export');
+const tlBtnCapture        = document.getElementById('tl-btn-capture');
 const tlTiersZone         = document.getElementById('tl-tiers-zone');
 const tlUnplacedZone      = document.getElementById('tl-unplaced-zone');
 const tlUnplacedCount     = document.getElementById('tl-unplaced-count');
@@ -2445,6 +2446,14 @@ const tlModalImgNameConfirm = document.getElementById('tl-modal-imgname-confirm'
 const tlModalImgNameCancel  = document.getElementById('tl-modal-imgname-cancel');
 const tlModalImgNameClose   = document.getElementById('tl-modal-imgname-close');
 
+const tlModalManage         = document.getElementById('tl-modal-manage');
+const tlModalManageTitle    = document.getElementById('tl-modal-manage-title');
+const tlModalManageClose    = document.getElementById('tl-modal-manage-close');
+const tlModalManageRename   = document.getElementById('tl-modal-manage-rename');
+const tlModalManageDuplicate= document.getElementById('tl-modal-manage-duplicate');
+const tlModalManageArchive  = document.getElementById('tl-modal-manage-archive');
+let tlModalManageTargetId   = null;
+
 // ── Drag state ────────────────────────────────────────────────────────────────
 let tlDragImgId = null;
 
@@ -2461,6 +2470,7 @@ function tlRender() {
   tlEditor.classList.remove('hidden');
 
   tlTitleDisplay.textContent = tl.name;
+  tlTitleInput.value = tl.name;
   tlShowLabelsToggle.checked = !!tl.showLabels;
   tlImgSizeSlider.value = tl.imgSize || 80;
 
@@ -2487,31 +2497,11 @@ function tlRenderList() {
     const nameSpan = document.createElement('span');
     nameSpan.className = 'tl-list-item-name';
     nameSpan.textContent = tl.name;
-    nameSpan.title = tl.name;
+    nameSpan.title = tl.name + '\nDouble-clic pour renommer, dupliquer ou archiver';
     item.appendChild(nameSpan);
 
-    const btnCopy = document.createElement('button');
-    btnCopy.className = 'tl-list-item-btn copy';
-    btnCopy.title = 'Copier';
-    btnCopy.textContent = '⎘';
-    btnCopy.addEventListener('click', e => { e.stopPropagation(); tlCopy(tl.id); });
-    item.appendChild(btnCopy);
-
-    const btnArch = document.createElement('button');
-    btnArch.className = 'tl-list-item-btn';
-    btnArch.title = 'Archiver';
-    btnArch.textContent = '📦';
-    btnArch.addEventListener('click', e => { e.stopPropagation(); tlArchive(tl.id); });
-    item.appendChild(btnArch);
-
-    const btnDel = document.createElement('button');
-    btnDel.className = 'tl-list-item-btn del';
-    btnDel.title = 'Supprimer';
-    btnDel.textContent = '✕';
-    btnDel.addEventListener('click', e => { e.stopPropagation(); tlDelete(tl.id); });
-    item.appendChild(btnDel);
-
     item.addEventListener('click', () => tlSwitch(tl.id));
+    item.addEventListener('dblclick', e => { e.stopPropagation(); tlOpenManageModal(tl.id); });
     tlList.appendChild(item);
   });
 }
@@ -2887,7 +2877,7 @@ function tlExport() {
   if (!tl) return;
 
   const imgSize = tl.imgSize || 80;
-  const labelW = 80;
+  const labelW = 140;
   const padding = 6;
   const rowGap = 4;
   const imgGap = 4;
@@ -2896,12 +2886,12 @@ function tlExport() {
   // Calcul de la hauteur de chaque tier
   const tierHeights = tl.tiers.map(tier => {
     if (tier.items.length === 0) return imgSize + padding * 2;
-    const rows = Math.ceil(tier.items.length * (imgSize + imgGap) / (800 - labelW));
+    const rows = Math.ceil(tier.items.length * (imgSize + imgGap) / (860 - labelW));
     return Math.max(imgSize + padding * 2, rows * (imgSize + imgGap) + padding * 2);
   });
 
   const totalHeight = tierHeights.reduce((a, b) => a + b + rowGap, 0) + 40;
-  const totalWidth = 820;
+  const totalWidth = 860;
 
   const canvas = document.createElement('canvas');
   canvas.width = totalWidth;
@@ -2949,13 +2939,13 @@ function tlExport() {
       const imgEl = await loadImage(imgData.src);
       if (imgEl) ctx.drawImage(imgEl, x, rowY, imgSize, imgSize);
       if (tl.showLabels) {
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(x, rowY + imgSize - 14, imgSize, 14);
-        ctx.fillStyle = '#ccc';
-        ctx.font = '9px Arial';
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(x, rowY + imgSize - 16, imgSize, 16);
+        ctx.fillStyle = '#e8e8f0';
+        ctx.font = 'bold 10px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(imgData.name.slice(0, 14), x + imgSize / 2, rowY + imgSize - 7);
+        ctx.fillText(imgData.name.slice(0, 14), x + imgSize / 2, rowY + imgSize - 8);
       }
       x += imgSize + imgGap;
     }
@@ -3107,6 +3097,133 @@ function tlConfirmTierModal() {
   tlTierModalCtx = null;
 }
 
+// ── Modal gestion (double clic sur onglet) ────────────────────────────────────
+function tlOpenManageModal(id) {
+  const tl = tlState.tierlists.find(t => t.id === id);
+  if (!tl) return;
+  tlModalManageTargetId = id;
+  tlModalManageTitle.textContent = tl.name;
+  tlModalManage.classList.remove('hidden');
+}
+
+// ── Capture Tierlist (presse-papier) ─────────────────────────────────────────
+function tlCapture() {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+
+  const imgSize = tl.imgSize || 80;
+  const labelW = 140;
+  const padding = 6;
+  const rowGap = 4;
+  const imgGap = 4;
+  const labelFontSize = Math.round(imgSize * 0.35);
+  const canvasWidth = 860;
+
+  const tierHeights = tl.tiers.map(tier => {
+    if (tier.items.length === 0) return imgSize + padding * 2;
+    const rows = Math.ceil(tier.items.length * (imgSize + imgGap) / (canvasWidth - labelW));
+    return Math.max(imgSize + padding * 2, rows * (imgSize + imgGap) + padding * 2);
+  });
+
+  const totalHeight = tierHeights.reduce((a, b) => a + b + rowGap, 0) + 40;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = totalHeight;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#18181c';
+  ctx.fillRect(0, 0, canvasWidth, totalHeight);
+
+  ctx.fillStyle = '#e8e8f0';
+  ctx.font = 'bold 18px Arial';
+  ctx.fillText(tl.name, 12, 26);
+
+  let y = 36;
+
+  const loadImage = (src) => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+
+  const drawTier = async (tier, tierH, yPos) => {
+    ctx.fillStyle = tier.color;
+    ctx.fillRect(0, yPos, labelW, tierH);
+    ctx.fillStyle = '#111';
+    ctx.font = `bold ${labelFontSize}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(tier.label, labelW / 2, yPos + tierH / 2);
+
+    ctx.fillStyle = '#22222a';
+    ctx.fillRect(labelW, yPos, canvasWidth - labelW, tierH);
+
+    let x = labelW + padding;
+    let rowY = yPos + padding;
+    for (const imgId of tier.items) {
+      const imgData = tl.images ? tl.images.find(i => i.id === imgId) : null;
+      if (!imgData) continue;
+      if (x + imgSize > canvasWidth - padding) { x = labelW + padding; rowY += imgSize + imgGap; }
+      const imgEl = await loadImage(imgData.src);
+      if (imgEl) ctx.drawImage(imgEl, x, rowY, imgSize, imgSize);
+      if (tl.showLabels) {
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(x, rowY + imgSize - 16, imgSize, 16);
+        ctx.fillStyle = '#e8e8f0';
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(imgData.name.slice(0, 14), x + imgSize / 2, rowY + imgSize - 8);
+      }
+      x += imgSize + imgGap;
+    }
+  };
+
+  (async () => {
+    for (let i = 0; i < tl.tiers.length; i++) {
+      await drawTier(tl.tiers[i], tierHeights[i], y);
+      y += tierHeights[i] + rowGap;
+    }
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
+        playCaptureSound();
+      }).catch(err => {
+        console.warn('TL Capture clipboard error:', err);
+      });
+    }, 'image/png');
+  })();
+}
+
+// ── Titre inline edit ─────────────────────────────────────────────────────────
+function tlStartTitleEdit() {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  tlTitleInput.value = tl.name;
+  tlTitleDisplay.classList.add('hidden');
+  tlTitleInput.classList.remove('hidden');
+  tlTitleInput.focus();
+  tlTitleInput.select();
+}
+
+function tlCommitTitleEdit() {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  const newName = tlTitleInput.value.trim();
+  tlTitleInput.classList.add('hidden');
+  tlTitleDisplay.classList.remove('hidden');
+  if (newName && newName !== tl.name) {
+    tlRename(tl.id, newName);
+  } else {
+    tlTitleDisplay.textContent = tl.name;
+  }
+}
+
 // ── Listeners ─────────────────────────────────────────────────────────────────
 tlBtnNew.addEventListener('click', tlOpenNewModal);
 
@@ -3119,9 +3236,39 @@ tlModalNewInput.addEventListener('keydown', e => {
   if (e.key === 'Escape') tlModalNew.classList.add('hidden');
 });
 
-tlBtnRenameTl.addEventListener('click', () => {
-  const tl = tlActiveTierlist();
-  if (tl) tlOpenRenameModal(tl.id);
+// Titre inline edit
+tlTitleDisplay.addEventListener('click', tlStartTitleEdit);
+tlTitleInput.addEventListener('blur', tlCommitTitleEdit);
+tlTitleInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { tlTitleInput.blur(); }
+  if (e.key === 'Escape') {
+    tlTitleInput.classList.add('hidden');
+    tlTitleDisplay.classList.remove('hidden');
+    const tl = tlActiveTierlist();
+    if (tl) tlTitleDisplay.textContent = tl.name;
+  }
+});
+
+// Modal gestion (double-clic onglet)
+tlModalManageClose.addEventListener('click', () => { tlModalManage.classList.add('hidden'); tlModalManageTargetId = null; });
+tlModalManage.addEventListener('click', e => { if (e.target === tlModalManage) { tlModalManage.classList.add('hidden'); tlModalManageTargetId = null; } });
+tlModalManageRename.addEventListener('click', () => {
+  const id = tlModalManageTargetId;
+  tlModalManage.classList.add('hidden');
+  tlModalManageTargetId = null;
+  if (id) tlOpenRenameModal(id);
+});
+tlModalManageDuplicate.addEventListener('click', () => {
+  const id = tlModalManageTargetId;
+  tlModalManage.classList.add('hidden');
+  tlModalManageTargetId = null;
+  if (id) tlCopy(id);
+});
+tlModalManageArchive.addEventListener('click', () => {
+  const id = tlModalManageTargetId;
+  tlModalManage.classList.add('hidden');
+  tlModalManageTargetId = null;
+  if (id) tlArchive(id);
 });
 
 tlBtnAddTier.addEventListener('click', () => tlOpenTierModal({ mode: 'create' }));
@@ -3145,6 +3292,7 @@ tlBtnImportImages.addEventListener('click', () => tlFileInput.click());
 tlFileInput.addEventListener('change', () => { if (tlFileInput.files.length) tlImportImages(tlFileInput.files); tlFileInput.value = ''; });
 
 tlBtnExport.addEventListener('click', tlExport);
+tlBtnCapture.addEventListener('click', tlCapture);
 
 tlShowLabelsToggle.addEventListener('change', () => {
   const tl = tlActiveTierlist();

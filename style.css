@@ -1413,7 +1413,7 @@ body {
 /* ── Layout principal tierlist ── */
 .tl-layout {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 480px 1fr;
   gap: 16px;
   align-items: start;
 }
@@ -1454,7 +1454,7 @@ body {
 .tl-btn-new {
   width: 28px;
   height: 28px;
-  background: var(--accent);
+  background: var(--success);
   border: none;
   border-radius: var(--radius);
   color: #111;
@@ -1468,7 +1468,7 @@ body {
   transition: var(--transition);
   flex-shrink: 0;
 }
-.tl-btn-new:hover { background: var(--accent-dim); }
+.tl-btn-new:hover { background: #2fa96e; }
 
 .tl-list {
   display: flex;
@@ -1584,6 +1584,33 @@ body {
   color: var(--text);
   letter-spacing: -0.01em;
 }
+.tl-title-editable {
+  cursor: pointer;
+  border-bottom: 2px dashed transparent;
+  transition: border-color 0.15s, color 0.15s;
+  padding-bottom: 1px;
+}
+.tl-title-editable:hover {
+  border-bottom-color: var(--accent-dim);
+  color: var(--accent);
+}
+.tl-title-input {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  background: var(--surface-2);
+  border: 1.5px solid var(--accent-dim);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  outline: none;
+  min-width: 120px;
+  max-width: 260px;
+}
+.tl-title-input:focus {
+  border-color: var(--accent);
+  background: var(--surface-3);
+}
 
 .tl-icon-btn {
   background: none;
@@ -1652,6 +1679,10 @@ body {
 .tl-toolbar-btn:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
 .tl-btn-export { color: var(--text-muted); }
 .tl-btn-export:hover { border-color: var(--success); color: var(--success); background: rgba(71,200,135,0.1); }
+.tl-btn-add-tier { color: var(--success) !important; border-color: var(--success) !important; background: rgba(71,200,135,0.08) !important; font-weight: 700; }
+.tl-btn-add-tier:hover { background: rgba(71,200,135,0.2) !important; }
+.tl-btn-capture { color: #f0b429; border-color: #b07e10; background: rgba(240,180,41,0.07); }
+.tl-btn-capture:hover { border-color: #f0b429; color: #f0b429; background: rgba(240,180,41,0.18); }
 
 /* ── Zone des tiers ── */
 .tl-tiers-zone {
@@ -1683,8 +1714,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-width: 70px;
-  width: 70px;
+  min-width: 140px;
+  width: 140px;
   flex-shrink: 0;
   color: #111;
   font-weight: 800;
@@ -1699,7 +1730,7 @@ body {
   word-break: break-word;
   text-align: center;
   line-height: 1.1;
-  max-width: 62px;
+  max-width: 128px;
 }
 
 .tl-tier-controls {
@@ -1778,16 +1809,17 @@ body {
 
 .tl-img-label {
   width: 100%;
-  font-size: 0.6rem;
+  font-size: 0.72rem;
   text-align: center;
-  color: var(--text-muted);
-  background: rgba(0,0,0,0.6);
-  padding: 2px 4px;
+  color: #e8e8f0;
+  background: rgba(0,0,0,0.72);
+  padding: 4px 5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.3;
+  line-height: 1.4;
   cursor: text;
+  font-weight: 600;
 }
 
 .tl-img-card-actions {
@@ -1943,9 +1975,32 @@ body {
   font-weight: 800;
   font-size: 0.9rem;
   text-align: center;
-  width: 58px;
+  width: 120px;
   padding: 2px 4px;
   outline: none;
+}
+
+/* ── Modal gestion tierlist ── */
+.tl-manage-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tl-manage-btn {
+  width: 100%;
+  text-align: left;
+  font-size: 0.92rem;
+  padding: 10px 14px;
+}
+.tl-manage-btn-archive {
+  border-color: var(--border) !important;
+  color: var(--text-muted) !important;
+  background: var(--surface-2) !important;
+}
+.tl-manage-btn-archive:hover {
+  border-color: #f0b429 !important;
+  color: #f0b429 !important;
+  background: rgba(240,180,41,0.1) !important;
 }
 
 /* ── Export canvas (caché) ── */

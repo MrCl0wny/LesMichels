@@ -66,3 +66,7 @@ node_modules/
 
 # Outils de dev local
 serveur-local.bat
+
+# Fichiers Claude Code (contexte local, non partagé)
+CLAUDE.md
+MEMORY.md
