@@ -15,6 +15,7 @@ function setupAuth() {
   const btnGoogle    = document.getElementById('btn-google-signin');
   const userBadge    = document.getElementById('user-badge');
   const userAvatar   = document.getElementById('user-avatar');
+  const userDropdown = document.getElementById('user-dropdown');
   const btnSignout   = document.getElementById('btn-signout');
 
   btnGoogle.addEventListener('click', () => {
@@ -25,7 +26,19 @@ function setupAuth() {
     });
   });
 
+  // Toggle dropdown au clic sur l'avatar
+  userAvatar.addEventListener('click', (e) => {
+    e.stopPropagation();
+    userDropdown.classList.toggle('hidden');
+  });
+
+  // Fermer le dropdown si on clique ailleurs
+  document.addEventListener('click', () => {
+    userDropdown.classList.add('hidden');
+  });
+
   btnSignout.addEventListener('click', () => {
+    userDropdown.classList.add('hidden');
     _auth.signOut();
   });
 
@@ -37,7 +50,6 @@ function setupAuth() {
       userBadge.classList.remove('hidden');
       userAvatar.src = user.photoURL || '';
       userAvatar.style.display = user.photoURL ? 'block' : 'none';
-      // userName masqué — on n'affiche plus le texte
     } else {
       currentUser   = null;
       currentPseudo = null;
@@ -2134,9 +2146,9 @@ btnReset.addEventListener('click', () => {
   const s = activeSubtheme();
   if (!t || t.locked || !s) return;
   if (!confirm('Décocher toutes les cases des grilles de ce sous-thème ?')) return;
-  // Reset uniquement les grilles du sous-thème actif
+  // Reset toutes les grilles du sous-thème actif (y compris les bloquées — le verrou protège la génération, pas les coches)
   (s.grids || []).filter(gx => !gx.archived).forEach(gx => {
-    if (!gx.locked) gx.grid = gx.grid.map(c => ({ ...c, checked: false }));
+    gx.grid = gx.grid.map(c => ({ ...c, checked: false }));
   });
   saveState();
   renderGrid();

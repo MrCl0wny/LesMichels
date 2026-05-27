@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=8" />
+  <link rel="stylesheet" href="style.css?v=11" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -26,6 +26,16 @@
         <button class="nav-btn" data-page="tierlist">Tier List</button>
         <button class="nav-btn disabled" title="Bientôt disponible">Planning</button>
       </nav>
+
+      <!-- Badge profil dans le header -->
+      <div id="user-badge" class="user-badge hidden">
+        <img id="user-avatar" class="user-avatar" src="" alt="" />
+        <!-- Dropdown déconnexion -->
+        <div id="user-dropdown" class="user-dropdown hidden">
+          <button id="btn-signout" class="user-dropdown-item user-dropdown-signout">↪ Se déconnecter</button>
+        </div>
+      </div>
+
     </div>
   </header>
 
@@ -451,11 +461,7 @@
     </div>
   </div>
 
-  <!-- Bouton utilisateur connecté (header) -->
-  <div id="user-badge" class="user-badge hidden">
-    <img id="user-avatar" class="user-avatar" src="" alt="" />
-    <button id="btn-signout" class="btn-signout" title="Se déconnecter">↪</button>
-  </div>
+  <!-- user-badge déplacé dans le header -->
 
   <!-- Firebase init + app -->
   <script>
@@ -471,6 +477,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>
