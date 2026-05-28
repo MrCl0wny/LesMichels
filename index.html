@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=23" />
+  <link rel="stylesheet" href="style.css?v=24" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -149,6 +149,13 @@
 
           <!-- Ligne 3 : Toolbar -->
           <div class="ctrl-row ctrl-row-toolbar">
+            <div class="grid-size-control">
+              <label>Grille</label>
+              <button class="size-btn" id="btn-grid-height-minus">−</button>
+              <input type="number" id="grid-height-input" class="scale-input" min="20" max="80" step="5" value="60" title="Hauteur de la grille en % de l'écran" />
+              <span class="scale-unit">%</span>
+              <button class="size-btn" id="btn-grid-height-plus">+</button>
+            </div>
             <div class="grid-size-control">
               <label>Texte</label>
               <button class="size-btn" id="btn-font-minus">−</button>
@@ -354,6 +361,7 @@
     <button class="ctx-menu-item" id="ctx-theme-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-theme-duplicate">❐ Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-theme-archive">📦 Archiver</button>
+    <button class="ctx-menu-item ctx-cancel" id="ctx-theme-cancel">✕ Annuler</button>
   </div>
 
   <!-- Menu contextuel grille (double-clic) -->
@@ -361,16 +369,19 @@
     <button class="ctx-menu-item" id="ctx-grid-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-grid-duplicate">❐ Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-grid-archive">📦 Archiver</button>
+    <button class="ctx-menu-item ctx-cancel" id="ctx-grid-cancel">✕ Annuler</button>
   </div>
 
   <div id="ctx-menu-element" class="ctx-menu hidden">
     <button class="ctx-menu-item" id="ctx-element-edit">✎ Modifier</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-archive">📦 Archiver</button>
+    <button class="ctx-menu-item ctx-cancel" id="ctx-element-cancel">✕ Annuler</button>
   </div>
 
   <div id="ctx-menu-element-archived" class="ctx-menu hidden">
     <button class="ctx-menu-item" id="ctx-element-restore">↩ Restaurer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-delete">✕ Supprimer</button>
+    <button class="ctx-menu-item ctx-cancel" id="ctx-element-archived-cancel">✕ Annuler</button>
   </div>
 
   <!-- Modal nouveau thème -->
@@ -514,6 +525,7 @@
     <button class="ctx-menu-item" id="ctx-subtheme-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-subtheme-duplicate">❐ Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-archive">📦 Archiver</button>
+    <button class="ctx-menu-item ctx-cancel" id="ctx-subtheme-cancel">✕ Annuler</button>
   </div>
 
   <!-- Modal nouvelle grille -->
@@ -567,6 +579,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=23"></script>
+  <script src="app.js?v=24"></script>
 </body>
 </html>

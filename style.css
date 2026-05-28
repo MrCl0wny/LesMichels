@@ -1190,6 +1190,8 @@ body {
 }
 .ctx-menu-item:hover { background: var(--surface-3); color: var(--accent); }
 .ctx-menu-item.ctx-danger:hover { color: var(--danger); background: rgba(232,91,71,0.1); }
+.ctx-menu-item.ctx-cancel { color: var(--text-faint); border-top: 1px solid var(--border); margin-top: 2px; }
+.ctx-menu-item.ctx-cancel:hover { color: var(--text-muted); background: var(--surface-3); }
 
 /* ── Modal thèmes archivés ── */
 .modal-overlay {

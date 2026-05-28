@@ -87,6 +87,22 @@ function saveLocalFontScale(scale) {
   localStorage.setItem(_LOCAL_FONT_SCALE_KEY, _localFontScale);
 }
 
+// Hauteur de la grille (en % de la hauteur d'écran, local non partagé)
+const _LOCAL_GRID_HEIGHT_KEY = 'lesmichels_bingo_gridheight';
+let _localGridHeight = parseInt(localStorage.getItem(_LOCAL_GRID_HEIGHT_KEY)) || 60;
+
+function saveLocalGridHeight(pct) {
+  _localGridHeight = Math.max(20, Math.min(80, pct));
+  localStorage.setItem(_LOCAL_GRID_HEIGHT_KEY, _localGridHeight);
+}
+
+function applyGridHeight() {
+  const h = _localGridHeight;
+  document.querySelectorAll('.bingo-grid').forEach(el => {
+    el.style.maxWidth = `min(${h}vh, 100%)`;
+  });
+}
+
 // IDs des grilles sélectionnées (affichées simultanément, max 3, local non partagé)
 // Stocké par sous-thème : { [subthemeId]: [gridId, ...] }
 const _LOCAL_SELECTED_GRIDS_KEY = 'lesmichels_bingo_selectedgrids_v3';
@@ -287,6 +303,9 @@ const gridsList        = document.getElementById('grids-list');
 const btnNewGrid       = document.getElementById('btn-new-grid');
 const themesList       = document.getElementById('themes-list');
 const btnNewTheme      = document.getElementById('btn-new-theme');
+const btnGridHeightMinus = document.getElementById('btn-grid-height-minus');
+const btnGridHeightPlus  = document.getElementById('btn-grid-height-plus');
+const gridHeightInput    = document.getElementById('grid-height-input');
 const btnFontMinus       = document.getElementById('btn-font-minus');
 const btnFontPlus        = document.getElementById('btn-font-plus');
 const fontScaleInput     = document.getElementById('font-scale-input');
@@ -355,11 +374,12 @@ function buildElementItem(el, isArchived) {
   const g = activeGrid();
   const isPlaced = manualMode && g && g.grid.some(cell => cell.elementId === el.id);
 
-  // Vérifier si cet élément est coché dans au moins une grille du sous-thème actif
+  // Vérifier si cet élément est coché : dans une grille OU directement sur l'élément
   const s = activeSubtheme();
-  const isChecked = !isArchived && s && (s.grids || []).filter(gx => !gx.archived).some(
+  const isCheckedInGrid = !isArchived && s && (s.grids || []).filter(gx => !gx.archived).some(
     gx => gx.grid.some(c => c.elementId === el.id && c.checked)
   );
+  const isChecked = isCheckedInGrid || (!isArchived && !!el.checked);
 
   li.className = 'element-item' + (isArchived ? ' archived' : '') + (isPlaced ? ' placed' : '') + (isChecked ? ' elem-checked' : '');
   li.dataset.id = el.id;
@@ -371,9 +391,26 @@ function buildElementItem(el, isArchived) {
   li.appendChild(span);
 
   if (!isArchived) {
-    li.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuElement(el.id, span, e); });
+    // Clic gauche : toggle coché/décoché
+    li.addEventListener('click', () => {
+      const tNow = activeTheme();
+      const sNow = activeSubtheme();
+      if (!tNow || !sNow) return;
+      const newChecked = !isChecked;
+      // Mettre à jour les grilles si la case y est présente
+      (sNow.grids || []).filter(gx => !gx.archived).forEach(gx => {
+        const matchCell = gx.grid.find(c => c.elementId === el.id);
+        if (matchCell) matchCell.checked = newChecked;
+      });
+      // Toujours mettre à jour el.checked (état de secours si hors grille)
+      el.checked = newChecked;
+      saveState();
+      renderGrid();
+      renderElements();
+    });
+    li.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuElement(el.id, span, e, li); });
   } else {
-    li.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuElementArchived(el.id, e); });
+    li.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuElementArchived(el.id, e, li); });
   }
 
   return li;
@@ -458,6 +495,7 @@ function restoreElement(id) {
   if (el) el.archived = false;
   saveState();
   renderElements();
+  renderGrid();
 }
 
 // ──────────────────────────────────────────────
@@ -482,6 +520,20 @@ function createTheme(name) {
 }
 
 function switchTheme(id) {
+  // Reclique sur le thème actif → le décocher
+  if (_localActiveThemeId === id) {
+    _localActiveThemeId = null;
+    _saveLocalActiveThemeId(null);
+    _localActiveSubthemeId = null;
+    _saveLocalActiveSubthemeId(null);
+    _selectedGridIds = [];
+    renderThemesList();
+    renderSubthemesList();
+    renderElements();
+    renderGridsList();
+    renderGrid();
+    return;
+  }
   _localActiveThemeId = id;
   _saveLocalActiveThemeId(id);
   // Restaurer ou initialiser le sous-thème actif
@@ -612,7 +664,7 @@ function renderThemesList() {
     item.addEventListener('contextmenu', e => {
       e.preventDefault();
       e.stopPropagation();
-      openCtxMenuTheme(t.id, e);
+      openCtxMenuTheme(t.id, e, item);
     });
 
     // Drag & drop pour réordonner les thèmes
@@ -771,7 +823,7 @@ function renderSubthemesList() {
     item.appendChild(nameSpan);
 
     item.addEventListener('click', () => switchSubtheme(s.id));
-    item.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuSubtheme(s.id, e); });
+    item.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuSubtheme(s.id, e, item); });
 
     // Drag & drop réordonnancement
     item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', s.id); item.classList.add('dragging'); });
@@ -897,12 +949,13 @@ const ctxSubthemeDuplicate = document.getElementById('ctx-subtheme-duplicate');
 const ctxSubthemeArchive   = document.getElementById('ctx-subtheme-archive');
 let _ctxSubthemeId = null;
 
-function openCtxMenuSubtheme(id, e) { closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuElement(); _ctxSubthemeId = id; positionCtxMenu(ctxMenuSubtheme, e); ctxMenuSubtheme.classList.remove('hidden'); }
+function openCtxMenuSubtheme(id, e, anchorEl) { closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuElement(); _ctxSubthemeId = id; positionCtxMenu(ctxMenuSubtheme, e, anchorEl); ctxMenuSubtheme.classList.remove('hidden'); }
 function closeCtxMenuSubtheme() { ctxMenuSubtheme.classList.add('hidden'); _ctxSubthemeId = null; }
 
 ctxSubthemeRename.addEventListener('click', () => { if (_ctxSubthemeId) openRenameSubthemeModal(_ctxSubthemeId); closeCtxMenuSubtheme(); });
 ctxSubthemeDuplicate.addEventListener('click', () => { if (_ctxSubthemeId) duplicateSubtheme(_ctxSubthemeId); closeCtxMenuSubtheme(); });
 ctxSubthemeArchive.addEventListener('click', () => { if (_ctxSubthemeId) archiveSubtheme(_ctxSubthemeId); closeCtxMenuSubtheme(); });
+document.getElementById('ctx-subtheme-cancel').addEventListener('click', () => closeCtxMenuSubtheme());
 
 // ──────────────────────────────────────────────
 // Export PNG de la grille bingo
@@ -1332,7 +1385,7 @@ function renderGridsList() {
       e.preventDefault();
       e.stopPropagation();
       if (_clickTimer) { clearTimeout(_clickTimer); _clickTimer = null; }
-      openCtxMenuGrid(g.id, e);
+      openCtxMenuGrid(g.id, e, item);
     });
 
     gridsList.appendChild(item);
@@ -1470,14 +1523,24 @@ function generateGrid() {
 
 function resetGrid() {
   const g = activeGrid();
-  if (!g) return;
+  const t = activeTheme();
+  const s = activeSubtheme();
+  if (!g || !t || !s) return;
   // Ne réinitialiser que les cases visibles (n×n), pas les cases mémorisées hors grille
   const cellCount = g.gridSize * g.gridSize;
   for (let i = 0; i < cellCount; i++) {
     if (g.grid[i]) g.grid[i] = { ...g.grid[i], checked: false };
   }
+  // Remettre el.checked à false pour les éléments qui ne sont plus cochés dans aucune grille
+  t.elements.forEach(el => {
+    const stillChecked = (s.grids || []).filter(gx => !gx.archived).some(
+      gx => gx.grid.some(c => c.elementId === el.id && c.checked)
+    );
+    if (!stillChecked) el.checked = false;
+  });
   saveState();
   renderGrid();
+  renderElements();
 }
 
 
@@ -1538,7 +1601,7 @@ function getCellFontSize(text, scale) {
 // Mode placement manuel supprimé
 const manualMode = false;
 
-function buildSingleGrid(t, g, isActive) {
+function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const n = g.gridSize;
   const scale = _localFontScale;
   const { indices: bingoIndices, lines: bingoLines } = getBingoResult(n, g.grid.slice(0, n * n));
@@ -1694,6 +1757,9 @@ function buildSingleGrid(t, g, isActive) {
   const gridEl = document.createElement('div');
   gridEl.className = 'bingo-grid';
   gridEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+  // Réduire proportionnellement pour les multi-grilles (même ratio que le CSS de base 80→68→56)
+  const heightFactor = totalGrids === 3 ? 0.70 : totalGrids === 2 ? 0.85 : 1;
+  gridEl.style.maxWidth = `min(${Math.round(_localGridHeight * heightFactor)}vh, 100%)`;
 
   // On n'itère que sur les n×n premières cases (le tableau peut être plus grand
   // pour préserver les cases cachées lors d'une réduction temporaire de taille)
@@ -1745,6 +1811,9 @@ function buildSingleGrid(t, g, isActive) {
               const matchCell = gx.grid.find(c => c.elementId === cell.elementId);
               if (matchCell) matchCell.checked = newChecked;
             });
+            // Synchroniser el.checked
+            const elObj = tNow.elements.find(e => e.id === cell.elementId);
+            if (elObj) elObj.checked = newChecked;
           }
           saveState();
           renderGrid();
@@ -1854,7 +1923,7 @@ function renderGrid() {
 
   gridsToShow.forEach(gridItem => {
     const isActive = gridItem.id === (g?.id);
-    const { wrapper } = buildSingleGrid(t, gridItem, isActive);
+    const { wrapper } = buildSingleGrid(t, gridItem, isActive, gridsToShow.length);
 
     // Drag & drop pour réordonner les grilles affichées
     if (gridsToShow.length > 1) {
@@ -2037,6 +2106,15 @@ inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') addElement(); 
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
 btnSizePlus.addEventListener('click',  () => changeSize(+1));
 
+btnGridHeightMinus.addEventListener('click', () => { saveLocalGridHeight(_localGridHeight - 5); gridHeightInput.value = _localGridHeight; renderGrid(); });
+btnGridHeightPlus.addEventListener('click',  () => { saveLocalGridHeight(_localGridHeight + 5); gridHeightInput.value = _localGridHeight; renderGrid(); });
+gridHeightInput.addEventListener('change', () => {
+  const v = Math.max(20, Math.min(80, parseInt(gridHeightInput.value) || 60));
+  saveLocalGridHeight(v);
+  gridHeightInput.value = _localGridHeight;
+  renderGrid();
+});
+
 btnFontMinus.addEventListener('click', () => changeFontScale(-0.1));
 btnFontPlus.addEventListener('click',  () => changeFontScale(+0.1));
 fontScaleInput.addEventListener('change', () => {
@@ -2076,10 +2154,10 @@ const ctxThemeDuplicate = document.getElementById('ctx-theme-duplicate');
 const ctxThemeArchive   = document.getElementById('ctx-theme-archive');
 let _ctxThemeId = null;
 
-function openCtxMenuTheme(id, e) {
+function openCtxMenuTheme(id, e, anchorEl) {
   closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
   _ctxThemeId = id;
-  positionCtxMenu(ctxMenuTheme, e);
+  positionCtxMenu(ctxMenuTheme, e, anchorEl);
   ctxMenuTheme.classList.remove('hidden');
 }
 
@@ -2100,6 +2178,7 @@ ctxThemeArchive.addEventListener('click', () => {
   if (_ctxThemeId) archiveTheme(_ctxThemeId);
   closeCtxMenuTheme();
 });
+document.getElementById('ctx-theme-cancel').addEventListener('click', () => closeCtxMenuTheme());
 
 // ──────────────────────────────────────────────
 // Menu contextuel — Grilles
@@ -2110,10 +2189,10 @@ const ctxGridDuplicate = document.getElementById('ctx-grid-duplicate');
 const ctxGridArchive   = document.getElementById('ctx-grid-archive');
 let _ctxGridId = null;
 
-function openCtxMenuGrid(id, e) {
+function openCtxMenuGrid(id, e, anchorEl) {
   closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuElement();
   _ctxGridId = id;
-  positionCtxMenu(ctxMenuGrid, e);
+  positionCtxMenu(ctxMenuGrid, e, anchorEl);
   ctxMenuGrid.classList.remove('hidden');
 }
 
@@ -2134,6 +2213,7 @@ ctxGridArchive.addEventListener('click', () => {
   if (_ctxGridId) archiveGrid(_ctxGridId);
   closeCtxMenuGrid();
 });
+document.getElementById('ctx-grid-cancel').addEventListener('click', () => closeCtxMenuGrid());
 
 // ── Menu contextuel cases ──
 const ctxMenuElement  = document.getElementById('ctx-menu-element');
@@ -2142,11 +2222,11 @@ const ctxElArchive    = document.getElementById('ctx-element-archive');
 let _ctxElementId     = null;
 let _ctxElementSpan   = null;
 
-function openCtxMenuElement(id, span, e) {
+function openCtxMenuElement(id, span, e, anchorEl) {
   closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuGrid();
   _ctxElementId = id;
   _ctxElementSpan = span;
-  positionCtxMenu(ctxMenuElement, e);
+  positionCtxMenu(ctxMenuElement, e, anchorEl);
   ctxMenuElement.classList.remove('hidden');
 }
 function closeCtxMenuElement() { ctxMenuElement.classList.add('hidden'); _ctxElementId = null; _ctxElementSpan = null; }
@@ -2159,6 +2239,7 @@ ctxElArchive.addEventListener('click', () => {
   if (_ctxElementId) archiveElement(_ctxElementId);
   closeCtxMenuElement();
 });
+document.getElementById('ctx-element-cancel').addEventListener('click', () => closeCtxMenuElement());
 
 // ── Menu contextuel cases archivées ──
 const ctxMenuElementArchived = document.getElementById('ctx-menu-element-archived');
@@ -2166,10 +2247,10 @@ const ctxElRestore           = document.getElementById('ctx-element-restore');
 const ctxElDelete            = document.getElementById('ctx-element-delete');
 let _ctxElementArchivedId    = null;
 
-function openCtxMenuElementArchived(id, e) {
+function openCtxMenuElementArchived(id, e, anchorEl) {
   closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
   _ctxElementArchivedId = id;
-  positionCtxMenu(ctxMenuElementArchived, e);
+  positionCtxMenu(ctxMenuElementArchived, e, anchorEl);
   ctxMenuElementArchived.classList.remove('hidden');
 }
 function closeCtxMenuElementArchived() { ctxMenuElementArchived.classList.add('hidden'); _ctxElementArchivedId = null; }
@@ -2182,16 +2263,29 @@ ctxElDelete.addEventListener('click', () => {
   if (_ctxElementArchivedId) deleteElement(_ctxElementArchivedId);
   closeCtxMenuElementArchived();
 });
+document.getElementById('ctx-element-archived-cancel').addEventListener('click', () => closeCtxMenuElementArchived());
 
-function positionCtxMenu(menu, e) {
-  menu.style.left = e.pageX + 'px';
-  menu.style.top  = e.pageY + 'px';
-  // Ajuster si déborde à droite ou en bas
-  requestAnimationFrame(() => {
-    const rect = menu.getBoundingClientRect();
-    if (rect.right > window.innerWidth - 8)  menu.style.left = (e.pageX - rect.width) + 'px';
-    if (rect.bottom > window.innerHeight - 8) menu.style.top = (e.pageY - rect.height) + 'px';
-  });
+function positionCtxMenu(menu, e, anchorEl) {
+  if (anchorEl) {
+    // getBoundingClientRect() retourne des coords viewport → compatible position:fixed directement
+    const aRect = anchorEl.getBoundingClientRect();
+    menu.style.left = (aRect.right + 4) + 'px';
+    menu.style.top  = aRect.top + 'px';
+    requestAnimationFrame(() => {
+      const rect = menu.getBoundingClientRect();
+      if (rect.right  > window.innerWidth  - 8) menu.style.left = (aRect.left - rect.width - 4) + 'px';
+      if (rect.bottom > window.innerHeight - 8)  menu.style.top  = (aRect.bottom - rect.height) + 'px';
+    });
+  } else {
+    // clientX/Y = coords viewport → compatible position:fixed
+    menu.style.left = e.clientX + 'px';
+    menu.style.top  = e.clientY + 'px';
+    requestAnimationFrame(() => {
+      const rect = menu.getBoundingClientRect();
+      if (rect.right  > window.innerWidth  - 8) menu.style.left = (e.clientX - rect.width) + 'px';
+      if (rect.bottom > window.innerHeight - 8)  menu.style.top  = (e.clientY - rect.height) + 'px';
+    });
+  }
 }
 
 document.addEventListener('click', () => {
@@ -2204,6 +2298,10 @@ document.addEventListener('click', () => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuSubtheme(); closeCtxMenuElement(); closeCtxMenuElementArchived(); }
 });
+// Fermer les menus contextuels au scroll (ils sont fixed et ne suivent pas la page)
+window.addEventListener('scroll', () => {
+  closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuSubtheme(); closeCtxMenuElement(); closeCtxMenuElementArchived();
+}, { passive: true });
 
 btnGenerate.addEventListener('click', () => {
   if (manualMode) return;
@@ -2236,6 +2334,8 @@ btnReset.addEventListener('click', () => {
   (s.grids || []).filter(gx => !gx.archived).forEach(gx => {
     gx.grid = gx.grid.map(c => ({ ...c, checked: false }));
   });
+  // Remettre el.checked à false pour tous les éléments du thème
+  t.elements.forEach(el => { el.checked = false; });
   saveState();
   renderGrid();
   renderElements();
@@ -4205,6 +4305,9 @@ _dbBingo.on('value', snapshot => {
 
   // Init affichage de la taille de texte locale
   fontScaleInput.value = Math.round(_localFontScale * 100);
+
+  // Init affichage de la hauteur de grille locale
+  gridHeightInput.value = _localGridHeight;
 
   // Charger les grilles sélectionnées pour le sous-thème actif
   const sub = activeSubtheme();
