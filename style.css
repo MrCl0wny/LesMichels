@@ -721,6 +721,49 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
+
+/* Variante slider pour Grille/Texte */
+.grid-size-control-slider {
+  gap: 6px;
+  padding: 4px 10px;
+}
+.slider-label {
+  white-space: nowrap;
+  min-width: 34px;
+}
+.toolbar-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 90px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.toolbar-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toolbar-slider::-webkit-slider-thumb:hover { background: #fff; }
+.toolbar-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.slider-value-display {
+  display: none;
+}
 .size-btn {
   width: 28px;
   height: 28px;
@@ -1167,13 +1210,30 @@ body {
   border-radius: var(--radius);
   box-shadow: 0 8px 24px rgba(0,0,0,0.45);
   min-width: 160px;
-  overflow: hidden;
+  overflow: visible;
   animation: ctx-appear 0.1s ease;
+  padding-top: 20px;
 }
+.ctx-menu:not(.hidden) { position: fixed; }
 @keyframes ctx-appear {
   from { opacity: 0; transform: scale(0.95); }
   to   { opacity: 1; transform: scale(1); }
 }
+.ctx-close-btn {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 0.78rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: color 0.12s;
+}
+.ctx-close-btn:hover { color: var(--danger); }
 .ctx-menu-item {
   display: block;
   width: 100%;
@@ -1190,8 +1250,6 @@ body {
 }
 .ctx-menu-item:hover { background: var(--surface-3); color: var(--accent); }
 .ctx-menu-item.ctx-danger:hover { color: var(--danger); background: rgba(232,91,71,0.1); }
-.ctx-menu-item.ctx-cancel { color: var(--text-faint); border-top: 1px solid var(--border); margin-top: 2px; }
-.ctx-menu-item.ctx-cancel:hover { color: var(--text-muted); background: var(--surface-3); }
 
 /* ── Modal thèmes archivés ── */
 .modal-overlay {
@@ -1331,6 +1389,13 @@ body {
   color: var(--text) !important;
   border-color: var(--text-faint) !important;
 }
+
+.btn-danger-action {
+  background: #8b1a0f !important;
+  color: #f5c0bb !important;
+  border: 1px solid #a82015 !important;
+}
+.btn-danger-action:hover { background: #a82015 !important; color: #fff !important; border-color: #c42a1a !important; }
 
 .themes-empty-msg {
   color: var(--text-faint);

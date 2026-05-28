@@ -89,7 +89,7 @@ function saveLocalFontScale(scale) {
 
 // Hauteur de la grille (en % de la hauteur d'écran, local non partagé)
 const _LOCAL_GRID_HEIGHT_KEY = 'lesmichels_bingo_gridheight';
-let _localGridHeight = parseInt(localStorage.getItem(_LOCAL_GRID_HEIGHT_KEY)) || 60;
+let _localGridHeight = parseInt(localStorage.getItem(_LOCAL_GRID_HEIGHT_KEY)) || 80;
 
 function saveLocalGridHeight(pct) {
   _localGridHeight = Math.max(20, Math.min(80, pct));
@@ -653,6 +653,7 @@ function renderThemesList() {
     item.className = 'theme-tab' + (t.id === _localActiveThemeId ? ' active' : '');
     item.dataset.id = t.id;
     item.draggable = true;
+    item.title = (t.id === _localActiveThemeId ? 'Clic gauche : masquer ce thème' : 'Clic gauche : afficher ce thème') + '\nClic droit : renommer, dupliquer, archiver';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'theme-tab-name';
@@ -816,6 +817,7 @@ function renderSubthemesList() {
     item.className = 'theme-tab subtheme-tab' + (s.id === _localActiveSubthemeId ? ' active' : '');
     item.dataset.id = s.id;
     item.draggable = true;
+    item.title = (s.id === _localActiveSubthemeId ? 'Clic gauche : masquer ce sous-thème' : 'Clic gauche : afficher ce sous-thème') + '\nClic droit : renommer, dupliquer, archiver';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'theme-tab-name';
@@ -1324,7 +1326,7 @@ function renderGridsList() {
     item.className = 'grid-tab' + (isSelected ? ' active' : '');
     item.dataset.id = g.id;
     item.draggable = true;
-    item.title = isSelected ? 'Cliquer pour masquer cette grille' : 'Cliquer pour afficher cette grille (max 3)';
+    item.title = (isSelected ? 'Clic gauche : masquer cette grille' : 'Clic gauche : afficher cette grille (max 3)') + '\nClic droit : renommer, dupliquer, archiver';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'grid-tab-name';
@@ -1570,6 +1572,8 @@ function applyFontScale() {
   const scale = _localFontScale;
   const pct = Math.round(scale * 100);
   fontScaleInput.value = pct;
+  const dispEl = document.getElementById('font-scale-display');
+  if (dispEl) dispEl.textContent = pct + '%';
 
   const t = activeTheme();
   const s = activeSubtheme();
@@ -1929,7 +1933,6 @@ function renderGrid() {
     if (gridsToShow.length > 1) {
       wrapper.draggable = true;
       wrapper.style.cursor = 'grab';
-      wrapper.title = 'Glisser pour réordonner';
       wrapper.addEventListener('dragstart', e => {
         e.dataTransfer.setData('text/plain', gridItem.id);
         wrapper.classList.add('grid-wrapper-dragging');
@@ -2106,20 +2109,17 @@ inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') addElement(); 
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
 btnSizePlus.addEventListener('click',  () => changeSize(+1));
 
-btnGridHeightMinus.addEventListener('click', () => { saveLocalGridHeight(_localGridHeight - 5); gridHeightInput.value = _localGridHeight; renderGrid(); });
-btnGridHeightPlus.addEventListener('click',  () => { saveLocalGridHeight(_localGridHeight + 5); gridHeightInput.value = _localGridHeight; renderGrid(); });
-gridHeightInput.addEventListener('change', () => {
-  const v = Math.max(20, Math.min(80, parseInt(gridHeightInput.value) || 60));
+gridHeightInput.addEventListener('input', () => {
+  const v = Math.max(20, Math.min(80, parseInt(gridHeightInput.value) || 80));
   saveLocalGridHeight(v);
-  gridHeightInput.value = _localGridHeight;
+  document.getElementById('grid-height-display').textContent = v + '%';
   renderGrid();
 });
 
-btnFontMinus.addEventListener('click', () => changeFontScale(-0.1));
-btnFontPlus.addEventListener('click',  () => changeFontScale(+0.1));
-fontScaleInput.addEventListener('change', () => {
-  const pct = Math.max(50, Math.min(300, parseInt(fontScaleInput.value) || 100));
+fontScaleInput.addEventListener('input', () => {
+  const pct = Math.max(50, Math.min(200, parseInt(fontScaleInput.value) || 100));
   saveLocalFontScale(pct / 100);
+  document.getElementById('font-scale-display').textContent = pct + '%';
   applyFontScale();
 });
 
@@ -2329,16 +2329,32 @@ btnReset.addEventListener('click', () => {
   const t = activeTheme();
   const s = activeSubtheme();
   if (!t || t.locked || !s) return;
-  if (!confirm('Décocher toutes les cases des grilles de ce sous-thème ?')) return;
-  // Reset toutes les grilles du sous-thème actif (y compris les bloquées — le verrou protège la génération, pas les coches)
+  document.getElementById('modal-confirm-reset').classList.remove('hidden');
+});
+
+document.getElementById('btn-confirm-reset').addEventListener('click', () => {
+  document.getElementById('modal-confirm-reset').classList.add('hidden');
+  const t = activeTheme();
+  const s = activeSubtheme();
+  if (!t || !s) return;
   (s.grids || []).filter(gx => !gx.archived).forEach(gx => {
     gx.grid = gx.grid.map(c => ({ ...c, checked: false }));
   });
-  // Remettre el.checked à false pour tous les éléments du thème
   t.elements.forEach(el => { el.checked = false; });
   saveState();
   renderGrid();
   renderElements();
+});
+
+document.getElementById('btn-cancel-reset').addEventListener('click', () => {
+  document.getElementById('modal-confirm-reset').classList.add('hidden');
+});
+document.getElementById('btn-close-confirm-reset').addEventListener('click', () => {
+  document.getElementById('modal-confirm-reset').classList.add('hidden');
+});
+document.getElementById('modal-confirm-reset').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-confirm-reset'))
+    document.getElementById('modal-confirm-reset').classList.add('hidden');
 });
 btnScreenshot.addEventListener('click', bingoScreenshot);
 
@@ -4304,10 +4320,13 @@ _dbBingo.on('value', snapshot => {
   }
 
   // Init affichage de la taille de texte locale
-  fontScaleInput.value = Math.round(_localFontScale * 100);
+  const initFontPct = Math.round(_localFontScale * 100);
+  fontScaleInput.value = initFontPct;
+  document.getElementById('font-scale-display').textContent = initFontPct + '%';
 
-  // Init affichage de la hauteur de grille locale
+  // Init affichage de la hauteur de grille locale (défaut max = 80)
   gridHeightInput.value = _localGridHeight;
+  document.getElementById('grid-height-display').textContent = _localGridHeight + '%';
 
   // Charger les grilles sélectionnées pour le sous-thème actif
   const sub = activeSubtheme();

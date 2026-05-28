@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=24" />
+  <link rel="stylesheet" href="style.css?v=26" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -149,29 +149,29 @@
 
           <!-- Ligne 3 : Toolbar -->
           <div class="ctrl-row ctrl-row-toolbar">
-            <div class="grid-size-control">
-              <label>Grille</label>
-              <button class="size-btn" id="btn-grid-height-minus">−</button>
-              <input type="number" id="grid-height-input" class="scale-input" min="20" max="80" step="5" value="60" title="Hauteur de la grille en % de l'écran" />
-              <span class="scale-unit">%</span>
-              <button class="size-btn" id="btn-grid-height-plus">+</button>
+            <div class="grid-size-control grid-size-control-slider">
+              <label class="slider-label">Grille</label>
+              <input type="range" id="grid-height-input" class="toolbar-slider" min="20" max="80" step="5" value="80" title="Taille des grilles" />
+              <span class="slider-value-display" id="grid-height-display">80%</span>
             </div>
-            <div class="grid-size-control">
-              <label>Texte</label>
-              <button class="size-btn" id="btn-font-minus">−</button>
-              <input type="number" id="font-scale-input" class="scale-input" min="50" max="300" step="10" value="100" title="Taille du texte en %" />
-              <span class="scale-unit">%</span>
-              <button class="size-btn" id="btn-font-plus">+</button>
+            <div class="grid-size-control grid-size-control-slider">
+              <label class="slider-label">Texte</label>
+              <input type="range" id="font-scale-input" class="toolbar-slider" min="50" max="200" step="10" value="100" title="Taille du texte" />
+              <span class="slider-value-display" id="font-scale-display">100%</span>
             </div>
-            <!-- Champ caché pour compatibilité JS (sizeDisplay toujours référencé) -->
             <span id="grid-size-display" style="display:none">4×4</span>
             <button class="size-btn" id="btn-size-minus" style="display:none">−</button>
             <button class="size-btn" id="btn-size-plus" style="display:none">+</button>
+            <!-- boutons cachés compatibilité (inutilisés, conservés pour éviter erreurs JS) -->
+            <button id="btn-grid-height-minus" style="display:none"></button>
+            <button id="btn-grid-height-plus" style="display:none"></button>
+            <button id="btn-font-minus" style="display:none"></button>
+            <button id="btn-font-plus" style="display:none"></button>
             <div class="grid-toolbar-sep"></div>
             <div class="lock-group">
               <label class="lock-generate-label" title="Bloquer la génération et le reset de toutes les grilles">
                 <input type="checkbox" id="chk-lock-generate" />
-                Bloquer
+                🔒
               </label>
               <button class="btn-action btn-generate-global" id="btn-generate">🎲 Générer</button>
               <button class="btn-action btn-reset" id="btn-reset">↺ Reset</button>
@@ -358,30 +358,30 @@
 
   <!-- Menu contextuel thème (double-clic) -->
   <div id="ctx-menu-theme" class="ctx-menu hidden">
+    <button class="ctx-close-btn" id="ctx-theme-cancel" title="Fermer">✕</button>
     <button class="ctx-menu-item" id="ctx-theme-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-theme-duplicate">❐ Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-theme-archive">📦 Archiver</button>
-    <button class="ctx-menu-item ctx-cancel" id="ctx-theme-cancel">✕ Annuler</button>
   </div>
 
   <!-- Menu contextuel grille (double-clic) -->
   <div id="ctx-menu-grid" class="ctx-menu hidden">
+    <button class="ctx-close-btn" id="ctx-grid-cancel" title="Fermer">✕</button>
     <button class="ctx-menu-item" id="ctx-grid-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-grid-duplicate">❐ Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-grid-archive">📦 Archiver</button>
-    <button class="ctx-menu-item ctx-cancel" id="ctx-grid-cancel">✕ Annuler</button>
   </div>
 
   <div id="ctx-menu-element" class="ctx-menu hidden">
+    <button class="ctx-close-btn" id="ctx-element-cancel" title="Fermer">✕</button>
     <button class="ctx-menu-item" id="ctx-element-edit">✎ Modifier</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-archive">📦 Archiver</button>
-    <button class="ctx-menu-item ctx-cancel" id="ctx-element-cancel">✕ Annuler</button>
   </div>
 
   <div id="ctx-menu-element-archived" class="ctx-menu hidden">
+    <button class="ctx-close-btn" id="ctx-element-archived-cancel" title="Fermer">✕</button>
     <button class="ctx-menu-item" id="ctx-element-restore">↩ Restaurer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-delete">✕ Supprimer</button>
-    <button class="ctx-menu-item ctx-cancel" id="ctx-element-archived-cancel">✕ Annuler</button>
   </div>
 
   <!-- Modal nouveau thème -->
@@ -522,10 +522,10 @@
 
   <!-- Menu contextuel sous-thème (double-clic) -->
   <div id="ctx-menu-subtheme" class="ctx-menu hidden">
+    <button class="ctx-close-btn" id="ctx-subtheme-cancel" title="Fermer">✕</button>
     <button class="ctx-menu-item" id="ctx-subtheme-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-subtheme-duplicate">❐ Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-archive">📦 Archiver</button>
-    <button class="ctx-menu-item ctx-cancel" id="ctx-subtheme-cancel">✕ Annuler</button>
   </div>
 
   <!-- Modal nouvelle grille -->
@@ -540,6 +540,23 @@
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-new-grid">Créer</button>
           <button class="btn-action btn-secondary" id="btn-cancel-new-grid">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal confirmation Reset -->
+  <div id="modal-confirm-reset" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Confirmer le reset</h3>
+        <button class="modal-close" id="btn-close-confirm-reset">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Décocher toutes les cases des grilles de ce sous-thème ?</p>
+        <div class="modal-actions">
+          <button class="btn-action btn-danger-action" id="btn-confirm-reset">↺ Reset</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-reset">Annuler</button>
         </div>
       </div>
     </div>
@@ -579,6 +596,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=24"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>
