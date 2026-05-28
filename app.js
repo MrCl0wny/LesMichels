@@ -129,12 +129,18 @@ function loadLocalSelectedGridsForSubtheme(subthemeId) {
 
 _selectedGridsBySubtheme = _loadSelectedGridsBySubtheme();
 
-function defaultSubtheme(name) {
-  return { id: uid(), name, grids: [], activeGridId: null, archived: false };
+function defaultSubtheme(name, withGrid = false) {
+  const sub = { id: uid(), name, grids: [], activeGridId: null, archived: false };
+  if (withGrid) {
+    const g = defaultGrid('Grille');
+    sub.grids = [g];
+    sub.activeGridId = g.id;
+  }
+  return sub;
 }
 
 function defaultTheme(name) {
-  const subtheme = defaultSubtheme('Principal');
+  const subtheme = defaultSubtheme('Principal', true);
   return {
     id: uid(),
     name,
@@ -376,13 +382,16 @@ function buildElementItem(el, isArchived) {
 
   // Vérifier si cet élément est coché : dans une grille OU directement sur l'élément
   const s = activeSubtheme();
-  const isCheckedInGrid = !isArchived && s && (s.grids || []).filter(gx => !gx.archived).some(
+  const isCheckedInGrid = s && (s.grids || []).filter(gx => !gx.archived).some(
     gx => gx.grid.some(c => c.elementId === el.id && c.checked)
   );
-  const isChecked = isCheckedInGrid || (!isArchived && !!el.checked);
+  const isChecked = isCheckedInGrid || !!el.checked;
 
   li.className = 'element-item' + (isArchived ? ' archived' : '') + (isPlaced ? ' placed' : '') + (isChecked ? ' elem-checked' : '');
   li.dataset.id = el.id;
+  li.title = isArchived
+    ? 'Clic gauche : ' + (isChecked ? 'désactiver' : 'valider') + ' · Clic droit : restaurer, supprimer'
+    : 'Clic gauche : ' + (isChecked ? 'désactiver' : 'valider') + ' · Clic droit : renommer, archiver';
   // Pas de drag & drop sur les cases
 
   const span = document.createElement('span');
@@ -390,24 +399,24 @@ function buildElementItem(el, isArchived) {
   span.textContent = el.text;
   li.appendChild(span);
 
-  if (!isArchived) {
-    // Clic gauche : toggle coché/décoché
-    li.addEventListener('click', () => {
-      const tNow = activeTheme();
-      const sNow = activeSubtheme();
-      if (!tNow || !sNow) return;
-      const newChecked = !isChecked;
-      // Mettre à jour les grilles si la case y est présente
-      (sNow.grids || []).filter(gx => !gx.archived).forEach(gx => {
-        const matchCell = gx.grid.find(c => c.elementId === el.id);
-        if (matchCell) matchCell.checked = newChecked;
-      });
-      // Toujours mettre à jour el.checked (état de secours si hors grille)
-      el.checked = newChecked;
-      saveState();
-      renderGrid();
-      renderElements();
+  // Clic gauche : toggle coché/décoché (actives ET archivées)
+  li.addEventListener('click', () => {
+    const tNow = activeTheme();
+    const sNow = activeSubtheme();
+    if (!tNow || !sNow) return;
+    const newChecked = !isChecked;
+    // Mettre à jour les grilles si la case y est présente
+    (sNow.grids || []).filter(gx => !gx.archived).forEach(gx => {
+      const matchCell = gx.grid.find(c => c.elementId === el.id);
+      if (matchCell) matchCell.checked = newChecked;
     });
+    el.checked = newChecked;
+    saveState();
+    renderGrid();
+    renderElements();
+  });
+
+  if (!isArchived) {
     li.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuElement(el.id, span, e, li); });
   } else {
     li.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuElementArchived(el.id, e, li); });
@@ -506,11 +515,12 @@ function createTheme(name) {
   state.themes.push(t);
   _localActiveThemeId = t.id;
   _saveLocalActiveThemeId(t.id);
-  // Activer le premier sous-thème
   const firstSub = t.subthemes[0];
   _localActiveSubthemeId = firstSub.id;
   _saveLocalActiveSubthemeId(firstSub.id);
-  _selectedGridIds = [];
+  const firstGrid = firstSub.grids[0];
+  _selectedGridIds = firstGrid ? [firstGrid.id] : [];
+  saveLocalSelectedGrids(_selectedGridIds);
   saveState();
   renderThemesList();
   renderSubthemesList();
@@ -692,6 +702,10 @@ function renderThemesList() {
 
     themesList.appendChild(item);
   });
+
+  // Grisage dynamique des boutons +
+  btnNewSubtheme.disabled = !_localActiveThemeId;
+  btnNewGrid.disabled = !_localActiveSubthemeId;
 }
 
 // ──────────────────────────────────────────────
@@ -705,11 +719,13 @@ function createSubtheme(name) {
   const t = activeTheme();
   if (!t) return;
   if (!t.subthemes) t.subthemes = [];
-  const sub = defaultSubtheme(name);
+  const sub = defaultSubtheme(name, true);
   t.subthemes.push(sub);
   _localActiveSubthemeId = sub.id;
   _saveLocalActiveSubthemeId(sub.id);
-  _selectedGridIds = [];
+  const firstGrid = sub.grids[0];
+  _selectedGridIds = firstGrid ? [firstGrid.id] : [];
+  saveLocalSelectedGrids(_selectedGridIds);
   saveState();
   renderSubthemesList();
   renderGridsList();
@@ -850,6 +866,8 @@ function renderSubthemesList() {
 
     subthemesList.appendChild(item);
   });
+
+  btnNewGrid.disabled = !_localActiveSubthemeId;
 }
 
 function renderArchivedSubthemesModal() {
@@ -1623,6 +1641,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   titleInput.placeholder = g.name;
   titleInput.value = g.title || g.name;
   titleInput.maxLength = 60;
+  titleInput.title = 'Renommer la grille';
   titleInput.addEventListener('input', () => {
     const sNow = activeSubtheme();
     if (!sNow) return;
@@ -1651,6 +1670,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   // Contrôles par grille (ordre : Taille | Bloquer | Générer | Capture)
   const subCtrl = document.createElement('div');
   subCtrl.className = 'subgrid-controls';
+  subCtrl.title = '';
 
   // Contrôle de taille propre à cette grille
   const sizeCtrl = document.createElement('div');
@@ -1662,6 +1682,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const szDisplay = document.createElement('span');
   szDisplay.className = 'subgrid-size-display';
   szDisplay.textContent = `${g.gridSize}×${g.gridSize}`;
+  szDisplay.title = '';
   const btnSzPlus = document.createElement('button');
   btnSzPlus.className = 'size-btn size-btn-sm';
   btnSzPlus.textContent = '+';
@@ -1696,7 +1717,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
 
   const lblLock = document.createElement('label');
   lblLock.className = 'subgrid-lock-label';
-  lblLock.title = 'Bloquer la génération et le reset de cette grille';
+  lblLock.title = 'Bloquer la génération aléatoire de cette grille';
   const chkLock = document.createElement('input');
   chkLock.type = 'checkbox';
   chkLock.checked = gridLocked;
@@ -1723,7 +1744,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   btnSubGen.textContent = '🎲';
   btnSubGen.title = genDisabled && !gridLocked
     ? `Pas assez d'éléments (${activeElemCount}/${cellCount})`
-    : 'Générer cette grille';
+    : 'Générer aléatoirement la grille';
   btnSubGen.addEventListener('click', () => {
     const tNow = activeTheme();
     const sNow = activeSubtheme();
@@ -1752,7 +1773,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const btnSubCapture = document.createElement('button');
   btnSubCapture.className = 'btn-action btn-screenshot-bingo btn-subgrid';
   btnSubCapture.textContent = '📷';
-  btnSubCapture.title = 'Copier cette grille dans le presse-papier';
+  btnSubCapture.title = 'Copier la grille dans le presse-papier';
   btnSubCapture.addEventListener('click', () => bingoScreenshotOne(g.id));
   subCtrl.appendChild(btnSubCapture);
 
@@ -1760,6 +1781,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
 
   const gridEl = document.createElement('div');
   gridEl.className = 'bingo-grid';
+  gridEl.title = '';
   gridEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
   // Réduire proportionnellement pour les multi-grilles (même ratio que le CSS de base 80→68→56)
   const heightFactor = totalGrids === 3 ? 0.70 : totalGrids === 2 ? 0.85 : 1;
@@ -1804,6 +1826,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
       if (bingoIndices.has(i)) div.classList.add('bingo-line');
 
       if (!manualMode || !isActive) {
+        div.title = cell.checked ? 'Désactiver cette case' : 'Valider cette case';
         div.addEventListener('click', () => {
           if (!cell.elementId) return;
           const newChecked = !cell.checked;
@@ -1861,7 +1884,13 @@ function renderGrid() {
   gridWrapper.innerHTML = '';
 
   if (!t) {
-    gridWrapper.innerHTML = '<div class="no-grid-msg">Crée un thème pour commencer.</div>';
+    panelElements.classList.add('panel-hidden-no-theme');
+    bingoLayout.classList.add('no-theme-layout');
+    const btn = document.createElement('button');
+    btn.className = 'btn-empty-state';
+    btn.textContent = '+ Ajouter un thème';
+    btn.addEventListener('click', openNewThemeModal);
+    gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
     bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
@@ -1871,9 +1900,15 @@ function renderGrid() {
     chkLockGenerate.checked = false;
     return;
   }
+  panelElements.classList.remove('panel-hidden-no-theme');
+  bingoLayout.classList.remove('no-theme-layout');
 
   if (!s) {
-    gridWrapper.innerHTML = '<div class="no-grid-msg">Crée un sous-thème pour commencer.</div>';
+    const btn = document.createElement('button');
+    btn.className = 'btn-empty-state';
+    btn.textContent = '+ Ajouter un sous-thème';
+    btn.addEventListener('click', openNewSubthemeModal);
+    gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
     bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
@@ -1886,11 +1921,15 @@ function renderGrid() {
 
   const hasAnyGrid = s.grids.some(x => !x.archived);
   if (!g && !hasAnyGrid) {
-    gridWrapper.innerHTML = '<div class="no-grid-msg">Crée une grille pour commencer.</div>';
+    const btn = document.createElement('button');
+    btn.className = 'btn-empty-state';
+    btn.textContent = '+ Ajouter une grille';
+    btn.addEventListener('click', openNewGridModal);
+    gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
     bingoMsg.classList.add('hidden');
-    btnGenerate.disabled = false;
-    btnGenerate.classList.remove('btn-disabled');
+    btnGenerate.disabled = true;
+    btnGenerate.classList.add('btn-disabled');
     btnReset.disabled = false;
     btnReset.classList.remove('btn-disabled');
     return;
@@ -1917,6 +1956,8 @@ function renderGrid() {
     gridWrapper.innerHTML = '<div class="no-grid-msg">Aucune grille sélectionnée — clique sur un onglet pour afficher une grille.</div>';
     gridWrapper.className = 'grid-wrapper';
     bingoMsg.classList.add('hidden');
+    btnGenerate.disabled = true;
+    btnGenerate.classList.add('btn-disabled');
     return;
   }
 
@@ -1933,6 +1974,7 @@ function renderGrid() {
     if (gridsToShow.length > 1) {
       wrapper.draggable = true;
       wrapper.style.cursor = 'grab';
+      wrapper.title = 'Déplace la grille';
       wrapper.addEventListener('dragstart', e => {
         e.dataTransfer.setData('text/plain', gridItem.id);
         wrapper.classList.add('grid-wrapper-dragging');
@@ -2308,8 +2350,8 @@ btnGenerate.addEventListener('click', () => {
   const t = activeTheme();
   const s = activeSubtheme();
   if (!t || t.locked || !s) return;
-  if (!activeGrid()) createGrid('Grille 1');
   const grids = getVisibleGrids();
+  if (grids.length === 0) return;
   const n = activeGrid()?.gridSize || 4;
   const cellCount = n * n;
   const active = t.elements.filter(e => !e.archived);

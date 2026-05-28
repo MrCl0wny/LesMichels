@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=26" />
+  <link rel="stylesheet" href="style.css?v=28" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -127,7 +127,7 @@
           <div class="ctrl-row ctrl-row-themes">
             <span class="ctrl-row-label">Thème</span>
             <div id="themes-list" class="themes-list"></div>
-            <button class="btn-new-theme" id="btn-new-theme" title="Nouveau thème"><span class="btn-plus-green">+</span></button>
+            <button class="btn-new-theme" id="btn-new-theme" title="Nouveau thème"><span class="btn-plus-green">+ Thème</span></button>
             <button class="btn-archived-themes" id="btn-archived-themes" title="Thèmes archivés">📦</button>
           </div>
 
@@ -135,7 +135,7 @@
           <div class="ctrl-row ctrl-row-subthemes">
             <span class="ctrl-row-label">Sous-thème</span>
             <div id="subthemes-list" class="subthemes-list"></div>
-            <button class="btn-new-subtheme" id="btn-new-subtheme" title="Nouveau sous-thème"><span class="btn-plus-green">+</span></button>
+            <button class="btn-new-subtheme" id="btn-new-subtheme" title="Nouveau sous-thème"><span class="btn-plus-green">+ Sous-thème</span></button>
             <button class="btn-archived-subthemes" id="btn-archived-subthemes" title="Sous-thèmes archivés">📦</button>
           </div>
 
@@ -143,7 +143,7 @@
           <div class="ctrl-row ctrl-row-grids">
             <span class="ctrl-row-label">Grille</span>
             <div id="grids-list" class="grids-list"></div>
-            <button class="btn-new-grid" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+</span></button>
+            <button class="btn-new-grid" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
             <button class="btn-archived-grids" id="btn-archived-grids" title="Grilles archivées">📦</button>
           </div>
 
@@ -169,14 +169,14 @@
             <button id="btn-font-plus" style="display:none"></button>
             <div class="grid-toolbar-sep"></div>
             <div class="lock-group">
-              <label class="lock-generate-label" title="Bloquer la génération et le reset de toutes les grilles">
+              <label class="lock-generate-label" title="Bloquer la génération aléatoire et la réinitialisation de toutes les grilles">
                 <input type="checkbox" id="chk-lock-generate" />
                 🔒
               </label>
-              <button class="btn-action btn-generate-global" id="btn-generate">🎲 Générer</button>
-              <button class="btn-action btn-reset" id="btn-reset">↺ Reset</button>
+              <button class="btn-action btn-generate-global" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées">🎲 Générer</button>
+              <button class="btn-action btn-reset" id="btn-reset" title="Réinitialise toutes les cases du sous-thème">↺ Reset</button>
             </div>
-            <button class="btn-action btn-screenshot-bingo" id="btn-screenshot-bingo" title="Copier la grille dans le presse-papier">📷 Capture</button>
+            <button class="btn-action btn-screenshot-bingo" id="btn-screenshot-bingo" title="Copier les grilles dans le presse-papier">📷 Capture</button>
           </div>
 
         </div>
@@ -189,7 +189,7 @@
         <aside class="panel panel-elements" id="panel-elements">
           <div class="panel-header">
             <h2>Cases</h2>
-            <span class="element-count" id="element-count">0</span>
+            <span class="element-count" id="element-count" title="Nombre de cases">0</span>
             <button class="btn-collapse-panel" id="btn-collapse-panel" title="Réduire le panneau">◀</button>
           </div>
 
@@ -201,12 +201,12 @@
                 placeholder="Ajouter une case..."
                 maxlength="80"
               />
-              <button id="btn-add-element" class="btn-icon" title="Ajouter">+</button>
+              <button id="btn-add-element" class="btn-icon" title="Ajouter une case">+</button>
             </div>
 
             <div class="elements-tabs">
-              <button class="tab-btn active" data-tab="active">Actives</button>
-              <button class="tab-btn" data-tab="archived">Archivées</button>
+              <button class="tab-btn active" data-tab="active" title="Clic gauche : afficher les cases actives">Actives</button>
+              <button class="tab-btn" data-tab="archived" title="Clic gauche : afficher les cases archivées">Archivées</button>
             </div>
 
             <ul id="elements-list" class="elements-list"></ul>
@@ -553,7 +553,7 @@
         <button class="modal-close" id="btn-close-confirm-reset">✕</button>
       </div>
       <div class="modal-body">
-        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Décocher toutes les cases des grilles de ce sous-thème ?</p>
+        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Réinitialiser toutes les cases de ce sous-thème ?</p>
         <div class="modal-actions">
           <button class="btn-action btn-danger-action" id="btn-confirm-reset">↺ Reset</button>
           <button class="btn-action btn-secondary" id="btn-cancel-reset">Annuler</button>
@@ -596,6 +596,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=26"></script>
+  <script src="app.js?v=28"></script>
 </body>
 </html>

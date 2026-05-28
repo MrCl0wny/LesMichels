@@ -249,19 +249,19 @@ body {
   border-radius: var(--radius);
   color: #3ecf6e;
   font-family: Arial, sans-serif;
-  font-size: 1rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+  padding: 4px 10px;
   cursor: pointer;
   transition: var(--transition);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .btn-new-theme:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
+.btn-new-theme:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
 .btn-archived-themes {
   background: var(--surface-2);
@@ -304,19 +304,19 @@ body {
   border-radius: var(--radius);
   color: #5da0e8;
   font-family: Arial, sans-serif;
-  font-size: 1rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+  padding: 4px 10px;
   cursor: pointer;
   transition: var(--transition);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .btn-new-subtheme:hover { border-color: #5da0e8; background: rgba(93,160,232,0.1); }
+.btn-new-subtheme:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
 .btn-archived-subthemes {
   background: var(--surface-2);
@@ -424,6 +424,7 @@ body {
   padding: 2px 8px;
   border-radius: 20px;
   border: 1px solid var(--border);
+  cursor: default;
 }
 
 .btn-collapse-panel {
@@ -661,19 +662,19 @@ body {
   border-radius: var(--radius);
   color: #3ecf6e;
   font-family: Arial, sans-serif;
-  font-size: 1rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+  padding: 4px 10px;
   cursor: pointer;
   transition: var(--transition);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .btn-new-grid:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
+.btn-new-grid:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
 .btn-archived-grids {
   background: var(--surface-2);
@@ -1063,6 +1064,7 @@ body {
   color: var(--text);
   min-width: 28px;
   text-align: center;
+  cursor: default;
 }
 
 .size-btn-sm {
@@ -1166,6 +1168,33 @@ body {
   font-style: italic;
   padding: 40px 0;
   font-size: 0.9rem;
+}
+
+.btn-empty-state {
+  display: block;
+  margin: auto;
+  margin-top: 80px;
+  padding: 18px 36px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  background: #22c55e;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.btn-empty-state:hover {
+  background: #16a34a;
+  transform: scale(1.04);
+}
+
+.panel-hidden-no-theme {
+  display: none !important;
+}
+
+.bingo-layout.no-theme-layout {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 @keyframes pulse-bingo {
