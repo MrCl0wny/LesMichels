@@ -2972,10 +2972,15 @@ function _tlNormalizeState(parsed) {
   if (!parsed || typeof parsed !== 'object') return { tierlists: [], folders: [], activeTierlistId: null };
   if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
   if (!Array.isArray(parsed.folders)) parsed.folders = [];
-  const active = parsed.tierlists.find(t => t.id === parsed.activeTierlistId && !t.archived);
-  if (!active) {
-    const first = parsed.tierlists.find(t => !t.archived);
-    parsed.activeTierlistId = first ? first.id : null;
+  // Firebase supprime les clés null — on distingue "aucune sélection voulue" via la clé noSelection
+  if (!parsed.noSelection) {
+    const active = parsed.tierlists.find(t => t.id === parsed.activeTierlistId && !t.archived);
+    if (!active) {
+      const first = parsed.tierlists.find(t => !t.archived);
+      parsed.activeTierlistId = first ? first.id : null;
+    }
+  } else {
+    parsed.activeTierlistId = null;
   }
   // Firebase supprime les tableaux vides — restaurer items/unplaced
   parsed.tierlists.forEach(tl => {
@@ -3826,7 +3831,13 @@ function tlCreate(name, folderId) {
 }
 
 function tlSwitch(id) {
-  tlState.activeTierlistId = id;
+  if (tlState.activeTierlistId === id) {
+    tlState.activeTierlistId = null;
+    tlState.noSelection = true;
+  } else {
+    tlState.activeTierlistId = id;
+    tlState.noSelection = false;
+  }
   tlSave();
   tlRender();
 }
@@ -3966,10 +3977,21 @@ function _tlCompressToBase64(file, maxPx = 400, quality = 0.82) {
   });
 }
 
+const TL_MAX_IMAGES = 50;
+
 function tlImportImages(files) {
   const tl = tlActiveTierlist();
   if (!tl) return;
   if (!tl.images) tl.images = [];
+
+  const remaining = TL_MAX_IMAGES - tl.images.length;
+  if (remaining <= 0) {
+    alert(`Limite atteinte — maximum ${TL_MAX_IMAGES} images par tierlist.`);
+    return;
+  }
+
+  const fileArray = Array.from(files).slice(0, remaining);
+  const ignored = files.length - fileArray.length;
 
   const processFile = (file) => {
     const name = file.name.replace(/\.[^.]+$/, '');
@@ -3981,9 +4003,10 @@ function tlImportImages(files) {
     });
   };
 
-  Promise.all(Array.from(files).map(processFile)).then(() => {
+  Promise.all(fileArray.map(processFile)).then(() => {
     tlSave();
     tlRender();
+    if (ignored > 0) alert(`${ignored} image${ignored > 1 ? 's ignorées' : ' ignorée'} — limite de ${TL_MAX_IMAGES} images atteinte.`);
   }).catch(e => console.warn('TL import error:', e));
 }
 
@@ -4366,7 +4389,8 @@ function tlOpenNewModal() {
   tlModalNewMode = 'create';
   tlModalNewTargetId = null;
   tlModalNewTitle.textContent = 'Nouvelle tier list';
-  tlModalNewInput.value = '';
+  const n = (tlState.tierlists || []).filter(t => !t.archived).length + 1;
+  tlModalNewInput.value = `Tierlist ${n}`;
   // Afficher/cacher le select dossier selon le mode
   const wrap = document.getElementById('tl-modal-new-folder-wrap');
   if (wrap) {
@@ -4374,7 +4398,7 @@ function tlOpenNewModal() {
     tlPopulateFolderSelect(tlModalNewFolderSelect, '');
   }
   tlModalNew.classList.remove('hidden');
-  setTimeout(() => tlModalNewInput.focus(), 50);
+  setTimeout(() => { tlModalNewInput.focus(); tlModalNewInput.select(); }, 50);
 }
 
 function tlOpenRenameModal(id) {
@@ -4554,7 +4578,8 @@ function tlOpenFolderModal(mode = 'create', id = null, currentName = '') {
   } else {
     tlModalFolderTitle.textContent = 'Nouveau dossier';
     tlModalFolderConfirm.textContent = 'Créer';
-    tlModalFolderInput.value = '';
+    const n = (tlState.folders || []).length + 1;
+    tlModalFolderInput.value = `Dossier ${n}`;
   }
   tlModalFolder.classList.remove('hidden');
   setTimeout(() => { tlModalFolderInput.focus(); tlModalFolderInput.select(); }, 50);
@@ -4667,6 +4692,8 @@ document.addEventListener('keydown', e => {
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
 tlBtnNew.addEventListener('click', tlOpenNewModal);
+document.getElementById('tl-empty-btn-new').addEventListener('click', tlOpenNewModal);
+document.getElementById('tl-empty-btn-folder').addEventListener('click', () => tlOpenFolderModal('create'));
 
 tlModalNewConfirm.addEventListener('click', tlConfirmNewModal);
 tlModalNewCancel.addEventListener('click', () => tlModalNew.classList.add('hidden'));
@@ -4826,12 +4853,17 @@ document.addEventListener('paste', e => {
   if (imageItems.length === 0) return;
 
   if (!tl.images) tl.images = [];
+  if (tl.images.length >= TL_MAX_IMAGES) {
+    alert(`Limite atteinte — maximum ${TL_MAX_IMAGES} images par tierlist.`);
+    return;
+  }
   const now = new Date();
   const promises = imageItems.map(it => {
     const file = it.getAsFile();
     if (!file) return Promise.resolve();
     const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
     return _tlCompressToBase64(file).then(src => {
+      if (tl.images.length >= TL_MAX_IMAGES) return;
       const img = { id: uid(), src, name };
       _tlSrcCache[img.id] = src;
       tl.images.push(img);

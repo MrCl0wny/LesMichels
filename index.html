@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=35" />
+  <link rel="stylesheet" href="style.css?v=36" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -63,7 +63,10 @@
         <!-- ── Zone principale ── -->
         <div class="tl-main" id="tl-main">
           <div id="tl-empty-state" class="tl-empty-state">
-            <p>Sélectionne ou crée une tier list</p>
+            <div class="tl-empty-actions">
+              <button id="tl-empty-btn-folder" class="tl-empty-btn tl-empty-btn--folder">+ Nouveau dossier</button>
+              <button id="tl-empty-btn-new" class="tl-empty-btn tl-empty-btn--tierlist">+ Nouvelle tier list</button>
+            </div>
           </div>
 
           <div id="tl-editor" class="tl-editor hidden">
@@ -618,6 +621,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=47"></script>
+  <script src="app.js?v=51"></script>
 </body>
 </html>
