@@ -2939,32 +2939,32 @@ const TL_PRESET_COLORS = [
 ];
 
 // ── État ──────────────────────────────────────────────────────────────────────
-const _TL_STORAGE_KEY = 'lesmichels_tierlist';
-
-let tlState = (() => {
-  try {
-    const raw = localStorage.getItem(_TL_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
-      if (!Array.isArray(parsed.folders)) parsed.folders = [];
-      const active = parsed.tierlists.find(t => t.id === parsed.activeTierlistId && !t.archived);
-      if (!active) {
-        const first = parsed.tierlists.find(t => !t.archived);
-        parsed.activeTierlistId = first ? first.id : null;
-      }
-      return parsed;
-    }
-  } catch (e) {}
-  return { tierlists: [], folders: [], activeTierlistId: null };
-})();
+let tlState = { tierlists: [], folders: [], activeTierlistId: null };
+let _tlRemoteUpdate = false; // anti-boucle Firebase
+const _dbTierlist = firebase.database().ref('tierlist');
 
 function tlSave() {
-  try {
-    localStorage.setItem(_TL_STORAGE_KEY, JSON.stringify(tlState));
-  } catch (e) {
-    console.warn('TL save error (localStorage plein ?):', e);
+  if (_tlRemoteUpdate) return;
+  _dbTierlist.set(tlState).catch(e => console.warn('TL save error:', e));
+}
+
+function _tlNormalizeState(parsed) {
+  if (!parsed || typeof parsed !== 'object') return { tierlists: [], folders: [], activeTierlistId: null };
+  if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
+  if (!Array.isArray(parsed.folders)) parsed.folders = [];
+  const active = parsed.tierlists.find(t => t.id === parsed.activeTierlistId && !t.archived);
+  if (!active) {
+    const first = parsed.tierlists.find(t => !t.archived);
+    parsed.activeTierlistId = first ? first.id : null;
   }
+  // Firebase supprime les tableaux vides — restaurer items/unplaced
+  parsed.tierlists.forEach(tl => {
+    if (!Array.isArray(tl.images)) tl.images = [];
+    if (!Array.isArray(tl.unplaced)) tl.unplaced = [];
+    if (!Array.isArray(tl.tiers)) tl.tiers = [];
+    tl.tiers.forEach(tier => { if (!Array.isArray(tier.items)) tier.items = []; });
+  });
+  return parsed;
 }
 
 // ── Stack Undo ─────────────────────────────────────────────────────────────────
@@ -3709,27 +3709,54 @@ function tlEditTier(tl, tier) {
 // tl.unplaced = [id, id, ...] — ids des images non placées dans un tier
 // tier.items  = [id, id, ...] — ids des images dans ce tier
 
+function _tlCompressImage(file, maxPx = 400, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = image;
+      if (width > maxPx || height > maxPx) {
+        if (width >= height) { height = Math.round(height * maxPx / width); width = maxPx; }
+        else { width = Math.round(width * maxPx / height); height = maxPx; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(image, 0, 0, width, height);
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('toBlob failed')), 'image/jpeg', quality);
+    };
+    image.onerror = reject;
+    image.src = url;
+  });
+}
+
+function _tlUploadImage(blob, name) {
+  const path = `tierlist/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+  const ref = window._storage.ref(path);
+  return ref.put(blob).then(() => ref.getDownloadURL()).then(url => ({ url, path }));
+}
+
 function tlImportImages(files) {
   tlPushUndo();
   const tl = tlActiveTierlist();
   if (!tl) return;
   if (!tl.images) tl.images = [];
 
-  const processFile = (file) => new Promise(resolve => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const img = { id: uid(), src: e.target.result, name: file.name.replace(/\.[^.]+$/, '') };
-      tl.images.push(img);
-      tl.unplaced.push(img.id);
-      resolve();
-    };
-    reader.readAsDataURL(file);
-  });
+  const processFile = (file) => {
+    const name = file.name.replace(/\.[^.]+$/, '');
+    return _tlCompressImage(file)
+      .then(blob => _tlUploadImage(blob, name))
+      .then(({ url, path }) => {
+        const img = { id: uid(), src: url, storagePath: path, name };
+        tl.images.push(img);
+        tl.unplaced.push(img.id);
+      });
+  };
 
   Promise.all(Array.from(files).map(processFile)).then(() => {
     tlSave();
     tlRender();
-  });
+  }).catch(e => console.warn('TL import error:', e));
 }
 
 function tlDeleteImage(tl, imgId) {
@@ -4560,22 +4587,21 @@ document.addEventListener('paste', e => {
 
   tlPushUndo();
   if (!tl.images) tl.images = [];
-  const promises = imageItems.map(it => new Promise(resolve => {
+  const now = new Date();
+  const promises = imageItems.map(it => {
     const file = it.getAsFile();
-    if (!file) return resolve();
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const now = new Date();
-      const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
-      const img = { id: uid(), src: ev.target.result, name };
-      tl.images.push(img);
-      tl.unplaced.push(img.id);
-      resolve();
-    };
-    reader.readAsDataURL(file);
-  }));
+    if (!file) return Promise.resolve();
+    const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
+    return _tlCompressImage(file)
+      .then(blob => _tlUploadImage(blob, name))
+      .then(({ url, path }) => {
+        const img = { id: uid(), src: url, storagePath: path, name };
+        tl.images.push(img);
+        tl.unplaced.push(img.id);
+      });
+  });
 
-  Promise.all(promises).then(() => { tlSave(); tlRender(); tlUpdateUndoBtn(); });
+  Promise.all(promises).then(() => { tlSave(); tlRender(); tlUpdateUndoBtn(); }).catch(e => console.warn('TL paste error:', e));
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4649,4 +4675,10 @@ _dbBingo.on('value', snapshot => {
 });
 
 // ── Tier List ─────────────────────────────────────────────────────────────────
-tlRender();
+_dbTierlist.on('value', snapshot => {
+  _tlRemoteUpdate = true;
+  const raw = snapshot.val();
+  tlState = _tlNormalizeState(raw);
+  tlRender();
+  _tlRemoteUpdate = false;
+});
