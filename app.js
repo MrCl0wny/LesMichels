@@ -42,8 +42,20 @@ function setupAuth() {
     _auth.signOut();
   });
 
+  const ALLOWED_UIDS = [
+    'qvXEXn9zarMPaK0l9AH4PDtxsVG3',
+    'VDpOI5BckhR7cmu3Bl7lzWj0wpH2'
+  ];
+
   _auth.onAuthStateChanged(user => {
     if (user) {
+      if (!ALLOWED_UIDS.includes(user.uid)) {
+        _auth.signOut();
+        modalAuth.classList.remove('hidden');
+        document.getElementById('auth-error').textContent = 'Accès non autorisé !';
+        return;
+      }
+      document.getElementById('auth-error').textContent = '';
       currentUser  = user;
       currentPseudo = user.displayName || user.email;
       modalAuth.classList.add('hidden');
