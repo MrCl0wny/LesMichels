@@ -61,6 +61,8 @@ function setupAuth() {
       _selectedGridIds = [];
       _localFontScale  = 1;
       _localGridHeight = 80;
+      _tlLocalShowLabels = null;
+      _tlLocalImgSize    = null;
       modalAuth.classList.remove('hidden');
       userBadge.classList.add('hidden');
     }
@@ -102,6 +104,11 @@ function loadUserPrefs() {
       try { _selectedGridsBySubtheme = typeof prefs.selectedGrids === 'object' ? prefs.selectedGrids : JSON.parse(prefs.selectedGrids); }
       catch { _selectedGridsBySubtheme = {}; }
     }
+    // Prefs tierlist
+    if (prefs.tlShowLabels != null) _tlLocalShowLabels = !!prefs.tlShowLabels;
+    if (prefs.tlImgSize    != null) _tlLocalImgSize    = prefs.tlImgSize;
+    // Page active
+    if (prefs.activePage   != null && window._switchPage) _switchPage(prefs.activePage);
     _prefsReady = true;
     // Appliquer les prefs visuelles
     gridHeightInput.value = _localGridHeight;
@@ -151,6 +158,9 @@ function _applyPrefsAndRender() {
   renderElements();
   renderGridsList();
   renderGrid();
+  // Appliquer les prefs tierlist aux controls UI
+  if (_tlLocalShowLabels !== null) tlShowLabelsToggle.checked = _tlLocalShowLabels;
+  if (_tlLocalImgSize    !== null) tlImgSizeSlider.value       = _tlLocalImgSize;
 }
 
 // ──────────────────────────────────────────────
@@ -2893,13 +2903,19 @@ renameGridInput.addEventListener('keydown', e => {
 
   const pageLabels = { bingo: 'Bingo', tierlist: 'Tier List' };
 
+  window._switchPage = (target) => {
+    if (!document.getElementById(`page-${target}`)) return;
+    navBtns.forEach(b => b.classList.toggle('active', b.dataset.page === target));
+    pages.forEach(p => p.classList.toggle('active', p.id === `page-${target}`));
+    if (logoTag) logoTag.textContent = pageLabels[target] || target;
+  };
+
   navBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.classList.contains('disabled')) return;
       const target = btn.dataset.page;
-      navBtns.forEach(b => b.classList.toggle('active', b.dataset.page === target));
-      pages.forEach(p => p.classList.toggle('active', p.id === `page-${target}`));
-      if (logoTag) logoTag.textContent = pageLabels[target] || target;
+      _switchPage(target);
+      saveUserPrefs({ activePage: target });
     });
   });
 })();
@@ -2943,6 +2959,10 @@ let tlState = { tierlists: [], folders: [], activeTierlistId: null };
 let _tlRemoteUpdate = false; // anti-boucle Firebase
 const _dbTierlist = firebase.database().ref('tierlist');
 
+// Prefs d'affichage tierlist — personnelles par utilisateur (non partagées)
+let _tlLocalShowLabels = null; // null = pas encore chargé
+let _tlLocalImgSize    = null;
+
 function tlSave() {
   if (_tlRemoteUpdate) return;
   _dbTierlist.set(tlState).catch(e => console.warn('TL save error:', e));
@@ -2968,12 +2988,36 @@ function _tlNormalizeState(parsed) {
 }
 
 // ── Stack Undo ─────────────────────────────────────────────────────────────────
-const _TL_UNDO_MAX = 30;
+const _TL_UNDO_MAX = 5;
 let _tlUndoStack = []; // chaque entrée = snapshot JSON de tlState
 
+// Cache global id→src : alimenté à chaque import/paste, jamais vidé.
+// Permet de restaurer les src même si l'image a été supprimée de tlState.
+const _tlSrcCache = {};
+
+function _tlCacheSrcs(tl) {
+  (tl.images || []).forEach(img => { if (img.src) _tlSrcCache[img.id] = img.src; });
+}
+
+function _tlStateWithoutSrc(state) {
+  return JSON.stringify({
+    ...state,
+    tierlists: state.tierlists.map(tl => ({
+      ...tl,
+      images: (tl.images || []).map(img => ({ id: img.id, name: img.name }))
+    }))
+  });
+}
+
+function _tlRestoreWithSrc(snapshot) {
+  snapshot.tierlists.forEach(tl => {
+    tl.images = (tl.images || []).map(img => ({ ...img, src: _tlSrcCache[img.id] || '' }));
+  });
+  return snapshot;
+}
+
 function tlPushUndo() {
-  // Pousser un snapshot de l'état actuel avant toute action
-  _tlUndoStack.push(JSON.stringify(tlState));
+  _tlUndoStack.push(_tlStateWithoutSrc(tlState));
   if (_tlUndoStack.length > _TL_UNDO_MAX) _tlUndoStack.shift();
   tlUpdateUndoBtn();
 }
@@ -2982,7 +3026,7 @@ function tlUndo() {
   if (_tlUndoStack.length === 0) return;
   const snapshot = _tlUndoStack.pop();
   try {
-    tlState = JSON.parse(snapshot);
+    tlState = _tlRestoreWithSrc(JSON.parse(snapshot));
   } catch (e) { return; }
   tlSave();
   tlRender();
@@ -3096,7 +3140,6 @@ const tlTitleInput        = document.getElementById('tl-title-input');
 const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
 const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
-const tlBtnImportImages   = document.getElementById('tl-btn-import-images');
 const tlFileInput         = document.getElementById('tl-file-input');
 const tlBtnExport         = document.getElementById('tl-btn-export');
 const tlBtnCapture        = document.getElementById('tl-btn-capture');
@@ -3274,8 +3317,11 @@ function tlRender() {
 
   tlTitleDisplay.textContent = tl.name;
   tlTitleInput.value = tl.name;
-  tlShowLabelsToggle.checked = !!tl.showLabels;
-  tlImgSizeSlider.value = tl.imgSize || 80;
+  // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
+  const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
+  const imgSize    = _tlLocalImgSize    !== null ? _tlLocalImgSize    : (tl.imgSize || 80);
+  tlShowLabelsToggle.checked = showLabels;
+  tlImgSizeSlider.value      = imgSize;
 
   tlRenderTiers(tl);
   tlRenderUnplaced(tl);
@@ -3421,72 +3467,103 @@ function tlRenderList() {
   activeToplevel.forEach(tl => tlList.appendChild(tlBuildTierlistItem(tl)));
 }
 
+// ── Drag & drop réordonnement des tiers ───────────────────────────────────────
+let _tlTierDragId = null;
+
 function tlRenderTiers(tl) {
   tlTiersZone.innerHTML = '';
-  const imgSize = tl.imgSize || 80;
+  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
 
   tl.tiers.forEach((tier, tierIdx) => {
     const row = document.createElement('div');
     row.className = 'tl-tier-row';
     row.dataset.tierId = tier.id;
 
-    // Cellule label
+    // Cellule label — draggable pour réordonner
     const labelCell = document.createElement('div');
     labelCell.className = 'tl-tier-label-cell';
     labelCell.style.background = tier.color;
+    labelCell.draggable = true;
+    labelCell.title = 'Clic droit pour les options · Glisser pour réordonner';
 
     const labelText = document.createElement('span');
     labelText.className = 'tl-tier-label-text';
     labelText.textContent = tier.label;
+    labelText.title = 'Clic pour renommer · Clic droit pour les options · Glisser pour réordonner';
+    labelText.addEventListener('click', e => {
+      e.stopPropagation();
+      _tlInlineRenameTier(labelText, tl, tier);
+    });
+    labelText.addEventListener('mousedown', e => e.stopPropagation()); // empêche drag depuis le texte
     labelCell.appendChild(labelText);
 
-    // Clic droit sur la cellule label → modifier le tier
-    labelCell.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); tlEditTier(tl, tier); });
+    // Drag & drop réordonnement tiers
+    labelCell.addEventListener('dragstart', e => {
+      _tlTierDragId = tier.id;
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(() => labelCell.classList.add('tl-tier-label-dragging'), 0);
+    });
+    labelCell.addEventListener('dragend', () => {
+      _tlTierDragId = null;
+      labelCell.classList.remove('tl-tier-label-dragging');
+      document.querySelectorAll('.tl-tier-row').forEach(r => r.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below'));
+    });
+    row.addEventListener('dragover', e => {
+      if (!_tlTierDragId || _tlTierDragId === tier.id) return;
+      e.preventDefault();
+      const rect = row.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      row.classList.toggle('tl-tier-drop-above', e.clientY < mid);
+      row.classList.toggle('tl-tier-drop-below', e.clientY >= mid);
+    });
+    row.addEventListener('dragleave', e => {
+      if (!row.contains(e.relatedTarget)) {
+        row.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below');
+      }
+    });
+    row.addEventListener('drop', e => {
+      if (!_tlTierDragId || _tlTierDragId === tier.id) return;
+      e.preventDefault();
+      row.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below');
+      const rect = row.getBoundingClientRect();
+      const before = e.clientY < rect.top + rect.height / 2;
+      const fromIdx = tl.tiers.findIndex(t => t.id === _tlTierDragId);
+      let toIdx = tierIdx;
+      if (fromIdx === -1) return;
+      tlPushUndo();
+      const [moved] = tl.tiers.splice(fromIdx, 1);
+      let insertIdx = tl.tiers.findIndex(t => t.id === tier.id);
+      if (!before) insertIdx += 1;
+      tl.tiers.splice(insertIdx, 0, moved);
+      tlSave();
+      tlRender();
+    });
 
-    // Contrôles du tier (au hover)
-    const controls = document.createElement('div');
-    controls.className = 'tl-tier-controls';
+    // Clic droit → menu contextuel tier
+    labelCell.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelText);
+    });
 
-    const btnEdit = document.createElement('button');
-    btnEdit.className = 'tl-tier-ctrl-btn';
-    btnEdit.title = 'Modifier';
-    btnEdit.textContent = '✏';
-    btnEdit.addEventListener('click', e => { e.stopPropagation(); tlEditTier(tl, tier); });
-    controls.appendChild(btnEdit);
-
-    const btnUp = document.createElement('button');
-    btnUp.className = 'tl-tier-ctrl-btn';
-    btnUp.title = 'Monter';
-    btnUp.textContent = '▲';
-    btnUp.disabled = tierIdx === 0;
-    btnUp.addEventListener('click', e => { e.stopPropagation(); tlMoveTier(tl, tierIdx, -1); });
-    controls.appendChild(btnUp);
-
-    const btnDown = document.createElement('button');
-    btnDown.className = 'tl-tier-ctrl-btn';
-    btnDown.title = 'Descendre';
-    btnDown.textContent = '▼';
-    btnDown.disabled = tierIdx === tl.tiers.length - 1;
-    btnDown.addEventListener('click', e => { e.stopPropagation(); tlMoveTier(tl, tierIdx, +1); });
-    controls.appendChild(btnDown);
-
-    const btnDel = document.createElement('button');
-    btnDel.className = 'tl-tier-ctrl-btn';
-    btnDel.title = 'Supprimer ce tier';
-    btnDel.textContent = '✕';
-    btnDel.addEventListener('click', e => { e.stopPropagation(); tlDeleteTier(tl, tier.id); });
-    controls.appendChild(btnDel);
-
-    labelCell.appendChild(controls);
     row.appendChild(labelCell);
 
     // Zone images
     const imgsDiv = document.createElement('div');
     imgsDiv.className = 'tl-tier-images';
     imgsDiv.dataset.dropzone = tier.id;
-    imgsDiv.addEventListener('dragover', tlDragOver);
-    imgsDiv.addEventListener('drop', e => tlDrop(e, tier.id));
-    imgsDiv.addEventListener('dragleave', tlDragLeave);
+    imgsDiv.addEventListener('dragover', e => {
+      if (_tlTierDragId) return; // ignore si on réordonne les tiers
+      tlDragOver(e);
+    });
+    imgsDiv.addEventListener('drop', e => {
+      if (_tlTierDragId) return;
+      tlDrop(e, tier.id);
+    });
+    imgsDiv.addEventListener('dragleave', e => {
+      if (_tlTierDragId) return;
+      tlDragLeave(e);
+    });
 
     if (tier.items.length === 0) {
       const hint = document.createElement('span');
@@ -3505,9 +3582,110 @@ function tlRenderTiers(tl) {
   });
 }
 
+// ── Renommage inline tier ─────────────────────────────────────────────────────
+function _tlInlineRenameTier(spanEl, tl, tier) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = tier.label;
+  input.className = 'tl-tier-label-input';
+  spanEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const commit = () => {
+    const newLabel = input.value.trim();
+    if (newLabel && newLabel !== tier.label) {
+      tlPushUndo();
+      tier.label = newLabel;
+      tlSave();
+    }
+    tlRender();
+  };
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { input.removeEventListener('blur', commit); tlRender(); }
+  });
+}
+
+// ── Menu contextuel tier ──────────────────────────────────────────────────────
+let _tlTierCtxMenu = null;
+
+function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
+  _tlCloseTierCtxMenu();
+  const menu = document.createElement('div');
+  menu.className = 'tl-tier-ctx-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:4px 0;min-width:190px;box-shadow:0 4px 16px rgba(0,0,0,0.4);';
+
+  const mkItem = (text, danger, fn) => {
+    const btn = document.createElement('button');
+    btn.className = 'tl-img-ctx-item' + (danger ? ' tl-img-ctx-item-danger' : '');
+    btn.textContent = text;
+    btn.addEventListener('click', () => { _tlCloseTierCtxMenu(); fn(); });
+    return btn;
+  };
+  const mkSep = () => {
+    const d = document.createElement('div');
+    d.style.cssText = 'height:1px;background:var(--border);margin:4px 0;';
+    return d;
+  };
+
+  menu.appendChild(mkItem('✏ Renommer', false, () => {
+    if (labelSpan && document.body.contains(labelSpan)) {
+      _tlInlineRenameTier(labelSpan, tl, tier);
+    } else {
+      // labelSpan plus dans le DOM (ex: re-render entre-temps) — ouvre le modal
+      tlOpenTierModal({ mode: 'edit', tl, tier });
+    }
+  }));
+  menu.appendChild(mkItem('🎨 Modifier la couleur', false, () => tlOpenTierModal({ mode: 'color', tl, tier })));
+
+  menu.appendChild(mkSep());
+
+  menu.appendChild(mkItem('↑ Ajouter un tier au-dessus', false, () => {
+    tlPushUndo();
+    tl.tiers.splice(tierIdx, 0, { id: uid(), label: '?', color: '#888888', items: [] });
+    tlSave(); tlRender();
+    tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx]);
+  }));
+  menu.appendChild(mkItem('↓ Ajouter un tier en-dessous', false, () => {
+    tlPushUndo();
+    tl.tiers.splice(tierIdx + 1, 0, { id: uid(), label: '?', color: '#888888', items: [] });
+    tlSave(); tlRender();
+    tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx + 1]);
+  }));
+
+  menu.appendChild(mkSep());
+
+  menu.appendChild(mkItem('✕ Supprimer ce tier', true, () => tlDeleteTier(tl, tier.id)));
+
+  positionCtxMenu(menu, e, null);
+  document.body.appendChild(menu);
+  _tlTierCtxMenu = menu;
+
+  setTimeout(() => {
+    document.addEventListener('click', _tlCloseTierCtxMenu, { once: true });
+    document.addEventListener('contextmenu', _tlCloseTierCtxMenu, { once: true });
+  }, 0);
+}
+
+function _tlCloseTierCtxMenu() {
+  if (_tlTierCtxMenu) { _tlTierCtxMenu.remove(); _tlTierCtxMenu = null; }
+}
+
 function tlRenderUnplaced(tl) {
   tlUnplacedZone.innerHTML = '';
-  const imgSize = tl.imgSize || 80;
+  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
+
+  // Bouton Import — coin supérieur gauche, même taille que les images
+  const btnImport = document.createElement('button');
+  btnImport.className = 'tl-import-btn';
+  btnImport.title = 'Importer des images';
+  btnImport.style.width = imgSize + 'px';
+  btnImport.style.height = imgSize + 'px';
+  btnImport.innerHTML = '<span style="font-size:1.6rem;display:block;">📁</span><span style="font-size:0.68rem;">Importer</span>';
+  btnImport.addEventListener('click', () => tlFileInput.click());
+  tlUnplacedZone.appendChild(btnImport);
 
   if (tl.unplaced.length === 0) {
     const hint = document.createElement('div');
@@ -3546,35 +3724,89 @@ function tlBuildImgCard(tl, img, size) {
   imgEl.draggable = false;
   card.appendChild(imgEl);
 
-  if (tl.showLabels) {
+  const _showLbls = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
+  if (_showLbls) {
     const label = document.createElement('div');
     label.className = 'tl-img-label';
     label.style.width = size + 'px';
     label.textContent = img.name;
-    label.title = 'Clic droit pour renommer';
-    label.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); tlOpenRenameImg(tl, img); });
+    label.title = 'Clic pour renommer';
+    label.addEventListener('click', e => {
+      e.stopPropagation();
+      _tlInlineRenameImg(label, tl, img, size);
+    });
     card.appendChild(label);
   }
 
-  const actions = document.createElement('div');
-  actions.className = 'tl-img-card-actions';
+  card.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _tlShowImgCtxMenu(e, tl, img);
+  });
+
+  return card;
+}
+
+// ── Renommage inline image ────────────────────────────────────────────────────
+function _tlInlineRenameImg(labelEl, tl, img, size) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = img.name;
+  input.className = 'tl-img-label-input';
+  input.style.width = size + 'px';
+  labelEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const commit = () => {
+    const newName = input.value.trim();
+    if (newName && newName !== img.name) {
+      tlPushUndo();
+      img.name = newName;
+      tlSave();
+    }
+    tlRender();
+  };
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { input.removeEventListener('blur', commit); tlRender(); }
+  });
+}
+
+// ── Menu contextuel image ─────────────────────────────────────────────────────
+let _tlImgCtxMenu = null;
+
+function _tlShowImgCtxMenu(e, tl, img) {
+  _tlCloseImgCtxMenu();
+  const menu = document.createElement('div');
+  menu.className = 'tl-img-ctx-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:4px 0;min-width:140px;box-shadow:0 4px 16px rgba(0,0,0,0.4);';
 
   const btnRename = document.createElement('button');
-  btnRename.className = 'tl-img-action-btn rename';
-  btnRename.title = 'Renommer';
-  btnRename.textContent = '✏';
-  btnRename.addEventListener('click', e => { e.stopPropagation(); tlOpenRenameImg(tl, img); });
-  actions.appendChild(btnRename);
+  btnRename.className = 'tl-img-ctx-item';
+  btnRename.textContent = '✏ Renommer';
+  btnRename.addEventListener('click', () => { _tlCloseImgCtxMenu(); tlOpenRenameImg(tl, img); });
+  menu.appendChild(btnRename);
 
   const btnDel = document.createElement('button');
-  btnDel.className = 'tl-img-action-btn';
-  btnDel.title = 'Supprimer cette image';
-  btnDel.textContent = '✕';
-  btnDel.addEventListener('click', e => { e.stopPropagation(); tlDeleteImage(tl, img.id); });
-  actions.appendChild(btnDel);
+  btnDel.className = 'tl-img-ctx-item tl-img-ctx-item-danger';
+  btnDel.textContent = '✕ Supprimer';
+  btnDel.addEventListener('click', () => { _tlCloseImgCtxMenu(); tlDeleteImage(tl, img.id); });
+  menu.appendChild(btnDel);
 
-  card.appendChild(actions);
-  return card;
+  positionCtxMenu(menu, e, null);
+  document.body.appendChild(menu);
+  _tlImgCtxMenu = menu;
+
+  setTimeout(() => {
+    document.addEventListener('click', _tlCloseImgCtxMenu, { once: true });
+    document.addEventListener('contextmenu', _tlCloseImgCtxMenu, { once: true });
+  }, 0);
+}
+
+function _tlCloseImgCtxMenu() {
+  if (_tlImgCtxMenu) { _tlImgCtxMenu.remove(); _tlImgCtxMenu = null; }
 }
 
 // ── Recherche d'image ─────────────────────────────────────────────────────────
@@ -3679,8 +3911,12 @@ function tlAddTier(label, color) {
 }
 
 function tlDeleteTier(tl, tierId) {
-  tlPushUndo();
   const tier = tl.tiers.find(t => t.id === tierId);
+  if (tier && tier.items.length > 0) {
+    const confirmed = confirm(`Ce tier contient ${tier.items.length} image(s). Les supprimer quand même ? (Elles seront renvoyées dans "Images non placées")`);
+    if (!confirmed) return;
+  }
+  tlPushUndo();
   if (tier) {
     tier.items.forEach(imgId => {
       if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId);
@@ -3709,7 +3945,7 @@ function tlEditTier(tl, tier) {
 // tl.unplaced = [id, id, ...] — ids des images non placées dans un tier
 // tier.items  = [id, id, ...] — ids des images dans ce tier
 
-function _tlCompressImage(file, maxPx = 400, quality = 0.82) {
+function _tlCompressToBase64(file, maxPx = 400, quality = 0.82) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const image = new Image();
@@ -3723,34 +3959,26 @@ function _tlCompressImage(file, maxPx = 400, quality = 0.82) {
       const canvas = document.createElement('canvas');
       canvas.width = width; canvas.height = height;
       canvas.getContext('2d').drawImage(image, 0, 0, width, height);
-      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('toBlob failed')), 'image/jpeg', quality);
+      resolve(canvas.toDataURL('image/jpeg', quality));
     };
     image.onerror = reject;
     image.src = url;
   });
 }
 
-function _tlUploadImage(blob, name) {
-  const path = `tierlist/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-  const ref = window._storage.ref(path);
-  return ref.put(blob).then(() => ref.getDownloadURL()).then(url => ({ url, path }));
-}
-
 function tlImportImages(files) {
-  tlPushUndo();
   const tl = tlActiveTierlist();
   if (!tl) return;
   if (!tl.images) tl.images = [];
 
   const processFile = (file) => {
     const name = file.name.replace(/\.[^.]+$/, '');
-    return _tlCompressImage(file)
-      .then(blob => _tlUploadImage(blob, name))
-      .then(({ url, path }) => {
-        const img = { id: uid(), src: url, storagePath: path, name };
-        tl.images.push(img);
-        tl.unplaced.push(img.id);
-      });
+    return _tlCompressToBase64(file).then(src => {
+      const img = { id: uid(), src, name };
+      _tlSrcCache[img.id] = src;
+      tl.images.push(img);
+      tl.unplaced.push(img.id);
+    });
   };
 
   Promise.all(Array.from(files).map(processFile)).then(() => {
@@ -4208,28 +4436,44 @@ function tlSelectColor(color, swatchEl) {
 
 function tlOpenTierModal(ctx = { mode: 'create' }) {
   tlTierModalCtx = ctx;
-  if (ctx.mode === 'edit') {
+  if (ctx.mode === 'color') {
+    tlModalTierTitle.textContent = 'Modifier la couleur';
+    tlModalTierLabel.style.display = 'none';
+    document.getElementById('tl-modal-tier-confirm').textContent = 'Enregistrer';
+    tlSelectColor(ctx.tier.color, null);
+    tlModalTierColor.value = ctx.tier.color;
+  } else if (ctx.mode === 'edit') {
     tlModalTierTitle.textContent = 'Modifier le tier';
+    tlModalTierLabel.style.display = '';
     tlModalTierLabel.value = ctx.tier.label;
     document.getElementById('tl-modal-tier-confirm').textContent = 'Enregistrer';
     tlSelectColor(ctx.tier.color, null);
     tlModalTierColor.value = ctx.tier.color;
   } else {
     tlModalTierTitle.textContent = 'Nouveau tier';
+    tlModalTierLabel.style.display = '';
     tlModalTierLabel.value = '';
     document.getElementById('tl-modal-tier-confirm').textContent = 'Ajouter';
     tlSelectColor(TL_PRESET_COLORS[0], null);
     tlModalTierColor.value = TL_PRESET_COLORS[0];
   }
   tlModalTier.classList.remove('hidden');
-  setTimeout(() => { tlModalTierLabel.focus(); tlModalTierLabel.select(); }, 50);
+  if (ctx.mode !== 'color') setTimeout(() => { tlModalTierLabel.focus(); tlModalTierLabel.select(); }, 50);
 }
 
 function tlConfirmTierModal() {
-  const label = tlModalTierLabel.value.trim();
-  if (!label) return;
   const color = tlTierSelectedColor;
   tlModalTier.classList.add('hidden');
+  if (tlTierModalCtx && tlTierModalCtx.mode === 'color') {
+    tlPushUndo();
+    tlTierModalCtx.tier.color = color;
+    tlSave();
+    tlRender();
+    tlTierModalCtx = null;
+    return;
+  }
+  const label = tlModalTierLabel.value.trim();
+  if (!label) return;
   if (tlTierModalCtx && tlTierModalCtx.mode === 'edit') {
     tlPushUndo();
     tlTierModalCtx.tier.label = label;
@@ -4517,25 +4761,21 @@ tlModalTierColor.addEventListener('input', () => {
 // Init swatches au démarrage
 tlInitSwatches();
 
-tlBtnImportImages.addEventListener('click', () => tlFileInput.click());
+// (tlBtnImportImages supprimé — le bouton est maintenant dans le panneau images non placées)
 tlFileInput.addEventListener('change', () => { if (tlFileInput.files.length) tlImportImages(tlFileInput.files); tlFileInput.value = ''; });
 
 tlBtnExport.addEventListener('click', tlExport);
 tlBtnCapture.addEventListener('click', tlCapture);
 
 tlShowLabelsToggle.addEventListener('change', () => {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-  tl.showLabels = tlShowLabelsToggle.checked;
-  tlSave();
+  _tlLocalShowLabels = tlShowLabelsToggle.checked;
+  saveUserPrefs({ tlShowLabels: _tlLocalShowLabels });
   tlRender();
 });
 
 tlImgSizeSlider.addEventListener('input', () => {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-  tl.imgSize = parseInt(tlImgSizeSlider.value);
-  tlSave();
+  _tlLocalImgSize = parseInt(tlImgSizeSlider.value);
+  saveUserPrefs({ tlImgSize: _tlLocalImgSize });
   tlRender();
 });
 
@@ -4585,20 +4825,18 @@ document.addEventListener('paste', e => {
   const imageItems = Array.from(items).filter(it => it.type.startsWith('image/'));
   if (imageItems.length === 0) return;
 
-  tlPushUndo();
   if (!tl.images) tl.images = [];
   const now = new Date();
   const promises = imageItems.map(it => {
     const file = it.getAsFile();
     if (!file) return Promise.resolve();
     const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
-    return _tlCompressImage(file)
-      .then(blob => _tlUploadImage(blob, name))
-      .then(({ url, path }) => {
-        const img = { id: uid(), src: url, storagePath: path, name };
-        tl.images.push(img);
-        tl.unplaced.push(img.id);
-      });
+    return _tlCompressToBase64(file).then(src => {
+      const img = { id: uid(), src, name };
+      _tlSrcCache[img.id] = src;
+      tl.images.push(img);
+      tl.unplaced.push(img.id);
+    });
   });
 
   Promise.all(promises).then(() => { tlSave(); tlRender(); tlUpdateUndoBtn(); }).catch(e => console.warn('TL paste error:', e));
@@ -4679,6 +4917,8 @@ _dbTierlist.on('value', snapshot => {
   _tlRemoteUpdate = true;
   const raw = snapshot.val();
   tlState = _tlNormalizeState(raw);
+  // Alimenter le cache src depuis les données Firebase
+  tlState.tierlists.forEach(_tlCacheSrcs);
   tlRender();
   _tlRemoteUpdate = false;
 });

@@ -5,14 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=32" />
+  <link rel="stylesheet" href="style.css?v=35" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 </head>
 <body>
 
@@ -86,7 +85,6 @@
                 </label>
                 <button class="tl-toolbar-btn tl-btn-add-tier" id="tl-btn-add-tier">+ Tier</button>
                 <button class="tl-toolbar-btn tl-btn-undo" id="tl-btn-undo" title="Annuler la dernière action" disabled>↩ Annuler</button>
-                <button class="tl-toolbar-btn" id="tl-btn-import-images">📁 Importer images</button>
                 <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
                 <button class="tl-toolbar-btn tl-btn-export" id="tl-btn-export">⬇ Export PNG</button>
                 <button class="tl-toolbar-btn tl-btn-capture" id="tl-btn-capture" title="Copier la tier list dans le presse-papier">📷 Capture</button>
@@ -619,8 +617,7 @@
     };
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
-    window._storage = firebase.storage();
   </script>
-  <script src="app.js?v=43"></script>
+  <script src="app.js?v=47"></script>
 </body>
 </html>
