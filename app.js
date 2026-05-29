@@ -50,9 +50,17 @@ function setupAuth() {
       userBadge.classList.remove('hidden');
       userAvatar.src = user.photoURL || '';
       userAvatar.style.display = user.photoURL ? 'block' : 'none';
+      loadUserPrefs();
     } else {
       currentUser   = null;
       currentPseudo = null;
+      _prefsReady            = false;
+      _localActiveThemeId    = null;
+      _localActiveSubthemeId = null;
+      _selectedGridsBySubtheme = {};
+      _selectedGridIds = [];
+      _localFontScale  = 1;
+      _localGridHeight = 80;
       modalAuth.classList.remove('hidden');
       userBadge.classList.add('hidden');
     }
@@ -67,33 +75,105 @@ setupAuth();
 const _dbBingo = window._db.ref('bingo');
 
 // ──────────────────────────────────────────────
+// Préférences utilisateur — Firebase par uid
+// ──────────────────────────────────────────────
+function _dbPrefs() {
+  if (!currentUser) return null;
+  return window._db.ref('users/' + currentUser.uid + '/prefs');
+}
+
+function saveUserPrefs(patch) {
+  const ref = _dbPrefs();
+  if (!ref) return;
+  ref.update(patch).catch(e => console.warn('Prefs save error:', e));
+}
+
+function loadUserPrefs() {
+  const ref = _dbPrefs();
+  if (!ref) return;
+  _prefsReady = false;
+  ref.once('value').then(snap => {
+    const prefs = snap.val() || {};
+    if (prefs.fontScale        != null) _localFontScale        = prefs.fontScale;
+    if (prefs.gridHeight       != null) _localGridHeight       = prefs.gridHeight;
+    if (prefs.activeThemeId    != null) _localActiveThemeId    = prefs.activeThemeId;
+    if (prefs.activeSubthemeId != null) _localActiveSubthemeId = prefs.activeSubthemeId;
+    if (prefs.selectedGrids    != null) {
+      try { _selectedGridsBySubtheme = typeof prefs.selectedGrids === 'object' ? prefs.selectedGrids : JSON.parse(prefs.selectedGrids); }
+      catch { _selectedGridsBySubtheme = {}; }
+    }
+    _prefsReady = true;
+    // Appliquer les prefs visuelles
+    gridHeightInput.value = _localGridHeight;
+    const ghDisp = document.getElementById('grid-height-display');
+    if (ghDisp) ghDisp.textContent = _localGridHeight + '%';
+    fontScaleInput.value = Math.round(_localFontScale * 100);
+    const fsDisp = document.getElementById('font-scale-display');
+    if (fsDisp) fsDisp.textContent = Math.round(_localFontScale * 100) + '%';
+    // Re-render seulement si les données Bingo sont déjà chargées
+    if (_firebaseReady) {
+      _applyPrefsAndRender();
+    }
+  }).catch(e => console.warn('Prefs load error:', e));
+}
+
+function _applyPrefsAndRender() {
+  // Valider que le thème actif existe toujours
+  if (_localActiveThemeId) {
+    const exists = state.themes.find(t => t.id === _localActiveThemeId && !t.archived);
+    if (!exists) {
+      const nonArchived = state.themes.filter(t => !t.archived);
+      _localActiveThemeId = nonArchived.length > 0 ? nonArchived[0].id : (state.themes[0]?.id || null);
+    }
+  }
+  // Valider que le sous-thème actif existe toujours
+  const tNow = activeTheme();
+  if (tNow && _localActiveSubthemeId) {
+    const subExists = tNow.subthemes.find(s => s.id === _localActiveSubthemeId && !s.archived);
+    if (!subExists) {
+      const nonArchived = tNow.subthemes.filter(s => !s.archived);
+      _localActiveSubthemeId = nonArchived.length > 0 ? nonArchived[0].id : (tNow.subthemes[0]?.id || null);
+    }
+  }
+  // Charger les grilles sélectionnées pour le sous-thème actif
+  const sub = activeSubtheme();
+  if (sub) {
+    const hasSavedSelection = sub.id in _selectedGridsBySubtheme;
+    _selectedGridIds = loadLocalSelectedGridsForSubtheme(sub.id);
+    // Forcer la première grille uniquement s'il n'y a jamais eu de sélection sauvegardée
+    if (_selectedGridIds.length === 0 && !hasSavedSelection) {
+      const firstGrid = sub.grids.find(g => !g.archived);
+      if (firstGrid) _selectedGridIds = [firstGrid.id];
+    }
+  }
+  renderThemesList();
+  renderSubthemesList();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
+// ──────────────────────────────────────────────
 // État global Bingo
 // ──────────────────────────────────────────────
 
-// La taille de texte est locale (par navigateur), pas partagée via Firebase
-const _LOCAL_FONT_SCALE_KEY = 'lesmichels_bingo_fontscale';
-let _localFontScale = parseFloat(localStorage.getItem(_LOCAL_FONT_SCALE_KEY)) || 1;
+// Préférences visuelles — stockées dans Firebase /users/{uid}/prefs
+let _localFontScale  = 1;
+let _localGridHeight = 80;
 
-// Le thème actif et le sous-thème actif sont locaux (par navigateur), pas partagés via Firebase
-const _LOCAL_ACTIVE_THEME_KEY    = 'lesmichels_bingo_activetheme';
-const _LOCAL_ACTIVE_SUBTHEME_KEY = 'lesmichels_bingo_activesubtheme';
-function _loadLocalActiveThemeId()    { return localStorage.getItem(_LOCAL_ACTIVE_THEME_KEY) || null; }
-function _loadLocalActiveSubthemeId() { return localStorage.getItem(_LOCAL_ACTIVE_SUBTHEME_KEY) || null; }
-function _saveLocalActiveThemeId(id)  { if (id) localStorage.setItem(_LOCAL_ACTIVE_THEME_KEY, id); else localStorage.removeItem(_LOCAL_ACTIVE_THEME_KEY); }
-function _saveLocalActiveSubthemeId(id) { if (id) localStorage.setItem(_LOCAL_ACTIVE_SUBTHEME_KEY, id); else localStorage.removeItem(_LOCAL_ACTIVE_SUBTHEME_KEY); }
+function _saveLocalActiveThemeId(id)    { saveUserPrefs({ activeThemeId:    id || null }); }
+function _saveLocalActiveSubthemeId(id) { saveUserPrefs({ activeSubthemeId: id || null }); }
+function _loadLocalActiveThemeId()    { return _localActiveThemeId; }
+function _loadLocalActiveSubthemeId() { return _localActiveSubthemeId; }
 
 function saveLocalFontScale(scale) {
   _localFontScale = Math.max(0.5, Math.min(3, scale));
-  localStorage.setItem(_LOCAL_FONT_SCALE_KEY, _localFontScale);
+  saveUserPrefs({ fontScale: _localFontScale });
 }
-
-// Hauteur de la grille (en % de la hauteur d'écran, local non partagé)
-const _LOCAL_GRID_HEIGHT_KEY = 'lesmichels_bingo_gridheight';
-let _localGridHeight = parseInt(localStorage.getItem(_LOCAL_GRID_HEIGHT_KEY)) || 80;
 
 function saveLocalGridHeight(pct) {
   _localGridHeight = Math.max(20, Math.min(80, pct));
-  localStorage.setItem(_LOCAL_GRID_HEIGHT_KEY, _localGridHeight);
+  saveUserPrefs({ gridHeight: _localGridHeight });
 }
 
 function applyGridHeight() {
@@ -103,31 +183,30 @@ function applyGridHeight() {
   });
 }
 
-// IDs des grilles sélectionnées (affichées simultanément, max 3, local non partagé)
+// IDs des grilles sélectionnées (affichées simultanément, max 3)
 // Stocké par sous-thème : { [subthemeId]: [gridId, ...] }
-const _LOCAL_SELECTED_GRIDS_KEY = 'lesmichels_bingo_selectedgrids_v3';
 let _selectedGridIds = [];
 let _selectedGridsBySubtheme = {};
 
-function _loadSelectedGridsBySubtheme() {
-  try {
-    const raw = localStorage.getItem(_LOCAL_SELECTED_GRIDS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
-}
+const _EMPTY_SELECTION = '__empty__';
 
 function saveLocalSelectedGrids(ids) {
   _selectedGridIds = ids.slice(0, 3);
   const sub = activeSubtheme();
-  if (sub) _selectedGridsBySubtheme[sub.id] = _selectedGridIds.slice();
-  localStorage.setItem(_LOCAL_SELECTED_GRIDS_KEY, JSON.stringify(_selectedGridsBySubtheme));
+  if (sub) {
+    // Firebase supprime les tableaux vides — on stocke un marqueur pour distinguer
+    // "pas de sélection sauvegardée" de "sélection vide intentionnelle"
+    _selectedGridsBySubtheme[sub.id] = _selectedGridIds.length > 0 ? _selectedGridIds.slice() : [_EMPTY_SELECTION];
+  }
+  saveUserPrefs({ selectedGrids: _selectedGridsBySubtheme });
 }
 
 function loadLocalSelectedGridsForSubtheme(subthemeId) {
-  return (_selectedGridsBySubtheme[subthemeId] || []).slice();
+  const saved = _selectedGridsBySubtheme[subthemeId];
+  if (!saved) return [];
+  if (Array.isArray(saved) && saved.length === 1 && saved[0] === _EMPTY_SELECTION) return [];
+  return saved.slice();
 }
-
-_selectedGridsBySubtheme = _loadSelectedGridsBySubtheme();
 
 function defaultSubtheme(name, withGrid = false) {
   const sub = { id: uid(), name, grids: [], activeGridId: null, archived: false };
@@ -234,9 +313,10 @@ function migrateState(raw) {
 let state = initState();
 let _bingoRemoteUpdate = false;
 let _firebaseReady = false;
-// activeThemeId et activeSubthemeId sont locaux (par navigateur)
-let _localActiveThemeId    = _loadLocalActiveThemeId();
-let _localActiveSubthemeId = _loadLocalActiveSubthemeId();
+let _prefsReady    = false;
+// activeThemeId et activeSubthemeId sont chargés depuis Firebase /users/{uid}/prefs
+let _localActiveThemeId    = null;
+let _localActiveSubthemeId = null;
 
 function initState() {
   return { themes: [], trash: [] };
@@ -789,10 +869,25 @@ function createSubtheme(name) {
 }
 
 function switchSubtheme(id) {
+  // Reclique sur le sous-thème actif → le décocher
+  if (_localActiveSubthemeId === id) {
+    // Sauvegarder la sélection vide avant de nullifier le sous-thème actif
+    _selectedGridIds = [];
+    _selectedGridsBySubtheme[id] = [_EMPTY_SELECTION];
+    saveUserPrefs({ selectedGrids: _selectedGridsBySubtheme });
+    _localActiveSubthemeId = null;
+    _saveLocalActiveSubthemeId(null);
+    renderSubthemesList();
+    renderElements();
+    renderGridsList();
+    renderGrid();
+    return;
+  }
   _localActiveSubthemeId = id;
   _saveLocalActiveSubthemeId(id);
+  const hasSavedSelection = id in _selectedGridsBySubtheme;
   _selectedGridIds = loadLocalSelectedGridsForSubtheme(id);
-  if (_selectedGridIds.length === 0) {
+  if (_selectedGridIds.length === 0 && !hasSavedSelection) {
     const t = activeTheme();
     const sub = t && t.subthemes ? t.subthemes.find(s => s.id === id) : null;
     if (sub) {
@@ -1855,7 +1950,7 @@ function renderGrid() {
     bingoLayout.classList.add('no-theme-layout');
     const btn = document.createElement('button');
     btn.className = 'btn-empty-state';
-    btn.textContent = '+ Ajouter un thème';
+    btn.textContent = '+ Nouveau thème';
     btn.addEventListener('click', openNewThemeModal);
     gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
@@ -1873,7 +1968,7 @@ function renderGrid() {
   if (!s) {
     const btn = document.createElement('button');
     btn.className = 'btn-empty-state';
-    btn.textContent = '+ Ajouter un sous-thème';
+    btn.textContent = '+ Nouveau sous-thème';
     btn.addEventListener('click', openNewSubthemeModal);
     gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
@@ -1887,10 +1982,10 @@ function renderGrid() {
   }
 
   const hasAnyGrid = s.grids.some(x => !x.archived);
-  if (!g && !hasAnyGrid) {
+  if (!hasAnyGrid || _selectedGridIds.length === 0) {
     const btn = document.createElement('button');
     btn.className = 'btn-empty-state';
-    btn.textContent = '+ Ajouter une grille';
+    btn.textContent = '+ Nouvelle grille';
     btn.addEventListener('click', openNewGridModal);
     gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
@@ -2120,16 +2215,24 @@ btnSizePlus.addEventListener('click',  () => changeSize(+1));
 
 gridHeightInput.addEventListener('input', () => {
   const v = Math.max(20, Math.min(80, parseInt(gridHeightInput.value) || 80));
-  saveLocalGridHeight(v);
+  _localGridHeight = v;
   document.getElementById('grid-height-display').textContent = v + '%';
   renderGrid();
+});
+gridHeightInput.addEventListener('change', () => {
+  const v = Math.max(20, Math.min(80, parseInt(gridHeightInput.value) || 80));
+  saveLocalGridHeight(v);
 });
 
 fontScaleInput.addEventListener('input', () => {
   const pct = Math.max(50, Math.min(200, parseInt(fontScaleInput.value) || 100));
-  saveLocalFontScale(pct / 100);
+  _localFontScale = pct / 100;
   document.getElementById('font-scale-display').textContent = pct + '%';
   applyFontScale();
+});
+fontScaleInput.addEventListener('change', () => {
+  const pct = Math.max(50, Math.min(200, parseInt(fontScaleInput.value) || 100));
+  saveLocalFontScale(pct / 100);
 });
 
 chkLockGenerate.addEventListener('change', () => {
@@ -4531,52 +4634,17 @@ _dbBingo.on('value', snapshot => {
     });
   });
 
-  // Résoudre le thème actif local
-  if (state.themes.length > 0) {
-    const themeExists = state.themes.find(t => t.id === _localActiveThemeId && !t.archived);
-    if (!themeExists) {
-      const nonArchived = state.themes.filter(t => !t.archived);
-      _localActiveThemeId = nonArchived.length > 0 ? nonArchived[0].id : state.themes[0].id;
-      _saveLocalActiveThemeId(_localActiveThemeId);
-    }
+  if (_prefsReady) {
+    _applyPrefsAndRender();
+  } else if (!currentUser) {
+    // Pas encore connecté : render par défaut sans prefs
+    renderThemesList();
+    renderSubthemesList();
+    renderElements();
+    renderGridsList();
+    renderGrid();
   }
-
-  // Résoudre le sous-thème actif local
-  const _tNow = activeTheme();
-  if (_tNow && _tNow.subthemes.length > 0) {
-    const subExists = _tNow.subthemes.find(s => s.id === _localActiveSubthemeId && !s.archived);
-    if (!subExists) {
-      const nonArchived = _tNow.subthemes.filter(s => !s.archived);
-      _localActiveSubthemeId = nonArchived.length > 0 ? nonArchived[0].id : _tNow.subthemes[0].id;
-      _saveLocalActiveSubthemeId(_localActiveSubthemeId);
-    }
-  }
-
-  // Init affichage de la taille de texte locale
-  const initFontPct = Math.round(_localFontScale * 100);
-  fontScaleInput.value = initFontPct;
-  document.getElementById('font-scale-display').textContent = initFontPct + '%';
-
-  // Init affichage de la hauteur de grille locale (défaut max = 80)
-  gridHeightInput.value = _localGridHeight;
-  document.getElementById('grid-height-display').textContent = _localGridHeight + '%';
-
-  // Charger les grilles sélectionnées pour le sous-thème actif
-  const sub = activeSubtheme();
-  if (sub) {
-    const hasSavedSelection = sub.id in _selectedGridsBySubtheme;
-    _selectedGridIds = loadLocalSelectedGridsForSubtheme(sub.id);
-    if (_selectedGridIds.length === 0 && !hasSavedSelection) {
-      const firstGrid = sub.grids.find(g => !g.archived);
-      if (firstGrid) _selectedGridIds = [firstGrid.id];
-    }
-  }
-
-  renderThemesList();
-  renderSubthemesList();
-  renderElements();
-  renderGridsList();
-  renderGrid();
+  // Si _prefsReady est false mais currentUser existe : loadUserPrefs() appellera _applyPrefsAndRender() lui-même
   _bingoRemoteUpdate = false;
 });
 
