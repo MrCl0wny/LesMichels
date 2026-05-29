@@ -1,13 +1,7 @@
 {
   "rules": {
-    "bingo": {
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
-    "tierlist": {
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
+    ".read": "auth != null && (auth.uid === 'qvXEXn9zarMPaK0l9AH4PDtxsVG3' || auth.uid === 'VDpOI5BckhR7cmu3Bl7lzWj0wpH2')",
+    ".write": "auth != null && (auth.uid === 'qvXEXn9zarMPaK0l9AH4PDtxsVG3' || auth.uid === 'VDpOI5BckhR7cmu3Bl7lzWj0wpH2')",
     "users": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
