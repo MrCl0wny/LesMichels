@@ -2462,17 +2462,7 @@ function _makeLeafRow(label, depth, actions) {
   name.textContent = label;
   row.appendChild(name);
 
-  const btns = document.createElement('span');
-  btns.className = 'tree-leaf-actions';
-  actions.forEach(({ text, cls, disabled, onClick }) => {
-    const btn = document.createElement('button');
-    btn.className = 'archived-theme-btn ' + cls;
-    btn.innerHTML = text;
-    if (disabled) btn.disabled = true;
-    else btn.addEventListener('click', onClick);
-    btns.appendChild(btn);
-  });
-  row.appendChild(btns);
+  row.appendChild(_makeArchiveButtons(actions));
 
   return row;
 }
@@ -3746,42 +3736,32 @@ function tlConfirmRenameImg() {
   tlRender();
 }
 
-// ── Export PNG ────────────────────────────────────────────────────────────────
-function tlExport() {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-
+// ── Canvas partagé Export/Capture ────────────────────────────────────────────
+async function _tlBuildCanvas(tl) {
   const imgSize = tl.imgSize || 80;
   const labelW = 140;
   const padding = 6;
   const rowGap = 4;
   const imgGap = 4;
   const labelFontSize = Math.round(imgSize * 0.35);
+  const totalWidth = 860;
 
-  // Calcul de la hauteur de chaque tier
   const tierHeights = tl.tiers.map(tier => {
     if (tier.items.length === 0) return imgSize + padding * 2;
-    const rows = Math.ceil(tier.items.length * (imgSize + imgGap) / (860 - labelW));
+    const rows = Math.ceil(tier.items.length * (imgSize + imgGap) / (totalWidth - labelW));
     return Math.max(imgSize + padding * 2, rows * (imgSize + imgGap) + padding * 2);
   });
 
-  const totalHeight = tierHeights.reduce((a, b) => a + b + rowGap, 0) + 40;
-  const totalWidth = 860;
-
   const canvas = document.createElement('canvas');
   canvas.width = totalWidth;
-  canvas.height = totalHeight;
+  canvas.height = tierHeights.reduce((a, b) => a + b + rowGap, 0) + 40;
   const ctx = canvas.getContext('2d');
 
   ctx.fillStyle = '#18181c';
-  ctx.fillRect(0, 0, totalWidth, totalHeight);
-
-  // Titre
+  ctx.fillRect(0, 0, totalWidth, canvas.height);
   ctx.fillStyle = '#e8e8f0';
-  ctx.font = `bold 18px Arial`;
+  ctx.font = 'bold 18px Arial';
   ctx.fillText(tl.name, 12, 26);
-
-  let y = 36;
 
   const loadImage = (src) => new Promise((resolve) => {
     const img = new Image();
@@ -3790,23 +3770,21 @@ function tlExport() {
     img.src = src;
   });
 
-  const drawTier = async (tier, tierH, yPos) => {
-    // Label cell
+  let y = 36;
+  for (let i = 0; i < tl.tiers.length; i++) {
+    const tier = tl.tiers[i];
+    const tierH = tierHeights[i];
     ctx.fillStyle = tier.color;
-    ctx.fillRect(0, yPos, labelW, tierH);
+    ctx.fillRect(0, y, labelW, tierH);
     ctx.fillStyle = '#111';
     ctx.font = `bold ${labelFontSize}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(tier.label, labelW / 2, yPos + tierH / 2);
-
-    // Images zone bg
+    ctx.fillText(tier.label, labelW / 2, y + tierH / 2);
     ctx.fillStyle = '#22222a';
-    ctx.fillRect(labelW, yPos, totalWidth - labelW, tierH);
-
-    // Draw images
+    ctx.fillRect(labelW, y, totalWidth - labelW, tierH);
     let x = labelW + padding;
-    let rowY = yPos + padding;
+    let rowY = y + padding;
     for (const imgId of tier.items) {
       const imgData = tl.images ? tl.images.find(i => i.id === imgId) : null;
       if (!imgData) continue;
@@ -3824,21 +3802,23 @@ function tlExport() {
       }
       x += imgSize + imgGap;
     }
-  };
+    y += tierH + rowGap;
+  }
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  return canvas;
+}
 
-  (async () => {
-    for (let i = 0; i < tl.tiers.length; i++) {
-      await drawTier(tl.tiers[i], tierHeights[i], y);
-      y += tierHeights[i] + rowGap;
-    }
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-
+// ── Export PNG ────────────────────────────────────────────────────────────────
+function tlExport() {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  _tlBuildCanvas(tl).then(canvas => {
     const link = document.createElement('a');
     link.download = (tl.name || 'tierlist').replace(/[^a-z0-9]/gi, '_') + '.png';
     link.href = canvas.toDataURL('image/png');
     link.click();
-  })();
+  });
 }
 
 // ── Modal archivées (tierlists + dossiers) ────────────────────────────────────
@@ -4258,85 +4238,7 @@ function tlOpenManageModal(id, anchorEl) {
 function tlCapture() {
   const tl = tlActiveTierlist();
   if (!tl) return;
-
-  const imgSize = tl.imgSize || 80;
-  const labelW = 140;
-  const padding = 6;
-  const rowGap = 4;
-  const imgGap = 4;
-  const labelFontSize = Math.round(imgSize * 0.35);
-  const canvasWidth = 860;
-
-  const tierHeights = tl.tiers.map(tier => {
-    if (tier.items.length === 0) return imgSize + padding * 2;
-    const rows = Math.ceil(tier.items.length * (imgSize + imgGap) / (canvasWidth - labelW));
-    return Math.max(imgSize + padding * 2, rows * (imgSize + imgGap) + padding * 2);
-  });
-
-  const totalHeight = tierHeights.reduce((a, b) => a + b + rowGap, 0) + 40;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = canvasWidth;
-  canvas.height = totalHeight;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#18181c';
-  ctx.fillRect(0, 0, canvasWidth, totalHeight);
-
-  ctx.fillStyle = '#e8e8f0';
-  ctx.font = 'bold 18px Arial';
-  ctx.fillText(tl.name, 12, 26);
-
-  let y = 36;
-
-  const loadImage = (src) => new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
-
-  const drawTier = async (tier, tierH, yPos) => {
-    ctx.fillStyle = tier.color;
-    ctx.fillRect(0, yPos, labelW, tierH);
-    ctx.fillStyle = '#111';
-    ctx.font = `bold ${labelFontSize}px Arial`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(tier.label, labelW / 2, yPos + tierH / 2);
-
-    ctx.fillStyle = '#22222a';
-    ctx.fillRect(labelW, yPos, canvasWidth - labelW, tierH);
-
-    let x = labelW + padding;
-    let rowY = yPos + padding;
-    for (const imgId of tier.items) {
-      const imgData = tl.images ? tl.images.find(i => i.id === imgId) : null;
-      if (!imgData) continue;
-      if (x + imgSize > canvasWidth - padding) { x = labelW + padding; rowY += imgSize + imgGap; }
-      const imgEl = await loadImage(imgData.src);
-      if (imgEl) ctx.drawImage(imgEl, x, rowY, imgSize, imgSize);
-      if (tl.showLabels) {
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(x, rowY + imgSize - 16, imgSize, 16);
-        ctx.fillStyle = '#e8e8f0';
-        ctx.font = 'bold 10px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(imgData.name.slice(0, 14), x + imgSize / 2, rowY + imgSize - 8);
-      }
-      x += imgSize + imgGap;
-    }
-  };
-
-  (async () => {
-    for (let i = 0; i < tl.tiers.length; i++) {
-      await drawTier(tl.tiers[i], tierHeights[i], y);
-      y += tierHeights[i] + rowGap;
-    }
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-
+  _tlBuildCanvas(tl).then(canvas => {
     canvas.toBlob(blob => {
       if (!blob) return;
       navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
@@ -4345,7 +4247,7 @@ function tlCapture() {
         console.warn('TL Capture clipboard error:', err);
       });
     }, 'image/png');
-  })();
+  });
 }
 
 // ── Titre inline edit ─────────────────────────────────────────────────────────
