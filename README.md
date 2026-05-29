@@ -22,6 +22,8 @@
 - Jusqu'à 3 grilles simultanées avec contrôles indépendants
 - Génération aléatoire, détection bingo, captures PNG
 - Synchronisation temps réel entre tous les appareils connectés
+- **Archives unifiées** : onglet unique regroupant thèmes, sous-thèmes et grilles archivés
+- **Corbeille** : les éléments supprimés sont conservés temporairement, restaurables ou supprimables définitivement
 
 ### Tier List
 - Création et gestion de tier lists avec dossiers

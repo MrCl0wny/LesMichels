@@ -2388,3 +2388,179 @@ body {
   border-color: #3a6abf !important;
   background: rgba(58,106,191,0.12) !important;
 }
+
+/* ── Boutons Archives & Corbeille unifiés ── */
+.btn-archives-unified {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: Arial, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 7px 16px;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.btn-trash-unified {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: Arial, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 7px 16px;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-archives-unified:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
+.btn-trash-unified:hover { border-color: var(--danger); color: var(--danger); background: rgba(232,91,71,0.08); }
+
+/* ── Modale Archives / Corbeille unifiée ── */
+.modal-archives-box {
+  min-width: 420px;
+  max-width: 620px;
+  width: 95%;
+}
+
+.modal-archives-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.modal-archives-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent-dim);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-trash-actions-top {
+  margin-bottom: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Badge type dans la corbeille */
+.trash-type-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: var(--surface-3);
+  border-radius: var(--radius);
+  padding: 2px 6px;
+  flex-shrink: 0;
+  min-width: 68px;
+  text-align: center;
+}
+
+/* ── Arborescence Archives / Corbeille ── */
+.archives-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.tree-node-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  cursor: default;
+  margin-top: 6px;
+}
+.tree-node-row:first-child { margin-top: 0; }
+
+.tree-arrow {
+  font-size: 0.65rem;
+  color: var(--text-faint);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+  width: 12px;
+  display: inline-block;
+  text-align: center;
+}
+.tree-arrow.collapsed { transform: rotate(-90deg); }
+
+.tree-node-label {
+  flex: 1;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.tree-children {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tree-children.tree-hidden { display: none; }
+
+.tree-leaf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid transparent;
+}
+.tree-leaf-row:hover { border-color: var(--border); }
+
+.tree-leaf-icon {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  width: 10px;
+  text-align: center;
+}
+
+.tree-leaf-label {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.tree-leaf-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.archived-theme-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.archived-theme-btn.del {
+  font-size: 0.95rem;
+  padding: 4px 8px;
+}

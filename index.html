@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=28" />
+  <link rel="stylesheet" href="style.css?v=32" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -128,7 +128,6 @@
             <span class="ctrl-row-label">Thème</span>
             <div id="themes-list" class="themes-list"></div>
             <button class="btn-new-theme" id="btn-new-theme" title="Nouveau thème"><span class="btn-plus-green">+ Thème</span></button>
-            <button class="btn-archived-themes" id="btn-archived-themes" title="Thèmes archivés">📦</button>
           </div>
 
           <!-- Ligne 1b : Sous-thèmes -->
@@ -136,7 +135,6 @@
             <span class="ctrl-row-label">Sous-thème</span>
             <div id="subthemes-list" class="subthemes-list"></div>
             <button class="btn-new-subtheme" id="btn-new-subtheme" title="Nouveau sous-thème"><span class="btn-plus-green">+ Sous-thème</span></button>
-            <button class="btn-archived-subthemes" id="btn-archived-subthemes" title="Sous-thèmes archivés">📦</button>
           </div>
 
           <!-- Ligne 2 : Grilles -->
@@ -144,7 +142,6 @@
             <span class="ctrl-row-label">Grille</span>
             <div id="grids-list" class="grids-list"></div>
             <button class="btn-new-grid" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
-            <button class="btn-archived-grids" id="btn-archived-grids" title="Grilles archivées">📦</button>
           </div>
 
           <!-- Ligne 3 : Toolbar -->
@@ -177,6 +174,8 @@
               <button class="btn-action btn-reset" id="btn-reset" title="Réinitialise toutes les cases du sous-thème">↺ Reset</button>
             </div>
             <button class="btn-action btn-screenshot-bingo" id="btn-screenshot-bingo" title="Copier les grilles dans le presse-papier">📷 Capture</button>
+            <button class="btn-archives-unified" id="btn-archives-unified" title="Eléments archivés">📦 Archives</button>
+            <button class="btn-trash-unified" id="btn-trash-unified" title="Éléments supprimés">🗑 Corbeille</button>
           </div>
 
         </div>
@@ -356,32 +355,35 @@
     </div>
   </div>
 
-  <!-- Menu contextuel thème (double-clic) -->
+  <!-- Menu contextuel thème (clic droit) -->
   <div id="ctx-menu-theme" class="ctx-menu hidden">
     <button class="ctx-close-btn" id="ctx-theme-cancel" title="Fermer">✕</button>
     <button class="ctx-menu-item" id="ctx-theme-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-theme-duplicate">❐ Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-theme-archive">📦 Archiver</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-theme-delete">🗑 Supprimer</button>
   </div>
 
-  <!-- Menu contextuel grille (double-clic) -->
+  <!-- Menu contextuel grille (clic droit) -->
   <div id="ctx-menu-grid" class="ctx-menu hidden">
     <button class="ctx-close-btn" id="ctx-grid-cancel" title="Fermer">✕</button>
     <button class="ctx-menu-item" id="ctx-grid-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-grid-duplicate">❐ Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-grid-archive">📦 Archiver</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-grid-delete">🗑 Supprimer</button>
   </div>
 
   <div id="ctx-menu-element" class="ctx-menu hidden">
     <button class="ctx-close-btn" id="ctx-element-cancel" title="Fermer">✕</button>
     <button class="ctx-menu-item" id="ctx-element-edit">✎ Modifier</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-archive">📦 Archiver</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-element-delete-active">🗑 Supprimer</button>
   </div>
 
   <div id="ctx-menu-element-archived" class="ctx-menu hidden">
     <button class="ctx-close-btn" id="ctx-element-archived-cancel" title="Fermer">✕</button>
     <button class="ctx-menu-item" id="ctx-element-restore">↩ Restaurer</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-element-delete">✕ Supprimer</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-element-delete">🗑 Supprimer</button>
   </div>
 
   <!-- Modal nouveau thème -->
@@ -401,27 +403,55 @@
     </div>
   </div>
 
-  <!-- Modal thèmes archivés -->
-  <div id="modal-archived-themes" class="modal-overlay hidden">
-    <div class="modal-box">
+  <!-- Modal Archives unifiée -->
+  <div id="modal-archives-unified" class="modal-overlay hidden">
+    <div class="modal-box modal-archives-box">
       <div class="modal-header">
-        <h3>Thèmes archivés</h3>
-        <button class="modal-close" id="btn-close-archived-modal">✕</button>
+        <h3>📦 Archives</h3>
+        <button class="modal-close" id="btn-close-archives-unified">✕</button>
       </div>
-      <div id="archived-themes-list" class="archived-themes-list"></div>
+      <div id="archives-tree" class="archives-tree"></div>
+    </div>
+  </div>
+  <!-- stubs legacy pour compatibilité JS -->
+  <div id="archived-themes-list" style="display:none"></div>
+  <div id="archived-subthemes-list" style="display:none"></div>
+  <div id="archived-grids-list" style="display:none"></div>
+
+  <!-- Modal Corbeille unifiée -->
+  <div id="modal-trash-unified" class="modal-overlay hidden">
+    <div class="modal-box modal-archives-box">
+      <div class="modal-header">
+        <h3>🗑 Corbeille</h3>
+        <button class="modal-close" id="btn-close-trash-unified">✕</button>
+      </div>
+      <div class="modal-trash-actions-top">
+        <button class="btn-action btn-danger-action" id="btn-trash-empty-all">🗑 Vider la corbeille</button>
+      </div>
+      <div id="trash-list" class="archived-themes-list"></div>
     </div>
   </div>
 
-  <!-- Modal grilles archivées -->
-  <div id="modal-archived-grids" class="modal-overlay hidden">
-    <div class="modal-box">
+  <!-- Modal confirmation vider corbeille -->
+  <div id="modal-confirm-trash-empty" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
       <div class="modal-header">
-        <h3>Grilles archivées</h3>
-        <button class="modal-close" id="btn-close-archived-grids-modal">✕</button>
+        <h3>Vider la corbeille</h3>
+        <button class="modal-close" id="btn-close-confirm-trash-empty">✕</button>
       </div>
-      <div id="archived-grids-list" class="archived-themes-list"></div>
+      <div class="modal-body">
+        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Supprimer définitivement tous les éléments de la corbeille ? Cette action est irréversible.</p>
+        <div class="modal-actions">
+          <button class="btn-action btn-danger-action" id="btn-confirm-trash-empty">🗑 Vider</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-trash-empty">Annuler</button>
+        </div>
+      </div>
     </div>
   </div>
+
+  <!-- Modales legacy conservées pour compatibilité JS (cachées, non utilisées) -->
+  <div id="modal-archived-themes" class="hidden" style="display:none!important"></div>
+  <div id="modal-archived-grids" class="hidden" style="display:none!important"></div>
 
   <!-- Modal renommer thème -->
   <div id="modal-rename-theme" class="modal-overlay hidden">
@@ -492,15 +522,9 @@
     </div>
   </div>
 
-  <!-- Modal sous-thèmes archivés -->
-  <div id="modal-archived-subthemes" class="modal-overlay hidden">
-    <div class="modal-box">
-      <div class="modal-header">
-        <h3>Sous-thèmes archivés</h3>
-        <button class="modal-close" id="btn-close-archived-subthemes-modal">✕</button>
-      </div>
-      <div id="archived-subthemes-list" class="archived-themes-list"></div>
-    </div>
+  <!-- Modal sous-thèmes archivés legacy (stub pour compatibilité JS) -->
+  <div id="modal-archived-subthemes" class="hidden" style="display:none!important">
+    <button id="btn-close-archived-subthemes-modal" style="display:none"></button>
   </div>
 
   <!-- Modal renommer sous-thème -->
@@ -520,12 +544,13 @@
     </div>
   </div>
 
-  <!-- Menu contextuel sous-thème (double-clic) -->
+  <!-- Menu contextuel sous-thème (clic droit) -->
   <div id="ctx-menu-subtheme" class="ctx-menu hidden">
     <button class="ctx-close-btn" id="ctx-subtheme-cancel" title="Fermer">✕</button>
     <button class="ctx-menu-item" id="ctx-subtheme-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-subtheme-duplicate">❐ Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-archive">📦 Archiver</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-delete">🗑 Supprimer</button>
   </div>
 
   <!-- Modal nouvelle grille -->
@@ -596,6 +621,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=28"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>

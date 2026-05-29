@@ -225,6 +225,9 @@ function migrateState(raw) {
   // Supprimer activeThemeId de Firebase (il est désormais local)
   delete raw.activeThemeId;
 
+  // Initialiser la corbeille si absente
+  if (!raw.trash) raw.trash = [];
+
   return raw;
 }
 
@@ -236,7 +239,7 @@ let _localActiveThemeId    = _loadLocalActiveThemeId();
 let _localActiveSubthemeId = _loadLocalActiveSubthemeId();
 
 function initState() {
-  return { themes: [] };
+  return { themes: [], trash: [] };
 }
 
 function activeTheme() {
@@ -289,6 +292,57 @@ function saveState() {
 }
 
 // ──────────────────────────────────────────────
+// Corbeille
+// ──────────────────────────────────────────────
+function trashPush(entry) {
+  if (!state.trash) state.trash = [];
+  state.trash.push({ ...entry, deletedAt: Date.now() });
+}
+
+function trashRestore(idx) {
+  if (!state.trash) return;
+  const entry = state.trash[idx];
+  if (!entry) return;
+  state.trash.splice(idx, 1);
+
+  if (entry.type === 'theme') {
+    state.themes.push(entry.data);
+  } else if (entry.type === 'subtheme') {
+    const t = state.themes.find(t => t.id === entry.themeId);
+    if (t) {
+      if (!t.subthemes) t.subthemes = [];
+      t.subthemes.push(entry.data);
+    }
+  } else if (entry.type === 'grid') {
+    let s = null;
+    const t = state.themes.find(t => t.id === entry.themeId);
+    if (t) s = (t.subthemes || []).find(s => s.id === entry.subthemeId);
+    if (s) {
+      if (!s.grids) s.grids = [];
+      s.grids.push(entry.data);
+    }
+  }
+
+  saveState();
+  renderThemesList();
+  renderSubthemesList();
+  renderGridsList();
+  renderGrid();
+  renderElements();
+}
+
+function trashDeleteOne(idx) {
+  if (!state.trash) return;
+  state.trash.splice(idx, 1);
+  saveState();
+}
+
+function trashEmpty() {
+  state.trash = [];
+  saveState();
+}
+
+// ──────────────────────────────────────────────
 // Éléments DOM
 // ──────────────────────────────────────────────
 const inputEl          = document.getElementById('new-element-input');
@@ -316,14 +370,15 @@ const btnFontMinus       = document.getElementById('btn-font-minus');
 const btnFontPlus        = document.getElementById('btn-font-plus');
 const fontScaleInput     = document.getElementById('font-scale-input');
 const gridWrapper        = document.getElementById('grid-wrapper');
-const btnArchivedThemes     = document.getElementById('btn-archived-themes');
-const modalArchivedThemes   = document.getElementById('modal-archived-themes');
-const btnCloseArchivedModal = document.getElementById('btn-close-archived-modal');
 const archivedThemesList    = document.getElementById('archived-themes-list');
-const btnArchivedGrids      = document.getElementById('btn-archived-grids');
-const modalArchivedGrids    = document.getElementById('modal-archived-grids');
-const btnCloseArchivedGridsModal = document.getElementById('btn-close-archived-grids-modal');
 const archivedGridsList     = document.getElementById('archived-grids-list');
+// Legacy stubs — éléments conservés pour compatibilité avec l'ancien code
+const btnArchivedThemes     = { addEventListener: () => {} };
+const modalArchivedThemes   = { classList: { remove: () => {}, add: () => {} }, addEventListener: () => {} };
+const btnCloseArchivedModal = { addEventListener: () => {} };
+const btnArchivedGrids      = { addEventListener: () => {} };
+const modalArchivedGrids    = { classList: { remove: () => {}, add: () => {} }, addEventListener: () => {} };
+const btnCloseArchivedGridsModal = { addEventListener: () => {} };
 const chkLockGenerate          = document.getElementById('chk-lock-generate');
 const btnCollapsePanel         = document.getElementById('btn-collapse-panel');
 const panelElements            = document.getElementById('panel-elements');
@@ -391,7 +446,7 @@ function buildElementItem(el, isArchived) {
   li.dataset.id = el.id;
   li.title = isArchived
     ? 'Clic gauche : ' + (isChecked ? 'désactiver' : 'valider') + ' · Clic droit : restaurer, supprimer'
-    : 'Clic gauche : ' + (isChecked ? 'désactiver' : 'valider') + ' · Clic droit : renommer, archiver';
+    : 'Clic gauche : ' + (isChecked ? 'désactiver' : 'valider') + ' · Clic droit : modifier, archiver, supprimer';
   // Pas de drag & drop sur les cases
 
   const span = document.createElement('span');
@@ -572,6 +627,8 @@ function switchTheme(id) {
 }
 
 function deleteTheme(id) {
+  const t = state.themes.find(t => t.id === id);
+  if (t) trashPush({ type: 'theme', data: JSON.parse(JSON.stringify(t)) });
   state.themes = state.themes.filter(t => t.id !== id);
   if (_localActiveThemeId === id) {
     const remaining = state.themes.filter(t => !t.archived);
@@ -594,13 +651,20 @@ function archiveTheme(id) {
   const t = state.themes.find(t => t.id === id);
   if (!t) return;
   t.archived = !t.archived;
-  if (t.archived && _localActiveThemeId === id) {
-    const remaining = state.themes.filter(x => !x.archived);
-    _localActiveThemeId = remaining.length > 0 ? remaining[0].id : null;
-    _saveLocalActiveThemeId(_localActiveThemeId);
-    _localActiveSubthemeId = null;
-    _saveLocalActiveSubthemeId(null);
-    _selectedGridIds = [];
+  if (t.archived) {
+    // Archiver en cascade : tous les sous-thèmes et leurs grilles
+    (t.subthemes || []).forEach(s => {
+      s.archived = true;
+      (s.grids || []).forEach(g => { g.archived = true; });
+    });
+    if (_localActiveThemeId === id) {
+      const remaining = state.themes.filter(x => !x.archived);
+      _localActiveThemeId = remaining.length > 0 ? remaining[0].id : null;
+      _saveLocalActiveThemeId(_localActiveThemeId);
+      _localActiveSubthemeId = null;
+      _saveLocalActiveSubthemeId(null);
+      _selectedGridIds = [];
+    }
   }
   saveState();
   renderThemesList();
@@ -663,7 +727,7 @@ function renderThemesList() {
     item.className = 'theme-tab' + (t.id === _localActiveThemeId ? ' active' : '');
     item.dataset.id = t.id;
     item.draggable = true;
-    item.title = (t.id === _localActiveThemeId ? 'Clic gauche : masquer ce thème' : 'Clic gauche : afficher ce thème') + '\nClic droit : renommer, dupliquer, archiver';
+    item.title = (t.id === _localActiveThemeId ? 'Clic gauche : masquer ce thème' : 'Clic gauche : afficher ce thème') + '\nClic droit : renommer, dupliquer, archiver, supprimer';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'theme-tab-name';
@@ -713,7 +777,7 @@ function renderThemesList() {
 // ──────────────────────────────────────────────
 const subthemesList       = document.getElementById('subthemes-list');
 const btnNewSubtheme      = document.getElementById('btn-new-subtheme');
-const btnArchivedSubthemes = document.getElementById('btn-archived-subthemes');
+const btnArchivedSubthemes = { addEventListener: () => {} }; // remplacé par btn-archives-unified
 
 function createSubtheme(name) {
   const t = activeTheme();
@@ -753,6 +817,8 @@ function switchSubtheme(id) {
 function deleteSubtheme(id) {
   const t = activeTheme();
   if (!t || !t.subthemes) return;
+  const sub = t.subthemes.find(s => s.id === id);
+  if (sub) trashPush({ type: 'subtheme', themeId: t.id, data: JSON.parse(JSON.stringify(sub)) });
   t.subthemes = t.subthemes.filter(s => s.id !== id);
   if (_localActiveSubthemeId === id) {
     const remaining = t.subthemes.filter(s => !s.archived);
@@ -772,11 +838,15 @@ function archiveSubtheme(id) {
   const sub = t.subthemes.find(s => s.id === id);
   if (!sub) return;
   sub.archived = !sub.archived;
-  if (sub.archived && _localActiveSubthemeId === id) {
-    const remaining = t.subthemes.filter(s => !s.archived);
-    _localActiveSubthemeId = remaining.length > 0 ? remaining[0].id : null;
-    _saveLocalActiveSubthemeId(_localActiveSubthemeId);
-    _selectedGridIds = [];
+  if (sub.archived) {
+    // Archiver en cascade : toutes les grilles du sous-thème
+    (sub.grids || []).forEach(g => { g.archived = true; });
+    if (_localActiveSubthemeId === id) {
+      const remaining = t.subthemes.filter(s => !s.archived);
+      _localActiveSubthemeId = remaining.length > 0 ? remaining[0].id : null;
+      _saveLocalActiveSubthemeId(_localActiveSubthemeId);
+      _selectedGridIds = [];
+    }
   }
   saveState();
   renderSubthemesList();
@@ -833,7 +903,7 @@ function renderSubthemesList() {
     item.className = 'theme-tab subtheme-tab' + (s.id === _localActiveSubthemeId ? ' active' : '');
     item.dataset.id = s.id;
     item.draggable = true;
-    item.title = (s.id === _localActiveSubthemeId ? 'Clic gauche : masquer ce sous-thème' : 'Clic gauche : afficher ce sous-thème') + '\nClic droit : renommer, dupliquer, archiver';
+    item.title = (s.id === _localActiveSubthemeId ? 'Clic gauche : masquer ce sous-thème' : 'Clic gauche : afficher ce sous-thème') + '\nClic droit : renommer, dupliquer, archiver, supprimer';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'theme-tab-name';
@@ -870,33 +940,7 @@ function renderSubthemesList() {
   btnNewGrid.disabled = !_localActiveSubthemeId;
 }
 
-function renderArchivedSubthemesModal() {
-  const listEl = document.getElementById('archived-subthemes-list');
-  listEl.innerHTML = '';
-  const t = activeTheme();
-  if (!t || !t.subthemes) { listEl.innerHTML = '<p class="archived-empty">Aucun thème actif.</p>'; return; }
-  const archived = t.subthemes.filter(s => s.archived);
-  if (archived.length === 0) { listEl.innerHTML = '<p class="archived-empty">Aucun sous-thème archivé.</p>'; return; }
-  archived.forEach(s => {
-    const item = document.createElement('div');
-    item.className = 'archived-theme-item';
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'archived-theme-name';
-    nameSpan.textContent = s.name;
-    item.appendChild(nameSpan);
-    const btnRestore = document.createElement('button');
-    btnRestore.className = 'archived-theme-btn restore';
-    btnRestore.textContent = '↩ Restaurer';
-    btnRestore.addEventListener('click', () => { archiveSubtheme(s.id); renderArchivedSubthemesModal(); });
-    item.appendChild(btnRestore);
-    const btnDel = document.createElement('button');
-    btnDel.className = 'archived-theme-btn del';
-    btnDel.textContent = '✕ Supprimer';
-    btnDel.addEventListener('click', () => { deleteSubtheme(s.id); renderArchivedSubthemesModal(); });
-    item.appendChild(btnDel);
-    listEl.appendChild(item);
-  });
-}
+function renderArchivedSubthemesModal() {} // remplacé par renderArchivesUnified
 
 // Modales renommage sous-thème
 const modalRenameSubtheme      = document.getElementById('modal-rename-subtheme');
@@ -951,16 +995,7 @@ modalNewSubtheme.addEventListener('click', e => { if (e.target === modalNewSubth
 newSubthemeNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmNewSubtheme(); if (e.key === 'Escape') closeNewSubthemeModal(); });
 
 btnNewSubtheme.addEventListener('click', () => { if (activeTheme()) openNewSubthemeModal(); });
-btnArchivedSubthemes.addEventListener('click', () => {
-  renderArchivedSubthemesModal();
-  document.getElementById('modal-archived-subthemes').classList.remove('hidden');
-});
-document.getElementById('btn-close-archived-subthemes-modal').addEventListener('click', () => {
-  document.getElementById('modal-archived-subthemes').classList.add('hidden');
-});
-document.getElementById('modal-archived-subthemes').addEventListener('click', e => {
-  if (e.target === document.getElementById('modal-archived-subthemes')) document.getElementById('modal-archived-subthemes').classList.add('hidden');
-});
+// Les sous-thèmes archivés sont désormais dans modal-archives-unified
 
 // Menu contextuel sous-thème
 const ctxMenuSubtheme    = document.getElementById('ctx-menu-subtheme');
@@ -975,6 +1010,7 @@ function closeCtxMenuSubtheme() { ctxMenuSubtheme.classList.add('hidden'); _ctxS
 ctxSubthemeRename.addEventListener('click', () => { if (_ctxSubthemeId) openRenameSubthemeModal(_ctxSubthemeId); closeCtxMenuSubtheme(); });
 ctxSubthemeDuplicate.addEventListener('click', () => { if (_ctxSubthemeId) duplicateSubtheme(_ctxSubthemeId); closeCtxMenuSubtheme(); });
 ctxSubthemeArchive.addEventListener('click', () => { if (_ctxSubthemeId) archiveSubtheme(_ctxSubthemeId); closeCtxMenuSubtheme(); });
+document.getElementById('ctx-subtheme-delete').addEventListener('click', () => { if (_ctxSubthemeId) deleteSubtheme(_ctxSubthemeId); closeCtxMenuSubtheme(); });
 document.getElementById('ctx-subtheme-cancel').addEventListener('click', () => closeCtxMenuSubtheme());
 
 // ──────────────────────────────────────────────
@@ -1167,45 +1203,27 @@ function bingoScreenshotOne(gId) {
   copyGridToClipboard([g]);
 }
 
-function renderArchivedThemesModal() {
-  archivedThemesList.innerHTML = '';
-  const archived = state.themes.filter(t => t.archived);
-  if (archived.length === 0) {
-    archivedThemesList.innerHTML = '<p class="archived-empty">Aucun thème archivé.</p>';
-    return;
-  }
-  archived.forEach(t => {
-    const item = document.createElement('div');
-    item.className = 'archived-theme-item';
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'archived-theme-name';
-    nameSpan.textContent = t.name;
-    item.appendChild(nameSpan);
-
-    const btnRestore = document.createElement('button');
-    btnRestore.className = 'archived-theme-btn restore';
-    btnRestore.title = 'Restaurer';
-    btnRestore.textContent = '↩ Restaurer';
-    btnRestore.addEventListener('click', () => {
-      archiveTheme(t.id);
-      renderArchivedThemesModal();
-    });
-    item.appendChild(btnRestore);
-
-    const btnDel = document.createElement('button');
-    btnDel.className = 'archived-theme-btn del';
-    btnDel.title = 'Supprimer définitivement';
-    btnDel.textContent = '✕ Supprimer';
-    btnDel.addEventListener('click', () => {
-      deleteTheme(t.id);
-      renderArchivedThemesModal();
-    });
-    item.appendChild(btnDel);
-
-    archivedThemesList.appendChild(item);
+function _makeBreadcrumb(parts) {
+  const span = document.createElement('span');
+  span.className = 'archived-theme-name';
+  parts.forEach((part, i) => {
+    if (i > 0) {
+      const sep = document.createTextNode(' / ');
+      span.appendChild(sep);
+    }
+    if (i === parts.length - 1) {
+      const b = document.createElement('b');
+      b.style.color = '#fff';
+      b.textContent = part;
+      span.appendChild(b);
+    } else {
+      span.appendChild(document.createTextNode(part));
+    }
   });
+  return span;
 }
+
+function renderArchivedThemesModal() {} // remplacé par renderArchivesUnified
 
 function openRenameThemeModal(id) {
   const t = state.themes.find(t => t.id === id);
@@ -1281,6 +1299,9 @@ function switchGrid(id) {
 function deleteGrid(id) {
   const s = activeSubtheme();
   if (!s) return;
+  const t = activeTheme();
+  const g = s.grids.find(g => g.id === id);
+  if (g) trashPush({ type: 'grid', themeId: t?.id, subthemeId: s.id, data: JSON.parse(JSON.stringify(g)) });
   s.grids = s.grids.filter(g => g.id !== id);
   if (s.activeGridId === id) {
     const remaining = s.grids.filter(g => !g.archived);
@@ -1344,7 +1365,7 @@ function renderGridsList() {
     item.className = 'grid-tab' + (isSelected ? ' active' : '');
     item.dataset.id = g.id;
     item.draggable = true;
-    item.title = (isSelected ? 'Clic gauche : masquer cette grille' : 'Clic gauche : afficher cette grille (max 3)') + '\nClic droit : renommer, dupliquer, archiver';
+    item.title = (isSelected ? 'Clic gauche : masquer cette grille' : 'Clic gauche : afficher cette grille (max 3)') + '\nClic droit : renommer, dupliquer, archiver, supprimer';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'grid-tab-name';
@@ -1449,50 +1470,7 @@ function archiveGrid(id) {
   renderGrid();
 }
 
-function renderArchivedGridsModal() {
-  archivedGridsList.innerHTML = '';
-  const s = activeSubtheme();
-  if (!s) {
-    archivedGridsList.innerHTML = '<p class="archived-empty">Aucun sous-thème actif.</p>';
-    return;
-  }
-  const archived = s.grids.filter(g => g.archived);
-  if (archived.length === 0) {
-    archivedGridsList.innerHTML = '<p class="archived-empty">Aucune grille archivée.</p>';
-    return;
-  }
-  archived.forEach(g => {
-    const item = document.createElement('div');
-    item.className = 'archived-theme-item';
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'archived-theme-name';
-    nameSpan.textContent = g.name;
-    item.appendChild(nameSpan);
-
-    const btnRestore = document.createElement('button');
-    btnRestore.className = 'archived-theme-btn restore';
-    btnRestore.textContent = '↩ Restaurer';
-    btnRestore.addEventListener('click', () => {
-      g.archived = false;
-      saveState();
-      renderGridsList();
-      renderArchivedGridsModal();
-    });
-    item.appendChild(btnRestore);
-
-    const btnDel = document.createElement('button');
-    btnDel.className = 'archived-theme-btn del';
-    btnDel.textContent = '✕ Supprimer';
-    btnDel.addEventListener('click', () => {
-      deleteGrid(g.id);
-      renderArchivedGridsModal();
-    });
-    item.appendChild(btnDel);
-
-    archivedGridsList.appendChild(item);
-  });
-}
+function renderArchivedGridsModal() {} // remplacé par renderArchivesUnified
 
 // ──────────────────────────────────────────────
 // Grille — actions
@@ -2220,6 +2198,10 @@ ctxThemeArchive.addEventListener('click', () => {
   if (_ctxThemeId) archiveTheme(_ctxThemeId);
   closeCtxMenuTheme();
 });
+document.getElementById('ctx-theme-delete').addEventListener('click', () => {
+  if (_ctxThemeId) deleteTheme(_ctxThemeId);
+  closeCtxMenuTheme();
+});
 document.getElementById('ctx-theme-cancel').addEventListener('click', () => closeCtxMenuTheme());
 
 // ──────────────────────────────────────────────
@@ -2255,6 +2237,10 @@ ctxGridArchive.addEventListener('click', () => {
   if (_ctxGridId) archiveGrid(_ctxGridId);
   closeCtxMenuGrid();
 });
+document.getElementById('ctx-grid-delete').addEventListener('click', () => {
+  if (_ctxGridId) deleteGrid(_ctxGridId);
+  closeCtxMenuGrid();
+});
 document.getElementById('ctx-grid-cancel').addEventListener('click', () => closeCtxMenuGrid());
 
 // ── Menu contextuel cases ──
@@ -2279,6 +2265,10 @@ ctxElEdit.addEventListener('click', () => {
 });
 ctxElArchive.addEventListener('click', () => {
   if (_ctxElementId) archiveElement(_ctxElementId);
+  closeCtxMenuElement();
+});
+document.getElementById('ctx-element-delete-active').addEventListener('click', () => {
+  if (_ctxElementId) deleteElement(_ctxElementId);
   closeCtxMenuElement();
 });
 document.getElementById('ctx-element-cancel').addEventListener('click', () => closeCtxMenuElement());
@@ -2445,31 +2435,349 @@ btnNewTheme.addEventListener('click', () => {
   openNewThemeModal();
 });
 
-btnArchivedThemes.addEventListener('click', () => {
-  renderArchivedThemesModal();
-  modalArchivedThemes.classList.remove('hidden');
-});
+// ── Archives unifiées ──────────────────────────────────────────────────────────
+const modalArchivesUnified = document.getElementById('modal-archives-unified');
 
-btnCloseArchivedModal.addEventListener('click', () => {
-  modalArchivedThemes.classList.add('hidden');
-});
+function _makeTreeNode(label, depth, collapsed, onToggle) {
+  const row = document.createElement('div');
+  row.className = 'tree-node-row';
+  row.style.paddingLeft = (depth * 20) + 'px';
 
-modalArchivedThemes.addEventListener('click', e => {
-  if (e.target === modalArchivedThemes) modalArchivedThemes.classList.add('hidden');
-});
+  const arrow = document.createElement('span');
+  arrow.className = 'tree-arrow' + (collapsed ? ' collapsed' : '');
+  arrow.textContent = '▼';
+  arrow.addEventListener('click', onToggle);
+  row.appendChild(arrow);
 
-btnArchivedGrids.addEventListener('click', () => {
-  renderArchivedGridsModal();
-  modalArchivedGrids.classList.remove('hidden');
-});
+  const name = document.createElement('span');
+  name.className = 'tree-node-label';
+  name.textContent = label;
+  name.addEventListener('click', onToggle);
+  row.appendChild(name);
 
-btnCloseArchivedGridsModal.addEventListener('click', () => {
-  modalArchivedGrids.classList.add('hidden');
-});
+  return row;
+}
 
-modalArchivedGrids.addEventListener('click', e => {
-  if (e.target === modalArchivedGrids) modalArchivedGrids.classList.add('hidden');
+function _makeLeafRow(label, depth, actions) {
+  const row = document.createElement('div');
+  row.className = 'tree-leaf-row';
+  row.style.paddingLeft = (depth * 20) + 'px';
+
+  const icon = document.createElement('span');
+  icon.className = 'tree-leaf-icon';
+  icon.textContent = '—';
+  row.appendChild(icon);
+
+  const name = document.createElement('span');
+  name.className = 'tree-leaf-label';
+  name.textContent = label;
+  row.appendChild(name);
+
+  const btns = document.createElement('span');
+  btns.className = 'tree-leaf-actions';
+  actions.forEach(({ text, cls, disabled, onClick }) => {
+    const btn = document.createElement('button');
+    btn.className = 'archived-theme-btn ' + cls;
+    btn.innerHTML = text;
+    if (disabled) btn.disabled = true;
+    else btn.addEventListener('click', onClick);
+    btns.appendChild(btn);
+  });
+  row.appendChild(btns);
+
+  return row;
+}
+
+function _makeArchiveButtons(actions) {
+  const area = document.createElement('span');
+  area.className = 'tree-leaf-actions';
+  actions.forEach(({ text, cls, disabled, onClick }) => {
+    const btn = document.createElement('button');
+    btn.className = 'archived-theme-btn ' + cls;
+    btn.innerHTML = text;
+    if (disabled) btn.disabled = true;
+    else btn.addEventListener('click', onClick);
+    area.appendChild(btn);
+  });
+  return area;
+}
+
+function renderArchivesUnified() {
+  const container = document.getElementById('archives-tree');
+  container.innerHTML = '';
+
+  let hasAny = false;
+  state.themes.forEach(t => {
+    const tArchived = t.archived;
+    const archivedSubs = (t.subthemes || []).filter(s => s.archived);
+    const anyArchivedGrid = (t.subthemes || []).some(s => (s.grids || []).some(g => g.archived));
+
+    if (!tArchived && archivedSubs.length === 0 && !anyArchivedGrid) return;
+    hasAny = true;
+
+    const themeChildren = document.createElement('div');
+    themeChildren.className = 'tree-children';
+    let themeCollapsed = false;
+    const themeRow = _makeTreeNode(t.name, 0, themeCollapsed, () => {
+      themeCollapsed = !themeCollapsed;
+      themeRow.querySelector('.tree-arrow').classList.toggle('collapsed', themeCollapsed);
+      themeChildren.classList.toggle('tree-hidden', themeCollapsed);
+    });
+
+    if (tArchived) {
+      themeRow.appendChild(_makeArchiveButtons([
+        {
+          text: '↩ Restaurer', cls: 'restore',
+          onClick: () => { archiveTheme(t.id); renderArchivesUnified(); }
+        },
+        {
+          text: '🗑 Supprimer', cls: 'del',
+          onClick: () => { deleteTheme(t.id); renderArchivesUnified(); }
+        }
+      ]));
+    }
+    container.appendChild(themeRow);
+    container.appendChild(themeChildren);
+
+    (t.subthemes || []).forEach(s => {
+      const sArchived = s.archived;
+      const archivedGridsInSub = (s.grids || []).filter(g => g.archived);
+      if (!sArchived && archivedGridsInSub.length === 0) return;
+
+      const subChildren = document.createElement('div');
+      subChildren.className = 'tree-children';
+      let subCollapsed = false;
+      const subRow = _makeTreeNode(s.name, 1, subCollapsed, () => {
+        subCollapsed = !subCollapsed;
+        subRow.querySelector('.tree-arrow').classList.toggle('collapsed', subCollapsed);
+        subChildren.classList.toggle('tree-hidden', subCollapsed);
+      });
+
+      if (sArchived) {
+        subRow.appendChild(_makeArchiveButtons([
+          {
+            text: '↩ Restaurer', cls: 'restore',
+            disabled: tArchived,
+            onClick: () => {
+              const saved = _localActiveThemeId;
+              _localActiveThemeId = t.id;
+              archiveSubtheme(s.id);
+              _localActiveThemeId = saved;
+              _saveLocalActiveThemeId(saved);
+              renderArchivesUnified();
+            }
+          },
+          {
+            text: '🗑 Supprimer', cls: 'del',
+            onClick: () => {
+              const saved = _localActiveThemeId;
+              _localActiveThemeId = t.id;
+              deleteSubtheme(s.id);
+              _localActiveThemeId = saved;
+              _saveLocalActiveThemeId(saved);
+              renderArchivesUnified();
+            }
+          }
+        ]));
+      }
+      themeChildren.appendChild(subRow);
+      themeChildren.appendChild(subChildren);
+
+      archivedGridsInSub.forEach(g => {
+        const parentArchived = tArchived || sArchived;
+        const leafRow = _makeLeafRow(g.name, 2, [
+          {
+            text: '↩ Restaurer', cls: 'restore',
+            disabled: parentArchived,
+            title: '',
+            onClick: () => {
+              g.archived = false;
+              saveState();
+              renderGridsList();
+              renderArchivesUnified();
+            }
+          },
+          {
+            text: '🗑 Supprimer', cls: 'del',
+            title: '',
+            onClick: () => {
+              const saved = _localActiveThemeId;
+              const savedSub = _localActiveSubthemeId;
+              _localActiveThemeId = t.id;
+              _localActiveSubthemeId = s.id;
+              deleteGrid(g.id);
+              _localActiveThemeId = saved;
+              _localActiveSubthemeId = savedSub;
+              _saveLocalActiveThemeId(saved);
+              _saveLocalActiveSubthemeId(savedSub);
+              renderArchivesUnified();
+            }
+          }
+        ]);
+        subChildren.appendChild(leafRow);
+      });
+    });
+  });
+
+  if (!hasAny) container.innerHTML = '<p class="archived-empty">Aucun élément archivé.</p>';
+}
+
+function openArchivesUnified() {
+  renderArchivesUnified();
+  modalArchivesUnified.classList.remove('hidden');
+}
+
+function closeArchivesUnified() {
+  modalArchivesUnified.classList.add('hidden');
+}
+
+document.getElementById('btn-archives-unified').addEventListener('click', openArchivesUnified);
+document.getElementById('btn-close-archives-unified').addEventListener('click', closeArchivesUnified);
+modalArchivesUnified.addEventListener('click', e => { if (e.target === modalArchivesUnified) closeArchivesUnified(); });
+
+// ── Corbeille unifiée ──────────────────────────────────────────────────────────
+const modalTrashUnified = document.getElementById('modal-trash-unified');
+const modalConfirmTrashEmpty = document.getElementById('modal-confirm-trash-empty');
+
+const _TYPE_LABELS = { theme: 'Thème', subtheme: 'Sous-thème', grid: 'Grille' };
+
+function renderTrashList() {
+  const container = document.getElementById('trash-list');
+  container.innerHTML = '';
+  const trash = state.trash || [];
+  if (trash.length === 0) {
+    container.innerHTML = '<p class="archived-empty">La corbeille est vide.</p>';
+    return;
+  }
+
+  // Arborescence Thème → Sous-thème → Grille.
+  // Les éléments supprimés emportent leurs enfants dans entry.data — on les affiche aussi.
+  // Les enfants imbriqués sont affichés en lecture seule (pas de bouton individuel).
+  const treeNodes = []; // ordre d'insertion préservé
+
+  function _getOrCreateTNode(key, label) {
+    let node = treeNodes.find(n => n.key === key);
+    if (!node) { node = { key, label, themeEntry: null, subs: [] }; treeNodes.push(node); }
+    else if (label && label !== '(thème supprimé)') node.label = label;
+    return node;
+  }
+  function _getOrCreateSNode(tNode, key, label) {
+    let node = tNode.subs.find(n => n.key === key);
+    if (!node) { node = { key, label, subEntry: null, grids: [] }; tNode.subs.push(node); }
+    else if (label && label !== '(sous-thème supprimé)') node.label = label;
+    return node;
+  }
+
+  // IDs des grilles déjà présentes en entrée séparée dans trash (type:'grid')
+  const separateGridIds = new Set(
+    trash.filter(e => e.type === 'grid').map(e => e.data?.id).filter(Boolean)
+  );
+
+  trash.forEach((entry, origIdx) => {
+    if (entry.type === 'theme') {
+      const tNode = _getOrCreateTNode('__t__' + origIdx, entry.data?.name || '?');
+      tNode.themeEntry = { entry, origIdx };
+      (entry.data?.subthemes || []).forEach(sub => {
+        const sNode = _getOrCreateSNode(tNode, '__s__' + sub.id, sub.name || '?');
+        // N'ajouter que les grilles qui ne sont pas déjà en entrée séparée
+        (sub.grids || []).forEach(g => {
+          if (!separateGridIds.has(g.id)) sNode.grids.push({ name: g.name, fromParent: true });
+        });
+      });
+    } else if (entry.type === 'subtheme') {
+      const pt = state.themes.find(t => t.id === entry.themeId);
+      const tNode = _getOrCreateTNode(entry.themeId || '__orphan__', pt?.name || '(thème supprimé)');
+      const sNode = _getOrCreateSNode(tNode, entry.data?.id || ('sub_' + origIdx), entry.data?.name || '?');
+      sNode.subEntry = { entry, origIdx };
+      // N'ajouter que les grilles qui ne sont pas déjà en entrée séparée
+      (entry.data?.grids || []).forEach(g => {
+        if (!separateGridIds.has(g.id)) sNode.grids.push({ name: g.name, fromParent: true });
+      });
+    } else if (entry.type === 'grid') {
+      const pt = state.themes.find(t => t.id === entry.themeId);
+      const ps = pt ? (pt.subthemes || []).find(s => s.id === entry.subthemeId) : null;
+      const tNode = _getOrCreateTNode(entry.themeId || '__orphan__', pt?.name || '(thème supprimé)');
+      const sNode = _getOrCreateSNode(tNode, entry.subthemeId || '__orphan_sub__', ps?.name || '(sous-thème supprimé)');
+      const canRestore = !!(pt && ps);
+      sNode.grids.push({ name: entry.data?.name || '?', fromParent: false, origIdx, canRestore });
+    }
+  });
+
+  treeNodes.forEach(tNode => {
+    const themeChildren = document.createElement('div');
+    themeChildren.className = 'tree-children';
+    let tCollapsed = false;
+    const themeRow = _makeTreeNode(tNode.label, 0, tCollapsed, () => {
+      tCollapsed = !tCollapsed;
+      themeRow.querySelector('.tree-arrow').classList.toggle('collapsed', tCollapsed);
+      themeChildren.classList.toggle('tree-hidden', tCollapsed);
+    });
+    if (tNode.themeEntry) {
+      themeRow.appendChild(_makeArchiveButtons([{
+        text: '↩ Restaurer', cls: 'restore',
+        onClick: () => { trashRestore(tNode.themeEntry.origIdx); renderTrashList(); }
+      }]));
+    }
+    container.appendChild(themeRow);
+    container.appendChild(themeChildren);
+
+    tNode.subs.forEach(sNode => {
+      const subChildren = document.createElement('div');
+      subChildren.className = 'tree-children';
+      let sCollapsed = false;
+      const subRow = _makeTreeNode(sNode.label, 1, sCollapsed, () => {
+        sCollapsed = !sCollapsed;
+        subRow.querySelector('.tree-arrow').classList.toggle('collapsed', sCollapsed);
+        subChildren.classList.toggle('tree-hidden', sCollapsed);
+      });
+      if (sNode.subEntry) {
+        const parentExists = !!state.themes.find(t => t.id === sNode.subEntry.entry.themeId);
+        subRow.appendChild(_makeArchiveButtons([{
+          text: '↩ Restaurer', cls: 'restore',
+          disabled: !parentExists,
+          onClick: () => { trashRestore(sNode.subEntry.origIdx); renderTrashList(); }
+        }]));
+      }
+      themeChildren.appendChild(subRow);
+      themeChildren.appendChild(subChildren);
+
+      sNode.grids.forEach(g => {
+        const actions = g.fromParent ? [] : [{
+          text: '↩ Restaurer', cls: 'restore',
+          disabled: !g.canRestore,
+          onClick: () => { trashRestore(g.origIdx); renderTrashList(); }
+        }];
+        subChildren.appendChild(_makeLeafRow(g.name, 2, actions));
+      });
+    });
+  });
+}
+
+function openTrashUnified() {
+  renderTrashList();
+  modalTrashUnified.classList.remove('hidden');
+}
+
+function closeTrashUnified() {
+  modalTrashUnified.classList.add('hidden');
+}
+
+document.getElementById('btn-trash-unified').addEventListener('click', openTrashUnified);
+document.getElementById('btn-close-trash-unified').addEventListener('click', closeTrashUnified);
+modalTrashUnified.addEventListener('click', e => { if (e.target === modalTrashUnified) closeTrashUnified(); });
+
+document.getElementById('btn-trash-empty-all').addEventListener('click', () => {
+  if ((state.trash || []).length === 0) return;
+  modalConfirmTrashEmpty.classList.remove('hidden');
 });
+document.getElementById('btn-close-confirm-trash-empty').addEventListener('click', () => modalConfirmTrashEmpty.classList.add('hidden'));
+document.getElementById('btn-cancel-trash-empty').addEventListener('click', () => modalConfirmTrashEmpty.classList.add('hidden'));
+document.getElementById('btn-confirm-trash-empty').addEventListener('click', () => {
+  trashEmpty();
+  modalConfirmTrashEmpty.classList.add('hidden');
+  renderTrashList();
+});
+modalConfirmTrashEmpty.addEventListener('click', e => { if (e.target === modalConfirmTrashEmpty) modalConfirmTrashEmpty.classList.add('hidden'); });
 
 // Modales renommage thème
 btnConfirmRenameTheme.addEventListener('click', confirmRenameTheme);
