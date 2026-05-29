@@ -263,21 +263,6 @@ body {
 .btn-new-theme:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
 .btn-new-theme:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
-.btn-archived-themes {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-family: Arial, sans-serif;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  cursor: pointer;
-  transition: var(--transition);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.btn-archived-themes:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
 
 /* ── Sous-thèmes ── */
 .subthemes-list {
@@ -318,21 +303,6 @@ body {
 .btn-new-subtheme:hover { border-color: #5da0e8; background: rgba(93,160,232,0.1); }
 .btn-new-subtheme:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
-.btn-archived-subthemes {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-family: Arial, sans-serif;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  cursor: pointer;
-  transition: var(--transition);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.btn-archived-subthemes:hover { border-color: #5da0e8; color: #8ec8f8; background: rgba(93,160,232,0.1); }
 
 /* ── Boutons de réordonnancement des grilles ── */
 .btn-grid-move {
@@ -676,21 +646,6 @@ body {
 .btn-new-grid:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
 .btn-new-grid:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
-.btn-archived-grids {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-family: Arial, sans-serif;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  cursor: pointer;
-  transition: var(--transition);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.btn-archived-grids:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
 
 /* ── Toolbar ── */
 .ctrl-row-toolbar {
@@ -788,46 +743,7 @@ body {
   text-align: center;
 }
 
-.scale-input {
-  font-family: 'Space Mono', monospace;
-  font-size: 0.82rem;
-  color: var(--text);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 2px 6px;
-  width: 52px;
-  text-align: center;
-  outline: none;
-  transition: var(--transition);
-  -moz-appearance: textfield;
-}
-.scale-input::-webkit-inner-spin-button,
-.scale-input::-webkit-outer-spin-button { -webkit-appearance: none; }
-.scale-input:focus { border-color: var(--accent-dim); background: var(--surface-3); }
 
-.scale-unit {
-  font-size: 0.78rem;
-  color: var(--text-faint);
-  margin-left: -4px;
-}
-
-.font-select {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-  font-family: Arial, sans-serif;
-  font-size: 0.8rem;
-  padding: 4px 8px;
-  cursor: pointer;
-  outline: none;
-  transition: var(--transition);
-  max-width: 140px;
-}
-.font-select:focus { border-color: var(--accent-dim); }
-
-.grid-actions { display: flex; gap: 8px; }
 .btn-action {
   background: var(--accent);
   border: none;
@@ -2123,16 +2039,6 @@ body {
   padding: 1px;
 }
 
-/* ── Color input (legacy, kept for compat) ── */
-.tl-color-input {
-  width: 48px;
-  height: 36px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  cursor: pointer;
-  padding: 2px;
-}
 
 /* ── Tier label inline edit ── */
 .tl-tier-label-edit {

@@ -372,13 +372,6 @@ const fontScaleInput     = document.getElementById('font-scale-input');
 const gridWrapper        = document.getElementById('grid-wrapper');
 const archivedThemesList    = document.getElementById('archived-themes-list');
 const archivedGridsList     = document.getElementById('archived-grids-list');
-// Legacy stubs — éléments conservés pour compatibilité avec l'ancien code
-const btnArchivedThemes     = { addEventListener: () => {} };
-const modalArchivedThemes   = { classList: { remove: () => {}, add: () => {} }, addEventListener: () => {} };
-const btnCloseArchivedModal = { addEventListener: () => {} };
-const btnArchivedGrids      = { addEventListener: () => {} };
-const modalArchivedGrids    = { classList: { remove: () => {}, add: () => {} }, addEventListener: () => {} };
-const btnCloseArchivedGridsModal = { addEventListener: () => {} };
 const chkLockGenerate          = document.getElementById('chk-lock-generate');
 const btnCollapsePanel         = document.getElementById('btn-collapse-panel');
 const panelElements            = document.getElementById('panel-elements');
@@ -777,7 +770,6 @@ function renderThemesList() {
 // ──────────────────────────────────────────────
 const subthemesList       = document.getElementById('subthemes-list');
 const btnNewSubtheme      = document.getElementById('btn-new-subtheme');
-const btnArchivedSubthemes = { addEventListener: () => {} }; // remplacé par btn-archives-unified
 
 function createSubtheme(name) {
   const t = activeTheme();
@@ -940,7 +932,6 @@ function renderSubthemesList() {
   btnNewGrid.disabled = !_localActiveSubthemeId;
 }
 
-function renderArchivedSubthemesModal() {} // remplacé par renderArchivesUnified
 
 // Modales renommage sous-thème
 const modalRenameSubtheme      = document.getElementById('modal-rename-subtheme');
@@ -1223,7 +1214,6 @@ function _makeBreadcrumb(parts) {
   return span;
 }
 
-function renderArchivedThemesModal() {} // remplacé par renderArchivesUnified
 
 function openRenameThemeModal(id) {
   const t = state.themes.find(t => t.id === id);
@@ -1470,7 +1460,6 @@ function archiveGrid(id) {
   renderGrid();
 }
 
-function renderArchivedGridsModal() {} // remplacé par renderArchivesUnified
 
 // ──────────────────────────────────────────────
 // Grille — actions
@@ -3159,14 +3148,6 @@ function _tlSidebarDropOnItem(e, targetId, targetType, targetEl) {
       const arr = tlState.tierlists;
       const fromIdx = arr.findIndex(t => t.id === _tlSidebarDragId);
       const [moved] = arr.splice(fromIdx, 1);
-      // Insérer avant/après le dossier dans la liste globale
-      // On insère en cherchant la position relative via les dossiers
-      const folders = tlState.folders.filter(f => !f.archived);
-      const folderIdx = folders.findIndex(f => f.id === targetId);
-      // Repositionner dans tlState.tierlists : on insère à une position relative
-      // Pour simplifier : insérer au début ou à la fin de la liste des racines
-      const rootTls = tlState.tierlists.filter(t => !t.archived && !t.folderId);
-      const insertPos = isTop ? 0 : tlState.tierlists.length;
       tlState.tierlists.splice(isTop ? 0 : tlState.tierlists.length, 0, moved);
     }
   } else if (_tlSidebarDragType === 'folder') {
