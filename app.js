@@ -44,7 +44,8 @@ function setupAuth() {
 
   const ALLOWED_UIDS = [
     'qvXEXn9zarMPaK0l9AH4PDtxsVG3',
-    'VDpOI5BckhR7cmu3Bl7lzWj0wpH2'
+    'VDpOI5BckhR7cmu3Bl7lzWj0wpH2',
+    'KXEWIJplDrdqGnUSJA7Pvnr7aRx2'
   ];
 
   _auth.onAuthStateChanged(user => {
