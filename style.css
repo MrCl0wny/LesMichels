@@ -1784,6 +1784,16 @@ body {
 }
 .tl-btn-undo:disabled { opacity: 0.4; cursor: not-allowed; }
 .tl-btn-undo:disabled:hover { border-color: var(--border); color: var(--text-muted); background: var(--surface-2); }
+.tl-btn-reset {
+  background: rgba(232,91,71,0.12) !important;
+  color: var(--danger) !important;
+  border-color: var(--danger) !important;
+}
+.tl-btn-reset:hover {
+  background: rgba(232,91,71,0.25) !important;
+  color: #ff8070 !important;
+  border-color: #ff6050 !important;
+}
 
 /* ── Zone des tiers ── */
 .tl-tiers-zone {
@@ -1991,13 +2001,29 @@ body {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
   font-weight: 600;
 }
 .tl-import-btn:hover {
   border-color: var(--accent);
   background: var(--accent-glow);
   color: var(--accent);
+}
+.tl-import-btn--plus {
+  border-color: #50dc8c;
+  background: rgba(80,220,140,0.08);
+  color: #50dc8c;
+}
+.tl-import-btn--plus:hover {
+  border-color: #50dc8c;
+  background: rgba(80,220,140,0.18);
+  color: #fff;
+}
+.tl-import-plus {
+  font-size: 2.2rem;
+  line-height: 1;
+  font-weight: 300;
+  color: inherit;
 }
 
 .tl-unplaced-zone {

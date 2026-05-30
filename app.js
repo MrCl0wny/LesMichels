@@ -74,8 +74,10 @@ function setupAuth() {
       _selectedGridIds = [];
       _localFontScale  = 1;
       _localGridHeight = 80;
-      _tlLocalShowLabels = null;
-      _tlLocalImgSize    = null;
+      _tlLocalShowLabels       = null;
+      _tlLocalImgSize          = null;
+      _tlLocalActiveTierlistId = null;
+      _tlLocalNoSelection      = false;
       modalAuth.classList.remove('hidden');
       userBadge.classList.add('hidden');
     }
@@ -118,8 +120,10 @@ function loadUserPrefs() {
       catch { _selectedGridsBySubtheme = {}; }
     }
     // Prefs tierlist
-    if (prefs.tlShowLabels != null) _tlLocalShowLabels = !!prefs.tlShowLabels;
-    if (prefs.tlImgSize    != null) _tlLocalImgSize    = prefs.tlImgSize;
+    if (prefs.tlShowLabels        != null) _tlLocalShowLabels       = !!prefs.tlShowLabels;
+    if (prefs.tlImgSize           != null) _tlLocalImgSize          = prefs.tlImgSize;
+    if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
+    if (prefs.tlNoSelection       != null) _tlLocalNoSelection      = !!prefs.tlNoSelection;
     // Page active
     if (prefs.activePage   != null && window._switchPage) _switchPage(prefs.activePage);
     _prefsReady = true;
@@ -2968,33 +2972,30 @@ const TL_PRESET_COLORS = [
 ];
 
 // ── État ──────────────────────────────────────────────────────────────────────
-let tlState = { tierlists: [], folders: [], activeTierlistId: null };
+let tlState = { tierlists: [], folders: [] };
 let _tlRemoteUpdate = false; // anti-boucle Firebase
 const _dbTierlist = firebase.database().ref('tierlist');
 
-// Prefs d'affichage tierlist — personnelles par utilisateur (non partagées)
-let _tlLocalShowLabels = null; // null = pas encore chargé
-let _tlLocalImgSize    = null;
+// Prefs tierlist — personnelles par utilisateur (non partagées)
+let _tlLocalShowLabels      = null; // null = pas encore chargé
+let _tlLocalImgSize         = null;
+let _tlLocalActiveTierlistId = null; // null = pas encore chargé
+let _tlLocalNoSelection     = false; // true = l'utilisateur a délibérément désélectionné
 
 function tlSave() {
   if (_tlRemoteUpdate) return;
-  _dbTierlist.set(tlState).catch(e => console.warn('TL save error:', e));
+  // Ne pas sauvegarder activeTierlistId/noSelection dans les données partagées
+  const { activeTierlistId, noSelection, ...shared } = tlState;
+  _dbTierlist.set(shared).catch(e => console.warn('TL save error:', e));
 }
 
 function _tlNormalizeState(parsed) {
-  if (!parsed || typeof parsed !== 'object') return { tierlists: [], folders: [], activeTierlistId: null };
+  if (!parsed || typeof parsed !== 'object') return { tierlists: [], folders: [] };
   if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
   if (!Array.isArray(parsed.folders)) parsed.folders = [];
-  // Firebase supprime les clés null — on distingue "aucune sélection voulue" via la clé noSelection
-  if (!parsed.noSelection) {
-    const active = parsed.tierlists.find(t => t.id === parsed.activeTierlistId && !t.archived);
-    if (!active) {
-      const first = parsed.tierlists.find(t => !t.archived);
-      parsed.activeTierlistId = first ? first.id : null;
-    }
-  } else {
-    parsed.activeTierlistId = null;
-  }
+  // Supprimer les anciens champs partagés s'ils existent encore en base
+  delete parsed.activeTierlistId;
+  delete parsed.noSelection;
   // Firebase supprime les tableaux vides — restaurer items/unplaced
   parsed.tierlists.forEach(tl => {
     if (!Array.isArray(tl.images)) tl.images = [];
@@ -3054,6 +3055,9 @@ function tlUndo() {
 function tlUpdateUndoBtn() {
   const btn = document.getElementById('tl-btn-undo');
   if (btn) btn.disabled = _tlUndoStack.length === 0;
+  const tl = tlActiveTierlist();
+  const hasPlaced = tl ? tl.tiers.some(tier => tier.items.length > 0) : false;
+  if (tlBtnReset) { tlBtnReset.disabled = !hasPlaced; tlBtnReset.style.opacity = hasPlaced ? '' : '0.4'; tlBtnReset.style.cursor = hasPlaced ? '' : 'not-allowed'; }
 }
 
 // Wrapper : pousser undo avant toute action modifiante
@@ -3063,7 +3067,7 @@ function tlWithUndo(fn) {
 }
 
 function tlActiveTierlist() {
-  return tlState.tierlists.find(tl => tl.id === tlState.activeTierlistId) || null;
+  return tlState.tierlists.find(tl => tl.id === _tlLocalActiveTierlistId) || null;
 }
 
 function tlDefaultTierlist(name) {
@@ -3158,6 +3162,7 @@ const tlTitleInput        = document.getElementById('tl-title-input');
 const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
 const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
+const tlBtnReset          = document.getElementById('tl-btn-reset');
 const tlFileInput         = document.getElementById('tl-file-input');
 const tlBtnExport         = document.getElementById('tl-btn-export');
 const tlBtnCapture        = document.getElementById('tl-btn-capture');
@@ -3190,12 +3195,7 @@ const tlModalImgNameConfirm = document.getElementById('tl-modal-imgname-confirm'
 const tlModalImgNameCancel  = document.getElementById('tl-modal-imgname-cancel');
 const tlModalImgNameClose   = document.getElementById('tl-modal-imgname-close');
 
-const tlModalManage         = document.getElementById('tl-modal-manage');
-const tlModalManageTitle    = document.getElementById('tl-modal-manage-title');
-const tlModalManageRename   = document.getElementById('tl-modal-manage-rename');
-const tlModalManageDuplicate= document.getElementById('tl-modal-manage-duplicate');
-const tlModalManageArchive  = document.getElementById('tl-modal-manage-archive');
-let tlModalManageTargetId   = null;
+// (tl-modal-manage remplacé par menus contextuels dynamiques)
 
 // ── Drag state ────────────────────────────────────────────────────────────────
 let tlDragImgId = null;
@@ -3347,7 +3347,7 @@ function tlRender() {
 
 function tlBuildTierlistItem(tl) {
   const item = document.createElement('div');
-  item.className = 'tl-list-item' + (tl.id === tlState.activeTierlistId ? ' active' : '');
+  item.className = 'tl-list-item' + (tl.id === _tlLocalActiveTierlistId ? ' active' : '');
   item.dataset.id = tl.id;
   item.draggable = true;
 
@@ -3360,7 +3360,7 @@ function tlBuildTierlistItem(tl) {
   const nameSpan = document.createElement('span');
   nameSpan.className = 'tl-list-item-name';
   nameSpan.textContent = tl.name;
-  nameSpan.title = tl.name + '\nDouble-clic pour renommer, dupliquer ou archiver';
+  nameSpan.title = tl.name + '\nClic gauche : sélectionner / désélectionner\nClic droit : renommer, dupliquer, archiver\nGlisser : réordonner';
   item.appendChild(nameSpan);
 
   item.addEventListener('click', () => tlSwitch(tl.id));
@@ -3396,7 +3396,7 @@ function tlRenderList() {
   activeFolders.forEach(folder => {
     const folderEl = document.createElement('div');
     // Surbrillance bleue si la tierlist active est dans ce dossier
-    const activeTl = tlState.tierlists.find(t => t.id === tlState.activeTierlistId && !t.archived);
+    const activeTl = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId && !t.archived);
     const folderIsActive = activeTl && activeTl.folderId === folder.id;
     folderEl.className = 'tl-folder' + (folder.open ? ' open' : '') + (folderIsActive ? ' active-folder' : '');
     folderEl.dataset.folderId = folder.id;
@@ -3419,6 +3419,7 @@ function tlRenderList() {
     const name = document.createElement('span');
     name.className = 'tl-folder-name';
     name.textContent = folder.name;
+    name.title = folder.name + '\nClic droit : renommer, archiver\nGlisser : réordonner';
 
     header.appendChild(arrow);
     header.appendChild(icon);
@@ -3626,83 +3627,104 @@ function _tlInlineRenameTier(spanEl, tl, tier) {
   });
 }
 
-// ── Menu contextuel tier ──────────────────────────────────────────────────────
-let _tlTierCtxMenu = null;
+// ── Helper : fabrique un ctx-menu TL (même style que Bingo) ──────────────────
+// Retourne { menu, addItem, addSep, close }
+// close() supprime le menu + retire les listeners document
+let _tlActiveCtxMenu = null; // un seul menu TL ouvert à la fois
 
-function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
-  _tlCloseTierCtxMenu();
+function _tlMakeCtxMenu(anchorEl, e) {
+  // Fermer tout menu TL déjà ouvert
+  if (_tlActiveCtxMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; }
+
   const menu = document.createElement('div');
-  menu.className = 'tl-tier-ctx-menu';
-  menu.style.cssText = 'position:fixed;z-index:9999;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:4px 0;min-width:190px;box-shadow:0 4px 16px rgba(0,0,0,0.4);';
+  menu.className = 'ctx-menu';
 
-  const mkItem = (text, danger, fn) => {
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'ctx-close-btn';
+  closeBtn.title = 'Fermer';
+  closeBtn.textContent = '✕';
+  menu.appendChild(closeBtn);
+
+  const close = () => {
+    menu.remove();
+    if (_tlActiveCtxMenu === menu) _tlActiveCtxMenu = null;
+    document.removeEventListener('click', onDocClick);
+    document.removeEventListener('contextmenu', onDocCtx);
+  };
+
+  closeBtn.addEventListener('click', e => { e.stopPropagation(); close(); });
+
+  const addItem = (label, danger, fn) => {
     const btn = document.createElement('button');
-    btn.className = 'tl-img-ctx-item' + (danger ? ' tl-img-ctx-item-danger' : '');
-    btn.textContent = text;
-    btn.addEventListener('click', () => { _tlCloseTierCtxMenu(); fn(); });
+    btn.className = 'ctx-menu-item' + (danger ? ' ctx-danger' : '');
+    btn.textContent = label;
+    btn.addEventListener('click', () => { close(); fn(); });
+    menu.appendChild(btn);
     return btn;
   };
-  const mkSep = () => {
+
+  const addSep = () => {
     const d = document.createElement('div');
     d.style.cssText = 'height:1px;background:var(--border);margin:4px 0;';
-    return d;
+    menu.appendChild(d);
   };
 
-  menu.appendChild(mkItem('✏ Renommer', false, () => {
-    if (labelSpan && document.body.contains(labelSpan)) {
-      _tlInlineRenameTier(labelSpan, tl, tier);
-    } else {
-      // labelSpan plus dans le DOM (ex: re-render entre-temps) — ouvre le modal
-      tlOpenTierModal({ mode: 'edit', tl, tier });
-    }
-  }));
-  menu.appendChild(mkItem('🎨 Modifier la couleur', false, () => tlOpenTierModal({ mode: 'color', tl, tier })));
+  document.body.appendChild(menu);
+  _tlActiveCtxMenu = menu;
 
-  menu.appendChild(mkSep());
+  if (anchorEl) positionCtxMenu(menu, null, anchorEl);
+  else positionCtxMenu(menu, e, null);
 
-  menu.appendChild(mkItem('↑ Ajouter un tier au-dessus', false, () => {
+  const onDocClick = () => close();
+  const onDocCtx   = () => close();
+  setTimeout(() => {
+    document.addEventListener('click', onDocClick, { once: true });
+    document.addEventListener('contextmenu', onDocCtx, { once: true });
+  }, 0);
+
+  return { menu, addItem, addSep, close };
+}
+
+// ── Menu contextuel tier ──────────────────────────────────────────────────────
+function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
+  const { addItem, addSep } = _tlMakeCtxMenu(null, e);
+
+  addItem('✏ Renommer', false, () => {
+    if (labelSpan && document.body.contains(labelSpan)) _tlInlineRenameTier(labelSpan, tl, tier);
+    else tlOpenTierModal({ mode: 'edit', tl, tier });
+  });
+  addItem('🎨 Modifier la couleur', false, () => tlOpenTierModal({ mode: 'color', tl, tier }));
+  addSep();
+  addItem('↑ Ajouter un tier au-dessus', false, () => {
     tlPushUndo();
     tl.tiers.splice(tierIdx, 0, { id: uid(), label: '?', color: '#888888', items: [] });
     tlSave(); tlRender();
     tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx]);
-  }));
-  menu.appendChild(mkItem('↓ Ajouter un tier en-dessous', false, () => {
+  });
+  addItem('↓ Ajouter un tier en-dessous', false, () => {
     tlPushUndo();
     tl.tiers.splice(tierIdx + 1, 0, { id: uid(), label: '?', color: '#888888', items: [] });
     tlSave(); tlRender();
     tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx + 1]);
-  }));
-
-  menu.appendChild(mkSep());
-
-  menu.appendChild(mkItem('✕ Supprimer ce tier', true, () => tlDeleteTier(tl, tier.id)));
-
-  positionCtxMenu(menu, e, null);
-  document.body.appendChild(menu);
-  _tlTierCtxMenu = menu;
-
-  setTimeout(() => {
-    document.addEventListener('click', _tlCloseTierCtxMenu, { once: true });
-    document.addEventListener('contextmenu', _tlCloseTierCtxMenu, { once: true });
-  }, 0);
+  });
+  addSep();
+  addItem('✕ Supprimer ce tier', true, () => tlDeleteTier(tl, tier.id));
 }
 
-function _tlCloseTierCtxMenu() {
-  if (_tlTierCtxMenu) { _tlTierCtxMenu.remove(); _tlTierCtxMenu = null; }
-}
+function _tlCloseTierCtxMenu() { if (_tlActiveCtxMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; } }
 
 function tlRenderUnplaced(tl) {
   tlUnplacedZone.innerHTML = '';
   const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
 
-  // Bouton Import — coin supérieur gauche, même taille que les images
+  // Bouton "+" import — gros bouton vert avec menu contextuel (fichiers / presse-papier)
   const btnImport = document.createElement('button');
-  btnImport.className = 'tl-import-btn';
-  btnImport.title = 'Importer des images';
+  btnImport.className = 'tl-import-btn tl-import-btn--plus';
+  btnImport.title = 'Ajouter des images\nClic : importer des fichiers ou coller depuis le presse-papier';
   btnImport.style.width = imgSize + 'px';
   btnImport.style.height = imgSize + 'px';
-  btnImport.innerHTML = '<span style="font-size:1.6rem;display:block;">📁</span><span style="font-size:0.68rem;">Importer</span>';
-  btnImport.addEventListener('click', () => tlFileInput.click());
+  btnImport.innerHTML = '<span class="tl-import-plus">+</span>';
+  btnImport.addEventListener('click', () => _tlShowImportMenu(btnImport));
   tlUnplacedZone.appendChild(btnImport);
 
   if (tl.unplaced.length === 0) {
@@ -3719,11 +3741,48 @@ function tlRenderUnplaced(tl) {
   tlUnplacedCount.textContent = tl.unplaced.length;
 }
 
+function _tlShowImportMenu(anchorEl) {
+  const { addItem } = _tlMakeCtxMenu(anchorEl, null);
+  addItem('📂 Importer des fichiers', false, () => tlFileInput.click());
+  addItem('📋 Coller depuis le presse-papier', false, () => _tlPasteFromClipboard(tlActiveTierlist()));
+}
+
+function _tlPasteFromClipboard(tl) {
+  if (!tl) return;
+  navigator.clipboard.read().then(items => {
+    const imageItems = items.filter(item => item.types.some(t => t.startsWith('image/')));
+    if (imageItems.length === 0) { alert('Aucune image dans le presse-papier.'); return; }
+    if (!tl.images) tl.images = [];
+    if (tl.images.length >= TL_MAX_IMAGES) {
+      alert(`Limite atteinte — maximum ${TL_MAX_IMAGES} images par tierlist.`); return;
+    }
+    const now = new Date();
+    const promises = imageItems.map(item => {
+      const type = item.types.find(t => t.startsWith('image/'));
+      return item.getType(type).then(blob => {
+        const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
+        return _tlCompressToBase64(blob).then(src => {
+          if (tl.images.length >= TL_MAX_IMAGES) return;
+          const img = { id: uid(), src, name };
+          _tlSrcCache[img.id] = src;
+          tl.images.push(img);
+          tl.unplaced.push(img.id);
+        });
+      });
+    });
+    Promise.all(promises).then(() => { tlSave(); tlRender(); }).catch(e => {
+      console.warn('TL clipboard paste error:', e);
+      alert('Impossible de lire le presse-papier. Essaie Ctrl+V à la place.');
+    });
+  }).catch(() => alert('Impossible de lire le presse-papier. Essaie Ctrl+V à la place.'));
+}
+
 function tlBuildImgCard(tl, img, size) {
   const card = document.createElement('div');
   card.className = 'tl-img-card';
   card.draggable = true;
   card.dataset.imgId = img.id;
+  card.title = img.name + '\nGlisser pour déplacer · Clic droit : renommer / supprimer';
 
   card.addEventListener('dragstart', e => {
     tlDragImgId = img.id;
@@ -3748,7 +3807,7 @@ function tlBuildImgCard(tl, img, size) {
     label.className = 'tl-img-label';
     label.style.width = size + 'px';
     label.textContent = img.name;
-    label.title = 'Clic pour renommer';
+    label.title = 'Clic gauche : renommer · Clic droit : options';
     label.addEventListener('click', e => {
       e.stopPropagation();
       _tlInlineRenameImg(label, tl, img, size);
@@ -3793,39 +3852,13 @@ function _tlInlineRenameImg(labelEl, tl, img, size) {
 }
 
 // ── Menu contextuel image ─────────────────────────────────────────────────────
-let _tlImgCtxMenu = null;
-
 function _tlShowImgCtxMenu(e, tl, img) {
-  _tlCloseImgCtxMenu();
-  const menu = document.createElement('div');
-  menu.className = 'tl-img-ctx-menu';
-  menu.style.cssText = 'position:fixed;z-index:9999;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:4px 0;min-width:140px;box-shadow:0 4px 16px rgba(0,0,0,0.4);';
-
-  const btnRename = document.createElement('button');
-  btnRename.className = 'tl-img-ctx-item';
-  btnRename.textContent = '✏ Renommer';
-  btnRename.addEventListener('click', () => { _tlCloseImgCtxMenu(); tlOpenRenameImg(tl, img); });
-  menu.appendChild(btnRename);
-
-  const btnDel = document.createElement('button');
-  btnDel.className = 'tl-img-ctx-item tl-img-ctx-item-danger';
-  btnDel.textContent = '✕ Supprimer';
-  btnDel.addEventListener('click', () => { _tlCloseImgCtxMenu(); tlDeleteImage(tl, img.id); });
-  menu.appendChild(btnDel);
-
-  positionCtxMenu(menu, e, null);
-  document.body.appendChild(menu);
-  _tlImgCtxMenu = menu;
-
-  setTimeout(() => {
-    document.addEventListener('click', _tlCloseImgCtxMenu, { once: true });
-    document.addEventListener('contextmenu', _tlCloseImgCtxMenu, { once: true });
-  }, 0);
+  const { addItem } = _tlMakeCtxMenu(null, e);
+  addItem('✏ Renommer', false, () => tlOpenRenameImg(tl, img));
+  addItem('✕ Supprimer', true, () => tlDeleteImage(tl, img.id));
 }
 
-function _tlCloseImgCtxMenu() {
-  if (_tlImgCtxMenu) { _tlImgCtxMenu.remove(); _tlImgCtxMenu = null; }
-}
+function _tlCloseImgCtxMenu() { if (_tlActiveCtxMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; } }
 
 // ── Recherche d'image ─────────────────────────────────────────────────────────
 function tlFindImage(tl, imgId) {
@@ -3838,18 +3871,22 @@ function tlCreate(name, folderId) {
   const tl = tlDefaultTierlist(name);
   if (folderId) tl.folderId = folderId;
   tlState.tierlists.push(tl);
-  tlState.activeTierlistId = tl.id;
+  _tlLocalActiveTierlistId = tl.id;
+  _tlLocalNoSelection = false;
+  saveUserPrefs({ tlActiveTierlistId: tl.id, tlNoSelection: false });
   tlSave();
   tlRender();
 }
 
 function tlSwitch(id) {
-  if (tlState.activeTierlistId === id) {
-    tlState.activeTierlistId = null;
-    tlState.noSelection = true;
+  if (_tlLocalActiveTierlistId === id) {
+    _tlLocalActiveTierlistId = null;
+    _tlLocalNoSelection = true;
+    saveUserPrefs({ tlActiveTierlistId: null, tlNoSelection: true });
   } else {
-    tlState.activeTierlistId = id;
-    tlState.noSelection = false;
+    _tlLocalActiveTierlistId = id;
+    _tlLocalNoSelection = false;
+    saveUserPrefs({ tlActiveTierlistId: id, tlNoSelection: false });
   }
   tlSave();
   tlRender();
@@ -3858,9 +3895,11 @@ function tlSwitch(id) {
 function tlDelete(id) {
   tlPushUndo();
   tlState.tierlists = tlState.tierlists.filter(t => t.id !== id);
-  if (tlState.activeTierlistId === id) {
+  if (_tlLocalActiveTierlistId === id) {
     const remaining = tlState.tierlists.filter(t => !t.archived);
-    tlState.activeTierlistId = remaining.length > 0 ? remaining[0].id : null;
+    _tlLocalActiveTierlistId = remaining.length > 0 ? remaining[0].id : null;
+    _tlLocalNoSelection = false;
+    saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: false });
   }
   tlSave();
   tlRender();
@@ -3871,9 +3910,11 @@ function tlArchive(id) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
   tl.archived = true;
-  if (tlState.activeTierlistId === id) {
+  if (_tlLocalActiveTierlistId === id) {
     const remaining = tlState.tierlists.filter(t => !t.archived);
-    tlState.activeTierlistId = remaining.length > 0 ? remaining[0].id : null;
+    _tlLocalActiveTierlistId = remaining.length > 0 ? remaining[0].id : null;
+    _tlLocalNoSelection = false;
+    saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: false });
   }
   tlSave();
   tlRender();
@@ -3886,6 +3927,26 @@ function tlUnarchive(id) {
   tlSave();
   tlRender();
   tlRenderArchivedModal();
+}
+
+function tlReset() {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  const hasPlaced = tl.tiers.some(tier => tier.items.length > 0);
+  if (!hasPlaced) return;
+  document.getElementById('tl-modal-confirm-reset').classList.remove('hidden');
+}
+
+function _tlDoReset() {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  tlPushUndo();
+  tl.tiers.forEach(tier => {
+    tier.items.forEach(imgId => { if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId); });
+    tier.items = [];
+  });
+  tlSave();
+  tlRender();
 }
 
 function tlCopy(id) {
@@ -3911,7 +3972,9 @@ function tlCopy(id) {
   }));
   copy.unplaced = (copy.unplaced || []).map(oid => idMap[oid] || oid);
   tlState.tierlists.push(copy);
-  tlState.activeTierlistId = copy.id;
+  _tlLocalActiveTierlistId = copy.id;
+  _tlLocalNoSelection = false;
+  saveUserPrefs({ tlActiveTierlistId: copy.id, tlNoSelection: false });
   tlSave();
   tlRender();
 }
@@ -4233,7 +4296,11 @@ function tlBuildArchivedTierlistItem(tl) {
     tlPushUndo();
     const t = tlState.tierlists.find(x => x.id === tl.id);
     if (t) { t.archived = false; t.folderId = null; }
-    if (!tlState.activeTierlistId) tlState.activeTierlistId = tl.id;
+    if (!_tlLocalActiveTierlistId) {
+      _tlLocalActiveTierlistId = tl.id;
+      _tlLocalNoSelection = false;
+      saveUserPrefs({ tlActiveTierlistId: tl.id, tlNoSelection: false });
+    }
     tlSave(); tlRender(); tlRenderArchivedModal();
   });
   item.appendChild(btnRestore);
@@ -4523,53 +4590,18 @@ function tlConfirmTierModal() {
   tlTierModalCtx = null;
 }
 
-// ── Modal gestion dossier (double clic sur header) ────────────────────────────
-let _tlFolderManageId = null;
-const _tlFolderManageEl = (() => {
-  const el = document.createElement('div');
-  el.className = 'tl-ctx-modal hidden';
-  el.innerHTML = `
-    <div class="tl-ctx-modal-title" id="tl-folder-manage-title">Dossier</div>
-    <div class="tl-manage-actions">
-      <button class="tl-manage-btn" id="tl-folder-manage-rename">✏ Renommer</button>
-      <button class="tl-manage-btn tl-manage-btn-archive" id="tl-folder-manage-archive">📦 Archiver</button>
-    </div>`;
-  // L'insérer dans l'overlay
-  document.addEventListener('DOMContentLoaded', () => {});
-  return el;
-})();
-
-// Le modal dossier sera inséré dans l'overlay à la première utilisation (dans tlOpenFolderManageModal)
+// ── Gestion dossier — remplacée par menus contextuels dynamiques ──────────────
 
 function tlOpenFolderManageModal(id, anchorEl) {
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
-  _tlFolderManageId = id;
-  _tlFolderManageEl.querySelector('#tl-folder-manage-title').textContent = folder.name;
-  // Déplacer dans l'overlay si pas encore dedans
-  const overlay = document.getElementById('tl-ctx-overlay');
-  if (overlay && !overlay.contains(_tlFolderManageEl)) overlay.appendChild(_tlFolderManageEl);
-  if (typeof tlShowCtxOverlay === 'function') tlShowCtxOverlay(_tlFolderManageEl);
-  else { _tlFolderManageEl.classList.remove('hidden'); }
+  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null);
+  addItem('✏ Renommer', false, () => tlOpenFolderModal('rename', id, folder.name));
+  addSep();
+  addItem('📦 Archiver', true, () => tlArchiveFolder(id));
 }
 
-function tlCloseFolderManageModal() {
-  if (typeof tlHideCtxOverlay === 'function') tlHideCtxOverlay();
-  else { _tlFolderManageEl.classList.add('hidden'); }
-  _tlFolderManageId = null;
-}
-
-_tlFolderManageEl.querySelector('#tl-folder-manage-rename').addEventListener('click', () => {
-  const id = _tlFolderManageId; tlCloseFolderManageModal();
-  if (!id) return;
-  const folder = (tlState.folders || []).find(f => f.id === id);
-  if (!folder) return;
-  tlOpenFolderModal('rename', id, folder.name);
-});
-_tlFolderManageEl.querySelector('#tl-folder-manage-archive').addEventListener('click', () => {
-  const id = _tlFolderManageId; tlCloseFolderManageModal();
-  if (id) tlArchiveFolder(id);
-});
+function tlCloseFolderManageModal() { if (_tlActiveCtxMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; } }
 
 // ── Modal nouveau/renommer dossier ────────────────────────────────────────────
 let _tlFolderModalMode = 'create'; // 'create' | 'rename'
@@ -4618,32 +4650,18 @@ tlModalFolderInput.addEventListener('keydown', e => {
 // Bouton + Dossier
 document.getElementById('tl-btn-new-folder').addEventListener('click', () => tlOpenFolderModal('create'));
 
-// ── Overlay ctx modals ────────────────────────────────────────────────────────
-const tlCtxOverlay = document.getElementById('tl-ctx-overlay');
+// (tl-ctx-overlay supprimé — remplacé par menus contextuels dynamiques)
 
-function tlShowCtxOverlay(modalEl) {
-  // Cacher tous les ctx modals dans l'overlay
-  tlCtxOverlay.querySelectorAll('.tl-ctx-modal').forEach(m => m.classList.add('hidden'));
-  modalEl.classList.remove('hidden');
-  tlCtxOverlay.classList.remove('hidden');
-}
-
-function tlHideCtxOverlay() {
-  tlCtxOverlay.classList.add('hidden');
-  tlCtxOverlay.querySelectorAll('.tl-ctx-modal').forEach(m => m.classList.add('hidden'));
-}
-
-tlCtxOverlay.addEventListener('click', e => {
-  if (e.target === tlCtxOverlay) { tlCloseManageModal(); tlCloseFolderManageModal(); }
-});
-
-// ── Menu contextuel tierlist (double clic sur onglet) — centré ────────────────
+// ── Menu contextuel tierlist (clic droit sur onglet) ─────────────────────────
 function tlOpenManageModal(id, anchorEl) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
-  tlModalManageTargetId = id;
-  tlModalManageTitle.textContent = tl.name;
-  tlShowCtxOverlay(tlModalManage);
+  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null);
+  addItem('✏ Renommer', false, () => tlOpenRenameModal(id));
+  addItem('❐ Dupliquer', false, () => tlCopy(id));
+  addItem('📂 Ranger dans un dossier', false, () => tlOpenMoveModal(id));
+  addSep();
+  addItem('📦 Archiver', true, () => tlArchive(id));
 }
 
 // ── Capture Tierlist (presse-papier) ─────────────────────────────────────────
@@ -4698,9 +4716,9 @@ tlSidebarExpand.addEventListener('click', () => {
   tlLayout.classList.remove('sidebar-collapsed');
 });
 
-// Fermer les ctx modals sur Escape
+// Fermer le menu contextuel TL actif sur Escape
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { tlHideCtxOverlay(); }
+  if (e.key === 'Escape' && _tlActiveCtxMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; }
 });
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
@@ -4730,28 +4748,7 @@ tlTitleInput.addEventListener('keydown', e => {
   }
 });
 
-// Menu contextuel tierlist — fermeture
-function tlCloseManageModal() { tlHideCtxOverlay(); tlModalManageTargetId = null; }
-tlModalManageRename.addEventListener('click', () => {
-  const id = tlModalManageTargetId;
-  tlCloseManageModal();
-  if (id) tlOpenRenameModal(id);
-});
-tlModalManageDuplicate.addEventListener('click', () => {
-  const id = tlModalManageTargetId;
-  tlCloseManageModal();
-  if (id) tlCopy(id);
-});
-document.getElementById('tl-modal-manage-move').addEventListener('click', () => {
-  const id = tlModalManageTargetId;
-  tlCloseManageModal();
-  if (id) tlOpenMoveModal(id);
-});
-tlModalManageArchive.addEventListener('click', () => {
-  const id = tlModalManageTargetId;
-  tlCloseManageModal();
-  if (id) tlArchive(id);
-});
+// (tlCloseManageModal supprimé — remplacé par menus contextuels dynamiques)
 
 // ── Modal "Ranger dans un dossier" ───────────────────────────────────────────
 let _tlMoveTargetId = null;
@@ -4803,6 +4800,13 @@ tlInitSwatches();
 
 // (tlBtnImportImages supprimé — le bouton est maintenant dans le panneau images non placées)
 tlFileInput.addEventListener('change', () => { if (tlFileInput.files.length) tlImportImages(tlFileInput.files); tlFileInput.value = ''; });
+
+tlBtnReset.addEventListener('click', tlReset);
+const _tlModalConfirmReset = document.getElementById('tl-modal-confirm-reset');
+document.getElementById('tl-btn-confirm-reset').addEventListener('click', () => { _tlModalConfirmReset.classList.add('hidden'); _tlDoReset(); });
+document.getElementById('tl-btn-cancel-reset').addEventListener('click', () => _tlModalConfirmReset.classList.add('hidden'));
+document.getElementById('tl-btn-close-confirm-reset').addEventListener('click', () => _tlModalConfirmReset.classList.add('hidden'));
+_tlModalConfirmReset.addEventListener('click', e => { if (e.target === _tlModalConfirmReset) _tlModalConfirmReset.classList.add('hidden'); });
 
 tlBtnExport.addEventListener('click', tlExport);
 tlBtnCapture.addEventListener('click', tlCapture);
@@ -4964,6 +4968,22 @@ _dbTierlist.on('value', snapshot => {
   tlState = _tlNormalizeState(raw);
   // Alimenter le cache src depuis les données Firebase
   tlState.tierlists.forEach(_tlCacheSrcs);
+  // Valider que la tierlist active de cet utilisateur existe encore
+  if (!_tlLocalNoSelection && _tlLocalActiveTierlistId) {
+    const still = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId && !t.archived);
+    if (!still) {
+      const first = tlState.tierlists.find(t => !t.archived);
+      _tlLocalActiveTierlistId = first ? first.id : null;
+      if (_tlLocalActiveTierlistId) saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId });
+    }
+  } else if (!_tlLocalNoSelection && !_tlLocalActiveTierlistId) {
+    // Première connexion / première fois : sélectionner la première tierlist dispo
+    const first = tlState.tierlists.find(t => !t.archived);
+    if (first) {
+      _tlLocalActiveTierlistId = first.id;
+      saveUserPrefs({ tlActiveTierlistId: first.id, tlNoSelection: false });
+    }
+  }
   tlRender();
   _tlRemoteUpdate = false;
 });
