@@ -323,7 +323,10 @@ function migrateState(raw) {
         // Migration : s'assurer que le tableau de cases est toujours de taille MAX_SIZE²
         // pour permettre la restauration des cases lors d'un ré-agrandissement
         if (!g.grid) g.grid = [];
-        while (g.grid.length < 25) g.grid.push({ elementId: null, checked: false });
+        while (g.grid.length < 25) g.grid.push({ elementId: null, checked: false, color: null });
+        g.grid.forEach(cell => {
+          if (cell.color === undefined) cell.color = null;
+        });
       });
     });
   });
@@ -542,33 +545,26 @@ function buildElementItem(el, isArchived) {
   );
   const isChecked = isCheckedInGrid || !!el.checked;
 
-  li.className = 'element-item' + (isArchived ? ' archived' : '') + (isPlaced ? ' placed' : '') + (isChecked ? ' elem-checked' : '');
+  // Vérifier si la case a une couleur rouge
+  const hasRedColor = s && (s.grids || []).filter(gx => !gx.archived).some(
+    gx => gx.grid.some(c => c.elementId === el.id && c.color === 'red')
+  );
+
+  li.className = 'element-item' + (isArchived ? ' archived' : '') + (isPlaced ? ' placed' : '') + (isChecked ? ' elem-checked' : '') + (hasRedColor ? ' elem-red' : '');
   li.dataset.id = el.id;
-  li.title = isArchived
-    ? 'Clic gauche : ' + (isChecked ? 'désactiver' : 'valider') + ' · Clic droit : restaurer, supprimer'
-    : 'Clic gauche : ' + (isChecked ? 'désactiver' : 'valider') + ' · Clic droit : modifier, archiver, supprimer';
+  li.title = 'Clic gauche : renommer · Clic droit : ' + (isArchived ? 'restaurer, supprimer' : 'archiver, supprimer');
   // Pas de drag & drop sur les cases
 
   const span = document.createElement('span');
   span.className = 'element-text';
   span.textContent = el.text;
+  span.style.cursor = 'text';
   li.appendChild(span);
 
-  // Clic gauche : toggle coché/décoché (actives ET archivées)
-  li.addEventListener('click', () => {
-    const tNow = activeTheme();
-    const sNow = activeSubtheme();
-    if (!tNow || !sNow) return;
-    const newChecked = !isChecked;
-    // Mettre à jour les grilles si la case y est présente
-    (sNow.grids || []).filter(gx => !gx.archived).forEach(gx => {
-      const matchCell = gx.grid.find(c => c.elementId === el.id);
-      if (matchCell) matchCell.checked = newChecked;
-    });
-    el.checked = newChecked;
-    saveState();
-    renderGrid();
-    renderElements();
+  // Clic gauche : renommer la case
+  li.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startEditElement(el.id, span, e);
   });
 
   if (!isArchived) {
@@ -580,34 +576,49 @@ function buildElementItem(el, isArchived) {
   return li;
 }
 
-function startEditElement(id, span) {
+function startEditElement(id, span, clickEvent) {
   const t = activeTheme();
   if (!t) return;
   const el = t.elements.find(e => e.id === id);
   if (!el) return;
 
-  const input = document.createElement('input');
-  input.className = 'element-edit-input';
-  input.value = el.text;
-  input.maxLength = 80;
+  const textarea = document.createElement('textarea');
+  textarea.className = 'element-edit-input';
+  textarea.textContent = el.text;
+  textarea.maxLength = 80;
 
   const commit = () => {
-    const newText = input.value.trim();
+    const newText = textarea.value.trim();
     if (newText) el.text = newText;
     saveState();
     renderElements();
     renderGrid();
   };
 
-  input.addEventListener('blur', commit);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') input.blur();
-    if (e.key === 'Escape') { input.value = el.text; input.blur(); }
+  textarea.addEventListener('blur', commit);
+  textarea.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { textarea.value = el.text; textarea.blur(); }
   });
 
-  span.replaceWith(input);
-  input.focus();
-  input.select();
+  const autoResize = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  };
+  textarea.addEventListener('input', autoResize);
+
+  const rect = span.getBoundingClientRect();
+  span.replaceWith(textarea);
+  textarea.focus();
+  autoResize();
+
+  if (clickEvent) {
+    const clickX = clickEvent.clientX - rect.left;
+    const charWidth = rect.width / el.text.length;
+    const position = Math.round(clickX / charWidth);
+    textarea.setSelectionRange(position, position);
+  } else {
+    textarea.select();
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -634,7 +645,7 @@ function deleteElement(id) {
   (t.subthemes || []).forEach(s => {
     (s.grids || []).forEach(g => {
       g.grid = g.grid.map(cell =>
-        cell.elementId === id ? { elementId: null, checked: false } : cell
+        cell.elementId === id ? { elementId: null, checked: false, color: null } : cell
       );
     });
   });
@@ -1368,7 +1379,7 @@ function createGrid(name) {
   if (!s) return;
   const g = defaultGrid(name);
   // Initialiser toujours MAX_SIZE² cases pour permettre la restauration lors d'un ré-agrandissement
-  g.grid  = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false }));
+  g.grid  = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false, color: null }));
   s.grids.push(g);
   s.activeGridId = g.id;
   // Sélectionner automatiquement la nouvelle grille
@@ -1597,12 +1608,13 @@ function generateOneGrid(t, g) {
   const globalChecked = getGlobalCheckedElementIds(t);
   // S'assurer que le tableau est au moins de taille MAX_SIZE² pour préserver les cases cachées
   const maxCells = MAX_SIZE * MAX_SIZE;
-  while (g.grid.length < maxCells) g.grid.push({ elementId: null, checked: false });
+  while (g.grid.length < maxCells) g.grid.push({ elementId: null, checked: false, color: null });
   // Ne remplacer que les n×n premières cases, les suivantes sont conservées
   for (let i = 0; i < cellCount; i++) {
     g.grid[i] = {
       elementId: pool[i] ? pool[i].id : null,
       checked: pool[i] ? globalChecked.has(pool[i].id) : false,
+      color: null,
     };
   }
   return true;
@@ -1662,7 +1674,7 @@ function changeSize(delta) {
   g.gridSize = newSize;
   // S'assurer que le tableau est toujours de taille MAX_SIZE² — on ne tronque jamais
   while (g.grid.length < MAX_SIZE * MAX_SIZE) {
-    g.grid.push({ elementId: null, checked: false });
+    g.grid.push({ elementId: null, checked: false, color: null });
   }
 
   saveState();
@@ -1720,6 +1732,13 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const wrapper = document.createElement('div');
   wrapper.className = 'grid-view-wrapper';
   wrapper.dataset.gridId = g.id;
+
+  // Afficher le thème et sous-thème
+  const s = activeSubtheme();
+  const themeSubthemeRow = document.createElement('div');
+  themeSubthemeRow.className = 'grid-view-theme-subtheme-row';
+  themeSubthemeRow.textContent = t.name + ' - ' + (s?.name || '?');
+  wrapper.appendChild(themeSubthemeRow);
 
   // Titre de grille éditable (synchronisé avec le nom de l'onglet)
   const titleRow = document.createElement('div');
@@ -1912,12 +1931,13 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
       div.textContent = cellText;
       div.style.fontSize = getCellFontSize(cellText, scale);
       if (cell.checked)        div.classList.add('checked');
+      if (cell.color === 'red') div.classList.add('cell-red');
       if (bingoIndices.has(i)) div.classList.add('bingo-line');
 
       if (!manualMode || !isActive) {
-        div.title = cell.checked ? 'Désactiver cette case' : 'Valider cette case';
+        div.title = cell.checked ? 'Désactiver cette case' : (cell.color === 'red' ? 'Impossible : case rouge' : 'Valider cette case');
         div.addEventListener('click', () => {
-          if (!cell.elementId) return;
+          if (!cell.elementId || cell.color === 'red') return;
           const newChecked = !cell.checked;
           // Appliquer le même état à toutes les grilles non-archivées du sous-thème actif uniquement
           const tNow = activeTheme();
@@ -1935,9 +1955,25 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
           renderGrid();
           renderElements();
         });
+
+        div.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          if (!cell.elementId || cell.checked) return;
+          const tNow = activeTheme();
+          const sNow = activeSubtheme();
+          if (!tNow || !sNow) return;
+          const newColor = cell.color === 'red' ? null : 'red';
+          (sNow.grids || []).filter(gx => !gx.archived).forEach(gx => {
+            const matchCell = gx.grid.find(c => c.elementId === cell.elementId);
+            if (matchCell) matchCell.color = newColor;
+          });
+          saveState();
+          renderGrid();
+          renderElements();
+        });
       } else {
         div.addEventListener('click', () => {
-          g.grid[i] = { elementId: null, checked: false };
+          g.grid[i] = { elementId: null, checked: false, color: null };
           saveState();
           renderGrid();
           renderElements();
@@ -4932,10 +4968,10 @@ _dbBingo.on('value', snapshot => {
         // les cases cachées lors d'une réduction de taille — on ne le réinitialise que si vide)
         const expected = g.gridSize * g.gridSize;
         if (!g.grid || g.grid.length === 0) {
-          g.grid = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false }));
+          g.grid = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false, color: null }));
         } else {
           // Compléter jusqu'à MAX_SIZE² sans écraser les cases existantes
-          while (g.grid.length < MAX_SIZE * MAX_SIZE) g.grid.push({ elementId: null, checked: false });
+          while (g.grid.length < MAX_SIZE * MAX_SIZE) g.grid.push({ elementId: null, checked: false, color: null });
         }
       });
       const nonArchivedGrids = s.grids.filter(g => !g.archived);

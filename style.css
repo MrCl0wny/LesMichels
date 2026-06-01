@@ -68,6 +68,7 @@ body {
   align-items: baseline;
   gap: 2px;
   flex-shrink: 0;
+  cursor: default;
 }
 .logo-les {
   font-family: Arial, sans-serif;
@@ -548,6 +549,12 @@ body {
 }
 .element-item.elem-checked .element-text { color: var(--accent); }
 
+.element-item.elem-red {
+  background: rgba(232, 91, 71, 0.14);
+  border-color: rgba(232, 91, 71, 0.5);
+}
+.element-item.elem-red .element-text { color: var(--danger); }
+
 .element-edit-input {
   flex: 1;
   background: var(--surface-3);
@@ -558,6 +565,15 @@ body {
   font-size: 0.88rem;
   padding: 2px 6px;
   outline: none;
+}
+
+textarea.element-edit-input {
+  resize: vertical;
+  min-height: 3.5em;
+  max-height: 10em;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 .elem-btn {
@@ -884,6 +900,16 @@ body {
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
+.grid-view-theme-subtheme-row {
+  width: 100%;
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
 .grid-view-title-row {
   width: 100%;
   display: flex;
@@ -1075,6 +1101,12 @@ body {
 .bingo-cell.drag-over {
   border-color: var(--accent) !important;
   background: var(--accent-glow) !important;
+}
+
+.bingo-cell.cell-red {
+  background: rgba(232, 91, 71, 0.2);
+  border-color: var(--danger) !important;
+  color: var(--danger);
 }
 
 .no-grid-msg {
