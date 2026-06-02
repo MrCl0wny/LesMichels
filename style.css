@@ -787,7 +787,7 @@ textarea.element-edit-input {
   pointer-events: none;
 }
 
-/* Bouton Générer global */
+/* Bouton Générer grille */
 .btn-action.btn-generate-global {
   background: #1a4f8b;
   color: #b8d4f5;
@@ -795,13 +795,39 @@ textarea.element-edit-input {
 }
 .btn-action.btn-generate-global:hover { background: #2060a8; color: #fff; border-color: #2a72c4; }
 
+/* Bouton Générer cases vides (bleu plus clair) */
+.btn-action.btn-generate-fill-empty {
+  background: #2a6bc4;
+  color: #d0e8ff;
+  border: 1px solid #3a7fe8;
+}
+.btn-action.btn-generate-fill-empty:hover:not(:disabled) { background: #3a7fe8; color: #fff; border-color: #4a95ff; }
+.btn-action.btn-generate-fill-empty:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* Bouton Générer sous-grille (🎲) */
 .btn-action.btn-subgrid-gen {
   background: #1a4f8b;
   color: #b8d4f5;
   border: 1px solid #2060a8;
 }
-.btn-action.btn-subgrid-gen:hover { background: #2060a8; color: #fff; border-color: #2a72c4; }
+.btn-action.btn-subgrid-gen:hover:not(:disabled) { background: #2060a8; color: #fff; border-color: #2a72c4; }
+
+/* Bouton Générer cases vides sous-grille (📝) */
+.btn-action.btn-subgrid-fill-empty {
+  background: #2a6bc4;
+  color: #d0e8ff;
+  border: 1px solid #3a7fe8;
+}
+.btn-action.btn-subgrid-fill-empty:hover:not(:disabled) { background: #3a7fe8; color: #fff; border-color: #4a95ff; }
+.btn-action.btn-subgrid-fill-empty:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 
 .btn-action.btn-screenshot-bingo {
   background: var(--surface-2);
@@ -835,6 +861,26 @@ textarea.element-edit-input {
 }
 .lock-generate-label input[type="checkbox"] {
   accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Checkbox remplir cases vides ── */
+.fill-only-empty-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.fill-only-empty-label input[type="checkbox"] {
+  accent-color: var(--success);
   width: 15px;
   height: 15px;
   cursor: pointer;

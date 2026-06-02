@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=42" />
+  <link rel="stylesheet" href="style.css?v=45" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -173,7 +173,8 @@
                 <input type="checkbox" id="chk-lock-generate" />
                 🔒
               </label>
-              <button class="btn-action btn-generate-global" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées">🎲 Générer</button>
+              <button class="btn-action btn-generate-global" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées">🎲 Générer grille</button>
+              <button class="btn-action btn-generate-fill-empty" id="btn-generate-fill-empty" title="Générer aléatoirement seulement les cases vides, laisser les cases existantes intactes">📝 Générer cases vides</button>
               <button class="btn-action btn-reset" id="btn-reset" title="Réinitialise toutes les cases du sous-thème">↺ Reset</button>
             </div>
             <button class="btn-action btn-screenshot-bingo" id="btn-screenshot-bingo" title="Copier les grilles dans le presse-papier">📷 Capture</button>
@@ -640,6 +641,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=63"></script>
+  <script src="app.js?v=69"></script>
 </body>
 </html>

@@ -20,10 +20,12 @@
 ### Bingo
 - Thèmes, sous-thèmes et grilles multiples entièrement personnalisables
 - Jusqu'à 3 grilles simultanées avec contrôles indépendants
-- Génération aléatoire, détection bingo, captures PNG
+- Génération aléatoire (toutes cases ou seulement cases vides), détection bingo, captures PNG
 - Synchronisation temps réel entre tous les appareils connectés
 - **Archives unifiées** : onglet unique regroupant thèmes, sous-thèmes et grilles archivés
+- **Archivage par sous-thème** : chaque sous-thème a ses propres cases archivées, indépendant des autres sous-thèmes
 - **Corbeille** : les éléments supprimés sont conservés temporairement, restaurables ou supprimables définitivement
+- **Génération sélective** : option pour remplir uniquement les cases vides, laisser les cases existantes intactes
 
 ### Tier List
 - Création et gestion de tier lists avec dossiers

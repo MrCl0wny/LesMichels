@@ -236,7 +236,7 @@ function loadLocalSelectedGridsForSubtheme(subthemeId) {
 }
 
 function defaultSubtheme(name, withGrid = false) {
-  const sub = { id: uid(), name, grids: [], activeGridId: null, archived: false };
+  const sub = { id: uid(), name, grids: [], activeGridId: null, archived: false, archivedElementIds: [] };
   if (withGrid) {
     const g = defaultGrid('Grille');
     sub.grids = [g];
@@ -302,6 +302,7 @@ function migrateState(raw) {
         if (s.archived === undefined) s.archived = false;
         if (!s.grids) s.grids = [];
         if (!s.activeGridId) s.activeGridId = null;
+        if (!s.archivedElementIds) s.archivedElementIds = [];
         s.grids.forEach(g => {
           if (g.archived === undefined) g.archived = false;
           if (g.hidden === undefined) g.hidden = false;
@@ -333,6 +334,31 @@ function migrateState(raw) {
 
   // Supprimer activeThemeId de Firebase (il est désormais local)
   delete raw.activeThemeId;
+
+  // Migration : éléments archivés au niveau du thème → au niveau du sous-thème (principal)
+  raw.themes.forEach(t => {
+    if (t.elements && Array.isArray(t.elements)) {
+      const archivedElemIds = t.elements
+        .filter(el => el.archived === true)
+        .map(el => el.id);
+
+      if (archivedElemIds.length > 0 && t.subthemes && t.subthemes.length > 0) {
+        // Migrer les archives vers le premier sous-thème (Principal)
+        const firstSub = t.subthemes[0];
+        if (!firstSub.archivedElementIds) firstSub.archivedElementIds = [];
+        archivedElemIds.forEach(id => {
+          if (!firstSub.archivedElementIds.includes(id)) {
+            firstSub.archivedElementIds.push(id);
+          }
+        });
+      }
+
+      // Supprimer le flag archived des éléments (il est maintenant par sous-thème)
+      t.elements.forEach(el => {
+        delete el.archived;
+      });
+    }
+  });
 
   // Initialiser la corbeille si absente
   if (!raw.trash) raw.trash = [];
@@ -509,14 +535,16 @@ let _renameGridId  = null;
 // ──────────────────────────────────────────────
 function renderElements() {
   const t = activeTheme();
-  if (!t) {
+  const s = activeSubtheme();
+  if (!t || !s) {
     listActive.innerHTML = '';
     listArchived.innerHTML = '';
     elementCount.textContent = '0';
     return;
   }
-  const active   = t.elements.filter(e => !e.archived);
-  const archived = t.elements.filter(e => e.archived);
+  const archivedIds = s.archivedElementIds || [];
+  const active   = t.elements.filter(e => !archivedIds.includes(e.id));
+  const archived = t.elements.filter(e => archivedIds.includes(e.id));
 
   elementCount.textContent = active.length;
 
@@ -543,7 +571,7 @@ function buildElementItem(el, isArchived) {
   const isCheckedInGrid = s && (s.grids || []).filter(gx => !gx.archived).some(
     gx => gx.grid.some(c => c.elementId === el.id && c.checked)
   );
-  const isChecked = isCheckedInGrid || !!el.checked;
+  const isChecked = isCheckedInGrid || (!!el.checked && !isArchived);
 
   // Vérifier si la case a une couleur rouge
   const hasRedColor = s && (s.grids || []).filter(gx => !gx.archived).some(
@@ -656,18 +684,28 @@ function deleteElement(id) {
 
 function archiveElement(id) {
   const t = activeTheme();
-  if (!t) return;
-  const el = t.elements.find(e => e.id === id);
-  if (el) el.archived = true;
+  const s = activeSubtheme();
+  if (!t || !s) return;
+  if (!s.archivedElementIds) s.archivedElementIds = [];
+  if (!s.archivedElementIds.includes(id)) {
+    s.archivedElementIds.push(id);
+  }
+  // Vider les cases contenant cet élément dans toutes les grilles du sous-thème actif
+  (s.grids || []).forEach(g => {
+    g.grid = g.grid.map(cell =>
+      cell.elementId === id ? { elementId: null, checked: false, color: null } : cell
+    );
+  });
   saveState();
   renderElements();
+  renderGrid();
 }
 
 function restoreElement(id) {
-  const t = activeTheme();
-  if (!t) return;
-  const el = t.elements.find(e => e.id === id);
-  if (el) el.archived = false;
+  const s = activeSubtheme();
+  if (!s) return;
+  if (!s.archivedElementIds) s.archivedElementIds = [];
+  s.archivedElementIds = s.archivedElementIds.filter(eid => eid !== id);
   saveState();
   renderElements();
   renderGrid();
@@ -838,7 +876,7 @@ function renderThemesList() {
     item.className = 'theme-tab' + (t.id === _localActiveThemeId ? ' active' : '');
     item.dataset.id = t.id;
     item.draggable = true;
-    item.title = (t.id === _localActiveThemeId ? 'Clic gauche : masquer ce thème' : 'Clic gauche : afficher ce thème') + '\nClic droit : renommer, dupliquer, archiver, supprimer';
+    item.title = (t.id === _localActiveThemeId ? 'Clic gauche : masquer ce thème' : 'Clic gauche : afficher ce thème') + '\nClic droit : renommer, dupliquer, archiver, supprimer\nGlisser-déposer : réordonner';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'theme-tab-name';
@@ -1028,7 +1066,7 @@ function renderSubthemesList() {
     item.className = 'theme-tab subtheme-tab' + (s.id === _localActiveSubthemeId ? ' active' : '');
     item.dataset.id = s.id;
     item.draggable = true;
-    item.title = (s.id === _localActiveSubthemeId ? 'Clic gauche : masquer ce sous-thème' : 'Clic gauche : afficher ce sous-thème') + '\nClic droit : renommer, dupliquer, archiver, supprimer';
+    item.title = (s.id === _localActiveSubthemeId ? 'Clic gauche : masquer ce sous-thème' : 'Clic gauche : afficher ce sous-thème') + '\nClic droit : renommer, dupliquer, archiver, supprimer\nGlisser-déposer : réordonner';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'theme-tab-name';
@@ -1398,8 +1436,13 @@ function getGlobalCheckedElementIds(t) {
   const checked = new Set();
   const s = activeSubtheme();
   if (!s) return checked;
+  const archivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
   (s.grids || []).filter(gx => !gx.archived).forEach(gx => {
-    gx.grid.forEach(c => { if (c.checked && c.elementId) checked.add(c.elementId); });
+    gx.grid.forEach(c => {
+      if (c.checked && c.elementId && !archivedIds.includes(c.elementId)) {
+        checked.add(c.elementId);
+      }
+    });
   });
   return checked;
 }
@@ -1488,7 +1531,7 @@ function renderGridsList() {
     item.className = 'grid-tab' + (isSelected ? ' active' : '');
     item.dataset.id = g.id;
     item.draggable = true;
-    item.title = (isSelected ? 'Clic gauche : masquer cette grille' : 'Clic gauche : afficher cette grille (max 3)') + '\nClic droit : renommer, dupliquer, archiver, supprimer';
+    item.title = (isSelected ? 'Clic gauche : masquer cette grille' : 'Clic gauche : afficher cette grille (max 3)') + '\nClic droit : renommer, dupliquer, archiver, supprimer\nGlisser-déposer : réordonner';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'grid-tab-name';
@@ -1597,30 +1640,75 @@ function archiveGrid(id) {
 // ──────────────────────────────────────────────
 // Grille — actions
 // ──────────────────────────────────────────────
-function generateOneGrid(t, g) {
+function generateOneGrid(t, g, fillOnlyEmpty = false) {
   if (g.locked) return false;
   const n = g.gridSize;
   const cellCount = n * n;
-  const active = t.elements.filter(e => !e.archived);
-  if (active.length < cellCount) return false;
-  const pool = shuffle(active).slice(0, cellCount);
-  // Utiliser les cases cochées de toutes les grilles (état partagé)
-  const globalChecked = getGlobalCheckedElementIds(t);
+  const s = activeSubtheme();
+  const archivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
+  const active = t.elements.filter(e => !archivedIds.includes(e.id));
+
   // S'assurer que le tableau est au moins de taille MAX_SIZE² pour préserver les cases cachées
   const maxCells = MAX_SIZE * MAX_SIZE;
   while (g.grid.length < maxCells) g.grid.push({ elementId: null, checked: false, color: null });
-  // Ne remplacer que les n×n premières cases, les suivantes sont conservées
-  for (let i = 0; i < cellCount; i++) {
-    g.grid[i] = {
-      elementId: pool[i] ? pool[i].id : null,
-      checked: pool[i] ? globalChecked.has(pool[i].id) : false,
-      color: null,
-    };
+
+  if (fillOnlyEmpty) {
+    // Ne remplir que les cases vides (elementId === null)
+    const emptyIndices = [];
+    const usedIds = new Set();
+
+    for (let i = 0; i < cellCount; i++) {
+      if (!g.grid[i]) {
+        emptyIndices.push(i);
+      } else if (g.grid[i].elementId === null) {
+        emptyIndices.push(i);
+      } else {
+        // Vérifier que l'élément existe toujours
+        const elemExists = t.elements.some(el => el.id === g.grid[i].elementId);
+        if (elemExists) {
+          usedIds.add(g.grid[i].elementId);
+        } else {
+          // L'élément a été supprimé, marquer la case comme vide
+          g.grid[i].elementId = null;
+          emptyIndices.push(i);
+        }
+      }
+    }
+
+    if (emptyIndices.length === 0) return false;
+
+    // Créer un pool d'éléments disponibles (non utilisés)
+    const available = active.filter(e => !usedIds.has(e.id));
+    if (available.length < emptyIndices.length) return false;
+
+    const pool = shuffle(available).slice(0, emptyIndices.length);
+    const globalChecked = getGlobalCheckedElementIds(t);
+
+    // Remplir uniquement les cases vides
+    emptyIndices.forEach((idx, poolIdx) => {
+      g.grid[idx] = {
+        elementId: pool[poolIdx] ? pool[poolIdx].id : null,
+        checked: pool[poolIdx] ? globalChecked.has(pool[poolIdx].id) : false,
+        color: null,
+      };
+    });
+  } else {
+    // Mode normal : remplacer toutes les cases visibles
+    if (active.length < cellCount) return false;
+    const pool = shuffle(active).slice(0, cellCount);
+    const globalChecked = getGlobalCheckedElementIds(t);
+    for (let i = 0; i < cellCount; i++) {
+      g.grid[i] = {
+        elementId: pool[i] ? pool[i].id : null,
+        checked: pool[i] ? globalChecked.has(pool[i].id) : false,
+        color: null,
+      };
+    }
   }
   return true;
 }
 
-function generateGrid() {
+function generateGrid(fillOnlyEmpty = false) {
   const t0 = activeTheme();
   if (t0 && t0.locked) return;
   const t = activeTheme();
@@ -1637,7 +1725,7 @@ function generateGrid() {
   }
   gridError.classList.add('hidden');
 
-  generateOneGrid(t, g);
+  generateOneGrid(t, g, fillOnlyEmpty);
   saveState();
   renderGrid();
 }
@@ -1841,7 +1929,9 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   lblLock.appendChild(document.createTextNode('🔒'));
 
   // Vérifier si assez d'éléments pour cette grille
-  const activeElemCount = t.elements.filter(e => !e.archived).length;
+  const sActive = activeSubtheme();
+  const sArchivedIds = (sActive && sActive.archivedElementIds) ? sActive.archivedElementIds : [];
+  const activeElemCount = t.elements.filter(e => !sArchivedIds.includes(e.id)).length;
   const cellCount = g.gridSize * g.gridSize;
   const enoughForThis = activeElemCount >= cellCount;
   const genDisabled = gridLocked || !enoughForThis;
@@ -1852,16 +1942,80 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   btnSubGen.textContent = '🎲';
   btnSubGen.title = genDisabled && !gridLocked
     ? `Pas assez d'éléments (${activeElemCount}/${cellCount})`
-    : 'Générer aléatoirement la grille';
+    : 'Générer aléatoirement la grille (ou remplir les cases vides si cochée l\'option)';
   btnSubGen.addEventListener('click', () => {
     const tNow = activeTheme();
     const sNow = activeSubtheme();
     if (!tNow || tNow.locked || !sNow) return;
     const gNow = sNow.grids.find(x => x.id === g.id);
     if (!gNow || gNow.locked) return;
-    const ok = generateOneGrid(tNow, gNow);
+    const ok = generateOneGrid(tNow, gNow, false);
     if (!ok) {
-      gridError.textContent = `⚠ Pas assez d'éléments actifs pour générer.`;
+      const n = gNow.gridSize;
+      const cellCount = n * n;
+      gridError.textContent = `⚠ Pas assez d'éléments actifs pour générer une grille ${n}×${n}.`;
+      gridError.classList.remove('hidden');
+      return;
+    }
+    gridError.classList.add('hidden');
+    saveState();
+    renderGrid();
+  });
+
+  // Bouton "Générer cases vides" par grille
+  const btnSubFillEmpty = document.createElement('button');
+  btnSubFillEmpty.className = 'btn-action btn-subgrid btn-subgrid-fill-empty';
+  btnSubFillEmpty.textContent = '📝';
+  btnSubFillEmpty.title = 'Générer aléatoirement seulement les cases vides';
+
+  // Vérifier si on peut remplir les cases vides
+  const canFillEmpty = (() => {
+    const usedIds = new Set();
+    for (let i = 0; i < cellCount; i++) {
+      if (g.grid[i] && g.grid[i].elementId) {
+        const elemExists = t.elements.some(el => el.id === g.grid[i].elementId);
+        if (elemExists) usedIds.add(g.grid[i].elementId);
+      }
+    }
+    const emptyCount = g.grid.slice(0, cellCount).filter(c => !c || !c.elementId).length;
+    const availableCount = activeElemCount - usedIds.size;
+    return !gridLocked && emptyCount > 0 && availableCount >= emptyCount;
+  })();
+
+  btnSubFillEmpty.disabled = !canFillEmpty;
+  if (!canFillEmpty) btnSubFillEmpty.classList.add('btn-disabled');
+
+  btnSubFillEmpty.addEventListener('click', () => {
+    const tNow = activeTheme();
+    const sNow = activeSubtheme();
+    if (!tNow || tNow.locked || !sNow) return;
+    const gNow = sNow.grids.find(x => x.id === g.id);
+    if (!gNow || gNow.locked) return;
+    const ok = generateOneGrid(tNow, gNow, true);
+    if (!ok) {
+      const n = gNow.gridSize;
+      const cellCount = n * n;
+      const usedIds = new Set();
+      const deletedIds = new Set();
+
+      for (let i = 0; i < cellCount; i++) {
+        if (gNow.grid[i] && gNow.grid[i].elementId) {
+          const elemExists = tNow.elements.some(el => el.id === gNow.grid[i].elementId);
+          if (elemExists) {
+            usedIds.add(gNow.grid[i].elementId);
+          } else {
+            deletedIds.add(gNow.grid[i].elementId);
+          }
+        }
+      }
+      const emptyCount = gNow.grid.slice(0, cellCount).filter(c => !c || !c.elementId).length;
+      const activeElemCount = tNow.elements.filter(e => !e.archived).length;
+      const availableCount = activeElemCount - usedIds.size;
+      let msg = `⚠ Impossible de remplir. Cases vides : ${emptyCount}, éléments disponibles : ${availableCount}.`;
+      if (deletedIds.size > 0) {
+        msg += ` (${deletedIds.size} éléments sur la grille ont été supprimés)`;
+      }
+      gridError.textContent = msg;
       gridError.classList.remove('hidden');
       return;
     }
@@ -1875,6 +2029,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   lockGenGroup.className = 'subgrid-lock-gen-group';
   lockGenGroup.appendChild(lblLock);
   lockGenGroup.appendChild(btnSubGen);
+  lockGenGroup.appendChild(btnSubFillEmpty);
   subCtrl.appendChild(lockGenGroup);
 
 
@@ -2067,10 +2222,9 @@ function renderGrid() {
   const locked = !!t.locked;
   chkLockGenerate.checked = locked;
 
-  const activeCount = t.elements.filter(e => !e.archived).length;
+  const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
+  const activeCount = t.elements.filter(e => !sArchivedIds.includes(e.id)).length;
   const enoughElements = activeCount >= n * n;
-  btnGenerate.disabled = !enoughElements || locked;
-  btnGenerate.classList.toggle('btn-disabled', !enoughElements || locked);
   btnReset.disabled = locked;
   btnReset.classList.toggle('btn-disabled', locked);
   if (enoughElements) gridError.classList.add('hidden');
@@ -2085,6 +2239,9 @@ function renderGrid() {
     btnGenerate.classList.add('btn-disabled');
     return;
   }
+
+  btnGenerate.disabled = !enoughElements || locked;
+  btnGenerate.classList.toggle('btn-disabled', !enoughElements || locked);
 
   gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}`;
 
@@ -2128,6 +2285,7 @@ function renderGrid() {
   });
 
   applyFontScale();
+  updateFillEmptyButtonState();
 }
 
 // ──────────────────────────────────────────────
@@ -2248,7 +2406,9 @@ function confirmBulkAdd() {
   const t = activeTheme();
   if (!t) return;
   const count = Math.max(1, Math.min(100, parseInt(bulkAddCountInput.value) || 1));
-  const startN = t.elements.filter(e => !e.archived).length + 1;
+  const s = activeSubtheme();
+  const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
+  const startN = t.elements.filter(e => !sArchivedIds.includes(e.id)).length + 1;
   for (let i = 0; i < count; i++) {
     t.elements.push({ id: uid(), text: `case ${startN + i}`, archived: false });
   }
@@ -2499,17 +2659,84 @@ btnGenerate.addEventListener('click', () => {
   if (grids.length === 0) return;
   const n = activeGrid()?.gridSize || 4;
   const cellCount = n * n;
-  const active = t.elements.filter(e => !e.archived);
+  const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
+  const active = t.elements.filter(e => !sArchivedIds.includes(e.id));
+
   if (active.length < cellCount) {
     gridError.textContent = `⚠ Il faut au moins ${cellCount} éléments actifs pour générer une grille ${n}×${n} (${active.length}/${cellCount}).`;
     gridError.classList.remove('hidden');
     return;
   }
   gridError.classList.add('hidden');
-  grids.forEach(gx => generateOneGrid(t, gx));
+  grids.forEach(gx => generateOneGrid(t, gx, false));
   saveState();
   renderGrid();
 });
+
+// Bouton "Générer cases vides"
+const btnGenerateFillEmpty = document.getElementById('btn-generate-fill-empty');
+btnGenerateFillEmpty.addEventListener('click', () => {
+  if (manualMode) return;
+  const t = activeTheme();
+  const s = activeSubtheme();
+  if (!t || t.locked || !s) return;
+  const grids = getVisibleGrids();
+  if (grids.length === 0) return;
+
+  gridError.classList.add('hidden');
+  grids.forEach(gx => generateOneGrid(t, gx, true));
+  saveState();
+  renderGrid();
+});
+
+// Fonction pour mettre à jour l'état du bouton "Générer cases vides"
+function updateFillEmptyButtonState() {
+  const t = activeTheme();
+  const s = activeSubtheme();
+  const btn = document.getElementById('btn-generate-fill-empty');
+  if (!btn) return;
+
+  if (!t || t.locked || !s) {
+    btn.disabled = true;
+    return;
+  }
+
+  const grids = getVisibleGrids();
+  if (grids.length === 0) {
+    btn.disabled = true;
+    return;
+  }
+
+  const active = t.elements.filter(e => !e.archived);
+  let canFillEmpty = false;
+
+  // Vérifier si on peut remplir au moins une grille avec la méthode "cases vides"
+  const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
+  const activeElem = t.elements.filter(e => !sArchivedIds.includes(e.id));
+  for (const g of grids) {
+    const n = g.gridSize;
+    const cellCount = n * n;
+    const usedIds = new Set();
+    const emptyCount = g.grid.slice(0, cellCount).filter(c => !c || !c.elementId).length;
+
+    if (emptyCount === 0) continue;
+
+    for (let i = 0; i < cellCount; i++) {
+      if (g.grid[i] && g.grid[i].elementId) {
+        const elemExists = t.elements.some(el => el.id === g.grid[i].elementId && !sArchivedIds.includes(el.id));
+        if (elemExists) usedIds.add(g.grid[i].elementId);
+      }
+    }
+
+    const availableCount = activeElem.length - usedIds.size;
+    if (availableCount >= emptyCount) {
+      canFillEmpty = true;
+      break;
+    }
+  }
+
+  btn.disabled = !canFillEmpty;
+}
 
 
 btnReset.addEventListener('click', () => {
