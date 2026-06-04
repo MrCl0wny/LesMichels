@@ -1357,8 +1357,7 @@ textarea.element-edit-input {
 
 .btn-empty-state {
   display: block;
-  margin: auto;
-  margin-top: 80px;
+  margin: 0;
   padding: 18px 36px;
   font-size: 1.15rem;
   font-weight: 700;

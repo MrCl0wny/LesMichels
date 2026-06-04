@@ -2426,6 +2426,8 @@ function renderGrid() {
   gridWrapper.innerHTML = '';
   gridWrapper.style.justifyContent = '';
   gridWrapper.style.alignItems = '';
+  gridWrapper.style.paddingTop = '';
+  gridWrapper.style.gap = '';
 
   if (!t) {
     bingoLayout.classList.add('no-theme-layout');
@@ -2465,6 +2467,8 @@ function renderGrid() {
   if (!hasAnyGrid || _selectedGridIds.length === 0) {
     gridWrapper.style.justifyContent = 'center';
     gridWrapper.style.alignItems = 'center';
+    gridWrapper.style.paddingTop = '80px';
+    gridWrapper.style.gap = '16px';
     const btnFolder = document.createElement('button');
     btnFolder.className = 'btn-empty-state btn-empty-state-blue';
     btnFolder.textContent = '+ Nouveau dossier';
