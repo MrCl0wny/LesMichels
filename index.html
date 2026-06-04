@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=52" />
+  <link rel="stylesheet" href="style.css?v=54" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -137,6 +137,7 @@
           <!-- Ligne 3 : Toolbar -->
           <div class="ctrl-row ctrl-row-toolbar">
             <button class="btn-action btn-folders-panel" id="btn-folders-panel" title="Ouvrir le panneau dossiers">📁 Dossiers</button>
+            <button class="btn-action btn-cases-panel" id="btn-cases-panel" title="Ouvrir/fermer le panneau cases">📋 Cases</button>
             <div class="ctrl-row-sep"></div>
             <div class="grid-size-control grid-size-control-slider">
               <label class="slider-label">Grille</label>
@@ -176,35 +177,6 @@
       </div>
 
       <div class="bingo-layout" id="bingo-layout">
-
-        <!-- ── Panneau gauche : Cases du thème ── -->
-        <aside class="panel panel-elements" id="panel-elements">
-          <div class="panel-header">
-            <h2>Cases</h2>
-            <span class="element-count" id="element-count" title="Nombre de cases">0</span>
-            <button class="btn-collapse-panel" id="btn-collapse-panel" title="Réduire le panneau">◀</button>
-          </div>
-
-          <div class="panel-elements-body" id="panel-elements-body">
-            <div class="add-element-form">
-              <input
-                type="text"
-                id="new-element-input"
-                placeholder="Ajouter une case..."
-                maxlength="80"
-              />
-              <button id="btn-add-element" class="btn-icon" title="Ajouter une case">+</button>
-            </div>
-
-            <div class="elements-tabs">
-              <button class="tab-btn active" data-tab="active" title="Clic gauche : afficher les cases actives">Actives</button>
-              <button class="tab-btn" data-tab="archived" title="Clic gauche : afficher les cases archivées">Archivées</button>
-            </div>
-
-            <ul id="elements-list" class="elements-list"></ul>
-            <ul id="elements-archived" class="elements-list hidden"></ul>
-          </div>
-        </aside>
 
         <!-- ── Panneau central : Grilles ── -->
         <div class="panel panel-grid">
@@ -356,6 +328,28 @@
       <button class="modal-close folders-panel-close" id="folders-panel-close">✕</button>
     </div>
     <div id="folders-panel-tree" class="folders-panel-tree"></div>
+  </div>
+
+  <!-- Panneau cases (drawer) -->
+  <div id="cases-panel-overlay" class="folders-panel-overlay"></div>
+  <div id="cases-panel" class="folders-panel cases-panel">
+    <div class="folders-panel-header">
+      <span class="folders-panel-title">📋 Cases</span>
+      <span class="element-count" id="element-count" title="Nombre de cases">0</span>
+      <button class="modal-close" id="cases-panel-close">✕</button>
+    </div>
+    <div id="panel-elements-body" class="folders-panel-tree panel-elements-body">
+      <div class="add-element-form">
+        <input type="text" id="new-element-input" placeholder="Ajouter une case..." maxlength="80" />
+        <button id="btn-add-element" class="btn-icon" title="Ajouter une case">+</button>
+      </div>
+      <div class="elements-tabs">
+        <button class="tab-btn active" data-tab="active" title="Clic gauche : afficher les cases actives">Actives</button>
+        <button class="tab-btn" data-tab="archived" title="Clic gauche : afficher les cases archivées">Archivées</button>
+      </div>
+      <ul id="elements-list" class="elements-list"></ul>
+      <ul id="elements-archived" class="elements-list hidden"></ul>
+    </div>
   </div>
 
   <!-- stubs DOM pour compat JS (root-folders-list, folders-list, ctrl-row-subfolders) -->
@@ -655,6 +649,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=79"></script>
+  <script src="app.js?v=81"></script>
 </body>
 </html>

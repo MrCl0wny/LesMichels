@@ -187,8 +187,9 @@ body {
 .ctrl-row-grids         { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
 .ctrl-row-toolbar       { padding-bottom: 4px; }
 
-/* ── Bouton Dossiers toolbar ── */
-.btn-folders-panel {
+/* ── Boutons Dossiers / Cases toolbar ── */
+.btn-folders-panel,
+.btn-cases-panel {
   font-size: 0.82rem;
   padding: 5px 12px;
   flex-shrink: 0;
@@ -568,22 +569,13 @@ body {
 /* ── Bingo layout ── */
 .bingo-layout {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: start;
-  transition: grid-template-columns 0.22s ease;
   position: relative;
   width: 100%;
   min-width: 0;
   overflow: hidden;
-}
-
-.bingo-layout.panel-hidden {
-  grid-template-columns: 40px minmax(0, 1fr);
-}
-
-@media (max-width: 768px) {
-  .bingo-layout { grid-template-columns: 1fr; }
 }
 
 /* ── Panneaux ── */
@@ -602,43 +594,6 @@ body {
   overflow: hidden;
 }
 
-.panel-elements {
-  overflow: visible;
-  min-width: 0;
-}
-
-.panel-elements.panel-collapsed {
-  padding: 10px 4px;
-  width: 40px;
-  min-width: 40px;
-  overflow: visible;
-  position: relative;
-  z-index: 10;
-}
-
-.panel-elements.panel-collapsed .panel-elements-body {
-  display: none;
-}
-
-.panel-elements.panel-collapsed .panel-header h2,
-.panel-elements.panel-collapsed .element-count {
-  display: none;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-.panel-header h2 {
-  flex: 1;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
 .element-count {
   font-family: 'Space Mono', monospace;
   font-size: 0.75rem;
@@ -650,31 +605,16 @@ body {
   cursor: default;
 }
 
-.btn-collapse-panel {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: 0.7rem;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: var(--transition);
-  z-index: 11;
-  position: relative;
-}
-.btn-collapse-panel:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--accent-glow); }
-
-.panel-elements.panel-collapsed .btn-collapse-panel {
-  margin: 0 auto;
-  display: flex;
-}
-
 /* ── Formulaire ajout ── */
+.panel-elements-body {
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
 .add-element-form {
   display: flex;
   gap: 8px;
@@ -1433,10 +1373,6 @@ textarea.element-edit-input {
 .btn-empty-state:hover {
   background: #16a34a;
   transform: scale(1.04);
-}
-
-.panel-hidden-no-theme {
-  display: none !important;
 }
 
 .bingo-layout.no-theme-layout {

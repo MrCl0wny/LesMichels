@@ -954,8 +954,6 @@ const gridWrapper        = document.getElementById('grid-wrapper');
 const archivedThemesList    = document.getElementById('archived-themes-list');
 const archivedGridsList     = document.getElementById('archived-grids-list');
 const chkLockGenerate          = document.getElementById('chk-lock-generate');
-const btnCollapsePanel         = document.getElementById('btn-collapse-panel');
-const panelElements            = document.getElementById('panel-elements');
 const panelElementsBody        = document.getElementById('panel-elements-body');
 const bingoLayout              = document.getElementById('bingo-layout');
 const btnCollapseControlPanel  = document.getElementById('btn-collapse-control-panel');
@@ -2421,7 +2419,6 @@ function renderGrid() {
   gridWrapper.innerHTML = '';
 
   if (!t) {
-    panelElements.classList.add('panel-hidden-no-theme');
     bingoLayout.classList.add('no-theme-layout');
     const btn = document.createElement('button');
     btn.className = 'btn-empty-state';
@@ -2437,7 +2434,6 @@ function renderGrid() {
     chkLockGenerate.checked = false;
     return;
   }
-  panelElements.classList.remove('panel-hidden-no-theme');
   bingoLayout.classList.remove('no-theme-layout');
 
   if (!s) {
@@ -2780,12 +2776,17 @@ chkLockGenerate.addEventListener('change', () => {
   renderGrid();
 });
 
-btnCollapsePanel.addEventListener('click', () => {
-  const collapsed = panelElements.classList.toggle('panel-collapsed');
-  bingoLayout.classList.toggle('panel-hidden', collapsed);
-  btnCollapsePanel.textContent = collapsed ? '▶' : '◀';
-  btnCollapsePanel.title = collapsed ? 'Ouvrir le panneau' : 'Réduire le panneau';
-});
+function openCasesPanel() {
+  document.getElementById('cases-panel').classList.add('open');
+  document.getElementById('cases-panel-overlay').classList.add('open');
+}
+function closeCasesPanel() {
+  document.getElementById('cases-panel').classList.remove('open');
+  document.getElementById('cases-panel-overlay').classList.remove('open');
+}
+document.getElementById('btn-cases-panel').addEventListener('click', openCasesPanel);
+document.getElementById('cases-panel-close').addEventListener('click', closeCasesPanel);
+document.getElementById('cases-panel-overlay').addEventListener('click', closeCasesPanel);
 
 btnCollapseControlPanel.addEventListener('click', () => {
   const collapsed = bingoControlPanel.classList.toggle('panel-ctrl-collapsed');
