@@ -173,8 +173,7 @@ function _applyPrefsAndRender() {
       if (firstGrid) _selectedGridIds = [firstGrid.id];
     }
   }
-  renderFolderBreadcrumb();
-  renderFoldersList();
+  renderAllFolders();
   renderElements();
   renderGridsList();
   renderGrid();
@@ -470,6 +469,383 @@ function activeGrid() {
 }
 
 // ──────────────────────────────────────────────
+// Shims de compatibilité (ancienne API → dossiers)
+// activeTheme() : dossier racine du dossier actif (remonte jusqu'à la racine)
+// activeSubtheme() : le dossier actif lui-même (peut être sous-dossier)
+// ──────────────────────────────────────────────
+function _findRootFolder(folderId) {
+  if (!folderId || !state.folders) return null;
+  // Si c'est directement dans state.folders, c'est la racine
+  const direct = state.folders.find(f => f.id === folderId);
+  if (direct) return direct;
+  // Sinon, chercher la racine qui contient ce dossier
+  for (const root of state.folders) {
+    if (findFolderById(root.folders, folderId)) return root;
+  }
+  return null;
+}
+
+function activeTheme() {
+  // Dans la nouvelle structure, "thème" = dossier racine du dossier actif
+  // Les éléments sont sur le dossier racine
+  const f = activeFolder();
+  if (!f) return null;
+  return _findRootFolder(f.id) || f;
+}
+
+function activeSubtheme() {
+  // "sous-thème" = le dossier actif lui-même (contient les grilles et archivedElementIds)
+  return activeFolder();
+}
+
+function defaultTheme(name) {
+  return defaultFolder(name, false);
+}
+
+function defaultSubtheme(name, withGrid = false) {
+  const sub = {
+    id: uid(),
+    name,
+    archived: false,
+    locked: false,
+    elements: [],
+    archivedElementIds: [],
+    folders: [],
+    grids: [],
+    children: []
+  };
+  if (withGrid) {
+    const g = defaultGrid('Grille');
+    sub.grids = [g];
+    sub.children = [{ type: 'grid', id: g.id }];
+  }
+  return sub;
+}
+
+// ──────────────────────────────────────────────
+// CRUD Dossiers
+// ──────────────────────────────────────────────
+
+function createFolder(name, parentId = null) {
+  const folder = defaultFolder(name, false);
+  if (!parentId) {
+    // Dossier racine
+    if (!state.folders) state.folders = [];
+    state.folders.push(folder);
+    _localActiveFolderId = folder.folders[0]?.id || folder.id;
+    _saveLocalActiveFolderId(_localActiveFolderId);
+  } else {
+    // Dossier enfant
+    const parent = findFolderById(state.folders, parentId);
+    if (!parent) return;
+    if (!parent.folders) parent.folders = [];
+    parent.folders.push(folder);
+    if (!parent.children) parent.children = [];
+    parent.children.push({ type: 'folder', id: folder.id });
+    // Rester sur le parent pour voir le nouveau dossier apparaître dans la liste
+    _localActiveFolderId = parentId;
+    _saveLocalActiveFolderId(parentId);
+  }
+  const newActive = activeFolder();
+  _selectedGridIds = newActive?.grids?.[0] ? [newActive.grids[0].id] : [];
+  saveLocalSelectedGrids(_selectedGridIds);
+  saveState();
+  renderAllFolders();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
+function switchFolder(id) {
+  if (_localActiveFolderId === id) {
+    _localActiveFolderId = null;
+    _saveLocalActiveFolderId(null);
+    _selectedGridIds = [];
+    renderAllFolders();
+    renderElements();
+    renderGridsList();
+    renderGrid();
+    return;
+  }
+  _localActiveFolderId = id;
+  _saveLocalActiveFolderId(id);
+  const hasSavedSelection = id in _selectedGridsByFolder;
+  _selectedGridIds = loadLocalSelectedGridsForFolder(id);
+  if (_selectedGridIds.length === 0 && !hasSavedSelection) {
+    const f = findFolderById(state.folders, id);
+    if (f) {
+      const firstGrid = (f.grids || []).find(g => !g.archived);
+      if (firstGrid) _selectedGridIds = [firstGrid.id];
+    }
+  }
+  renderAllFolders();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
+function deleteFolder(id) {
+  const folder = findFolderById(state.folders, id);
+  if (folder) trashPush({ type: 'folder', data: JSON.parse(JSON.stringify(folder)) });
+  const parent = findParentFolder(state.folders, id);
+  if (parent) {
+    parent.folders = (parent.folders || []).filter(f => f.id !== id);
+    parent.children = (parent.children || []).filter(c => c.id !== id);
+  } else {
+    state.folders = (state.folders || []).filter(f => f.id !== id);
+  }
+  if (_localActiveFolderId === id) {
+    const all = [];
+    function collect(folders) { if (!folders) return; for (const f of folders) { if (!f.archived) all.push(f); collect(f.folders); } }
+    collect(state.folders);
+    _localActiveFolderId = all[0]?.id || null;
+    _saveLocalActiveFolderId(_localActiveFolderId);
+    _selectedGridIds = [];
+  }
+  saveState();
+  renderAllFolders();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
+function archiveFolder(id) {
+  const folder = findFolderById(state.folders, id);
+  if (!folder) return;
+  folder.archived = !folder.archived;
+  if (folder.archived) {
+    function archiveAll(f) { f.archived = true; (f.grids || []).forEach(g => { g.archived = true; }); (f.folders || []).forEach(archiveAll); }
+    archiveAll(folder);
+    if (_localActiveFolderId === id || findFolderById([folder], _localActiveFolderId)) {
+      const all = [];
+      function collectNA(folders) { if (!folders) return; for (const f of folders) { if (!f.archived) all.push(f); collectNA(f.folders); } }
+      collectNA(state.folders);
+      _localActiveFolderId = all[0]?.id || null;
+      _saveLocalActiveFolderId(_localActiveFolderId);
+      _selectedGridIds = [];
+    }
+  }
+  saveState();
+  renderAllFolders();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
+function renameFolder(id, newName) {
+  const folder = findFolderById(state.folders, id);
+  if (folder && newName.trim()) folder.name = newName.trim();
+  saveState();
+  renderAllFolders();
+}
+
+function duplicateFolder(id) {
+  const src = findFolderById(state.folders, id);
+  if (!src) return;
+  const copy = JSON.parse(JSON.stringify(src));
+  function remapIds(f) {
+    f.id = uid();
+    f.archived = false;
+    (f.grids || []).forEach(g => { g.id = uid(); });
+    (f.folders || []).forEach(remapIds);
+    f.children = [...(f.grids || []).map(g => ({ type: 'grid', id: g.id })), ...(f.folders || []).map(sf => ({ type: 'folder', id: sf.id }))];
+  }
+  remapIds(copy);
+  copy.name = src.name + ' (copie)';
+  const parent = findParentFolder(state.folders, id);
+  if (parent) {
+    parent.folders.push(copy);
+    parent.children.push({ type: 'folder', id: copy.id });
+  } else {
+    state.folders.push(copy);
+  }
+  _localActiveFolderId = copy.folders[0]?.id || copy.id;
+  _saveLocalActiveFolderId(_localActiveFolderId);
+  _selectedGridIds = [];
+  saveState();
+  renderAllFolders();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
+// ──────────────────────────────────────────────
+// Rendu : fil d'Ariane dossiers
+// ──────────────────────────────────────────────
+function renderFolderBreadcrumb() {
+  const container = document.getElementById('folders-breadcrumb');
+  const rowEl = document.getElementById('ctrl-row-breadcrumb');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!_localActiveFolderId) {
+    if (rowEl) rowEl.classList.add('hidden');
+    return;
+  }
+
+  const path = getFolderPath(state.folders, _localActiveFolderId);
+
+  // Afficher le fil d'Ariane seulement à partir de 3 niveaux de profondeur
+  if (path.length < 3) {
+    if (rowEl) rowEl.classList.add('hidden');
+    return;
+  }
+
+  if (rowEl) rowEl.classList.remove('hidden');
+
+  path.forEach((f, i) => {
+    if (i > 0) {
+      const sep = document.createElement('span');
+      sep.className = 'breadcrumb-sep';
+      sep.textContent = ' › ';
+      container.appendChild(sep);
+    }
+    const span = document.createElement('span');
+    span.className = 'breadcrumb-item' + (i === path.length - 1 ? ' active' : '');
+    span.textContent = f.name;
+    if (i < path.length - 1) {
+      span.style.cursor = 'pointer';
+      span.addEventListener('click', () => switchFolder(f.id));
+    }
+    container.appendChild(span);
+  });
+}
+
+// ──────────────────────────────────────────────
+// Rendu : dossiers racines (rangée toujours visible)
+// ──────────────────────────────────────────────
+function renderRootFoldersList() {
+  const container = document.getElementById('root-folders-list');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const roots = (state.folders || []).filter(f => !f.archived);
+  const activeRoot = _localActiveFolderId ? _findRootFolder(_localActiveFolderId) : null;
+
+  roots.forEach(f => {
+    const item = document.createElement('div');
+    item.className = 'folder-tab root-folder-tab' + (f.id === (activeRoot?.id) ? ' active' : '');
+    item.dataset.id = f.id;
+    item.draggable = true;
+    item.title = 'Clic gauche : sélectionner\nClic droit : options';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'folder-tab-name';
+    nameSpan.textContent = f.name;
+    item.appendChild(nameSpan);
+
+    item.addEventListener('click', () => switchFolder(f.id));
+
+    item.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuFolder(f.id, e, item); });
+
+    item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', f.id); item.classList.add('dragging'); });
+    item.addEventListener('dragend', () => item.classList.remove('dragging'));
+    item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over-tab'); });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over-tab'));
+    item.addEventListener('drop', e => {
+      e.preventDefault();
+      item.classList.remove('drag-over-tab');
+      const srcId = e.dataTransfer.getData('text/plain');
+      if (srcId === f.id) return;
+      const srcIdx = state.folders.findIndex(x => x.id === srcId);
+      const dstIdx = state.folders.findIndex(x => x.id === f.id);
+      if (srcIdx === -1 || dstIdx === -1) return;
+      const [moved] = state.folders.splice(srcIdx, 1);
+      state.folders.splice(dstIdx, 0, moved);
+      saveState();
+      renderRootFoldersList();
+    });
+
+    container.appendChild(item);
+  });
+}
+
+// ──────────────────────────────────────────────
+// Rendu : sous-dossiers du dossier racine actif
+// ──────────────────────────────────────────────
+function renderFoldersList() {
+  const container = document.getElementById('folders-list');
+  const rowEl = document.getElementById('ctrl-row-subfolders');
+  if (!container) return;
+  container.innerHTML = '';
+
+  // Afficher les enfants du dossier actif (quelle que soit sa profondeur)
+  const activeF = _localActiveFolderId ? findFolderById(state.folders, _localActiveFolderId) : null;
+  const subs = activeF ? (activeF.folders || []).filter(f => !f.archived) : [];
+
+  if (rowEl) rowEl.classList.toggle('hidden', subs.length === 0);
+
+  const parentId = _localActiveFolderId || null;
+
+  subs.forEach(f => {
+    const item = document.createElement('div');
+    item.className = 'folder-tab' + (f.id === _localActiveFolderId ? ' active' : '');
+    item.dataset.id = f.id;
+    item.draggable = true;
+    item.title = 'Clic gauche : ouvrir\nClic droit : options';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'folder-tab-name';
+    nameSpan.textContent = f.name;
+    item.appendChild(nameSpan);
+    item.addEventListener('click', () => switchFolder(f.id));
+    item.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuFolder(f.id, e, item); });
+    item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', f.id); item.classList.add('dragging'); });
+    item.addEventListener('dragend', () => item.classList.remove('dragging'));
+    item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over-tab'); });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over-tab'));
+    item.addEventListener('drop', e => {
+      e.preventDefault();
+      item.classList.remove('drag-over-tab');
+      const srcId = e.dataTransfer.getData('text/plain');
+      if (srcId === f.id) return;
+      const list = parentId ? findFolderById(state.folders, parentId)?.folders : state.folders;
+      if (!list) return;
+      const srcIdx = list.findIndex(x => x.id === srcId);
+      const dstIdx = list.findIndex(x => x.id === f.id);
+      if (srcIdx === -1 || dstIdx === -1) return;
+      const [moved] = list.splice(srcIdx, 1);
+      list.splice(dstIdx, 0, moved);
+      saveState();
+      renderFoldersList();
+    });
+    container.appendChild(item);
+  });
+
+  const btnNewFolderBingo = document.getElementById('btn-new-folder-bingo');
+  if (btnNewFolderBingo) {
+    btnNewFolderBingo.dataset.parentId = parentId || '';
+  }
+  if (btnNewGrid) {
+    btnNewGrid.disabled = !_localActiveFolderId;
+  }
+}
+
+// ──────────────────────────────────────────────
+// Stubs compatibilité — anciennes variables d'état (no-op, le vrai état est dans _localActiveFolderId)
+// ──────────────────────────────────────────────
+let _localActiveThemeId    = null;
+let _localActiveSubthemeId = null;
+let _selectedGridsBySubtheme = {};
+function _saveLocalActiveThemeId(id) { /* no-op : remplacé par _localActiveFolderId */ }
+function _saveLocalActiveSubthemeId(id) { /* no-op */ }
+function _loadLocalActiveSubthemeId() { return null; }
+function loadLocalSelectedGridsForSubtheme(id) { return loadLocalSelectedGridsForFolder(id); }
+function switchTheme(id) { switchFolder(id); }
+function switchSubtheme(id) { switchFolder(id); }
+function createSubtheme(name) { createFolder(name, _localActiveFolderId || null); }
+function deleteSubtheme(id) { deleteFolder(id); }
+function archiveSubtheme(id) { archiveFolder(id); }
+function renameSubtheme(id, newName) { renameFolder(id, newName); }
+function duplicateSubtheme(id) { duplicateFolder(id); }
+function openRenameSubthemeModal(id) { openRenameFolderModal(id); }
+function closeRenameSubthemeModal() { closeRenameThemeModal(); }
+function confirmRenameSubtheme() { confirmRenameTheme(); }
+function openNewSubthemeModal() { openNewFolderModal(_localActiveFolderId || null); }
+function closeNewSubthemeModal() { closeNewThemeModal(); }
+function confirmNewSubtheme() { confirmNewTheme(); }
+function openCtxMenuSubtheme(id, e, el) { openCtxMenuFolder(id, e, el); }
+function closeCtxMenuSubtheme() { closeCtxMenuFolder(); }
+
+// ──────────────────────────────────────────────
 // Utilitaires
 // ──────────────────────────────────────────────
 function uid() {
@@ -512,27 +888,25 @@ function trashRestore(idx) {
   if (!entry) return;
   state.trash.splice(idx, 1);
 
-  if (entry.type === 'theme') {
-    state.themes.push(entry.data);
+  if (entry.type === 'folder' || entry.type === 'theme') {
+    if (!state.folders) state.folders = [];
+    state.folders.push(entry.data);
   } else if (entry.type === 'subtheme') {
-    const t = state.themes.find(t => t.id === entry.themeId);
-    if (t) {
-      if (!t.subthemes) t.subthemes = [];
-      t.subthemes.push(entry.data);
+    const parent = findFolderById(state.folders, entry.themeId);
+    if (parent) {
+      if (!parent.folders) parent.folders = [];
+      parent.folders.push(entry.data);
     }
   } else if (entry.type === 'grid') {
-    let s = null;
-    const t = state.themes.find(t => t.id === entry.themeId);
-    if (t) s = (t.subthemes || []).find(s => s.id === entry.subthemeId);
-    if (s) {
-      if (!s.grids) s.grids = [];
-      s.grids.push(entry.data);
+    const folder = findFolderById(state.folders, entry.folderId || entry.themeId);
+    if (folder) {
+      if (!folder.grids) folder.grids = [];
+      folder.grids.push(entry.data);
     }
   }
 
   saveState();
-  renderThemesList();
-  renderSubthemesList();
+  renderAllFolders();
   renderGridsList();
   renderGrid();
   renderElements();
@@ -568,8 +942,8 @@ const btnScreenshot    = document.getElementById('btn-screenshot-bingo');
 const gridError        = document.getElementById('grid-error');
 const gridsList        = document.getElementById('grids-list');
 const btnNewGrid       = document.getElementById('btn-new-grid');
-const themesList       = document.getElementById('themes-list');
-const btnNewTheme      = document.getElementById('btn-new-theme');
+const themesList       = document.getElementById('folders-list'); // remplacé par folders-list
+const btnNewTheme      = document.getElementById('btn-new-folder-bingo'); // remplacé par btn-new-folder-bingo
 const btnGridHeightMinus = document.getElementById('btn-grid-height-minus');
 const btnGridHeightPlus  = document.getElementById('btn-grid-height-plus');
 const gridHeightInput    = document.getElementById('grid-height-input');
@@ -587,12 +961,12 @@ const bingoLayout              = document.getElementById('bingo-layout');
 const btnCollapseControlPanel  = document.getElementById('btn-collapse-control-panel');
 const bingoControlPanel        = document.getElementById('bingo-control-panel');
 const bingoControlPanelBody    = document.getElementById('bingo-control-panel-body');
-// Modales renommage
-const modalRenameTheme      = document.getElementById('modal-rename-theme');
-const renameThemeInput      = document.getElementById('rename-theme-input');
-const btnConfirmRenameTheme = document.getElementById('btn-confirm-rename-theme');
-const btnCancelRenameTheme  = document.getElementById('btn-cancel-rename-theme');
-const btnCloseRenameThemeModal = document.getElementById('btn-close-rename-theme-modal');
+// Modales renommage — migré vers modal-rename-folder
+const modalRenameTheme      = document.getElementById('modal-rename-folder');
+const renameThemeInput      = document.getElementById('rename-folder-input');
+const btnConfirmRenameTheme = document.getElementById('btn-confirm-rename-folder');
+const btnCancelRenameTheme  = document.getElementById('btn-cancel-rename-folder');
+const btnCloseRenameThemeModal = document.getElementById('btn-close-rename-folder-modal');
 const modalRenameGrid       = document.getElementById('modal-rename-grid');
 const renameGridInput       = document.getElementById('rename-grid-input');
 const btnConfirmRenameGrid  = document.getElementById('btn-confirm-rename-grid');
@@ -729,7 +1103,7 @@ function addElement() {
 
   const t = activeTheme();
   if (!t) return;
-  t.elements.push({ id: uid(), text, archived: false });
+  t.elements.push({ id: uid(), text });
   inputEl.value = '';
   saveState();
   renderElements();
@@ -740,14 +1114,16 @@ function deleteElement(id) {
   const t = activeTheme();
   if (!t) return;
   t.elements = t.elements.filter(e => e.id !== id);
-  // Vider cet élément dans toutes les grilles de tous les sous-thèmes
-  (t.subthemes || []).forEach(s => {
-    (s.grids || []).forEach(g => {
+  // Vider cet élément dans toutes les grilles de tous les sous-dossiers du dossier racine
+  function _clearElemFromFolder(f) {
+    (f.grids || []).forEach(g => {
       g.grid = g.grid.map(cell =>
         cell.elementId === id ? { elementId: null, checked: false, color: null } : cell
       );
     });
-  });
+    (f.folders || []).forEach(_clearElemFromFolder);
+  }
+  _clearElemFromFolder(t);
   saveState();
   renderElements();
   renderGrid();
@@ -783,395 +1159,239 @@ function restoreElement(id) {
 }
 
 // ──────────────────────────────────────────────
-// Thèmes
+// Thèmes — délégation vers fonctions dossiers
 // ──────────────────────────────────────────────
-function createTheme(name) {
-  const t = defaultTheme(name);
-  state.themes.push(t);
-  _localActiveThemeId = t.id;
-  _saveLocalActiveThemeId(t.id);
-  const firstSub = t.subthemes[0];
-  _localActiveSubthemeId = firstSub.id;
-  _saveLocalActiveSubthemeId(firstSub.id);
-  const firstGrid = firstSub.grids[0];
-  _selectedGridIds = firstGrid ? [firstGrid.id] : [];
-  saveLocalSelectedGrids(_selectedGridIds);
-  saveState();
-  renderThemesList();
-  renderSubthemesList();
-  renderElements();
-  renderGridsList();
-  renderGrid();
+function createTheme(name) { createFolder(name, null); }
+function switchTheme(id) { switchFolder(id); }
+function deleteTheme(id) { deleteFolder(id); }
+function archiveTheme(id) { archiveFolder(id); }
+function renameTheme(id, newName) { renameFolder(id, newName); }
+function duplicateTheme(id) { duplicateFolder(id); }
+
+
+function renderAllFolders() {
+  renderFoldersPanelTree();
+  renderGridsBreadcrumb();
 }
 
-function switchTheme(id) {
-  // Reclique sur le thème actif → le décocher
-  if (_localActiveThemeId === id) {
-    _localActiveThemeId = null;
-    _saveLocalActiveThemeId(null);
-    _localActiveSubthemeId = null;
-    _saveLocalActiveSubthemeId(null);
-    _selectedGridIds = [];
-    renderThemesList();
-    renderSubthemesList();
-    renderElements();
-    renderGridsList();
-    renderGrid();
-    return;
-  }
-  _localActiveThemeId = id;
-  _saveLocalActiveThemeId(id);
-  // Restaurer ou initialiser le sous-thème actif
-  const t = state.themes.find(th => th.id === id);
-  if (t && t.subthemes && t.subthemes.length > 0) {
-    const savedSubId = _loadLocalActiveSubthemeId();
-    const validSub = t.subthemes.find(s => s.id === savedSubId && !s.archived);
-    const sub = validSub || t.subthemes.find(s => !s.archived) || t.subthemes[0];
-    _localActiveSubthemeId = sub.id;
-    _saveLocalActiveSubthemeId(sub.id);
-    _selectedGridIds = loadLocalSelectedGridsForSubtheme(sub.id);
-    if (_selectedGridIds.length === 0) {
-      const firstGrid = sub.grids.find(g => !g.archived);
-      if (firstGrid) _selectedGridIds = [firstGrid.id];
+// ──────────────────────────────────────────────
+// Rendu : breadcrumb chemin complet dans ctrl-row-grids
+// ──────────────────────────────────────────────
+function renderGridsBreadcrumb() {
+  const container = document.getElementById('grids-breadcrumb');
+  if (!container) return;
+  container.innerHTML = '';
+  if (!_localActiveFolderId) return;
+  const path = getFolderPath(state.folders, _localActiveFolderId);
+  path.forEach((f, i) => {
+    if (i > 0) {
+      const sep = document.createElement('span');
+      sep.className = 'grids-breadcrumb-sep';
+      sep.textContent = ' › ';
+      container.appendChild(sep);
+    }
+    const span = document.createElement('span');
+    span.className = 'grids-breadcrumb-item' + (i === path.length - 1 ? ' last' : '');
+    span.textContent = f.name;
+    container.appendChild(span);
+  });
+}
+
+function toggleGridSelection(gridId) {
+  const s = activeSubtheme();
+  if (!s) return;
+  const nowSelected = _selectedGridIds.includes(gridId);
+  if (nowSelected) {
+    _selectedGridIds = _selectedGridIds.filter(id => id !== gridId);
+    if (s.activeGridId === gridId) {
+      s.activeGridId = _selectedGridIds.length > 0 ? _selectedGridIds[0] : null;
     }
   } else {
-    _localActiveSubthemeId = null;
-    _saveLocalActiveSubthemeId(null);
-    _selectedGridIds = [];
+    if (_selectedGridIds.length >= 3) return;
+    _selectedGridIds.push(gridId);
+    s.activeGridId = gridId;
   }
-  renderThemesList();
-  renderSubthemesList();
-  renderElements();
-  renderGridsList();
-  renderGrid();
-}
-
-function deleteTheme(id) {
-  const t = state.themes.find(t => t.id === id);
-  if (t) trashPush({ type: 'theme', data: JSON.parse(JSON.stringify(t)) });
-  state.themes = state.themes.filter(t => t.id !== id);
-  if (_localActiveThemeId === id) {
-    const remaining = state.themes.filter(t => !t.archived);
-    const newActive = remaining.length > 0 ? remaining[0] : state.themes[0] || null;
-    _localActiveThemeId = newActive?.id || null;
-    _saveLocalActiveThemeId(_localActiveThemeId);
-    _localActiveSubthemeId = null;
-    _saveLocalActiveSubthemeId(null);
-    _selectedGridIds = [];
-  }
+  saveLocalSelectedGrids(_selectedGridIds);
   saveState();
-  renderThemesList();
-  renderSubthemesList();
-  renderElements();
   renderGridsList();
   renderGrid();
 }
 
-function archiveTheme(id) {
-  const t = state.themes.find(t => t.id === id);
-  if (!t) return;
-  t.archived = !t.archived;
-  if (t.archived) {
-    // Archiver en cascade : tous les sous-thèmes et leurs grilles
-    (t.subthemes || []).forEach(s => {
-      s.archived = true;
-      (s.grids || []).forEach(g => { g.archived = true; });
+function renderFoldersPanelTree() {
+  const container = document.getElementById('folders-panel-tree');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const roots = (state.folders || []).filter(f => !f.archived);
+  if (roots.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'fp-empty';
+    empty.textContent = 'Aucun dossier. Crée-en un !';
+    container.appendChild(empty);
+    return;
+  }
+
+  function _renderFolder(f, parentEl, depth) {
+    const wrapper = document.createElement('div');
+
+    const isActive = f.id === _localActiveFolderId;
+    const children = (f.folders || []).filter(sf => !sf.archived);
+    const grids = (f.grids || []).filter(g => !g.archived);
+    const hasChildren = children.length > 0 || grids.length > 0;
+
+    // État collapse persisté dans l'élément DOM (non Firebase)
+    const collapseKey = 'fp_collapsed_' + f.id;
+    let collapsed = sessionStorage.getItem(collapseKey) === '1';
+
+    const row = document.createElement('div');
+    row.className = 'fp-folder-row' + (isActive ? ' active' : '');
+
+    const arrow = document.createElement('span');
+    arrow.className = 'fp-folder-arrow' + (collapsed ? ' collapsed' : '');
+    arrow.textContent = '▼';
+    if (!hasChildren) arrow.style.visibility = 'hidden';
+
+    const icon = document.createElement('span');
+    icon.className = 'fp-folder-icon';
+    icon.textContent = isActive ? '📂' : '📁';
+
+    const name = document.createElement('span');
+    name.className = 'fp-folder-name';
+    name.textContent = f.name;
+
+    const ctxBtn = document.createElement('button');
+    ctxBtn.className = 'fp-folder-ctx-btn';
+    ctxBtn.textContent = '•••';
+    ctxBtn.title = 'Options';
+
+    row.appendChild(arrow);
+    row.appendChild(icon);
+    row.appendChild(name);
+    row.appendChild(ctxBtn);
+
+    const childrenEl = document.createElement('div');
+    childrenEl.className = 'fp-children' + (collapsed ? ' collapsed' : '');
+    childrenEl.style.paddingLeft = '14px';
+
+    // Grilles du dossier
+    grids.forEach(g => {
+      const gRow = document.createElement('div');
+      const gActive = _selectedGridIds.includes(g.id);
+      gRow.className = 'fp-grid-row' + (gActive ? ' active' : '');
+      gRow.style.paddingLeft = '14px';
+
+      const gIcon = document.createElement('span');
+      gIcon.className = 'fp-grid-icon';
+      gIcon.textContent = '▪';
+
+      const gName = document.createElement('span');
+      gName.className = 'fp-grid-name';
+      gName.textContent = g.name;
+
+      const gCtx = document.createElement('button');
+      gCtx.className = 'fp-grid-ctx-btn';
+      gCtx.textContent = '•••';
+      gCtx.title = 'Options';
+
+      gRow.appendChild(gIcon);
+      gRow.appendChild(gName);
+      gRow.appendChild(gCtx);
+
+      gRow.addEventListener('click', e => {
+        if (e.target === gCtx) return;
+        // Activer le dossier parent si pas déjà actif
+        if (_localActiveFolderId !== f.id) {
+          _localActiveFolderId = f.id;
+          _saveLocalActiveFolderId(f.id);
+          _selectedGridIds = [g.id];
+          saveLocalSelectedGrids(_selectedGridIds);
+          const folder = activeFolder();
+          if (folder) folder.activeGridId = g.id;
+          saveState();
+          renderAllFolders();
+          renderElements();
+          renderGridsList();
+          renderGrid();
+        } else {
+          toggleGridSelection(g.id);
+        }
+        closeFoldersPanel();
+      });
+      gCtx.addEventListener('click', e => {
+        e.stopPropagation();
+        closeFoldersPanel();
+        switchFolder(f.id);
+        setTimeout(() => openCtxMenuGrid(g.id, e, gRow), 50);
+      });
+
+      childrenEl.appendChild(gRow);
     });
-    if (_localActiveThemeId === id) {
-      const remaining = state.themes.filter(x => !x.archived);
-      _localActiveThemeId = remaining.length > 0 ? remaining[0].id : null;
-      _saveLocalActiveThemeId(_localActiveThemeId);
-      _localActiveSubthemeId = null;
-      _saveLocalActiveSubthemeId(null);
-      _selectedGridIds = [];
-    }
+
+    // Dossiers enfants (récursif)
+    children.forEach(sf => _renderFolder(sf, childrenEl, depth + 1));
+
+    // Toggle collapse
+    const toggleCollapse = e => {
+      e.stopPropagation();
+      collapsed = !collapsed;
+      sessionStorage.setItem(collapseKey, collapsed ? '1' : '0');
+      arrow.classList.toggle('collapsed', collapsed);
+      childrenEl.classList.toggle('collapsed', collapsed);
+    };
+    arrow.addEventListener('click', toggleCollapse);
+
+    // Clic sur le dossier → sélectionner, fermer drawer
+    row.addEventListener('click', e => {
+      if (e.target === arrow || e.target === ctxBtn) return;
+      switchFolder(f.id);
+      closeFoldersPanel();
+    });
+
+    ctxBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      closeFoldersPanel();
+      setTimeout(() => openCtxMenuFolder(f.id, e, row), 50);
+    });
+
+    wrapper.appendChild(row);
+    wrapper.appendChild(childrenEl);
+    parentEl.appendChild(wrapper);
   }
-  saveState();
-  renderThemesList();
-  renderSubthemesList();
-  renderElements();
-  renderGridsList();
-  renderGrid();
+
+  roots.forEach(f => _renderFolder(f, container, 0));
 }
 
-function renameTheme(id, newName) {
-  const t = state.themes.find(t => t.id === id);
-  if (t && newName.trim()) t.name = newName.trim();
-  saveState();
-  renderThemesList();
+function openFoldersPanel() {
+  renderFoldersPanelTree();
+  document.getElementById('folders-panel').classList.add('open');
+  document.getElementById('folders-panel-overlay').classList.add('open');
 }
 
-function duplicateTheme(id) {
-  const src = state.themes.find(t => t.id === id);
-  if (!src) return;
-  const copy = JSON.parse(JSON.stringify(src));
-  copy.id = uid();
-  copy.name = src.name + ' (copie)';
-  copy.archived = false;
-  // Remap sous-thèmes et grilles
-  copy.subthemes = (copy.subthemes || []).map(s => {
-    const newSub = { ...s, id: uid(), grids: (s.grids || []).map(g => ({ ...g, id: uid() })) };
-    newSub.activeGridId = newSub.grids.find(g => !g.archived)?.id || null;
-    return newSub;
-  });
-  copy.activeSubthemeId = copy.subthemes[0]?.id || null;
-  state.themes.push(copy);
-  _localActiveThemeId = copy.id;
-  _saveLocalActiveThemeId(copy.id);
-  const firstSub = copy.subthemes.find(s => !s.archived) || copy.subthemes[0];
-  _localActiveSubthemeId = firstSub?.id || null;
-  _saveLocalActiveSubthemeId(_localActiveSubthemeId);
-  _selectedGridIds = [];
-  saveState();
-  renderThemesList();
-  renderSubthemesList();
-  renderElements();
-  renderGridsList();
-  renderGrid();
+function closeFoldersPanel() {
+  document.getElementById('folders-panel').classList.remove('open');
+  document.getElementById('folders-panel-overlay').classList.remove('open');
 }
 
 function renderThemesList() {
-  themesList.innerHTML = '';
-  const activeThemes = state.themes.filter(t => !t.archived);
-
-  if (activeThemes.length === 0) {
-    const msg = document.createElement('span');
-    msg.className = 'themes-empty-msg';
-    msg.textContent = 'Aucun thème — crée-en un !';
-    themesList.appendChild(msg);
-    return;
-  }
-
-  activeThemes.forEach(t => {
-    const item = document.createElement('div');
-    item.className = 'theme-tab' + (t.id === _localActiveThemeId ? ' active' : '');
-    item.dataset.id = t.id;
-    item.draggable = true;
-    item.title = (t.id === _localActiveThemeId ? 'Clic gauche : masquer ce thème' : 'Clic gauche : afficher ce thème') + '\nClic droit : renommer, dupliquer, archiver, supprimer\nGlisser-déposer : réordonner';
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'theme-tab-name';
-    nameSpan.textContent = t.name;
-    item.appendChild(nameSpan);
-
-    item.addEventListener('click', () => switchTheme(t.id));
-
-    item.addEventListener('contextmenu', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      openCtxMenuTheme(t.id, e, item);
-    });
-
-    // Drag & drop pour réordonner les thèmes
-    item.addEventListener('dragstart', e => {
-      e.dataTransfer.setData('text/plain', t.id);
-      item.classList.add('dragging');
-    });
-    item.addEventListener('dragend', () => item.classList.remove('dragging'));
-    item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over-tab'); });
-    item.addEventListener('dragleave', () => item.classList.remove('drag-over-tab'));
-    item.addEventListener('drop', e => {
-      e.preventDefault();
-      item.classList.remove('drag-over-tab');
-      const srcId = e.dataTransfer.getData('text/plain');
-      if (srcId === t.id) return;
-      const srcIdx = state.themes.findIndex(x => x.id === srcId);
-      const dstIdx = state.themes.findIndex(x => x.id === t.id);
-      if (srcIdx === -1 || dstIdx === -1) return;
-      const [moved] = state.themes.splice(srcIdx, 1);
-      state.themes.splice(dstIdx, 0, moved);
-      saveState();
-      renderThemesList();
-    });
-
-    themesList.appendChild(item);
-  });
-
-  // Grisage dynamique des boutons +
-  btnNewSubtheme.disabled = !_localActiveThemeId;
-  btnNewGrid.disabled = !_localActiveSubthemeId;
+  renderAllFolders();
 }
 
 // ──────────────────────────────────────────────
 // Sous-thèmes
 // ──────────────────────────────────────────────
-const subthemesList       = document.getElementById('subthemes-list');
-const btnNewSubtheme      = document.getElementById('btn-new-subtheme');
+const subthemesList       = { innerHTML: '' }; // stub — liste sous-thèmes remplacée par dossiers
+const btnNewSubtheme      = document.getElementById('btn-new-folder-bingo'); // stub partagé
 
-function createSubtheme(name) {
-  const t = activeTheme();
-  if (!t) return;
-  if (!t.subthemes) t.subthemes = [];
-  const sub = defaultSubtheme(name, true);
-  t.subthemes.push(sub);
-  _localActiveSubthemeId = sub.id;
-  _saveLocalActiveSubthemeId(sub.id);
-  const firstGrid = sub.grids[0];
-  _selectedGridIds = firstGrid ? [firstGrid.id] : [];
-  saveLocalSelectedGrids(_selectedGridIds);
-  saveState();
-  renderSubthemesList();
-  renderGridsList();
-  renderGrid();
-}
-
-function switchSubtheme(id) {
-  // Reclique sur le sous-thème actif → le décocher
-  if (_localActiveSubthemeId === id) {
-    // Sauvegarder la sélection vide avant de nullifier le sous-thème actif
-    _selectedGridIds = [];
-    _selectedGridsBySubtheme[id] = [_EMPTY_SELECTION];
-    saveUserPrefs({ selectedGrids: _selectedGridsBySubtheme });
-    _localActiveSubthemeId = null;
-    _saveLocalActiveSubthemeId(null);
-    renderSubthemesList();
-    renderElements();
-    renderGridsList();
-    renderGrid();
-    return;
-  }
-  _localActiveSubthemeId = id;
-  _saveLocalActiveSubthemeId(id);
-  const hasSavedSelection = id in _selectedGridsBySubtheme;
-  _selectedGridIds = loadLocalSelectedGridsForSubtheme(id);
-  if (_selectedGridIds.length === 0 && !hasSavedSelection) {
-    const t = activeTheme();
-    const sub = t && t.subthemes ? t.subthemes.find(s => s.id === id) : null;
-    if (sub) {
-      const firstGrid = sub.grids.find(g => !g.archived);
-      if (firstGrid) _selectedGridIds = [firstGrid.id];
-    }
-  }
-  renderSubthemesList();
-  renderElements();
-  renderGridsList();
-  renderGrid();
-}
-
-function deleteSubtheme(id) {
-  const t = activeTheme();
-  if (!t || !t.subthemes) return;
-  const sub = t.subthemes.find(s => s.id === id);
-  if (sub) trashPush({ type: 'subtheme', themeId: t.id, data: JSON.parse(JSON.stringify(sub)) });
-  t.subthemes = t.subthemes.filter(s => s.id !== id);
-  if (_localActiveSubthemeId === id) {
-    const remaining = t.subthemes.filter(s => !s.archived);
-    _localActiveSubthemeId = remaining.length > 0 ? remaining[0].id : (t.subthemes[0]?.id || null);
-    _saveLocalActiveSubthemeId(_localActiveSubthemeId);
-    _selectedGridIds = [];
-  }
-  saveState();
-  renderSubthemesList();
-  renderGridsList();
-  renderGrid();
-}
-
-function archiveSubtheme(id) {
-  const t = activeTheme();
-  if (!t || !t.subthemes) return;
-  const sub = t.subthemes.find(s => s.id === id);
-  if (!sub) return;
-  sub.archived = !sub.archived;
-  if (sub.archived) {
-    // Archiver en cascade : toutes les grilles du sous-thème
-    (sub.grids || []).forEach(g => { g.archived = true; });
-    if (_localActiveSubthemeId === id) {
-      const remaining = t.subthemes.filter(s => !s.archived);
-      _localActiveSubthemeId = remaining.length > 0 ? remaining[0].id : null;
-      _saveLocalActiveSubthemeId(_localActiveSubthemeId);
-      _selectedGridIds = [];
-    }
-  }
-  saveState();
-  renderSubthemesList();
-  renderGridsList();
-  renderGrid();
-}
-
-function renameSubtheme(id, newName) {
-  const t = activeTheme();
-  if (!t || !t.subthemes) return;
-  const sub = t.subthemes.find(s => s.id === id);
-  if (sub && newName.trim()) sub.name = newName.trim();
-  saveState();
-  renderSubthemesList();
-}
-
-function duplicateSubtheme(id) {
-  const t = activeTheme();
-  if (!t || !t.subthemes) return;
-  const src = t.subthemes.find(s => s.id === id);
-  if (!src) return;
-  const copy = JSON.parse(JSON.stringify(src));
-  copy.id = uid();
-  copy.name = src.name + ' (copie)';
-  copy.archived = false;
-  copy.grids = (copy.grids || []).map(g => ({ ...g, id: uid() }));
-  copy.activeGridId = copy.grids.find(g => !g.archived)?.id || null;
-  t.subthemes.push(copy);
-  _localActiveSubthemeId = copy.id;
-  _saveLocalActiveSubthemeId(copy.id);
-  _selectedGridIds = [];
-  saveState();
-  renderSubthemesList();
-  renderGridsList();
-  renderGrid();
-}
+// Sous-thèmes — délégation vers fonctions dossiers
+function createSubtheme(name) { createFolder(name, _localActiveFolderId || null); }
+function switchSubtheme(id) { switchFolder(id); }
+function deleteSubtheme(id) { deleteFolder(id); }
+function archiveSubtheme(id) { archiveFolder(id); }
+function renameSubtheme(id, newName) { renameFolder(id, newName); }
+function duplicateSubtheme(id) { duplicateFolder(id); }
 
 function renderSubthemesList() {
-  subthemesList.innerHTML = '';
-  const t = activeTheme();
-  if (!t || !t.subthemes) return;
-  const activeSubs = t.subthemes.filter(s => !s.archived);
-
-  if (activeSubs.length === 0) {
-    const msg = document.createElement('span');
-    msg.className = 'themes-empty-msg';
-    msg.textContent = 'Aucun sous-thème';
-    subthemesList.appendChild(msg);
-    return;
-  }
-
-  activeSubs.forEach(s => {
-    const item = document.createElement('div');
-    item.className = 'theme-tab subtheme-tab' + (s.id === _localActiveSubthemeId ? ' active' : '');
-    item.dataset.id = s.id;
-    item.draggable = true;
-    item.title = (s.id === _localActiveSubthemeId ? 'Clic gauche : masquer ce sous-thème' : 'Clic gauche : afficher ce sous-thème') + '\nClic droit : renommer, dupliquer, archiver, supprimer\nGlisser-déposer : réordonner';
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'theme-tab-name';
-    nameSpan.textContent = s.name;
-    item.appendChild(nameSpan);
-
-    item.addEventListener('click', () => switchSubtheme(s.id));
-    item.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuSubtheme(s.id, e, item); });
-
-    // Drag & drop réordonnancement
-    item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', s.id); item.classList.add('dragging'); });
-    item.addEventListener('dragend', () => item.classList.remove('dragging'));
-    item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over-tab'); });
-    item.addEventListener('dragleave', () => item.classList.remove('drag-over-tab'));
-    item.addEventListener('drop', e => {
-      e.preventDefault();
-      item.classList.remove('drag-over-tab');
-      const srcId = e.dataTransfer.getData('text/plain');
-      if (srcId === s.id) return;
-      const tNow = activeTheme();
-      if (!tNow || !tNow.subthemes) return;
-      const srcIdx = tNow.subthemes.findIndex(x => x.id === srcId);
-      const dstIdx = tNow.subthemes.findIndex(x => x.id === s.id);
-      if (srcIdx === -1 || dstIdx === -1) return;
-      const [moved] = tNow.subthemes.splice(srcIdx, 1);
-      tNow.subthemes.splice(dstIdx, 0, moved);
-      saveState();
-      renderSubthemesList();
-    });
-
-    subthemesList.appendChild(item);
-  });
-
-  btnNewGrid.disabled = !_localActiveSubthemeId;
+  renderAllFolders();
 }
 
 
@@ -1183,16 +1403,7 @@ const btnCancelRenameSubtheme  = document.getElementById('btn-cancel-rename-subt
 const btnCloseRenameSubthemeModal = document.getElementById('btn-close-rename-subtheme-modal');
 let _renameSubthemeId = null;
 
-function openRenameSubthemeModal(id) {
-  const t = activeTheme();
-  if (!t || !t.subthemes) return;
-  const sub = t.subthemes.find(s => s.id === id);
-  if (!sub) return;
-  _renameSubthemeId = id;
-  renameSubthemeInput.value = sub.name;
-  modalRenameSubtheme.classList.remove('hidden');
-  setTimeout(() => { renameSubthemeInput.focus(); renameSubthemeInput.select(); }, 50);
-}
+function openRenameSubthemeModal(id) { openRenameFolderModal(id); }
 
 function closeRenameSubthemeModal() { modalRenameSubtheme.classList.add('hidden'); _renameSubthemeId = null; }
 function confirmRenameSubtheme() { if (!_renameSubthemeId) return; renameSubtheme(_renameSubthemeId, renameSubthemeInput.value); closeRenameSubthemeModal(); }
@@ -1203,48 +1414,38 @@ btnCloseRenameSubthemeModal.addEventListener('click', closeRenameSubthemeModal);
 modalRenameSubtheme.addEventListener('click', e => { if (e.target === modalRenameSubtheme) closeRenameSubthemeModal(); });
 renameSubthemeInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmRenameSubtheme(); if (e.key === 'Escape') closeRenameSubthemeModal(); });
 
-// Modale nouveau sous-thème
+// Modale nouveau sous-thème — stubs legacy (la modale modal-new-subtheme est cachée)
 const modalNewSubtheme        = document.getElementById('modal-new-subtheme');
-const newSubthemeNameInput    = document.getElementById('new-subtheme-name-input');
+const newSubthemeNameInput    = document.getElementById('new-subtheme-name-input') || { value: '' };
 const btnConfirmNewSubtheme   = document.getElementById('btn-confirm-new-subtheme');
 const btnCancelNewSubtheme    = document.getElementById('btn-cancel-new-subtheme');
 const btnCloseNewSubthemeModal = document.getElementById('btn-close-new-subtheme-modal');
 
-function openNewSubthemeModal() {
-  const t = activeTheme();
-  if (!t) return;
-  const n = (t.subthemes || []).length + 1;
-  newSubthemeNameInput.value = `Sous-thème ${n}`;
-  modalNewSubtheme.classList.remove('hidden');
-  setTimeout(() => { newSubthemeNameInput.focus(); newSubthemeNameInput.select(); }, 50);
+// Brancher le bouton "+ Dossier" sur la vraie modale
+const _btnNewFolderBingo = document.getElementById('btn-new-folder-bingo');
+if (_btnNewFolderBingo) {
+  _btnNewFolderBingo.addEventListener('click', () => {
+    const parentId = _btnNewFolderBingo.dataset.parentId || null;
+    openNewFolderModal(parentId || null);
+  });
 }
-function closeNewSubthemeModal() { modalNewSubtheme.classList.add('hidden'); }
-function confirmNewSubtheme() { const name = newSubthemeNameInput.value.trim(); if (!name) return; closeNewSubthemeModal(); createSubtheme(name); }
 
-btnConfirmNewSubtheme.addEventListener('click', confirmNewSubtheme);
-btnCancelNewSubtheme.addEventListener('click', closeNewSubthemeModal);
-btnCloseNewSubthemeModal.addEventListener('click', closeNewSubthemeModal);
-modalNewSubtheme.addEventListener('click', e => { if (e.target === modalNewSubtheme) closeNewSubthemeModal(); });
-newSubthemeNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmNewSubtheme(); if (e.key === 'Escape') closeNewSubthemeModal(); });
-
-btnNewSubtheme.addEventListener('click', () => { if (activeTheme()) openNewSubthemeModal(); });
+// Bouton "+ Dossier" racine
+const _btnNewRootFolder = document.getElementById('btn-new-root-folder');
+if (_btnNewRootFolder) {
+  _btnNewRootFolder.addEventListener('click', () => openNewFolderModal(null));
+}
 // Les sous-thèmes archivés sont désormais dans modal-archives-unified
 
-// Menu contextuel sous-thème
-const ctxMenuSubtheme    = document.getElementById('ctx-menu-subtheme');
-const ctxSubthemeRename    = document.getElementById('ctx-subtheme-rename');
-const ctxSubthemeDuplicate = document.getElementById('ctx-subtheme-duplicate');
-const ctxSubthemeArchive   = document.getElementById('ctx-subtheme-archive');
+// Menu contextuel sous-thème — redirigé vers menu dossier (ctx-menu-folder)
+const ctxMenuSubtheme    = document.getElementById('ctx-menu-folder'); // alias
+const ctxSubthemeRename    = document.getElementById('ctx-folder-rename');
+const ctxSubthemeDuplicate = document.getElementById('ctx-folder-duplicate');
+const ctxSubthemeArchive   = document.getElementById('ctx-folder-archive');
 let _ctxSubthemeId = null;
 
-function openCtxMenuSubtheme(id, e, anchorEl) { closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuElement(); _ctxSubthemeId = id; positionCtxMenu(ctxMenuSubtheme, e, anchorEl); ctxMenuSubtheme.classList.remove('hidden'); }
-function closeCtxMenuSubtheme() { ctxMenuSubtheme.classList.add('hidden'); _ctxSubthemeId = null; }
-
-ctxSubthemeRename.addEventListener('click', () => { if (_ctxSubthemeId) openRenameSubthemeModal(_ctxSubthemeId); closeCtxMenuSubtheme(); });
-ctxSubthemeDuplicate.addEventListener('click', () => { if (_ctxSubthemeId) duplicateSubtheme(_ctxSubthemeId); closeCtxMenuSubtheme(); });
-ctxSubthemeArchive.addEventListener('click', () => { if (_ctxSubthemeId) archiveSubtheme(_ctxSubthemeId); closeCtxMenuSubtheme(); });
-document.getElementById('ctx-subtheme-delete').addEventListener('click', () => { if (_ctxSubthemeId) deleteSubtheme(_ctxSubthemeId); closeCtxMenuSubtheme(); });
-document.getElementById('ctx-subtheme-cancel').addEventListener('click', () => closeCtxMenuSubtheme());
+function openCtxMenuSubtheme(id, e, anchorEl) { openCtxMenuFolder(id, e, anchorEl); }
+function closeCtxMenuSubtheme() { closeCtxMenuFolder(); }
 
 // ──────────────────────────────────────────────
 // Export PNG de la grille bingo
@@ -1457,25 +1658,6 @@ function _makeBreadcrumb(parts) {
 }
 
 
-function openRenameThemeModal(id) {
-  const t = state.themes.find(t => t.id === id);
-  if (!t) return;
-  _renameThemeId = id;
-  renameThemeInput.value = t.name;
-  modalRenameTheme.classList.remove('hidden');
-  setTimeout(() => { renameThemeInput.focus(); renameThemeInput.select(); }, 50);
-}
-
-function closeRenameThemeModal() {
-  modalRenameTheme.classList.add('hidden');
-  _renameThemeId = null;
-}
-
-function confirmRenameTheme() {
-  if (!_renameThemeId) return;
-  renameTheme(_renameThemeId, renameThemeInput.value);
-  closeRenameThemeModal();
-}
 
 // ──────────────────────────────────────────────
 // Grilles (dans le thème actif)
@@ -1538,7 +1720,7 @@ function deleteGrid(id) {
   if (!s) return;
   const t = activeTheme();
   const g = s.grids.find(g => g.id === id);
-  if (g) trashPush({ type: 'grid', themeId: t?.id, subthemeId: s.id, data: JSON.parse(JSON.stringify(g)) });
+  if (g) trashPush({ type: 'grid', folderId: s.id, themeId: t?.id, subthemeId: s.id, data: JSON.parse(JSON.stringify(g)) });
   s.grids = s.grids.filter(g => g.id !== id);
   if (s.activeGridId === id) {
     const remaining = s.grids.filter(g => !g.archived);
@@ -1587,6 +1769,7 @@ function toggleHideGrid(id) {
 }
 
 function renderGridsList() {
+  renderGridsBreadcrumb();
   gridsList.innerHTML = '';
   const s = activeSubtheme();
   if (!s) return;
@@ -1788,7 +1971,9 @@ function generateGrid(fillOnlyEmpty = false) {
   const n = g.gridSize;
   const cellCount = n * n;
 
-  const active = t.elements.filter(e => !e.archived);
+  const s = activeSubtheme();
+  const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
+  const active = t.elements.filter(e => !sArchivedIds.includes(e.id));
   if (active.length < cellCount) {
     gridError.textContent = `⚠ Il faut au moins ${cellCount} éléments actifs pour générer une grille ${n}×${n} (${active.length}/${cellCount}).`;
     gridError.classList.remove('hidden');
@@ -1892,11 +2077,11 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   wrapper.className = 'grid-view-wrapper';
   wrapper.dataset.gridId = g.id;
 
-  // Afficher le thème et sous-thème
-  const s = activeSubtheme();
+  // Afficher le chemin du dossier actif
+  const _activeFolderPath = getFolderPath(state.folders, _localActiveFolderId);
   const themeSubthemeRow = document.createElement('div');
   themeSubthemeRow.className = 'grid-view-theme-subtheme-row';
-  themeSubthemeRow.textContent = t.name + ' - ' + (s?.name || '?');
+  themeSubthemeRow.textContent = _activeFolderPath.map(f => f.name).join(' › ') || t.name;
   wrapper.appendChild(themeSubthemeRow);
 
   // Titre de grille éditable (synchronisé avec le nom de l'onglet)
@@ -2080,7 +2265,8 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
         }
       }
       const emptyCount = gNow.grid.slice(0, cellCount).filter(c => !c || !c.elementId).length;
-      const activeElemCount = tNow.elements.filter(e => !e.archived).length;
+      const sNowArchivedIds = (sNow && sNow.archivedElementIds) ? sNow.archivedElementIds : [];
+      const activeElemCount = tNow.elements.filter(e => !sNowArchivedIds.includes(e.id)).length;
       const availableCount = activeElemCount - usedIds.size;
       let msg = `⚠ Impossible de remplir. Cases vides : ${emptyCount}, éléments disponibles : ${availableCount}.`;
       if (deletedIds.size > 0) {
@@ -2239,8 +2425,8 @@ function renderGrid() {
     bingoLayout.classList.add('no-theme-layout');
     const btn = document.createElement('button');
     btn.className = 'btn-empty-state';
-    btn.textContent = '+ Nouveau thème';
-    btn.addEventListener('click', openNewThemeModal);
+    btn.textContent = '+ Nouveau dossier';
+    btn.addEventListener('click', () => openNewFolderModal(null));
     gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
     bingoMsg.classList.add('hidden');
@@ -2257,8 +2443,8 @@ function renderGrid() {
   if (!s) {
     const btn = document.createElement('button');
     btn.className = 'btn-empty-state';
-    btn.textContent = '+ Nouveau sous-thème';
-    btn.addEventListener('click', openNewSubthemeModal);
+    btn.textContent = '+ Nouveau dossier';
+    btn.addEventListener('click', () => openNewFolderModal(_localActiveFolderId || null));
     gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
     bingoMsg.classList.add('hidden');
@@ -2399,40 +2585,96 @@ function getBingoResult(n, grid) {
 }
 
 // ──────────────────────────────────────────────
-// Modale : nouveau thème
+// Modale : nouveau dossier (remplace modal-new-theme)
 // ──────────────────────────────────────────────
-const modalNewTheme        = document.getElementById('modal-new-theme');
-const newThemeNameInput    = document.getElementById('new-theme-name-input');
-const btnConfirmNewTheme   = document.getElementById('btn-confirm-new-theme');
-const btnCancelNewTheme    = document.getElementById('btn-cancel-new-theme');
-const btnCloseNewThemeModal = document.getElementById('btn-close-new-theme-modal');
+const modalNewTheme        = document.getElementById('modal-new-folder');
+const newThemeNameInput    = document.getElementById('new-folder-name-input');
+const btnConfirmNewTheme   = document.getElementById('btn-confirm-new-folder');
+const btnCancelNewTheme    = document.getElementById('btn-cancel-new-folder');
+const btnCloseNewThemeModal = document.getElementById('btn-close-new-folder-modal');
 
-function openNewThemeModal() {
-  const n = state.themes.length + 1;
-  newThemeNameInput.value = `Thème ${n}`;
+function openNewThemeModal(parentId = null) {
+  if (!modalNewTheme) return;
+
+  // Peupler le select parent
+  const sel = document.getElementById('new-folder-parent-select');
+  if (sel) {
+    sel.innerHTML = '';
+    const rootOpt = document.createElement('option');
+    rootOpt.value = '';
+    rootOpt.textContent = '— Racine —';
+    sel.appendChild(rootOpt);
+    function _addOptions(folders, depth) {
+      (folders || []).filter(f => !f.archived).forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = '  '.repeat(depth) + f.name;
+        sel.appendChild(opt);
+        _addOptions(f.folders, depth + 1);
+      });
+    }
+    _addOptions(state.folders, 0);
+    sel.value = parentId || '';
+  }
+
+  const parent = parentId ? findFolderById(state.folders, parentId) : null;
+  const siblings = parent ? (parent.folders || []) : (state.folders || []);
+  const n = siblings.length + 1;
+  newThemeNameInput.value = `Dossier ${n}`;
   modalNewTheme.classList.remove('hidden');
   setTimeout(() => { newThemeNameInput.focus(); newThemeNameInput.select(); }, 50);
 }
 
+function openNewFolderModal(parentId = null) { openNewThemeModal(parentId); }
+
 function closeNewThemeModal() {
-  modalNewTheme.classList.add('hidden');
+  if (modalNewTheme) modalNewTheme.classList.add('hidden');
 }
 
 function confirmNewTheme() {
   const name = newThemeNameInput.value.trim();
   if (!name) return;
+  const sel = document.getElementById('new-folder-parent-select');
+  const parentId = (sel && sel.value) ? sel.value : null;
   closeNewThemeModal();
-  createTheme(name);
+  createFolder(name, parentId);
 }
 
-btnConfirmNewTheme.addEventListener('click', confirmNewTheme);
-btnCancelNewTheme.addEventListener('click', closeNewThemeModal);
-btnCloseNewThemeModal.addEventListener('click', closeNewThemeModal);
-modalNewTheme.addEventListener('click', e => { if (e.target === modalNewTheme) closeNewThemeModal(); });
-newThemeNameInput.addEventListener('keydown', e => {
+function createTheme(name) { createFolder(name, null); }
+
+if (btnConfirmNewTheme) btnConfirmNewTheme.addEventListener('click', confirmNewTheme);
+if (btnCancelNewTheme) btnCancelNewTheme.addEventListener('click', closeNewThemeModal);
+if (btnCloseNewThemeModal) btnCloseNewThemeModal.addEventListener('click', closeNewThemeModal);
+if (modalNewTheme) modalNewTheme.addEventListener('click', e => { if (e.target === modalNewTheme) closeNewThemeModal(); });
+if (newThemeNameInput) newThemeNameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmNewTheme();
   if (e.key === 'Escape') closeNewThemeModal();
 });
+
+// Modale renommer dossier
+let _renameFolderId = null;
+function openRenameFolderModal(id) {
+  const folder = findFolderById(state.folders, id);
+  if (!folder) return;
+  _renameFolderId = id;
+  if (renameThemeInput) renameThemeInput.value = folder.name;
+  if (modalRenameTheme) modalRenameTheme.classList.remove('hidden');
+  setTimeout(() => { if (renameThemeInput) { renameThemeInput.focus(); renameThemeInput.select(); } }, 50);
+}
+function openRenameThemeModal(id) { openRenameFolderModal(id); }
+function closeRenameThemeModal() {
+  if (modalRenameTheme) modalRenameTheme.classList.add('hidden');
+  _renameFolderId = null;
+}
+function confirmRenameTheme() {
+  if (!_renameFolderId) return;
+  renameFolder(_renameFolderId, renameThemeInput?.value || '');
+  closeRenameThemeModal();
+}
+function renameTheme(id, newName) { renameFolder(id, newName); }
+function duplicateTheme(id) { duplicateFolder(id); }
+function deleteTheme(id) { deleteFolder(id); }
+function archiveTheme(id) { archiveFolder(id); }
 
 // ──────────────────────────────────────────────
 // Onglets actifs / archivés
@@ -2481,7 +2723,7 @@ function confirmBulkAdd() {
   const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
   const startN = t.elements.filter(e => !sArchivedIds.includes(e.id)).length + 1;
   for (let i = 0; i < count; i++) {
-    t.elements.push({ id: uid(), text: `case ${startN + i}`, archived: false });
+    t.elements.push({ id: uid(), text: `case ${startN + i}` });
   }
   closeBulkAddModal();
   saveState();
@@ -2552,43 +2794,53 @@ btnCollapseControlPanel.addEventListener('click', () => {
 });
 
 // ──────────────────────────────────────────────
-// Menu contextuel — Thèmes
+// Menu contextuel — Dossiers (remplace ctx-menu-theme)
 // ──────────────────────────────────────────────
-const ctxMenuTheme  = document.getElementById('ctx-menu-theme');
-const ctxThemeRename    = document.getElementById('ctx-theme-rename');
-const ctxThemeDuplicate = document.getElementById('ctx-theme-duplicate');
-const ctxThemeArchive   = document.getElementById('ctx-theme-archive');
-let _ctxThemeId = null;
+const ctxMenuTheme  = document.getElementById('ctx-menu-folder');
+const ctxThemeRename    = document.getElementById('ctx-folder-rename');
+const ctxThemeDuplicate = document.getElementById('ctx-folder-duplicate');
+const ctxThemeArchive   = document.getElementById('ctx-folder-archive');
+let _ctxThemeId = null; // contient maintenant un folderId
 
-function openCtxMenuTheme(id, e, anchorEl) {
+function openCtxMenuTheme(id, e, anchorEl) { openCtxMenuFolder(id, e, anchorEl); }
+function closeCtxMenuTheme() { closeCtxMenuFolder(); }
+
+function openCtxMenuFolder(id, e, anchorEl) {
   closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
   _ctxThemeId = id;
-  positionCtxMenu(ctxMenuTheme, e, anchorEl);
-  ctxMenuTheme.classList.remove('hidden');
+  if (ctxMenuTheme) { positionCtxMenu(ctxMenuTheme, e, anchorEl); ctxMenuTheme.classList.remove('hidden'); }
 }
 
-function closeCtxMenuTheme() {
-  ctxMenuTheme.classList.add('hidden');
+function closeCtxMenuFolder() {
+  if (ctxMenuTheme) ctxMenuTheme.classList.add('hidden');
   _ctxThemeId = null;
 }
 
-ctxThemeRename.addEventListener('click', () => {
-  if (_ctxThemeId) openRenameThemeModal(_ctxThemeId);
-  closeCtxMenuTheme();
+if (ctxThemeRename) ctxThemeRename.addEventListener('click', () => {
+  if (_ctxThemeId) openRenameFolderModal(_ctxThemeId);
+  closeCtxMenuFolder();
 });
-ctxThemeDuplicate.addEventListener('click', () => {
-  if (_ctxThemeId) duplicateTheme(_ctxThemeId);
-  closeCtxMenuTheme();
+if (ctxThemeDuplicate) ctxThemeDuplicate.addEventListener('click', () => {
+  if (_ctxThemeId) duplicateFolder(_ctxThemeId);
+  closeCtxMenuFolder();
 });
-ctxThemeArchive.addEventListener('click', () => {
-  if (_ctxThemeId) archiveTheme(_ctxThemeId);
-  closeCtxMenuTheme();
+if (ctxThemeArchive) ctxThemeArchive.addEventListener('click', () => {
+  if (_ctxThemeId) archiveFolder(_ctxThemeId);
+  closeCtxMenuFolder();
 });
-document.getElementById('ctx-theme-delete').addEventListener('click', () => {
-  if (_ctxThemeId) deleteTheme(_ctxThemeId);
-  closeCtxMenuTheme();
+const _ctxFolderDeleteBtn = document.getElementById('ctx-folder-delete');
+if (_ctxFolderDeleteBtn) _ctxFolderDeleteBtn.addEventListener('click', () => {
+  if (_ctxThemeId) deleteFolder(_ctxThemeId);
+  closeCtxMenuFolder();
 });
-document.getElementById('ctx-theme-cancel').addEventListener('click', () => closeCtxMenuTheme());
+const _ctxFolderNewChildBtn = document.getElementById('ctx-folder-new-child');
+if (_ctxFolderNewChildBtn) _ctxFolderNewChildBtn.addEventListener('click', () => {
+  const parentId = _ctxThemeId;
+  closeCtxMenuFolder();
+  if (parentId) openNewFolderModal(parentId);
+});
+const _ctxFolderCancelBtn = document.getElementById('ctx-folder-cancel');
+if (_ctxFolderCancelBtn) _ctxFolderCancelBtn.addEventListener('click', () => closeCtxMenuFolder());
 
 // ──────────────────────────────────────────────
 // Menu contextuel — Grilles
@@ -2778,7 +3030,6 @@ function updateFillEmptyButtonState() {
     return;
   }
 
-  const active = t.elements.filter(e => !e.archived);
   let canFillEmpty = false;
 
   // Vérifier si on peut remplir au moins une grille avec la méthode "cases vides"
@@ -2884,9 +3135,10 @@ btnNewGrid.addEventListener('click', () => {
   openNewGridModal();
 });
 
-btnNewTheme.addEventListener('click', () => {
-  openNewThemeModal();
-});
+const _btnNewFolderInGrids = document.getElementById('btn-new-folder-in-grids');
+if (_btnNewFolderInGrids) {
+  _btnNewFolderInGrids.addEventListener('click', () => openNewFolderModal(_localActiveFolderId || null));
+}
 
 // ── Archives unifiées ──────────────────────────────────────────────────────────
 const modalArchivesUnified = document.getElementById('modal-archives-unified');
@@ -2948,120 +3200,59 @@ function _makeArchiveButtons(actions) {
 function renderArchivesUnified() {
   const container = document.getElementById('archives-tree');
   container.innerHTML = '';
-
   let hasAny = false;
-  state.themes.forEach(t => {
-    const tArchived = t.archived;
-    const archivedSubs = (t.subthemes || []).filter(s => s.archived);
-    const anyArchivedGrid = (t.subthemes || []).some(s => (s.grids || []).some(g => g.archived));
 
-    if (!tArchived && archivedSubs.length === 0 && !anyArchivedGrid) return;
+  function _renderFolderArchive(f, depth, parentArchived) {
+    const fArchived = f.archived;
+    const archivedSubFolders = (f.folders || []).filter(sf => sf.archived || (sf.folders || []).some(x => x.archived) || (sf.grids || []).some(g => g.archived));
+    const archivedGrids = (f.grids || []).filter(g => g.archived);
+    if (!fArchived && archivedSubFolders.length === 0 && archivedGrids.length === 0) return;
     hasAny = true;
 
-    const themeChildren = document.createElement('div');
-    themeChildren.className = 'tree-children';
-    let themeCollapsed = false;
-    const themeRow = _makeTreeNode(t.name, 0, themeCollapsed, () => {
-      themeCollapsed = !themeCollapsed;
-      themeRow.querySelector('.tree-arrow').classList.toggle('collapsed', themeCollapsed);
-      themeChildren.classList.toggle('tree-hidden', themeCollapsed);
+    const folderChildren = document.createElement('div');
+    folderChildren.className = 'tree-children';
+    let collapsed = false;
+    const folderRow = _makeTreeNode(f.name, depth, collapsed, () => {
+      collapsed = !collapsed;
+      folderRow.querySelector('.tree-arrow').classList.toggle('collapsed', collapsed);
+      folderChildren.classList.toggle('tree-hidden', collapsed);
     });
 
-    if (tArchived) {
-      themeRow.appendChild(_makeArchiveButtons([
-        {
-          text: '↩ Restaurer', cls: 'restore',
-          onClick: () => { archiveTheme(t.id); renderArchivesUnified(); }
-        },
-        {
-          text: '🗑 Supprimer', cls: 'del',
-          onClick: () => { deleteTheme(t.id); renderArchivesUnified(); }
-        }
+    if (fArchived) {
+      folderRow.appendChild(_makeArchiveButtons([
+        { text: '↩ Restaurer', cls: 'restore', disabled: parentArchived,
+          onClick: () => { archiveFolder(f.id); renderArchivesUnified(); } },
+        { text: '🗑 Supprimer', cls: 'del',
+          onClick: () => { deleteFolder(f.id); renderArchivesUnified(); } }
       ]));
     }
-    container.appendChild(themeRow);
-    container.appendChild(themeChildren);
+    container.appendChild(folderRow);
+    container.appendChild(folderChildren);
 
-    (t.subthemes || []).forEach(s => {
-      const sArchived = s.archived;
-      const archivedGridsInSub = (s.grids || []).filter(g => g.archived);
-      if (!sArchived && archivedGridsInSub.length === 0) return;
-
-      const subChildren = document.createElement('div');
-      subChildren.className = 'tree-children';
-      let subCollapsed = false;
-      const subRow = _makeTreeNode(s.name, 1, subCollapsed, () => {
-        subCollapsed = !subCollapsed;
-        subRow.querySelector('.tree-arrow').classList.toggle('collapsed', subCollapsed);
-        subChildren.classList.toggle('tree-hidden', subCollapsed);
-      });
-
-      if (sArchived) {
-        subRow.appendChild(_makeArchiveButtons([
-          {
-            text: '↩ Restaurer', cls: 'restore',
-            disabled: tArchived,
-            onClick: () => {
-              const saved = _localActiveThemeId;
-              _localActiveThemeId = t.id;
-              archiveSubtheme(s.id);
-              _localActiveThemeId = saved;
-              _saveLocalActiveThemeId(saved);
-              renderArchivesUnified();
-            }
-          },
-          {
-            text: '🗑 Supprimer', cls: 'del',
-            onClick: () => {
-              const saved = _localActiveThemeId;
-              _localActiveThemeId = t.id;
-              deleteSubtheme(s.id);
-              _localActiveThemeId = saved;
-              _saveLocalActiveThemeId(saved);
-              renderArchivesUnified();
-            }
+    archivedGrids.forEach(g => {
+      const leafRow = _makeLeafRow(g.name, depth + 1, [
+        { text: '↩ Restaurer', cls: 'restore', disabled: fArchived || parentArchived,
+          onClick: () => { g.archived = false; saveState(); renderGridsList(); renderArchivesUnified(); } },
+        { text: '🗑 Supprimer', cls: 'del',
+          onClick: () => {
+            const savedId = _localActiveFolderId;
+            _localActiveFolderId = f.id;
+            deleteGrid(g.id);
+            _localActiveFolderId = savedId;
+            renderArchivesUnified();
           }
-        ]));
-      }
-      themeChildren.appendChild(subRow);
-      themeChildren.appendChild(subChildren);
-
-      archivedGridsInSub.forEach(g => {
-        const parentArchived = tArchived || sArchived;
-        const leafRow = _makeLeafRow(g.name, 2, [
-          {
-            text: '↩ Restaurer', cls: 'restore',
-            disabled: parentArchived,
-            title: '',
-            onClick: () => {
-              g.archived = false;
-              saveState();
-              renderGridsList();
-              renderArchivesUnified();
-            }
-          },
-          {
-            text: '🗑 Supprimer', cls: 'del',
-            title: '',
-            onClick: () => {
-              const saved = _localActiveThemeId;
-              const savedSub = _localActiveSubthemeId;
-              _localActiveThemeId = t.id;
-              _localActiveSubthemeId = s.id;
-              deleteGrid(g.id);
-              _localActiveThemeId = saved;
-              _localActiveSubthemeId = savedSub;
-              _saveLocalActiveThemeId(saved);
-              _saveLocalActiveSubthemeId(savedSub);
-              renderArchivesUnified();
-            }
-          }
-        ]);
-        subChildren.appendChild(leafRow);
-      });
+        }
+      ]);
+      folderChildren.appendChild(leafRow);
     });
-  });
 
+    (f.folders || []).forEach(sf => {
+      const sfArchived = sf.archived || (sf.folders || []).some(x => x.archived) || (sf.grids || []).some(g => g.archived);
+      if (sfArchived) _renderFolderArchive(sf, depth + 1, fArchived || parentArchived);
+    });
+  }
+
+  (state.folders || []).forEach(f => _renderFolderArchive(f, 0, false));
   if (!hasAny) container.innerHTML = '<p class="archived-empty">Aucun élément archivé.</p>';
 }
 
@@ -3078,11 +3269,16 @@ document.getElementById('btn-archives-unified').addEventListener('click', openAr
 document.getElementById('btn-close-archives-unified').addEventListener('click', closeArchivesUnified);
 modalArchivesUnified.addEventListener('click', e => { if (e.target === modalArchivesUnified) closeArchivesUnified(); });
 
+// ── Panneau dossiers ──
+document.getElementById('btn-folders-panel').addEventListener('click', openFoldersPanel);
+document.getElementById('folders-panel-close').addEventListener('click', closeFoldersPanel);
+document.getElementById('folders-panel-overlay').addEventListener('click', closeFoldersPanel);
+
 // ── Corbeille unifiée ──────────────────────────────────────────────────────────
 const modalTrashUnified = document.getElementById('modal-trash-unified');
 const modalConfirmTrashEmpty = document.getElementById('modal-confirm-trash-empty');
 
-const _TYPE_LABELS = { theme: 'Thème', subtheme: 'Sous-thème', grid: 'Grille' };
+const _TYPE_LABELS = { theme: 'Dossier', subtheme: 'Dossier', folder: 'Dossier', grid: 'Grille' };
 
 function renderTrashList() {
   const container = document.getElementById('trash-list');
@@ -3107,7 +3303,7 @@ function renderTrashList() {
   function _getOrCreateSNode(tNode, key, label) {
     let node = tNode.subs.find(n => n.key === key);
     if (!node) { node = { key, label, subEntry: null, grids: [] }; tNode.subs.push(node); }
-    else if (label && label !== '(sous-thème supprimé)') node.label = label;
+    else if (label && label !== '(dossier supprimé)') node.label = label;
     return node;
   }
 
@@ -3117,31 +3313,32 @@ function renderTrashList() {
   );
 
   trash.forEach((entry, origIdx) => {
-    if (entry.type === 'theme') {
+    if (entry.type === 'folder' || entry.type === 'theme') {
       const tNode = _getOrCreateTNode('__t__' + origIdx, entry.data?.name || '?');
       tNode.themeEntry = { entry, origIdx };
-      (entry.data?.subthemes || []).forEach(sub => {
+      (entry.data?.folders || entry.data?.subthemes || []).forEach(sub => {
         const sNode = _getOrCreateSNode(tNode, '__s__' + sub.id, sub.name || '?');
-        // N'ajouter que les grilles qui ne sont pas déjà en entrée séparée
         (sub.grids || []).forEach(g => {
           if (!separateGridIds.has(g.id)) sNode.grids.push({ name: g.name, fromParent: true });
         });
       });
+      (entry.data?.grids || []).forEach(g => {
+        const sNode = _getOrCreateSNode(tNode, '__direct__', '—');
+        if (!separateGridIds.has(g.id)) sNode.grids.push({ name: g.name, fromParent: true });
+      });
     } else if (entry.type === 'subtheme') {
-      const pt = state.themes.find(t => t.id === entry.themeId);
-      const tNode = _getOrCreateTNode(entry.themeId || '__orphan__', pt?.name || '(thème supprimé)');
+      const pf = findFolderById(state.folders, entry.themeId);
+      const tNode = _getOrCreateTNode(entry.themeId || '__orphan__', pf?.name || '(dossier supprimé)');
       const sNode = _getOrCreateSNode(tNode, entry.data?.id || ('sub_' + origIdx), entry.data?.name || '?');
       sNode.subEntry = { entry, origIdx };
-      // N'ajouter que les grilles qui ne sont pas déjà en entrée séparée
       (entry.data?.grids || []).forEach(g => {
         if (!separateGridIds.has(g.id)) sNode.grids.push({ name: g.name, fromParent: true });
       });
     } else if (entry.type === 'grid') {
-      const pt = state.themes.find(t => t.id === entry.themeId);
-      const ps = pt ? (pt.subthemes || []).find(s => s.id === entry.subthemeId) : null;
-      const tNode = _getOrCreateTNode(entry.themeId || '__orphan__', pt?.name || '(thème supprimé)');
-      const sNode = _getOrCreateSNode(tNode, entry.subthemeId || '__orphan_sub__', ps?.name || '(sous-thème supprimé)');
-      const canRestore = !!(pt && ps);
+      const pf = findFolderById(state.folders, entry.folderId || entry.themeId);
+      const tNode = _getOrCreateTNode(entry.folderId || entry.themeId || '__orphan__', pf?.name || '(dossier supprimé)');
+      const sNode = _getOrCreateSNode(tNode, '__direct__', '—');
+      const canRestore = !!pf;
       sNode.grids.push({ name: entry.data?.name || '?', fromParent: false, origIdx, canRestore });
     }
   });
@@ -3174,7 +3371,7 @@ function renderTrashList() {
         subChildren.classList.toggle('tree-hidden', sCollapsed);
       });
       if (sNode.subEntry) {
-        const parentExists = !!state.themes.find(t => t.id === sNode.subEntry.entry.themeId);
+        const parentExists = !!findFolderById(state.folders, sNode.subEntry.entry.themeId);
         subRow.appendChild(_makeArchiveButtons([{
           text: '↩ Restaurer', cls: 'restore',
           disabled: !parentExists,
@@ -3222,12 +3419,12 @@ document.getElementById('btn-confirm-trash-empty').addEventListener('click', () 
 });
 modalConfirmTrashEmpty.addEventListener('click', e => { if (e.target === modalConfirmTrashEmpty) modalConfirmTrashEmpty.classList.add('hidden'); });
 
-// Modales renommage thème
-btnConfirmRenameTheme.addEventListener('click', confirmRenameTheme);
-btnCancelRenameTheme.addEventListener('click', closeRenameThemeModal);
-btnCloseRenameThemeModal.addEventListener('click', closeRenameThemeModal);
-modalRenameTheme.addEventListener('click', e => { if (e.target === modalRenameTheme) closeRenameThemeModal(); });
-renameThemeInput.addEventListener('keydown', e => {
+// Modales renommage dossier
+if (btnConfirmRenameTheme) btnConfirmRenameTheme.addEventListener('click', confirmRenameTheme);
+if (btnCancelRenameTheme) btnCancelRenameTheme.addEventListener('click', closeRenameThemeModal);
+if (btnCloseRenameThemeModal) btnCloseRenameThemeModal.addEventListener('click', closeRenameThemeModal);
+if (modalRenameTheme) modalRenameTheme.addEventListener('click', e => { if (e.target === modalRenameTheme) closeRenameThemeModal(); });
+if (renameThemeInput) renameThemeInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmRenameTheme();
   if (e.key === 'Escape') closeRenameThemeModal();
 });
@@ -5237,49 +5434,28 @@ _dbBingo.on('value', snapshot => {
   const migrated = migrateState(raw);
   state = migrated || initState();
 
-  // Normaliser l'état
-  if (!state.themes) state.themes = [];
-  state.themes.forEach(t => {
-    if (!t.elements)  t.elements  = [];
-    if (!t.subthemes) t.subthemes = [];
-    if (t.locked === undefined) t.locked = false;
-    delete t.cellFont;
-    delete t.cellFontScale;
-
-    // S'assurer qu'il y a au moins un sous-thème
-    if (t.subthemes.length === 0) {
-      const sub = defaultSubtheme('Principal');
-      sub.grids = t.grids || [];
-      sub.activeGridId = t.activeGridId || null;
-      t.subthemes = [sub];
-    }
-
-    t.subthemes.forEach(s => {
-      if (!s.grids) s.grids = [];
-      if (s.archived === undefined) s.archived = false;
-      s.grids.forEach(g => {
-        if (g.archived === undefined) g.archived = false;
-        if (g.hidden === undefined)   g.hidden   = false;
-        if (g.title === undefined)    g.title    = '';
-        if (g.locked === undefined)   g.locked   = false;
-        // Le tableau doit avoir au moins gridSize² cases (il peut en avoir plus pour mémoriser
-        // les cases cachées lors d'une réduction de taille — on ne le réinitialise que si vide)
-        const expected = g.gridSize * g.gridSize;
-        if (!g.grid || g.grid.length === 0) {
-          g.grid = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false, color: null }));
-        } else {
-          // Compléter jusqu'à MAX_SIZE² sans écraser les cases existantes
-          while (g.grid.length < MAX_SIZE * MAX_SIZE) g.grid.push({ elementId: null, checked: false, color: null });
-        }
-      });
-      const nonArchivedGrids = s.grids.filter(g => !g.archived);
-      if (nonArchivedGrids.length === 0) {
-        s.activeGridId = null;
-      } else if (s.activeGridId && !nonArchivedGrids.find(g => g.id === s.activeGridId)) {
-        s.activeGridId = nonArchivedGrids[0].id;
+  // Normaliser l'état (nouvelle structure dossiers)
+  if (!state.folders) state.folders = [];
+  function _normalizeFolder(f) {
+    if (!f.elements)          f.elements          = [];
+    if (!f.archivedElementIds) f.archivedElementIds = [];
+    if (!f.folders)           f.folders            = [];
+    if (!f.grids)             f.grids              = [];
+    if (f.locked === undefined) f.locked            = false;
+    f.grids.forEach(g => {
+      if (g.archived === undefined) g.archived = false;
+      if (g.hidden   === undefined) g.hidden   = false;
+      if (g.title    === undefined) g.title    = '';
+      if (g.locked   === undefined) g.locked   = false;
+      if (!g.grid || g.grid.length === 0) {
+        g.grid = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false, color: null }));
+      } else {
+        while (g.grid.length < MAX_SIZE * MAX_SIZE) g.grid.push({ elementId: null, checked: false, color: null });
       }
     });
-  });
+    f.folders.forEach(_normalizeFolder);
+  }
+  state.folders.forEach(_normalizeFolder);
 
   if (_prefsReady) {
     _applyPrefsAndRender();

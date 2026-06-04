@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=45" />
+  <link rel="stylesheet" href="style.css?v=52" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -126,26 +126,18 @@
       <div class="bingo-control-panel" id="bingo-control-panel">
         <div class="bingo-control-panel-body" id="bingo-control-panel-body">
 
-          <!-- Ligne 1a : Fil d'Ariane dossiers -->
-          <div class="ctrl-row ctrl-row-breadcrumb">
-            <div id="folders-breadcrumb" class="folders-breadcrumb"></div>
-          </div>
-
-          <!-- Ligne 1b : Contenu du dossier actif (dossiers + grilles) -->
-          <div class="ctrl-row ctrl-row-folders">
-            <div id="folders-list" class="folders-list"></div>
-            <button class="btn-new-folder-bingo" id="btn-new-folder-bingo" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
-          </div>
-
-          <!-- Ligne 2 : Grilles (dans le dossier actif) -->
+          <!-- Ligne 1 : Grilles (dans le dossier actif) -->
           <div class="ctrl-row ctrl-row-grids">
-            <span class="ctrl-row-label">Grille</span>
+            <div id="grids-breadcrumb" class="grids-breadcrumb"></div>
             <div id="grids-list" class="grids-list"></div>
+            <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
             <button class="btn-new-grid" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
           </div>
 
           <!-- Ligne 3 : Toolbar -->
           <div class="ctrl-row ctrl-row-toolbar">
+            <button class="btn-action btn-folders-panel" id="btn-folders-panel" title="Ouvrir le panneau dossiers">📁 Dossiers</button>
+            <div class="ctrl-row-sep"></div>
             <div class="grid-size-control grid-size-control-slider">
               <label class="slider-label">Grille</label>
               <input type="range" id="grid-height-input" class="toolbar-slider" min="20" max="80" step="5" value="80" title="Taille des grilles" />
@@ -335,7 +327,7 @@
         <h3>Archives</h3>
         <button class="modal-close" id="tl-modal-archived-close">✕</button>
       </div>
-      <div id="tl-archived-list" class="archived-themes-list"></div>
+      <div id="tl-archived-list" class="modal-items-list"></div>
     </div>
   </div>
 
@@ -356,9 +348,30 @@
     </div>
   </div>
 
+  <!-- Panneau dossiers (drawer) -->
+  <div id="folders-panel-overlay" class="folders-panel-overlay"></div>
+  <div id="folders-panel" class="folders-panel">
+    <div class="folders-panel-header">
+      <span class="folders-panel-title">📁 Dossiers</span>
+      <button class="modal-close folders-panel-close" id="folders-panel-close">✕</button>
+    </div>
+    <div id="folders-panel-tree" class="folders-panel-tree"></div>
+  </div>
+
+  <!-- stubs DOM pour compat JS (root-folders-list, folders-list, ctrl-row-subfolders) -->
+  <div id="root-folders-list" style="display:none"></div>
+  <div id="folders-list" style="display:none"></div>
+  <div id="ctrl-row-subfolders" style="display:none"></div>
+  <div id="folders-breadcrumb" style="display:none"></div>
+  <div id="ctrl-row-breadcrumb" style="display:none"></div>
+  <!-- boutons stubs pour compat JS -->
+  <button id="btn-new-root-folder" style="display:none"></button>
+  <button id="btn-new-folder-bingo" style="display:none"></button>
+
   <!-- Menu contextuel dossier (clic droit) -->
   <div id="ctx-menu-folder" class="ctx-menu hidden">
     <button class="ctx-close-btn" id="ctx-folder-cancel" title="Fermer">✕</button>
+    <button class="ctx-menu-item" id="ctx-folder-new-child">📁 Nouveau dossier enfant</button>
     <button class="ctx-menu-item" id="ctx-folder-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-folder-duplicate">❐ Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-folder-archive">📦 Archiver</button>
@@ -396,6 +409,10 @@
       </div>
       <div class="modal-body">
         <input type="text" id="new-folder-name-input" class="modal-text-input" placeholder="Nom du dossier..." maxlength="40" />
+        <div id="new-folder-parent-wrap" style="margin-top:12px">
+          <span class="modal-folder-select-label">Emplacement</span>
+          <select id="new-folder-parent-select" class="modal-folder-select"></select>
+        </div>
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-new-folder">Créer</button>
           <button class="btn-action btn-secondary" id="btn-cancel-new-folder">Annuler</button>
@@ -429,7 +446,7 @@
       <div class="modal-trash-actions-top">
         <button class="btn-action btn-danger-action" id="btn-trash-empty-all">🗑 Vider la corbeille</button>
       </div>
-      <div id="trash-list" class="archived-themes-list"></div>
+      <div id="trash-list" class="modal-items-list"></div>
     </div>
   </div>
 
@@ -638,6 +655,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=69"></script>
+  <script src="app.js?v=79"></script>
 </body>
 </html>
