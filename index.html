@@ -126,21 +126,18 @@
       <div class="bingo-control-panel" id="bingo-control-panel">
         <div class="bingo-control-panel-body" id="bingo-control-panel-body">
 
-          <!-- Ligne 1 : Thèmes -->
-          <div class="ctrl-row ctrl-row-themes">
-            <span class="ctrl-row-label">Thème</span>
-            <div id="themes-list" class="themes-list"></div>
-            <button class="btn-new-theme" id="btn-new-theme" title="Nouveau thème"><span class="btn-plus-green">+ Thème</span></button>
+          <!-- Ligne 1a : Fil d'Ariane dossiers -->
+          <div class="ctrl-row ctrl-row-breadcrumb">
+            <div id="folders-breadcrumb" class="folders-breadcrumb"></div>
           </div>
 
-          <!-- Ligne 1b : Sous-thèmes -->
-          <div class="ctrl-row ctrl-row-subthemes">
-            <span class="ctrl-row-label">Sous-thème</span>
-            <div id="subthemes-list" class="subthemes-list"></div>
-            <button class="btn-new-subtheme" id="btn-new-subtheme" title="Nouveau sous-thème"><span class="btn-plus-green">+ Sous-thème</span></button>
+          <!-- Ligne 1b : Contenu du dossier actif (dossiers + grilles) -->
+          <div class="ctrl-row ctrl-row-folders">
+            <div id="folders-list" class="folders-list"></div>
+            <button class="btn-new-folder-bingo" id="btn-new-folder-bingo" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
           </div>
 
-          <!-- Ligne 2 : Grilles -->
+          <!-- Ligne 2 : Grilles (dans le dossier actif) -->
           <div class="ctrl-row ctrl-row-grids">
             <span class="ctrl-row-label">Grille</span>
             <div id="grids-list" class="grids-list"></div>
@@ -359,13 +356,13 @@
     </div>
   </div>
 
-  <!-- Menu contextuel thème (clic droit) -->
-  <div id="ctx-menu-theme" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-theme-cancel" title="Fermer">✕</button>
-    <button class="ctx-menu-item" id="ctx-theme-rename">✎ Renommer</button>
-    <button class="ctx-menu-item" id="ctx-theme-duplicate">❐ Dupliquer</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-theme-archive">📦 Archiver</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-theme-delete">🗑 Supprimer</button>
+  <!-- Menu contextuel dossier (clic droit) -->
+  <div id="ctx-menu-folder" class="ctx-menu hidden">
+    <button class="ctx-close-btn" id="ctx-folder-cancel" title="Fermer">✕</button>
+    <button class="ctx-menu-item" id="ctx-folder-rename">✎ Renommer</button>
+    <button class="ctx-menu-item" id="ctx-folder-duplicate">❐ Dupliquer</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-folder-archive">📦 Archiver</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-folder-delete">🗑 Supprimer</button>
   </div>
 
   <!-- Menu contextuel grille (clic droit) -->
@@ -390,18 +387,18 @@
     <button class="ctx-menu-item ctx-danger" id="ctx-element-delete">🗑 Supprimer</button>
   </div>
 
-  <!-- Modal nouveau thème -->
-  <div id="modal-new-theme" class="modal-overlay hidden">
+  <!-- Modal nouveau dossier -->
+  <div id="modal-new-folder" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
-        <h3>Nouveau thème</h3>
-        <button class="modal-close" id="btn-close-new-theme-modal">✕</button>
+        <h3>Nouveau dossier</h3>
+        <button class="modal-close" id="btn-close-new-folder-modal">✕</button>
       </div>
       <div class="modal-body">
-        <input type="text" id="new-theme-name-input" class="modal-text-input" placeholder="Nom du thème..." maxlength="40" />
+        <input type="text" id="new-folder-name-input" class="modal-text-input" placeholder="Nom du dossier..." maxlength="40" />
         <div class="modal-actions">
-          <button class="btn-action" id="btn-confirm-new-theme">Créer</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-new-theme">Annuler</button>
+          <button class="btn-action" id="btn-confirm-new-folder">Créer</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-new-folder">Annuler</button>
         </div>
       </div>
     </div>
@@ -457,18 +454,18 @@
   <div id="modal-archived-themes" class="hidden" style="display:none!important"></div>
   <div id="modal-archived-grids" class="hidden" style="display:none!important"></div>
 
-  <!-- Modal renommer thème -->
-  <div id="modal-rename-theme" class="modal-overlay hidden">
+  <!-- Modal renommer dossier -->
+  <div id="modal-rename-folder" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
-        <h3>Renommer le thème</h3>
-        <button class="modal-close" id="btn-close-rename-theme-modal">✕</button>
+        <h3>Renommer le dossier</h3>
+        <button class="modal-close" id="btn-close-rename-folder-modal">✕</button>
       </div>
       <div class="modal-body">
-        <input type="text" id="rename-theme-input" class="modal-text-input modal-rename-input" placeholder="Nom du thème..." maxlength="40" />
+        <input type="text" id="rename-folder-input" class="modal-text-input modal-rename-input" placeholder="Nom du dossier..." maxlength="40" />
         <div class="modal-actions">
-          <button class="btn-action" id="btn-confirm-rename-theme">Renommer</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-rename-theme">Annuler</button>
+          <button class="btn-action" id="btn-confirm-rename-folder">Renommer</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-rename-folder">Annuler</button>
         </div>
       </div>
     </div>

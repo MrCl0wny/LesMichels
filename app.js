@@ -68,9 +68,8 @@ function setupAuth() {
       currentUser   = null;
       currentPseudo = null;
       _prefsReady            = false;
-      _localActiveThemeId    = null;
-      _localActiveSubthemeId = null;
-      _selectedGridsBySubtheme = {};
+      _localActiveFolderId   = null;
+      _selectedGridsByFolder = {};
       _selectedGridIds = [];
       _localFontScale  = 1;
       _localGridHeight = 80;
@@ -113,11 +112,16 @@ function loadUserPrefs() {
     const prefs = snap.val() || {};
     if (prefs.fontScale        != null) _localFontScale        = prefs.fontScale;
     if (prefs.gridHeight       != null) _localGridHeight       = prefs.gridHeight;
-    if (prefs.activeThemeId    != null) _localActiveThemeId    = prefs.activeThemeId;
-    if (prefs.activeSubthemeId != null) _localActiveSubthemeId = prefs.activeSubthemeId;
+    // Prefs dossiers (nouvelle structure)
+    if (prefs.activeFolderId   != null) _localActiveFolderId   = prefs.activeFolderId;
     if (prefs.selectedGrids    != null) {
-      try { _selectedGridsBySubtheme = typeof prefs.selectedGrids === 'object' ? prefs.selectedGrids : JSON.parse(prefs.selectedGrids); }
-      catch { _selectedGridsBySubtheme = {}; }
+      try { _selectedGridsByFolder = typeof prefs.selectedGrids === 'object' ? prefs.selectedGrids : JSON.parse(prefs.selectedGrids); }
+      catch { _selectedGridsByFolder = {}; }
+    }
+    // Migration prefs anciens formats vers nouvelle structure
+    if (!prefs.activeFolderId && prefs.activeThemeId) {
+      _localActiveFolderId = prefs.activeThemeId;
+      saveUserPrefs({ activeFolderId: _localActiveFolderId, activeThemeId: null, activeSubthemeId: null });
     }
     // Prefs tierlist
     if (prefs.tlShowLabels        != null) _tlLocalShowLabels       = !!prefs.tlShowLabels;
@@ -142,36 +146,35 @@ function loadUserPrefs() {
 }
 
 function _applyPrefsAndRender() {
-  // Valider que le thème actif existe toujours
-  if (_localActiveThemeId) {
-    const exists = state.themes.find(t => t.id === _localActiveThemeId && !t.archived);
-    if (!exists) {
-      const nonArchived = state.themes.filter(t => !t.archived);
-      _localActiveThemeId = nonArchived.length > 0 ? nonArchived[0].id : (state.themes[0]?.id || null);
+  // Valider que le dossier actif existe toujours
+  if (_localActiveFolderId) {
+    const exists = findFolderById(state.folders, _localActiveFolderId);
+    if (!exists || exists.archived) {
+      const nonArchived = [];
+      function collectNonArchived(folders) {
+        if (!folders) return;
+        for (let f of folders) {
+          if (!f.archived) nonArchived.push(f);
+          collectNonArchived(f.folders);
+        }
+      }
+      collectNonArchived(state.folders);
+      _localActiveFolderId = nonArchived.length > 0 ? nonArchived[0].id : (state.folders[0]?.id || null);
     }
   }
-  // Valider que le sous-thème actif existe toujours
-  const tNow = activeTheme();
-  if (tNow && _localActiveSubthemeId) {
-    const subExists = tNow.subthemes.find(s => s.id === _localActiveSubthemeId && !s.archived);
-    if (!subExists) {
-      const nonArchived = tNow.subthemes.filter(s => !s.archived);
-      _localActiveSubthemeId = nonArchived.length > 0 ? nonArchived[0].id : (tNow.subthemes[0]?.id || null);
-    }
-  }
-  // Charger les grilles sélectionnées pour le sous-thème actif
-  const sub = activeSubtheme();
-  if (sub) {
-    const hasSavedSelection = sub.id in _selectedGridsBySubtheme;
-    _selectedGridIds = loadLocalSelectedGridsForSubtheme(sub.id);
+  // Charger les grilles sélectionnées pour le dossier actif
+  const folder = activeFolder();
+  if (folder) {
+    const hasSavedSelection = folder.id in _selectedGridsByFolder;
+    _selectedGridIds = loadLocalSelectedGridsForFolder(folder.id);
     // Forcer la première grille uniquement s'il n'y a jamais eu de sélection sauvegardée
     if (_selectedGridIds.length === 0 && !hasSavedSelection) {
-      const firstGrid = sub.grids.find(g => !g.archived);
+      const firstGrid = folder.grids.find(g => !g.archived);
       if (firstGrid) _selectedGridIds = [firstGrid.id];
     }
   }
-  renderThemesList();
-  renderSubthemesList();
+  renderFolderBreadcrumb();
+  renderFoldersList();
   renderElements();
   renderGridsList();
   renderGrid();
@@ -188,10 +191,7 @@ function _applyPrefsAndRender() {
 let _localFontScale  = 1;
 let _localGridHeight = 80;
 
-function _saveLocalActiveThemeId(id)    { saveUserPrefs({ activeThemeId:    id || null }); }
-function _saveLocalActiveSubthemeId(id) { saveUserPrefs({ activeSubthemeId: id || null }); }
-function _loadLocalActiveThemeId()    { return _localActiveThemeId; }
-function _loadLocalActiveSubthemeId() { return _localActiveSubthemeId; }
+function _saveLocalActiveFolderId(id) { saveUserPrefs({ activeFolderId: id || null }); }
 
 function saveLocalFontScale(scale) {
   _localFontScale = Math.max(0.5, Math.min(3, scale));
@@ -211,52 +211,48 @@ function applyGridHeight() {
 }
 
 // IDs des grilles sélectionnées (affichées simultanément, max 3)
-// Stocké par sous-thème : { [subthemeId]: [gridId, ...] }
+// Stocké par dossier : { [folderId]: [gridId, ...] }
 let _selectedGridIds = [];
-let _selectedGridsBySubtheme = {};
+let _selectedGridsByFolder = {};
 
 const _EMPTY_SELECTION = '__empty__';
 
 function saveLocalSelectedGrids(ids) {
   _selectedGridIds = ids.slice(0, 3);
-  const sub = activeSubtheme();
-  if (sub) {
+  const folder = activeFolder();
+  if (folder) {
     // Firebase supprime les tableaux vides — on stocke un marqueur pour distinguer
     // "pas de sélection sauvegardée" de "sélection vide intentionnelle"
-    _selectedGridsBySubtheme[sub.id] = _selectedGridIds.length > 0 ? _selectedGridIds.slice() : [_EMPTY_SELECTION];
+    _selectedGridsByFolder[folder.id] = _selectedGridIds.length > 0 ? _selectedGridIds.slice() : [_EMPTY_SELECTION];
   }
-  saveUserPrefs({ selectedGrids: _selectedGridsBySubtheme });
+  saveUserPrefs({ selectedGrids: _selectedGridsByFolder });
 }
 
-function loadLocalSelectedGridsForSubtheme(subthemeId) {
-  const saved = _selectedGridsBySubtheme[subthemeId];
+function loadLocalSelectedGridsForFolder(folderId) {
+  const saved = _selectedGridsByFolder[folderId];
   if (!saved) return [];
   if (Array.isArray(saved) && saved.length === 1 && saved[0] === _EMPTY_SELECTION) return [];
   return saved.slice();
 }
 
-function defaultSubtheme(name, withGrid = false) {
-  const sub = { id: uid(), name, grids: [], activeGridId: null, archived: false, archivedElementIds: [] };
-  if (withGrid) {
-    const g = defaultGrid('Grille');
-    sub.grids = [g];
-    sub.activeGridId = g.id;
-  }
-  return sub;
-}
-
-function defaultTheme(name) {
-  const subtheme = defaultSubtheme('Principal', true);
-  return {
+function defaultFolder(name, withGrid = false) {
+  const folder = {
     id: uid(),
     name,
-    elements: [],
-    subthemes: [subtheme],
-    activeSubthemeId: subtheme.id,
-    grids: [],        // gardé pour compatibilité migration
-    activeGridId: null,
+    archived: false,
     locked: false,
+    elements: [],
+    archivedElementIds: [],
+    folders: [],      // sous-dossiers
+    grids: [],        // grilles directes
+    children: []      // références ordonnées
   };
+  if (withGrid) {
+    const g = defaultGrid('Grille');
+    folder.grids = [g];
+    folder.children = [{ type: 'grid', id: g.id }];
+  }
+  return folder;
 }
 
 function defaultGrid(name) {
@@ -266,17 +262,17 @@ function defaultGrid(name) {
 function migrateState(raw) {
   if (!raw) return null;
 
+  // Si on a déjà des dossiers, c'est du nouveau format — rien à faire
+  if (raw.folders) return raw;
+
   // Ancien format v1 : { elements, grids, activeGridId }
   if (raw.elements && raw.grids && !raw.themes) {
-    const theme = defaultTheme('Soirée 1');
-    theme.elements = raw.elements || [];
-    // Migrer les grilles dans le sous-thème par défaut
-    const sub = theme.subthemes[0];
-    sub.grids = raw.grids || [];
-    sub.activeGridId = raw.activeGridId || null;
-    theme.grids = [];
-    theme.activeGridId = null;
-    return { themes: [theme] };
+    const folder = defaultFolder('Soirée 1');
+    folder.elements = raw.elements || [];
+    const grids = raw.grids || [];
+    folder.grids = grids;
+    folder.children = grids.map(g => ({ type: 'grid', id: g.id }));
+    return { folders: [folder], trash: [] };
   }
 
   if (!raw.themes || raw.themes.length === 0) return null;
@@ -363,6 +359,51 @@ function migrateState(raw) {
   // Initialiser la corbeille si absente
   if (!raw.trash) raw.trash = [];
 
+  // ─────────────────────────────────────────────────────────────
+  // MIGRATION v3→v4 : thèmes/sous-thèmes → dossiers imbriqués
+  // ─────────────────────────────────────────────────────────────
+  if (raw.themes && !raw.folders) {
+    const newFolders = [];
+    raw.themes.forEach(theme => {
+      // Créer un dossier racine par thème
+      const rootFolder = {
+        id: theme.id,
+        name: theme.name,
+        archived: theme.archived || false,
+        locked: theme.locked || false,
+        elements: theme.elements || [],
+        archivedElementIds: [],
+        folders: [],      // sous-dossiers
+        grids: [],        // grilles directes (vides au niveau racine)
+        children: []      // références ordonnées des enfants
+      };
+
+      // Convertir les sous-thèmes en sous-dossiers
+      if (theme.subthemes && theme.subthemes.length > 0) {
+        rootFolder.folders = theme.subthemes.map(sub => {
+          const subfolder = {
+            id: sub.id,
+            name: sub.name,
+            archived: sub.archived || false,
+            locked: false,
+            elements: [],   // les éléments sont au niveau du dossier racine
+            archivedElementIds: sub.archivedElementIds || [],
+            folders: [],    // aucun sous-sous-dossier
+            grids: sub.grids || [],
+            children: (sub.grids || []).map(g => ({ type: 'grid', id: g.id }))
+          };
+          return subfolder;
+        });
+        rootFolder.children = rootFolder.folders.map(f => ({ type: 'folder', id: f.id }));
+      }
+
+      newFolders.push(rootFolder);
+    });
+
+    raw.folders = newFolders;
+    delete raw.themes;
+  }
+
   return raw;
 }
 
@@ -370,31 +411,61 @@ let state = initState();
 let _bingoRemoteUpdate = false;
 let _firebaseReady = false;
 let _prefsReady    = false;
-// activeThemeId et activeSubthemeId sont chargés depuis Firebase /users/{uid}/prefs
-let _localActiveThemeId    = null;
-let _localActiveSubthemeId = null;
+// activeFolderId est chargé depuis Firebase /users/{uid}/prefs
+let _localActiveFolderId   = null;
 
 function initState() {
-  return { themes: [], trash: [] };
+  return { folders: [], trash: [] };
 }
 
-function activeTheme() {
-  if (!state.themes || state.themes.length === 0) return null;
-  return state.themes.find(t => t.id === _localActiveThemeId) || null;
+// ──────────────────────────────────────────────
+// Accesseurs et utilitaires dossiers
+// ──────────────────────────────────────────────
+
+function findFolderById(folders, id) {
+  if (!folders) return null;
+  for (let folder of folders) {
+    if (folder.id === id) return folder;
+    const found = findFolderById(folder.folders, id);
+    if (found) return found;
+  }
+  return null;
 }
 
-function activeSubtheme() {
-  const t = activeTheme();
-  if (!t || !t.subthemes || t.subthemes.length === 0) return null;
-  return t.subthemes.find(s => s.id === _localActiveSubthemeId) || null;
+function findParentFolder(folders, id) {
+  if (!folders) return null;
+  for (let folder of folders) {
+    // Vérifier si id est un sous-dossier
+    if (folder.folders && folder.folders.find(f => f.id === id)) return folder;
+    // Vérifier si id est une grille directe
+    if (folder.grids && folder.grids.find(g => g.id === id)) return folder;
+    // Chercher récursivement
+    const found = findParentFolder(folder.folders, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function getFolderPath(folders, id) {
+  const path = [];
+  let current = findFolderById(folders, id);
+  while (current) {
+    path.unshift(current);
+    current = findParentFolder(folders, current.id);
+  }
+  return path;
+}
+
+function activeFolder() {
+  if (!state.folders) return null;
+  return findFolderById(state.folders, _localActiveFolderId) || null;
 }
 
 function activeGrid() {
-  const s = activeSubtheme();
-  if (!s) return null;
-  if (s.activeGridId) return s.grids.find(g => g.id === s.activeGridId) || null;
+  const f = activeFolder();
+  if (!f) return null;
   return _selectedGridIds.length > 0
-    ? s.grids.find(g => g.id === _selectedGridIds[0]) || null
+    ? f.grids.find(g => g.id === _selectedGridIds[0]) || null
     : null;
 }
 
