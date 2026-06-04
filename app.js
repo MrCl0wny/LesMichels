@@ -1315,12 +1315,17 @@ function renderFoldersPanelTree() {
         }
         closeFoldersPanel();
       });
-      gCtx.addEventListener('click', e => {
+      const openGridMenu = (e, anchor) => {
         e.stopPropagation();
-        closeFoldersPanel();
         switchFolder(f.id);
-        setTimeout(() => openCtxMenuGrid(g.id, e, gRow), 50);
-      });
+        const { addItem } = _tlMakeCtxMenu(anchor, e);
+        addItem('✎ Renommer',   false, () => openRenameGridModal(g.id));
+        addItem('❐ Dupliquer',  false, () => duplicateGrid(g.id));
+        addItem('📦 Archiver',  true,  () => archiveGrid(g.id));
+        addItem('🗑 Supprimer', true,  () => deleteGrid(g.id));
+      };
+      gCtx.addEventListener('click', e => openGridMenu(e, gRow));
+      gRow.addEventListener('contextmenu', e => { e.preventDefault(); openGridMenu(e, gRow); });
 
       childrenEl.appendChild(gRow);
     });
@@ -1345,11 +1350,17 @@ function renderFoldersPanelTree() {
       closeFoldersPanel();
     });
 
-    ctxBtn.addEventListener('click', e => {
+    const openFolderMenu = (e, anchor) => {
       e.stopPropagation();
-      closeFoldersPanel();
-      setTimeout(() => openCtxMenuFolder(f.id, e, row), 50);
-    });
+      const { addItem } = _tlMakeCtxMenu(anchor, e);
+      addItem('📁 Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
+      addItem('✎ Renommer',             false, () => openRenameFolderModal(f.id));
+      addItem('❐ Dupliquer',            false, () => duplicateFolder(f.id));
+      addItem('📦 Archiver',            true,  () => archiveFolder(f.id));
+      addItem('🗑 Supprimer',           true,  () => deleteFolder(f.id));
+    };
+    ctxBtn.addEventListener('click', e => openFolderMenu(e, row));
+    row.addEventListener('contextmenu', e => { e.preventDefault(); openFolderMenu(e, row); });
 
     wrapper.appendChild(row);
     wrapper.appendChild(childrenEl);
