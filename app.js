@@ -956,7 +956,6 @@ const archivedGridsList     = document.getElementById('archived-grids-list');
 const chkLockGenerate          = document.getElementById('chk-lock-generate');
 const panelElementsBody        = document.getElementById('panel-elements-body');
 const bingoLayout              = document.getElementById('bingo-layout');
-const btnCollapseControlPanel  = document.getElementById('btn-collapse-control-panel');
 const bingoControlPanel        = document.getElementById('bingo-control-panel');
 const bingoControlPanelBody    = document.getElementById('bingo-control-panel-body');
 // Modales renommage — migré vers modal-rename-folder
@@ -1213,6 +1212,7 @@ function toggleGridSelection(gridId) {
   saveState();
   renderGridsList();
   renderGrid();
+  renderFoldersPanelTree();
 }
 
 function renderFoldersPanelTree() {
@@ -1274,7 +1274,7 @@ function renderFoldersPanelTree() {
     // Grilles du dossier
     grids.forEach(g => {
       const gRow = document.createElement('div');
-      const gActive = _selectedGridIds.includes(g.id);
+      const gActive = f.id === _localActiveFolderId && _selectedGridIds.includes(g.id);
       gRow.className = 'fp-grid-row' + (gActive ? ' active' : '');
       gRow.style.paddingLeft = '14px';
 
@@ -1313,11 +1313,9 @@ function renderFoldersPanelTree() {
         } else {
           toggleGridSelection(g.id);
         }
-        closeFoldersPanel();
       });
       const openGridMenu = (e, anchor) => {
         e.stopPropagation();
-        switchFolder(f.id);
         const { addItem } = _tlMakeCtxMenu(anchor, e);
         addItem('✎ Renommer',   false, () => openRenameGridModal(g.id));
         addItem('❐ Dupliquer',  false, () => duplicateGrid(g.id));
@@ -1325,7 +1323,7 @@ function renderFoldersPanelTree() {
         addItem('🗑 Supprimer', true,  () => deleteGrid(g.id));
       };
       gCtx.addEventListener('click', e => openGridMenu(e, gRow));
-      gRow.addEventListener('contextmenu', e => { e.preventDefault(); openGridMenu(e, gRow); });
+      gRow.addEventListener('contextmenu', e => { e.preventDefault(); openGridMenu(e, null); });
 
       childrenEl.appendChild(gRow);
     });
@@ -1343,11 +1341,9 @@ function renderFoldersPanelTree() {
     };
     arrow.addEventListener('click', toggleCollapse);
 
-    // Clic sur le dossier → sélectionner, fermer drawer
     row.addEventListener('click', e => {
       if (e.target === arrow || e.target === ctxBtn) return;
       switchFolder(f.id);
-      closeFoldersPanel();
     });
 
     const openFolderMenu = (e, anchor) => {
@@ -1360,7 +1356,7 @@ function renderFoldersPanelTree() {
       addItem('🗑 Supprimer',           true,  () => deleteFolder(f.id));
     };
     ctxBtn.addEventListener('click', e => openFolderMenu(e, row));
-    row.addEventListener('contextmenu', e => { e.preventDefault(); openFolderMenu(e, row); });
+    row.addEventListener('contextmenu', e => { e.preventDefault(); openFolderMenu(e, null); });
 
     wrapper.appendChild(row);
     wrapper.appendChild(childrenEl);
@@ -2428,6 +2424,8 @@ function renderGrid() {
   const g = activeGrid();
 
   gridWrapper.innerHTML = '';
+  gridWrapper.style.justifyContent = '';
+  gridWrapper.style.alignItems = '';
 
   if (!t) {
     bingoLayout.classList.add('no-theme-layout');
@@ -2465,10 +2463,17 @@ function renderGrid() {
 
   const hasAnyGrid = s.grids.some(x => !x.archived);
   if (!hasAnyGrid || _selectedGridIds.length === 0) {
+    gridWrapper.style.justifyContent = 'center';
+    gridWrapper.style.alignItems = 'center';
+    const btnFolder = document.createElement('button');
+    btnFolder.className = 'btn-empty-state btn-empty-state-blue';
+    btnFolder.textContent = '+ Nouveau dossier';
+    btnFolder.addEventListener('click', () => openNewFolderModal(_localActiveFolderId || null));
     const btn = document.createElement('button');
     btn.className = 'btn-empty-state';
     btn.textContent = '+ Nouvelle grille';
     btn.addEventListener('click', openNewGridModal);
+    gridWrapper.appendChild(btnFolder);
     gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
     bingoMsg.classList.add('hidden');
@@ -2799,11 +2804,6 @@ document.getElementById('btn-cases-panel').addEventListener('click', openCasesPa
 document.getElementById('cases-panel-close').addEventListener('click', closeCasesPanel);
 document.getElementById('cases-panel-overlay').addEventListener('click', closeCasesPanel);
 
-btnCollapseControlPanel.addEventListener('click', () => {
-  const collapsed = bingoControlPanel.classList.toggle('panel-ctrl-collapsed');
-  btnCollapseControlPanel.textContent = collapsed ? '▼' : '▲';
-  btnCollapseControlPanel.title = collapsed ? 'Déployer le panneau de contrôle' : 'Rétracter le panneau de contrôle';
-});
 
 // ──────────────────────────────────────────────
 // Menu contextuel — Dossiers (remplace ctx-menu-theme)

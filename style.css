@@ -1373,6 +1373,12 @@ textarea.element-edit-input {
   background: #16a34a;
   transform: scale(1.04);
 }
+.btn-empty-state-blue {
+  background: #3b82f6;
+}
+.btn-empty-state-blue:hover {
+  background: #2563eb;
+}
 
 .bingo-layout.no-theme-layout {
   grid-template-columns: minmax(0, 1fr);
