@@ -713,6 +713,61 @@ function moveFolder(id, targetParentId) {
   renderGrid();
 }
 
+function reorderFolder(srcId, refId, position) {
+  const folder = findFolderById(state.folders, srcId);
+  if (!folder) return;
+  const srcParent = findParentFolder(state.folders, srcId);
+  const refParent = findParentFolder(state.folders, refId);
+  // Les deux doivent avoir le même parent pour réordonner
+  const srcList  = srcParent ? (srcParent.folders || []) : state.folders;
+  const refList  = refParent ? (refParent.folders || []) : state.folders;
+  if (srcList !== refList) {
+    // Parents différents : on réordonne quand même en retirant du src et insérant au bon endroit dans refList
+    if (srcParent) {
+      srcParent.folders = (srcParent.folders || []).filter(f => f.id !== srcId);
+      srcParent.children = (srcParent.children || []).filter(c => c.id !== srcId);
+    } else {
+      state.folders = state.folders.filter(f => f.id !== srcId);
+    }
+    const targetList = refParent ? (refParent.folders || (refParent.folders = [])) : state.folders;
+    const refIdx = targetList.findIndex(f => f.id === refId);
+    const insertAt = position === 'before' ? refIdx : refIdx + 1;
+    targetList.splice(insertAt < 0 ? targetList.length : insertAt, 0, folder);
+    if (refParent) {
+      const cList = refParent.children || (refParent.children = []);
+      const cRefIdx = cList.findIndex(c => c.id === refId);
+      const cInsert = position === 'before' ? cRefIdx : cRefIdx + 1;
+      cList.splice(cInsert < 0 ? cList.length : cInsert, 0, { type: 'folder', id: srcId });
+    }
+  } else {
+    const list = srcList;
+    const fromIdx = list.findIndex(f => f.id === srcId);
+    let toIdx = list.findIndex(f => f.id === refId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    list.splice(fromIdx, 1);
+    toIdx = list.findIndex(f => f.id === refId);
+    const insertAt = position === 'before' ? toIdx : toIdx + 1;
+    list.splice(insertAt, 0, folder);
+    // Sync children si présent
+    const parentOfList = srcParent || refParent;
+    if (parentOfList && parentOfList.children) {
+      const cList = parentOfList.children;
+      const ci = cList.findIndex(c => c.id === srcId);
+      let ri = cList.findIndex(c => c.id === refId);
+      if (ci >= 0 && ri >= 0) {
+        const [item] = cList.splice(ci, 1);
+        ri = cList.findIndex(c => c.id === refId);
+        cList.splice(position === 'before' ? ri : ri + 1, 0, item);
+      }
+    }
+  }
+  saveState();
+  renderAllFolders();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
 function importElements(sourceId, targetId) {
   const src = findFolderById(state.folders, sourceId);
   const dst = findFolderById(state.folders, targetId);
@@ -1055,8 +1110,8 @@ function renderElements() {
   }
   const archivedIds = s.archivedElementIds || [];
   const sElems = s.elements || [];
-  const active   = sElems.filter(e => !archivedIds.includes(e.id));
-  const archived = sElems.filter(e => archivedIds.includes(e.id));
+  const active   = sElems.filter(e => !archivedIds.includes(e.id)).sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
+  const archived = sElems.filter(e => archivedIds.includes(e.id)).sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
 
   elementCount.textContent = active.length;
 
@@ -1383,27 +1438,44 @@ function renderFoldersPanelTree() {
     });
     row.addEventListener('dragend', () => {
       row.classList.remove('fp-folder-dragging');
-      document.querySelectorAll('.fp-folder-drag-over').forEach(el => el.classList.remove('fp-folder-drag-over'));
+      document.querySelectorAll('.fp-folder-drag-over, .fp-folder-drop-before, .fp-folder-drop-after, .fp-folder-drop-inside').forEach(el => {
+        el.classList.remove('fp-folder-drag-over', 'fp-folder-drop-before', 'fp-folder-drop-after', 'fp-folder-drop-inside');
+      });
     });
     row.addEventListener('dragover', e => {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
-      document.querySelectorAll('.fp-folder-drag-over').forEach(el => el.classList.remove('fp-folder-drag-over'));
-      row.classList.add('fp-folder-drag-over');
+      document.querySelectorAll('.fp-folder-drop-before, .fp-folder-drop-after, .fp-folder-drop-inside').forEach(el => {
+        el.classList.remove('fp-folder-drop-before', 'fp-folder-drop-after', 'fp-folder-drop-inside');
+      });
+      const rect = row.getBoundingClientRect();
+      const ratio = (e.clientY - rect.top) / rect.height;
+      if (ratio < 0.25) {
+        row.classList.add('fp-folder-drop-before');
+      } else if (ratio > 0.75) {
+        row.classList.add('fp-folder-drop-after');
+      } else {
+        row.classList.add('fp-folder-drop-inside');
+      }
     });
     row.addEventListener('dragleave', e => {
-      if (!row.contains(e.relatedTarget)) row.classList.remove('fp-folder-drag-over');
+      if (!row.contains(e.relatedTarget)) {
+        row.classList.remove('fp-folder-drop-before', 'fp-folder-drop-after', 'fp-folder-drop-inside');
+      }
     });
     row.addEventListener('drop', e => {
       e.preventDefault();
       e.stopPropagation();
-      row.classList.remove('fp-folder-drag-over');
+      const isBefore = row.classList.contains('fp-folder-drop-before');
+      const isAfter  = row.classList.contains('fp-folder-drop-after');
+      row.classList.remove('fp-folder-drop-before', 'fp-folder-drop-after', 'fp-folder-drop-inside');
       const srcId = e.dataTransfer.getData('text/plain');
       if (!srcId || srcId === f.id) return;
-      // Drop sur un dossier = déplacer à l'intérieur (comme sous-dossier)
-      // Si même parent = réordonner; sinon = déplacer
-      // Drop sur un dossier = toujours déplacer à l'intérieur
-      moveFolder(srcId, f.id);
+      if (isBefore || isAfter) {
+        reorderFolder(srcId, f.id, isBefore ? 'before' : 'after');
+      } else {
+        moveFolder(srcId, f.id);
+      }
     });
 
     const childrenEl = document.createElement('div');
@@ -5667,17 +5739,24 @@ function tlCommitTitleEdit() {
   }
 }
 
-// ── Sidebar collapse ─────────────────────────────────────────────────────────
-const tlLayout          = document.querySelector('.tl-layout');
-const tlSidebarCollapse = document.getElementById('tl-sidebar-collapse');
-const tlSidebarExpand   = document.getElementById('tl-sidebar-expand');
+// ── Sidebar drawer tierlist ───────────────────────────────────────────────────
+function openTlSidebar() {
+  const panel = document.getElementById('tl-sidebar');
+  _initPanelPosition(panel, 'left');
+  _makePanelDraggable(panel);
+  panel.classList.add('open');
+}
+function closeTlSidebar() {
+  document.getElementById('tl-sidebar').classList.remove('open');
+}
 
-tlSidebarCollapse.addEventListener('click', () => {
-  tlLayout.classList.add('sidebar-collapsed');
+document.getElementById('tl-btn-folders').addEventListener('click', () => {
+  const panel = document.getElementById('tl-sidebar');
+  if (panel.classList.contains('open')) closeTlSidebar();
+  else openTlSidebar();
 });
-tlSidebarExpand.addEventListener('click', () => {
-  tlLayout.classList.remove('sidebar-collapsed');
-});
+document.getElementById('tl-empty-btn-folders').addEventListener('click', openTlSidebar);
+document.getElementById('tl-sidebar-close').addEventListener('click', closeTlSidebar);
 
 // Fermer le menu contextuel TL actif sur Escape
 document.addEventListener('keydown', e => {

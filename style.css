@@ -236,7 +236,7 @@ body {
 .folders-panel {
   position: fixed;
   z-index: 201;
-  width: 300px;
+  width: 380px;
   max-width: 90vw;
   max-height: 80vh;
   background: var(--surface);
@@ -269,10 +269,14 @@ body {
 .folders-panel-header:active { cursor: grabbing; }
 .folders-panel-title {
   flex: 1;
+  min-width: 0;
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--text);
   letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cases-panel-folder-name {
   font-weight: 400;
@@ -293,6 +297,13 @@ body {
   transition: var(--transition);
 }
 .folders-panel-new-root:hover { border-color: var(--accent); color: var(--accent); }
+.folders-panel-header .btn-new-folder-in-grids,
+.folders-panel-header .btn-new-grid {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  height: auto;
+  background: none;
+}
 .folders-panel-close {
   flex-shrink: 0;
 }
@@ -377,7 +388,9 @@ body {
 
 /* États drag des lignes dossier */
 .fp-folder-row.fp-folder-dragging { opacity: 0.4; }
-.fp-folder-row.fp-folder-drag-over { border-color: var(--accent); background: var(--accent-glow); }
+.fp-folder-row.fp-folder-drop-inside { border-color: var(--accent); background: var(--accent-glow); }
+.fp-folder-row.fp-folder-drop-before { box-shadow: 0 -2px 0 var(--accent); }
+.fp-folder-row.fp-folder-drop-after  { box-shadow: 0 2px 0 var(--accent); }
 
 /* Modal déplacer dossier — radios */
 .move-folder-elements-choice { margin-bottom: 4px; }
@@ -567,6 +580,8 @@ body {
   font-size: 0.8rem;
   cursor: pointer;
   transition: var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .btn-new-folder-in-grids:hover,
 .btn-new-folder-bingo:hover { border-color: var(--accent); color: var(--accent); }
@@ -1792,92 +1807,20 @@ textarea.element-edit-input {
 .tl-layout {
   display: block;
   position: relative;
-  transition: padding-left 0.22s ease;
-  padding-left: 256px; /* 240px sidebar + 16px gap */
-}
-.tl-layout.sidebar-collapsed {
-  padding-left: 40px; /* 32px sidebar + 8px gap */
 }
 
-@media (max-width: 768px) {
-  .tl-layout { padding-left: 0; }
-  .tl-sidebar { position: relative; top: auto; left: auto; width: 100%; height: auto; max-height: 50vh; }
-}
-
-/* ── Sidebar ── */
+/* ── Sidebar tierlist (drawer, hérite de .folders-panel) ── */
 .tl-sidebar {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
+  width: 260px;
+  max-height: 82vh;
   gap: 10px;
-  position: fixed;
-  top: 70px;
-  left: 12px; /* padding du main */
-  width: 240px;
-  height: calc(100vh - 70px - 12px);
-  max-height: calc(100vh - 70px - 12px);
-  overflow: hidden;
-  transition: padding 0.22s, border-radius 0.22s, width 0.22s;
-  min-width: 0;
-  z-index: 10;
 }
-
-/* Quand sidebar est rétractée */
-.tl-layout.sidebar-collapsed .tl-sidebar {
-  width: 32px;
-  padding: 6px 4px;
-  border-radius: var(--radius);
+.tl-sidebar .folders-panel-header {
+  gap: 6px;
 }
-/* Masquer tout sauf le bouton expand quand rétractée */
-.tl-layout.sidebar-collapsed .tl-sidebar-header,
-.tl-layout.sidebar-collapsed .tl-list,
-.tl-layout.sidebar-collapsed .tl-btn-archived-toggle,
-.tl-layout.sidebar-collapsed .tl-sidebar-collapse-btn,
-.tl-layout.sidebar-collapsed .tl-folder {
-  display: none;
-}
-.tl-layout.sidebar-collapsed .tl-sidebar-expand-btn {
-  display: flex !important;
-}
-
-/* Boutons toggle sidebar */
-.tl-sidebar-toggle-btn {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-faint);
-  font-size: 0.65rem;
-  padding: 4px 7px;
-  cursor: pointer;
-  transition: var(--transition);
+.tl-sidebar .tl-btn-new-folder,
+.tl-sidebar .tl-btn-new {
   flex-shrink: 0;
-  align-self: flex-end;
-}
-.tl-sidebar-toggle-btn:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--accent-glow); }
-.tl-sidebar-collapse-btn { margin-top: auto; }
-.tl-sidebar-expand-btn {
-  align-self: center;
-  padding: 8px 6px;
-  font-size: 0.7rem;
-  margin: auto;
-}
-.tl-sidebar-expand-btn.hidden { display: none; }
-
-.tl-sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.tl-sidebar-title {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
 }
 
 .tl-btn-new {
@@ -2005,6 +1948,8 @@ textarea.element-edit-input {
 }
 .tl-empty-btn:hover { filter: brightness(1.1); transform: translateY(-2px); }
 .tl-empty-btn:active { filter: brightness(0.95); transform: translateY(0); }
+.tl-empty-btn--folders  { background: var(--surface-3); color: var(--text); border: 1px solid var(--border); }
+.tl-empty-btn--folders:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); filter: none; transform: none; }
 .tl-empty-btn--folder  { background: #2563eb; }
 .tl-empty-btn--tierlist { background: #16a34a; }
 

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=72" />
+  <link rel="stylesheet" href="style.css?v=78" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -45,25 +45,23 @@
 
       <div class="tl-layout">
 
-        <!-- ── Panneau gauche : liste des tierlists ── -->
-        <aside class="tl-sidebar" id="tl-sidebar">
-          <div class="tl-sidebar-header">
-            <div class="tl-sidebar-header-btns">
-              <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
-              <button id="tl-btn-new" class="tl-btn-new" title="Créer une nouvelle tier list">+ Tier list</button>
-            </div>
+        <!-- ── Drawer dossiers tierlist ── -->
+        <div class="folders-panel tl-sidebar" id="tl-sidebar">
+          <div class="folders-panel-header">
+            <span class="folders-panel-title">📁 Dossiers</span>
+            <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
+            <button id="tl-btn-new" class="tl-btn-new" title="Créer une nouvelle tier list">+ Tier list</button>
+            <button class="modal-close tl-sidebar-close" id="tl-sidebar-close">✕</button>
           </div>
-          <div id="tl-list" class="tl-list"></div>
+          <div id="tl-list" class="tl-list folders-panel-tree"></div>
           <button id="tl-btn-show-archived" class="tl-btn-archived-toggle" title="Voir les tier lists et dossiers archivés">📦 Archives</button>
-          <!-- Bouton rétracter/ouvrir -->
-          <button id="tl-sidebar-collapse" class="tl-sidebar-toggle-btn tl-sidebar-collapse-btn" title="Réduire">◀</button>
-          <button id="tl-sidebar-expand" class="tl-sidebar-toggle-btn tl-sidebar-expand-btn hidden" title="Ouvrir">▶</button>
-        </aside>
+        </div>
 
         <!-- ── Zone principale ── -->
         <div class="tl-main" id="tl-main">
           <div id="tl-empty-state" class="tl-empty-state">
             <div class="tl-empty-actions">
+              <button id="tl-empty-btn-folders" class="tl-empty-btn tl-empty-btn--folders">📁 Dossiers</button>
               <button id="tl-empty-btn-folder" class="tl-empty-btn tl-empty-btn--folder">+ Nouveau dossier</button>
               <button id="tl-empty-btn-new" class="tl-empty-btn tl-empty-btn--tierlist">+ Nouvelle tier list</button>
             </div>
@@ -78,6 +76,7 @@
                 <input type="text" id="tl-title-input" class="tl-title-input hidden" maxlength="60" />
               </div>
               <div class="tl-editor-actions">
+                <button class="tl-toolbar-btn tl-btn-folders" id="tl-btn-folders" title="Ouvrir le panneau dossiers">📁 Dossiers</button>
                 <label class="tl-toggle-label" title="Afficher ou masquer les noms sous chaque image">
                   <input type="checkbox" id="tl-show-labels-toggle" />
                   <span>Noms</span>
@@ -130,8 +129,6 @@
           <div class="ctrl-row ctrl-row-grids">
             <div id="grids-breadcrumb" class="grids-breadcrumb"></div>
             <div id="grids-list" class="grids-list"></div>
-            <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
-            <button class="btn-new-grid" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
           </div>
 
           <!-- Ligne 3 : Toolbar -->
@@ -328,6 +325,8 @@
   <div id="folders-panel" class="folders-panel">
     <div class="folders-panel-header">
       <span class="folders-panel-title">📁 Dossiers</span>
+      <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
+      <button class="btn-new-grid" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
       <button class="modal-close folders-panel-close" id="folders-panel-close">✕</button>
     </div>
     <div id="folders-panel-tree" class="folders-panel-tree"></div>
@@ -724,6 +723,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=108"></script>
+  <script src="app.js?v=112"></script>
 </body>
 </html>
