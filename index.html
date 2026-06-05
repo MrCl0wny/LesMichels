@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=71" />
+  <link rel="stylesheet" href="style.css?v=72" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -345,6 +345,7 @@
       <div class="add-element-form">
         <input type="text" id="new-element-input" placeholder="Ajouter une case..." maxlength="80" />
         <button id="btn-add-element" class="btn-icon" title="Ajouter une case">+</button>
+        <button id="btn-import-elements-panel" class="btn-icon" title="Importer des cases d'un autre dossier">📥</button>
       </div>
       <div class="elements-tabs">
         <button class="tab-btn active" data-tab="active" title="Clic gauche : afficher les cases actives">Actives</button>
@@ -723,6 +724,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=103"></script>
+  <script src="app.js?v=108"></script>
 </body>
 </html>

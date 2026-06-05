@@ -334,44 +334,44 @@ body {
 .fp-folder-row.active .fp-folder-name { color: #93c5fd; }
 .fp-folder-row.ancestor .fp-folder-name { color: #60a5fa; }
 .fp-folder-arrow {
-  font-size: 0.6rem;
-  color: var(--text-faint);
+  font-size: 0.75rem;
+  color: var(--text-dim);
   cursor: pointer;
   transition: transform 0.15s;
   flex-shrink: 0;
-  width: 12px;
+  width: 14px;
   text-align: center;
   user-select: none;
 }
 .fp-folder-arrow.collapsed { transform: rotate(-90deg); }
 .fp-folder-ctx-btn {
-  font-size: 0.7rem;
-  color: var(--text-faint);
+  font-size: 0.85rem;
+  color: var(--text-dim);
   background: none;
   border: none;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 2px 5px;
   border-radius: 4px;
-  opacity: 0;
+  opacity: 0.6;
   transition: opacity var(--transition), color var(--transition);
   flex-shrink: 0;
 }
 .fp-folder-row:hover .fp-folder-ctx-btn { opacity: 1; }
-.fp-folder-ctx-btn:hover { color: var(--text); background: var(--surface-3); }
+.fp-folder-ctx-btn:hover { color: var(--text); background: var(--surface-3); opacity: 1; }
 
 /* Poignée drag dossier */
 .fp-folder-drag-handle {
   font-size: 1rem;
-  color: var(--text-faint);
+  color: var(--text-dim);
   cursor: grab;
-  opacity: 0.25;
+  opacity: 0.6;
   transition: opacity var(--transition), color var(--transition);
   flex-shrink: 0;
   padding: 0 4px;
   user-select: none;
   letter-spacing: 0.05em;
 }
-.fp-folder-row:hover .fp-folder-drag-handle { opacity: 0.75; color: var(--text-dim); }
+.fp-folder-row:hover .fp-folder-drag-handle { opacity: 1; color: var(--text); }
 .fp-folder-drag-handle:hover { opacity: 1 !important; color: var(--accent); }
 .fp-folder-drag-handle:active { cursor: grabbing; }
 
@@ -706,6 +706,8 @@ body {
   line-height: 1;
 }
 .btn-icon:hover { background: #2db85a; }
+#btn-import-elements-panel { background: #4b5563; color: #e5e7eb; font-size: 1rem; }
+#btn-import-elements-panel:hover { background: #6b7280; }
 
 /* ── Tabs ── */
 .elements-tabs {

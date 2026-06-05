@@ -261,8 +261,20 @@ function defaultGrid(name) {
 function migrateState(raw) {
   if (!raw) return null;
 
-  // Si on a déjà des dossiers, c'est du nouveau format — rien à faire
-  if (raw.folders) return raw;
+  // Si on a déjà des dossiers, c'est du nouveau format
+  if (raw.folders) {
+    // Migration éléments : propager les éléments de la racine vers les enfants qui n'en ont pas
+    function _propagateElements(folders, parentElements) {
+      (folders || []).forEach(f => {
+        if ((!f.elements || f.elements.length === 0) && parentElements && parentElements.length > 0) {
+          f.elements = JSON.parse(JSON.stringify(parentElements));
+        }
+        _propagateElements(f.folders, f.elements);
+      });
+    }
+    _propagateElements(raw.folders, null);
+    return raw;
+  }
 
   // Ancien format v1 : { elements, grids, activeGridId }
   if (raw.elements && raw.grids && !raw.themes) {
@@ -385,7 +397,7 @@ function migrateState(raw) {
             name: sub.name,
             archived: sub.archived || false,
             locked: false,
-            elements: [],   // les éléments sont au niveau du dossier racine
+            elements: JSON.parse(JSON.stringify(theme.elements || [])),
             archivedElementIds: sub.archivedElementIds || [],
             folders: [],    // aucun sous-sous-dossier
             grids: sub.grids || [],
@@ -705,23 +717,15 @@ function importElements(sourceId, targetId) {
   const src = findFolderById(state.folders, sourceId);
   const dst = findFolderById(state.folders, targetId);
   if (!src || !dst) return;
-  // Trouver la racine de chaque dossier pour accéder aux éléments
-  function getRootElements(folderId) {
-    const root = _findRootFolder(folderId);
-    return root ? (root.elements || []) : [];
-  }
-  const srcRoot = _findRootFolder(sourceId);
-  const srcElements = srcRoot ? (srcRoot.elements || []) : [];
+  const srcElements = src.elements || [];
   if (srcElements.length === 0) return;
-  const dstRoot = _findRootFolder(targetId);
-  if (!dstRoot) return;
-  if (!dstRoot.elements) dstRoot.elements = [];
+  if (!dst.elements) dst.elements = [];
   // Ajouter uniquement les éléments non déjà présents (comparaison par texte)
-  const existingTexts = new Set(dstRoot.elements.map(e => e.text.trim().toLowerCase()));
+  const existingTexts = new Set(dst.elements.map(e => e.text.trim().toLowerCase()));
   let added = 0;
   srcElements.forEach(e => {
     if (!existingTexts.has(e.text.trim().toLowerCase())) {
-      dstRoot.elements.push({ id: uid(), text: e.text });
+      dst.elements.push({ id: uid(), text: e.text });
       added++;
     }
   });
@@ -1050,8 +1054,9 @@ function renderElements() {
     return;
   }
   const archivedIds = s.archivedElementIds || [];
-  const active   = t.elements.filter(e => !archivedIds.includes(e.id));
-  const archived = t.elements.filter(e => archivedIds.includes(e.id));
+  const sElems = s.elements || [];
+  const active   = sElems.filter(e => !archivedIds.includes(e.id));
+  const archived = sElems.filter(e => archivedIds.includes(e.id));
 
   elementCount.textContent = active.length;
 
@@ -1140,9 +1145,9 @@ function buildElementItem(el, isArchived) {
 }
 
 function startEditElement(id, span, clickEvent) {
-  const t = activeTheme();
-  if (!t) return;
-  const el = t.elements.find(e => e.id === id);
+  const s = activeSubtheme();
+  if (!s) return;
+  const el = (s.elements || []).find(e => e.id === id);
   if (!el) return;
 
   const textarea = document.createElement('textarea');
@@ -1191,9 +1196,10 @@ function addElement() {
   const text = inputEl.value.trim();
   if (!text) return;
 
-  const t = activeTheme();
-  if (!t) return;
-  t.elements.push({ id: uid(), text });
+  const s = activeSubtheme();
+  if (!s) return;
+  if (!s.elements) s.elements = [];
+  s.elements.push({ id: uid(), text });
   inputEl.value = '';
   saveState();
   renderElements();
@@ -1201,28 +1207,23 @@ function addElement() {
 }
 
 function deleteElement(id) {
-  const t = activeTheme();
-  if (!t) return;
-  t.elements = t.elements.filter(e => e.id !== id);
-  // Vider cet élément dans toutes les grilles de tous les sous-dossiers du dossier racine
-  function _clearElemFromFolder(f) {
-    (f.grids || []).forEach(g => {
-      g.grid = g.grid.map(cell =>
-        cell.elementId === id ? { elementId: null, checked: false, color: null } : cell
-      );
-    });
-    (f.folders || []).forEach(_clearElemFromFolder);
-  }
-  _clearElemFromFolder(t);
+  const s = activeSubtheme();
+  if (!s) return;
+  s.elements = (s.elements || []).filter(e => e.id !== id);
+  // Vider cet élément dans toutes les grilles du dossier actif
+  (s.grids || []).forEach(g => {
+    g.grid = g.grid.map(cell =>
+      cell.elementId === id ? { elementId: null, checked: false, color: null } : cell
+    );
+  });
   saveState();
   renderElements();
   renderGrid();
 }
 
 function archiveElement(id) {
-  const t = activeTheme();
   const s = activeSubtheme();
-  if (!t || !s) return;
+  if (!s) return;
   if (!s.archivedElementIds) s.archivedElementIds = [];
   if (!s.archivedElementIds.includes(id)) {
     s.archivedElementIds.push(id);
@@ -1401,26 +1402,8 @@ function renderFoldersPanelTree() {
       if (!srcId || srcId === f.id) return;
       // Drop sur un dossier = déplacer à l'intérieur (comme sous-dossier)
       // Si même parent = réordonner; sinon = déplacer
-      const srcParent = findParentFolder(state.folders, srcId);
-      const dstParent = findParentFolder(state.folders, f.id);
-      const sameLevel = (srcParent?.id === dstParent?.id) || (!srcParent && !dstParent);
-      if (sameLevel) {
-        // Réordonner dans la même liste
-        const list = srcParent ? (srcParent.folders || []) : (state.folders || []);
-        const srcIdx = list.findIndex(x => x.id === srcId);
-        const dstIdx = list.findIndex(x => x.id === f.id);
-        if (srcIdx !== -1 && dstIdx !== -1) {
-          const [moved] = list.splice(srcIdx, 1);
-          list.splice(dstIdx, 0, moved);
-          saveState();
-          renderFoldersPanelTree();
-        }
-      } else {
-        // Niveaux différents : ouvrir la modal de déplacement pré-sélectionnée
-        openMoveFolderModal(srcId);
-        const sel = document.getElementById('move-folder-target-select');
-        if (sel) sel.value = f.id;
-      }
+      // Drop sur un dossier = toujours déplacer à l'intérieur
+      moveFolder(srcId, f.id);
     });
 
     const childrenEl = document.createElement('div');
@@ -1509,7 +1492,7 @@ function renderFoldersPanelTree() {
       addItem('✎ Renommer',             false, () => openRenameFolderModal(f.id));
       addItem('❐ Dupliquer',            false, () => duplicateFolder(f.id));
       addItem('📂 Déplacer',            false, () => openMoveFolderModal(f.id));
-      addItem('📥 Importer des cases',  false, () => openImportElementsModal(f.id));
+
       addItem('📦 Archiver',            true,  () => archiveFolder(f.id));
       addItem('🗑 Supprimer',           true,  () => deleteFolder(f.id));
     };
@@ -1695,7 +1678,7 @@ function renderGridToCanvas(t, g) {
     const x = col * (cellSize + gap);
     const y = offsetY + headerH + row * (cellSize + gap);
     const cell = g.grid[i];
-    const el = cell && cell.elementId ? t.elements.find(e => e.id === cell.elementId) : null;
+    const el = cell && cell.elementId ? (activeSubtheme()?.elements || []).find(e => e.id === cell.elementId) : null;
 
     if (bingoIdx.has(i)) {
       ctx.fillStyle = '#4caf7d';
@@ -2101,7 +2084,8 @@ function generateOneGrid(t, g, fillOnlyEmpty = false) {
   const cellCount = n * n;
   const s = activeSubtheme();
   const archivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
-  const active = t.elements.filter(e => !archivedIds.includes(e.id));
+  const sElems = (s && s.elements) ? s.elements : [];
+  const active = sElems.filter(e => !archivedIds.includes(e.id));
 
   // S'assurer que le tableau est au moins de taille MAX_SIZE² pour préserver les cases cachées
   const maxCells = MAX_SIZE * MAX_SIZE;
@@ -2119,7 +2103,7 @@ function generateOneGrid(t, g, fillOnlyEmpty = false) {
         emptyIndices.push(i);
       } else {
         // Vérifier que l'élément existe toujours
-        const elemExists = t.elements.some(el => el.id === g.grid[i].elementId);
+        const elemExists = sElems.some(el => el.id === g.grid[i].elementId);
         if (elemExists) {
           usedIds.add(g.grid[i].elementId);
         } else {
@@ -2137,7 +2121,7 @@ function generateOneGrid(t, g, fillOnlyEmpty = false) {
     if (available.length < emptyIndices.length) return false;
 
     const pool = shuffle(available).slice(0, emptyIndices.length);
-    const globalChecked = getGlobalCheckedElementIds(t);
+    const globalChecked = getGlobalCheckedElementIds(s);
 
     // Remplir uniquement les cases vides
     emptyIndices.forEach((idx, poolIdx) => {
@@ -2151,7 +2135,7 @@ function generateOneGrid(t, g, fillOnlyEmpty = false) {
     // Mode normal : remplacer toutes les cases visibles
     if (active.length < cellCount) return false;
     const pool = shuffle(active).slice(0, cellCount);
-    const globalChecked = getGlobalCheckedElementIds(t);
+    const globalChecked = getGlobalCheckedElementIds(s);
     for (let i = 0; i < cellCount; i++) {
       g.grid[i] = {
         elementId: pool[i] ? pool[i].id : null,
@@ -2174,7 +2158,8 @@ function generateGrid(fillOnlyEmpty = false) {
 
   const s = activeSubtheme();
   const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
-  const active = t.elements.filter(e => !sArchivedIds.includes(e.id));
+  const sElems = (s && s.elements) ? s.elements : [];
+  const active = sElems.filter(e => !sArchivedIds.includes(e.id));
   if (active.length < cellCount) {
     gridError.textContent = `⚠ Il faut au moins ${cellCount} éléments actifs pour générer une grille ${n}×${n} (${active.length}/${cellCount}).`;
     gridError.classList.remove('hidden');
@@ -2198,7 +2183,7 @@ function resetGrid() {
     if (g.grid[i]) g.grid[i] = { ...g.grid[i], checked: false };
   }
   // Remettre el.checked à false pour les éléments qui ne sont plus cochés dans aucune grille
-  t.elements.forEach(el => {
+  (s.elements || []).forEach(el => {
     const stillChecked = (s.grids || []).filter(gx => !gx.archived).some(
       gx => gx.grid.some(c => c.elementId === el.id && c.checked)
     );
@@ -2250,7 +2235,7 @@ function applyFontScale() {
     if (!g) return;
     const cell = g.grid[idx];
     if (!cell || !cell.elementId) return;
-    const el = t.elements.find(e => e.id === cell.elementId);
+    const el = (s && s.elements ? s.elements : []).find(e => e.id === cell.elementId);
     if (el) div.style.fontSize = getCellFontSize(el.text, scale);
   });
 }
@@ -2279,6 +2264,7 @@ function openClearCellConfirm(label, callback) {
 function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const n = g.gridSize;
   const scale = _localFontScale;
+  const s = activeSubtheme();
   const { indices: bingoIndices, lines: bingoLines } = getBingoResult(n, g.grid.slice(0, n * n));
 
   const wrapper = document.createElement('div');
@@ -2395,7 +2381,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   // Vérifier si assez d'éléments pour cette grille
   const sActive = activeSubtheme();
   const sArchivedIds = (sActive && sActive.archivedElementIds) ? sActive.archivedElementIds : [];
-  const activeElemCount = t.elements.filter(e => !sArchivedIds.includes(e.id)).length;
+  const activeElemCount = (sActive && sActive.elements ? sActive.elements : []).filter(e => !sArchivedIds.includes(e.id)).length;
   const cellCount = g.gridSize * g.gridSize;
   const enoughForThis = activeElemCount >= cellCount;
   const genDisabled = gridLocked || !enoughForThis;
@@ -2437,7 +2423,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     const usedIds = new Set();
     for (let i = 0; i < cellCount; i++) {
       if (g.grid[i] && g.grid[i].elementId) {
-        const elemExists = t.elements.some(el => el.id === g.grid[i].elementId);
+        const elemExists = (sActive && sActive.elements ? sActive.elements : []).some(el => el.id === g.grid[i].elementId);
         if (elemExists) usedIds.add(g.grid[i].elementId);
       }
     }
@@ -2464,7 +2450,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
 
       for (let i = 0; i < cellCount; i++) {
         if (gNow.grid[i] && gNow.grid[i].elementId) {
-          const elemExists = tNow.elements.some(el => el.id === gNow.grid[i].elementId);
+          const elemExists = (sNow.elements || []).some(el => el.id === gNow.grid[i].elementId);
           if (elemExists) {
             usedIds.add(gNow.grid[i].elementId);
           } else {
@@ -2474,7 +2460,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
       }
       const emptyCount = gNow.grid.slice(0, cellCount).filter(c => !c || !c.elementId).length;
       const sNowArchivedIds = (sNow && sNow.archivedElementIds) ? sNow.archivedElementIds : [];
-      const activeElemCount = tNow.elements.filter(e => !sNowArchivedIds.includes(e.id)).length;
+      const activeElemCount = (sNow.elements || []).filter(e => !sNowArchivedIds.includes(e.id)).length;
       const availableCount = activeElemCount - usedIds.size;
       let msg = `⚠ Impossible de remplir. Cases vides : ${emptyCount}, éléments disponibles : ${availableCount}.`;
       if (deletedIds.size > 0) {
@@ -2566,7 +2552,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
       div.classList.add('empty');
       div.textContent = '—';
     } else {
-      const el = t.elements.find(e => e.id === cell.elementId);
+      const el = (s && s.elements ? s.elements : []).find(e => e.id === cell.elementId);
       const cellText = el ? el.text : '?';
       div.textContent = cellText;
       div.style.fontSize = getCellFontSize(cellText, scale);
@@ -2585,7 +2571,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
             const matchCell = gx.grid.find(c => c.elementId === cell.elementId);
             if (matchCell) matchCell.checked = newChecked;
           });
-          const elObj = tNow.elements.find(e => e.id === cell.elementId);
+          const elObj = (sNow.elements || []).find(e => e.id === cell.elementId);
           if (elObj) elObj.checked = newChecked;
         }
         saveState();
@@ -2596,7 +2582,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
       if (!gridLocked) {
         div.addEventListener('contextmenu', e => {
           e.preventDefault();
-          const el = t.elements.find(x => x.id === cell.elementId);
+          const el = (s && s.elements ? s.elements : []).find(x => x.id === cell.elementId);
           const label = el ? `« ${el.text} »` : 'cette case';
           openClearCellConfirm(label, () => {
             const sNow = activeSubtheme();
@@ -2716,7 +2702,7 @@ function renderGrid() {
   chkLockGenerate.checked = locked;
 
   const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
-  const activeCount = t.elements.filter(e => !sArchivedIds.includes(e.id)).length;
+  const activeCount = (s.elements || []).filter(e => !sArchivedIds.includes(e.id)).length;
   const enoughElements = activeCount >= n * n;
   btnReset.disabled = locked;
   btnReset.classList.toggle('btn-disabled', locked);
@@ -2947,12 +2933,8 @@ function openMoveFolderModal(id) {
   const curParent = findParentFolder(state.folders, id);
   if (sel) sel.value = curParent ? curParent.id : '';
 
-  // Afficher le choix d'éléments uniquement si la destination a potentiellement des éléments différents
   const choiceDiv = document.getElementById('move-folder-elements-choice');
-  if (choiceDiv) choiceDiv.style.display = '';
-  // Reset radio
-  const radios = document.querySelectorAll('input[name="move-folder-elements"]');
-  radios.forEach(r => { r.checked = r.value === 'keep'; });
+  if (choiceDiv) choiceDiv.style.display = 'none';
 
   const modal = document.getElementById('modal-move-folder');
   if (modal) modal.classList.remove('hidden');
@@ -2968,19 +2950,6 @@ function confirmMoveFolder() {
   if (!_moveFolderId) return;
   const sel = document.getElementById('move-folder-target-select');
   const targetId = sel ? (sel.value || null) : null;
-  const adoptEl = document.querySelector('input[name="move-folder-elements"][value="adopt"]');
-  const adopt = adoptEl ? adoptEl.checked : false;
-
-  if (adopt && targetId) {
-    // Adopter les éléments du dossier d'arrivée (copie sur la racine du dossier déplacé)
-    const dstRoot = _findRootFolder(targetId);
-    const srcFolder = findFolderById(state.folders, _moveFolderId);
-    const srcRoot = _findRootFolder(_moveFolderId);
-    if (dstRoot && srcRoot && srcRoot !== dstRoot) {
-      srcRoot.elements = JSON.parse(JSON.stringify(dstRoot.elements || []));
-      srcRoot.elements.forEach(e => { e.id = uid(); });
-    }
-  }
 
   moveFolder(_moveFolderId, targetId);
   closeMoveFolderModal();
@@ -3013,15 +2982,11 @@ function openImportElementsModal(targetId) {
     sel.appendChild(placeholder);
     function _addSrc(folders, depth) {
       (folders || []).filter(f => !f.archived).forEach(f => {
-        const srcRoot = _findRootFolder(f.id);
-        const dstRoot = _findRootFolder(targetId);
-        if (srcRoot && srcRoot !== dstRoot && (srcRoot.elements || []).length > 0) {
-          if (!sel.querySelector(`option[value="${srcRoot.id}"]`)) {
-            const opt = document.createElement('option');
-            opt.value = srcRoot.id;
-            opt.textContent = '  '.repeat(depth) + f.name + (depth > 0 ? '' : '');
-            sel.appendChild(opt);
-          }
+        if (f.id !== targetId && (f.elements || []).length > 0) {
+          const opt = document.createElement('option');
+          opt.value = f.id;
+          opt.textContent = '  '.repeat(depth) + f.name;
+          sel.appendChild(opt);
         }
         _addSrc(f.folders, depth + 1);
       });
@@ -3101,14 +3066,14 @@ function closeBulkAddModal() {
 }
 
 function confirmBulkAdd() {
-  const t = activeTheme();
-  if (!t) return;
-  const count = Math.max(1, Math.min(100, parseInt(bulkAddCountInput.value) || 1));
   const s = activeSubtheme();
-  const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
-  const startN = t.elements.filter(e => !sArchivedIds.includes(e.id)).length + 1;
+  if (!s) return;
+  if (!s.elements) s.elements = [];
+  const count = Math.max(1, Math.min(100, parseInt(bulkAddCountInput.value) || 1));
+  const sArchivedIds = s.archivedElementIds || [];
+  const startN = s.elements.filter(e => !sArchivedIds.includes(e.id)).length + 1;
   for (let i = 0; i < count; i++) {
-    t.elements.push({ id: uid(), text: `case ${startN + i}` });
+    s.elements.push({ id: uid(), text: `case ${startN + i}` });
   }
   closeBulkAddModal();
   saveState();
@@ -3130,6 +3095,12 @@ bulkAddCountInput.addEventListener('keydown', e => {
 // ──────────────────────────────────────────────
 btnAdd.addEventListener('click', addElement);
 inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') addElement(); });
+
+document.getElementById('btn-import-elements-panel').addEventListener('click', () => {
+  const s = activeSubtheme();
+  if (!s) return;
+  openImportElementsModal(s.id);
+});
 
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
 btnSizePlus.addEventListener('click',  () => changeSize(+1));
@@ -3378,7 +3349,7 @@ btnGenerate.addEventListener('click', () => {
   const n = activeGrid()?.gridSize || 4;
   const cellCount = n * n;
   const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
-  const active = t.elements.filter(e => !sArchivedIds.includes(e.id));
+  const active = (s.elements || []).filter(e => !sArchivedIds.includes(e.id));
 
   if (active.length < cellCount) {
     gridError.textContent = `⚠ Il faut au moins ${cellCount} éléments actifs pour générer une grille ${n}×${n} (${active.length}/${cellCount}).`;
@@ -3429,7 +3400,7 @@ function updateFillEmptyButtonState() {
 
   // Vérifier si on peut remplir au moins une grille avec la méthode "cases vides"
   const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
-  const activeElem = t.elements.filter(e => !sArchivedIds.includes(e.id));
+  const activeElem = (s.elements || []).filter(e => !sArchivedIds.includes(e.id));
   for (const g of grids) {
     const n = g.gridSize;
     const cellCount = n * n;
@@ -3440,7 +3411,7 @@ function updateFillEmptyButtonState() {
 
     for (let i = 0; i < cellCount; i++) {
       if (g.grid[i] && g.grid[i].elementId) {
-        const elemExists = t.elements.some(el => el.id === g.grid[i].elementId && !sArchivedIds.includes(el.id));
+        const elemExists = (s.elements || []).some(el => el.id === g.grid[i].elementId && !sArchivedIds.includes(el.id));
         if (elemExists) usedIds.add(g.grid[i].elementId);
       }
     }
@@ -3471,7 +3442,7 @@ document.getElementById('btn-confirm-reset').addEventListener('click', () => {
   (s.grids || []).filter(gx => !gx.archived).forEach(gx => {
     gx.grid = gx.grid.map(c => ({ ...c, checked: false }));
   });
-  t.elements.forEach(el => { el.checked = false; });
+  (s.elements || []).forEach(el => { el.checked = false; });
   saveState();
   renderGrid();
   renderElements();
@@ -3672,19 +3643,8 @@ function renderArchivesUnified() {
       folderRow.appendChild(_makeArchiveButtons([
         { text: '↩ Restaurer', cls: 'restore', disabled: parentArchived,
           onClick: () => { archiveFolder(f.id); renderArchivesUnified(); } },
-        { text: '📂 Déplacer', cls: 'move',
-          onClick: () => openMoveFolderModal(f.id) },
-        { text: '📥 Importer', cls: 'import',
-          onClick: () => openImportElementsModal(f.id) },
         { text: '🗑 Supprimer', cls: 'del',
           onClick: () => { deleteFolder(f.id); renderArchivesUnified(); } }
-      ]));
-    } else {
-      folderRow.appendChild(_makeArchiveButtons([
-        { text: '📂 Déplacer', cls: 'move',
-          onClick: () => openMoveFolderModal(f.id) },
-        { text: '📥 Importer', cls: 'import',
-          onClick: () => openImportElementsModal(f.id) }
       ]));
     }
     container.appendChild(folderRow);
