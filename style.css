@@ -866,6 +866,21 @@ textarea.element-edit-input {
 .elem-drag-handle:active { cursor: grabbing; }
 .element-item.elem-dragging { opacity: 0.45; }
 
+.elem-menu-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: var(--radius);
+  transition: background 0.15s, color 0.15s;
+  letter-spacing: 1px;
+}
+.elem-menu-btn:hover { background: var(--surface-4, var(--surface-3)); color: var(--text); }
+
 .hidden { display: none !important; }
 
 /* ── Grilles ── */

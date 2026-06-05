@@ -1184,7 +1184,22 @@ function buildElementItem(el, isArchived) {
   span.style.cursor = 'text';
   li.appendChild(span);
 
-  // Clic gauche : renommer la case
+  // Bouton "..." options
+  const menuBtn = document.createElement('button');
+  menuBtn.className = 'elem-menu-btn';
+  menuBtn.textContent = '···';
+  menuBtn.title = 'Options';
+  menuBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!isArchived) {
+      openCtxMenuElement(el.id, span, e, li);
+    } else {
+      openCtxMenuElementArchived(el.id, e, li);
+    }
+  });
+  li.appendChild(menuBtn);
+
+  // Clic gauche sur la ligne : renommer la case
   li.addEventListener('click', (e) => {
     e.stopPropagation();
     startEditElement(el.id, span, e);
