@@ -669,6 +669,67 @@ function duplicateFolder(id) {
   renderGrid();
 }
 
+function moveFolder(id, targetParentId) {
+  // Retrait de la position actuelle
+  const folder = findFolderById(state.folders, id);
+  if (!folder) return;
+  // Empêcher de se déplacer dans soi-même ou un descendant
+  if (targetParentId && findFolderById([folder], targetParentId)) return;
+  const oldParent = findParentFolder(state.folders, id);
+  if (oldParent) {
+    oldParent.folders = (oldParent.folders || []).filter(f => f.id !== id);
+    oldParent.children = (oldParent.children || []).filter(c => c.id !== id);
+  } else {
+    state.folders = (state.folders || []).filter(f => f.id !== id);
+  }
+  // Insertion dans la nouvelle destination
+  if (targetParentId) {
+    const newParent = findFolderById(state.folders, targetParentId);
+    if (!newParent) return;
+    if (!newParent.folders) newParent.folders = [];
+    if (!newParent.children) newParent.children = [];
+    newParent.folders.push(folder);
+    newParent.children.push({ type: 'folder', id: folder.id });
+  } else {
+    if (!state.folders) state.folders = [];
+    state.folders.push(folder);
+  }
+  saveState();
+  renderAllFolders();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
+function importElements(sourceId, targetId) {
+  const src = findFolderById(state.folders, sourceId);
+  const dst = findFolderById(state.folders, targetId);
+  if (!src || !dst) return;
+  // Trouver la racine de chaque dossier pour accéder aux éléments
+  function getRootElements(folderId) {
+    const root = _findRootFolder(folderId);
+    return root ? (root.elements || []) : [];
+  }
+  const srcRoot = _findRootFolder(sourceId);
+  const srcElements = srcRoot ? (srcRoot.elements || []) : [];
+  if (srcElements.length === 0) return;
+  const dstRoot = _findRootFolder(targetId);
+  if (!dstRoot) return;
+  if (!dstRoot.elements) dstRoot.elements = [];
+  // Ajouter uniquement les éléments non déjà présents (comparaison par texte)
+  const existingTexts = new Set(dstRoot.elements.map(e => e.text.trim().toLowerCase()));
+  let added = 0;
+  srcElements.forEach(e => {
+    if (!existingTexts.has(e.text.trim().toLowerCase())) {
+      dstRoot.elements.push({ id: uid(), text: e.text });
+      added++;
+    }
+  });
+  saveState();
+  renderElements();
+  return added;
+}
+
 // ──────────────────────────────────────────────
 // Rendu : fil d'Ariane dossiers
 // ──────────────────────────────────────────────
@@ -978,6 +1039,10 @@ let _renameGridId  = null;
 function renderElements() {
   const t = activeTheme();
   const s = activeSubtheme();
+  const folderNameEl = document.getElementById('cases-panel-folder-name');
+  if (folderNameEl) {
+    folderNameEl.textContent = s ? `(${s.name})` : (t ? `(${t.name})` : '');
+  }
   if (!t || !s) {
     listActive.innerHTML = '';
     listArchived.innerHTML = '';
@@ -989,6 +1054,12 @@ function renderElements() {
   const archived = t.elements.filter(e => archivedIds.includes(e.id));
 
   elementCount.textContent = active.length;
+
+  // Mettre à jour les compteurs sur les onglets Actives / Archivées
+  const tabActive   = document.querySelector('.tab-btn[data-tab="active"]');
+  const tabArchived = document.querySelector('.tab-btn[data-tab="archived"]');
+  if (tabActive)   tabActive.textContent   = `Actives (${active.length})`;
+  if (tabArchived) tabArchived.textContent = `Archivées (${archived.length})`;
 
   listActive.innerHTML = '';
   active.forEach(el => {
@@ -1004,10 +1075,6 @@ function renderElements() {
 function buildElementItem(el, isArchived) {
   const li = document.createElement('li');
 
-  // En mode manuel, griser les éléments déjà placés sur la grille
-  const g = activeGrid();
-  const isPlaced = manualMode && g && g.grid.some(cell => cell.elementId === el.id);
-
   // Vérifier si cet élément est coché : dans une grille OU directement sur l'élément
   const s = activeSubtheme();
   const isCheckedInGrid = s && (s.grids || []).filter(gx => !gx.archived).some(
@@ -1020,10 +1087,36 @@ function buildElementItem(el, isArchived) {
     gx => gx.grid.some(c => c.elementId === el.id && c.color === 'red')
   );
 
-  li.className = 'element-item' + (isArchived ? ' archived' : '') + (isPlaced ? ' placed' : '') + (isChecked ? ' elem-checked' : '') + (hasRedColor ? ' elem-red' : '');
+  li.className = 'element-item' + (isArchived ? ' archived' : '') + (isChecked ? ' elem-checked' : '') + (hasRedColor ? ' elem-red' : '');
   li.dataset.id = el.id;
   li.title = 'Clic gauche : renommer · Clic droit : ' + (isArchived ? 'restaurer, supprimer' : 'archiver, supprimer');
-  // Pas de drag & drop sur les cases
+
+  // Poignée drag & drop si l'élément est absent d'au moins une grille visible non bloquée
+  const _visGrids = getVisibleGrids ? getVisibleGrids() : [];
+  const _t = activeTheme();
+  const canDragToAny = !isArchived && _visGrids.some(gx => {
+    const gLocked = gx.locked || (!!_t && _t.locked);
+    return !gLocked && !gx.grid.some(c => c.elementId === el.id);
+  });
+  if (canDragToAny) {
+    const handle = document.createElement('span');
+    handle.className = 'elem-drag-handle';
+    handle.textContent = '⠿';
+    handle.title = 'Glisser-déposer vers une case de la grille';
+    handle.draggable = true;
+    handle.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', el.id);
+      e.dataTransfer.effectAllowed = 'copy';
+      li.classList.add('elem-dragging');
+      _isDraggingElement = true;
+    });
+    handle.addEventListener('dragend', () => {
+      li.classList.remove('elem-dragging');
+      _isDraggingElement = false;
+    });
+    handle.addEventListener('click', e => e.stopPropagation());
+    li.appendChild(handle);
+  }
 
   const span = document.createElement('span');
   span.className = 'element-text';
@@ -1229,10 +1322,14 @@ function renderFoldersPanelTree() {
     return;
   }
 
+  const activePath = getFolderPath(state.folders, _localActiveFolderId);
+  const ancestorIds = new Set(activePath.slice(0, -1).map(f => f.id));
+
   function _renderFolder(f, parentEl, depth) {
     const wrapper = document.createElement('div');
 
     const isActive = f.id === _localActiveFolderId;
+    const isAncestor = ancestorIds.has(f.id);
     const children = (f.folders || []).filter(sf => !sf.archived);
     const grids = (f.grids || []).filter(g => !g.archived);
     const hasChildren = children.length > 0 || grids.length > 0;
@@ -1242,7 +1339,7 @@ function renderFoldersPanelTree() {
     let collapsed = sessionStorage.getItem(collapseKey) === '1';
 
     const row = document.createElement('div');
-    row.className = 'fp-folder-row' + (isActive ? ' active' : '');
+    row.className = 'fp-folder-row' + (isActive ? ' active' : '') + (isAncestor ? ' ancestor' : '');
 
     const arrow = document.createElement('span');
     arrow.className = 'fp-folder-arrow' + (collapsed ? ' collapsed' : '');
@@ -1251,21 +1348,80 @@ function renderFoldersPanelTree() {
 
     const icon = document.createElement('span');
     icon.className = 'fp-folder-icon';
-    icon.textContent = isActive ? '📂' : '📁';
+    icon.textContent = (isActive || isAncestor) ? '📂' : '📁';
 
     const name = document.createElement('span');
     name.className = 'fp-folder-name';
     name.textContent = f.name;
+
+    const dragHandle = document.createElement('span');
+    dragHandle.className = 'fp-folder-drag-handle';
+    dragHandle.textContent = '⠿';
+    dragHandle.title = 'Glisser pour déplacer';
 
     const ctxBtn = document.createElement('button');
     ctxBtn.className = 'fp-folder-ctx-btn';
     ctxBtn.textContent = '•••';
     ctxBtn.title = 'Options';
 
+    row.appendChild(dragHandle);
     row.appendChild(arrow);
     row.appendChild(icon);
     row.appendChild(name);
     row.appendChild(ctxBtn);
+
+    // Drag & drop pour réordonner / déplacer
+    row.draggable = true;
+    row.dataset.folderId = f.id;
+    dragHandle.addEventListener('mousedown', () => { row.draggable = true; });
+    row.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', f.id);
+      e.dataTransfer.effectAllowed = 'move';
+      row.classList.add('fp-folder-dragging');
+      setTimeout(() => row.classList.add('fp-folder-dragging'), 0);
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('fp-folder-dragging');
+      document.querySelectorAll('.fp-folder-drag-over').forEach(el => el.classList.remove('fp-folder-drag-over'));
+    });
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      document.querySelectorAll('.fp-folder-drag-over').forEach(el => el.classList.remove('fp-folder-drag-over'));
+      row.classList.add('fp-folder-drag-over');
+    });
+    row.addEventListener('dragleave', e => {
+      if (!row.contains(e.relatedTarget)) row.classList.remove('fp-folder-drag-over');
+    });
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      row.classList.remove('fp-folder-drag-over');
+      const srcId = e.dataTransfer.getData('text/plain');
+      if (!srcId || srcId === f.id) return;
+      // Drop sur un dossier = déplacer à l'intérieur (comme sous-dossier)
+      // Si même parent = réordonner; sinon = déplacer
+      const srcParent = findParentFolder(state.folders, srcId);
+      const dstParent = findParentFolder(state.folders, f.id);
+      const sameLevel = (srcParent?.id === dstParent?.id) || (!srcParent && !dstParent);
+      if (sameLevel) {
+        // Réordonner dans la même liste
+        const list = srcParent ? (srcParent.folders || []) : (state.folders || []);
+        const srcIdx = list.findIndex(x => x.id === srcId);
+        const dstIdx = list.findIndex(x => x.id === f.id);
+        if (srcIdx !== -1 && dstIdx !== -1) {
+          const [moved] = list.splice(srcIdx, 1);
+          list.splice(dstIdx, 0, moved);
+          saveState();
+          renderFoldersPanelTree();
+        }
+      } else {
+        // Niveaux différents : ouvrir la modal de déplacement pré-sélectionnée
+        openMoveFolderModal(srcId);
+        const sel = document.getElementById('move-folder-target-select');
+        if (sel) sel.value = f.id;
+      }
+    });
 
     const childrenEl = document.createElement('div');
     childrenEl.className = 'fp-children' + (collapsed ? ' collapsed' : '');
@@ -1352,6 +1508,8 @@ function renderFoldersPanelTree() {
       addItem('📁 Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
       addItem('✎ Renommer',             false, () => openRenameFolderModal(f.id));
       addItem('❐ Dupliquer',            false, () => duplicateFolder(f.id));
+      addItem('📂 Déplacer',            false, () => openMoveFolderModal(f.id));
+      addItem('📥 Importer des cases',  false, () => openImportElementsModal(f.id));
       addItem('📦 Archiver',            true,  () => archiveFolder(f.id));
       addItem('🗑 Supprimer',           true,  () => deleteFolder(f.id));
     };
@@ -1366,15 +1524,53 @@ function renderFoldersPanelTree() {
   roots.forEach(f => _renderFolder(f, container, 0));
 }
 
+function _initPanelPosition(panel, side) {
+  if (panel.dataset.positioned) return;
+  const ctrl = document.getElementById('bingo-control-panel');
+  const ctrlBottom = ctrl ? ctrl.getBoundingClientRect().bottom + 12 : 80;
+  const panelW = panel.offsetWidth || 300;
+  const x = side === 'left' ? 12 : window.innerWidth - panelW - 12;
+  panel.style.left = x + 'px';
+  panel.style.top  = ctrlBottom + 'px';
+  panel.dataset.positioned = '1';
+}
+
+function _makePanelDraggable(panel) {
+  if (panel.dataset.draggable) return;
+  panel.dataset.draggable = '1';
+  const header = panel.querySelector('.folders-panel-header');
+  if (!header) return;
+  let ox = 0, oy = 0, startX = 0, startY = 0, dragging = false;
+
+  header.addEventListener('mousedown', e => {
+    if (e.target.closest('button, input, select')) return;
+    dragging = true;
+    startX = e.clientX; startY = e.clientY;
+    ox = panel.offsetLeft; oy = panel.offsetTop;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const nx = ox + e.clientX - startX;
+    const ny = oy + e.clientY - startY;
+    const maxX = window.innerWidth  - panel.offsetWidth;
+    const maxY = window.innerHeight - panel.offsetHeight;
+    panel.style.left = Math.max(0, Math.min(nx, maxX)) + 'px';
+    panel.style.top  = Math.max(0, Math.min(ny, maxY)) + 'px';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+}
+
 function openFoldersPanel() {
   renderFoldersPanelTree();
-  document.getElementById('folders-panel').classList.add('open');
-  document.getElementById('folders-panel-overlay').classList.add('open');
+  const panel = document.getElementById('folders-panel');
+  _initPanelPosition(panel, 'left');
+  _makePanelDraggable(panel);
+  panel.classList.add('open');
 }
 
 function closeFoldersPanel() {
   document.getElementById('folders-panel').classList.remove('open');
-  document.getElementById('folders-panel-overlay').classList.remove('open');
 }
 
 function renderThemesList() {
@@ -2073,6 +2269,13 @@ function getCellFontSize(text, scale) {
 // Mode placement manuel supprimé
 const manualMode = false;
 
+let _clearCellCallback = null;
+function openClearCellConfirm(label, callback) {
+  _clearCellCallback = callback;
+  document.getElementById('modal-clear-msg').textContent = `Vider la case ${label} ?`;
+  document.getElementById('modal-confirm-clear').classList.remove('hidden');
+}
+
 function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const n = g.gridSize;
   const scale = _localFontScale;
@@ -2286,12 +2489,30 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     renderGrid();
   });
 
+  const btnSubClear = document.createElement('button');
+  btnSubClear.className = 'btn-action btn-subgrid btn-subgrid-clear' + (gridLocked ? ' btn-disabled' : '');
+  btnSubClear.disabled = gridLocked;
+  btnSubClear.textContent = '⊘';
+  btnSubClear.title = gridLocked ? 'Grille bloquée' : 'Vider cette grille';
+  btnSubClear.addEventListener('click', () => {
+    const tNow = activeTheme();
+    const sNow = activeSubtheme();
+    if (!tNow || tNow.locked || !sNow) return;
+    const gNow = sNow.grids.find(x => x.id === g.id);
+    if (!gNow || gNow.locked) return;
+    gNow.grid = gNow.grid.map(() => ({ elementId: null, checked: false }));
+    saveState();
+    renderGrid();
+    renderElements();
+  });
+
   // Cadre discret autour de Bloquer + Générer
   const lockGenGroup = document.createElement('div');
   lockGenGroup.className = 'subgrid-lock-gen-group';
   lockGenGroup.appendChild(lblLock);
   lockGenGroup.appendChild(btnSubGen);
   lockGenGroup.appendChild(btnSubFillEmpty);
+  lockGenGroup.appendChild(btnSubClear);
   subCtrl.appendChild(lockGenGroup);
 
 
@@ -2320,8 +2541,8 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     div.className = 'bingo-cell';
     div.dataset.index = i;
 
-    if (manualMode && isActive) {
-      div.classList.add('manual-target');
+    // Drop depuis le drawer (actif si grille non bloquée et élément absent de cette grille)
+    if (!gridLocked) {
       div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
       div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
       div.addEventListener('drop', e => {
@@ -2329,19 +2550,21 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
         div.classList.remove('drag-over');
         const elId = e.dataTransfer.getData('text/plain');
         const targetIdx = parseInt(div.dataset.index);
-        if (elId && !isNaN(targetIdx)) {
-          const prevChecked = g.grid[targetIdx]?.checked || false;
-          g.grid[targetIdx] = { elementId: elId, checked: prevChecked };
-          saveState();
-          renderGrid();
-          renderElements();
-        }
+        if (!elId || isNaN(targetIdx)) return;
+        // Refuser si l'élément est déjà présent dans cette grille spécifique
+        const alreadyInGrid = g.grid.some(c => c.elementId === elId);
+        if (alreadyInGrid) return;
+        const prevChecked = g.grid[targetIdx]?.checked || false;
+        g.grid[targetIdx] = { elementId: elId, checked: prevChecked };
+        saveState();
+        renderGrid();
+        renderElements();
       });
     }
 
     if (!cell.elementId) {
       div.classList.add('empty');
-      div.textContent = (manualMode && isActive) ? '+ Dépose ici' : '—';
+      div.textContent = '—';
     } else {
       const el = t.elements.find(e => e.id === cell.elementId);
       const cellText = el ? el.text : '?';
@@ -2351,51 +2574,41 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
       if (cell.color === 'red') div.classList.add('cell-red');
       if (bingoIndices.has(i)) div.classList.add('bingo-line');
 
-      if (!manualMode || !isActive) {
-        div.title = cell.checked ? 'Désactiver cette case' : (cell.color === 'red' ? 'Impossible : case rouge' : 'Valider cette case');
-        div.addEventListener('click', () => {
-          if (!cell.elementId || cell.color === 'red') return;
-          const newChecked = !cell.checked;
-          // Appliquer le même état à toutes les grilles non-archivées du sous-thème actif uniquement
-          const tNow = activeTheme();
-          const sNow = activeSubtheme();
-          if (tNow && sNow) {
-            (sNow.grids || []).filter(gx => !gx.archived).forEach(gx => {
-              const matchCell = gx.grid.find(c => c.elementId === cell.elementId);
-              if (matchCell) matchCell.checked = newChecked;
-            });
-            // Synchroniser el.checked
-            const elObj = tNow.elements.find(e => e.id === cell.elementId);
-            if (elObj) elObj.checked = newChecked;
-          }
-          saveState();
-          renderGrid();
-          renderElements();
-        });
-
-        div.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          if (!cell.elementId || cell.checked) return;
-          const tNow = activeTheme();
-          const sNow = activeSubtheme();
-          if (!tNow || !sNow) return;
-          const newColor = cell.color === 'red' ? null : 'red';
+      div.title = cell.checked ? 'Désactiver cette case' : 'Valider cette case' + (!gridLocked ? ' · Clic droit : vider' : '');
+      div.addEventListener('click', () => {
+        if (!cell.elementId) return;
+        const newChecked = !cell.checked;
+        const tNow = activeTheme();
+        const sNow = activeSubtheme();
+        if (tNow && sNow) {
           (sNow.grids || []).filter(gx => !gx.archived).forEach(gx => {
             const matchCell = gx.grid.find(c => c.elementId === cell.elementId);
-            if (matchCell) matchCell.color = newColor;
+            if (matchCell) matchCell.checked = newChecked;
           });
-          saveState();
-          renderGrid();
-          renderElements();
+          const elObj = tNow.elements.find(e => e.id === cell.elementId);
+          if (elObj) elObj.checked = newChecked;
+        }
+        saveState();
+        renderGrid();
+        renderElements();
+      });
+
+      if (!gridLocked) {
+        div.addEventListener('contextmenu', e => {
+          e.preventDefault();
+          const el = t.elements.find(x => x.id === cell.elementId);
+          const label = el ? `« ${el.text} »` : 'cette case';
+          openClearCellConfirm(label, () => {
+            const sNow = activeSubtheme();
+            if (!sNow) return;
+            const gNow = sNow.grids.find(x => x.id === g.id);
+            if (!gNow || gNow.locked) return;
+            gNow.grid[i] = { elementId: null, checked: false };
+            saveState();
+            renderGrid();
+            renderElements();
+          });
         });
-      } else {
-        div.addEventListener('click', () => {
-          g.grid[i] = { elementId: null, checked: false, color: null };
-          saveState();
-          renderGrid();
-          renderElements();
-        });
-        div.title = 'Cliquer pour vider la case';
       }
     }
 
@@ -2423,6 +2636,7 @@ function renderGrid() {
   const s = activeSubtheme();
   const g = activeGrid();
 
+  updateClearGridsButton();
   gridWrapper.innerHTML = '';
   gridWrapper.style.justifyContent = '';
   gridWrapper.style.alignItems = '';
@@ -2431,8 +2645,11 @@ function renderGrid() {
 
   if (!t) {
     bingoLayout.classList.add('no-theme-layout');
+    gridWrapper.style.justifyContent = 'center';
+    gridWrapper.style.alignItems = 'center';
+    gridWrapper.style.paddingTop = '80px';
     const btn = document.createElement('button');
-    btn.className = 'btn-empty-state';
+    btn.className = 'btn-empty-state btn-empty-state-blue';
     btn.textContent = '+ Nouveau dossier';
     btn.addEventListener('click', () => openNewFolderModal(null));
     gridWrapper.appendChild(btn);
@@ -2448,8 +2665,11 @@ function renderGrid() {
   bingoLayout.classList.remove('no-theme-layout');
 
   if (!s) {
+    gridWrapper.style.justifyContent = 'center';
+    gridWrapper.style.alignItems = 'center';
+    gridWrapper.style.paddingTop = '80px';
     const btn = document.createElement('button');
-    btn.className = 'btn-empty-state';
+    btn.className = 'btn-empty-state btn-empty-state-blue';
     btn.textContent = '+ Nouveau dossier';
     btn.addEventListener('click', () => openNewFolderModal(_localActiveFolderId || null));
     gridWrapper.appendChild(btn);
@@ -2500,6 +2720,7 @@ function renderGrid() {
   const enoughElements = activeCount >= n * n;
   btnReset.disabled = locked;
   btnReset.classList.toggle('btn-disabled', locked);
+  updateClearGridsButton();
   if (enoughElements) gridError.classList.add('hidden');
 
   const gridsToShow = getVisibleGrids();
@@ -2693,6 +2914,154 @@ function deleteTheme(id) { deleteFolder(id); }
 function archiveTheme(id) { archiveFolder(id); }
 
 // ──────────────────────────────────────────────
+// Modale — déplacer un dossier
+// ──────────────────────────────────────────────
+let _moveFolderId = null;
+
+function _buildFolderSelectOptions(sel, excludeId) {
+  sel.innerHTML = '';
+  const rootOpt = document.createElement('option');
+  rootOpt.value = '';
+  rootOpt.textContent = '— Racine —';
+  sel.appendChild(rootOpt);
+  function _add(folders, depth) {
+    (folders || []).filter(f => !f.archived && f.id !== excludeId).forEach(f => {
+      // Exclure aussi les descendants du dossier déplacé
+      if (excludeId && findFolderById([f], excludeId)) return;
+      const opt = document.createElement('option');
+      opt.value = f.id;
+      opt.textContent = '  '.repeat(depth) + f.name;
+      sel.appendChild(opt);
+      _add(f.folders, depth + 1);
+    });
+  }
+  _add(state.folders, 0);
+}
+
+function openMoveFolderModal(id) {
+  _moveFolderId = id;
+  const sel = document.getElementById('move-folder-target-select');
+  if (sel) _buildFolderSelectOptions(sel, id);
+
+  // Sélectionner le parent actuel
+  const curParent = findParentFolder(state.folders, id);
+  if (sel) sel.value = curParent ? curParent.id : '';
+
+  // Afficher le choix d'éléments uniquement si la destination a potentiellement des éléments différents
+  const choiceDiv = document.getElementById('move-folder-elements-choice');
+  if (choiceDiv) choiceDiv.style.display = '';
+  // Reset radio
+  const radios = document.querySelectorAll('input[name="move-folder-elements"]');
+  radios.forEach(r => { r.checked = r.value === 'keep'; });
+
+  const modal = document.getElementById('modal-move-folder');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeMoveFolderModal() {
+  const modal = document.getElementById('modal-move-folder');
+  if (modal) modal.classList.add('hidden');
+  _moveFolderId = null;
+}
+
+function confirmMoveFolder() {
+  if (!_moveFolderId) return;
+  const sel = document.getElementById('move-folder-target-select');
+  const targetId = sel ? (sel.value || null) : null;
+  const adoptEl = document.querySelector('input[name="move-folder-elements"][value="adopt"]');
+  const adopt = adoptEl ? adoptEl.checked : false;
+
+  if (adopt && targetId) {
+    // Adopter les éléments du dossier d'arrivée (copie sur la racine du dossier déplacé)
+    const dstRoot = _findRootFolder(targetId);
+    const srcFolder = findFolderById(state.folders, _moveFolderId);
+    const srcRoot = _findRootFolder(_moveFolderId);
+    if (dstRoot && srcRoot && srcRoot !== dstRoot) {
+      srcRoot.elements = JSON.parse(JSON.stringify(dstRoot.elements || []));
+      srcRoot.elements.forEach(e => { e.id = uid(); });
+    }
+  }
+
+  moveFolder(_moveFolderId, targetId);
+  closeMoveFolderModal();
+}
+
+(function() {
+  const modal = document.getElementById('modal-move-folder');
+  const btnClose = document.getElementById('btn-close-move-folder-modal');
+  const btnConfirm = document.getElementById('btn-confirm-move-folder');
+  const btnCancel = document.getElementById('btn-cancel-move-folder');
+  if (btnClose) btnClose.addEventListener('click', closeMoveFolderModal);
+  if (btnConfirm) btnConfirm.addEventListener('click', confirmMoveFolder);
+  if (btnCancel) btnCancel.addEventListener('click', closeMoveFolderModal);
+  if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeMoveFolderModal(); });
+})();
+
+// ──────────────────────────────────────────────
+// Modale — importer les cases d'un autre dossier
+// ──────────────────────────────────────────────
+let _importElementsTargetId = null;
+
+function openImportElementsModal(targetId) {
+  _importElementsTargetId = targetId;
+  const sel = document.getElementById('import-elements-source-select');
+  if (sel) {
+    sel.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '— Choisir un dossier —';
+    sel.appendChild(placeholder);
+    function _addSrc(folders, depth) {
+      (folders || []).filter(f => !f.archived).forEach(f => {
+        const srcRoot = _findRootFolder(f.id);
+        const dstRoot = _findRootFolder(targetId);
+        if (srcRoot && srcRoot !== dstRoot && (srcRoot.elements || []).length > 0) {
+          if (!sel.querySelector(`option[value="${srcRoot.id}"]`)) {
+            const opt = document.createElement('option');
+            opt.value = srcRoot.id;
+            opt.textContent = '  '.repeat(depth) + f.name + (depth > 0 ? '' : '');
+            sel.appendChild(opt);
+          }
+        }
+        _addSrc(f.folders, depth + 1);
+      });
+    }
+    _addSrc(state.folders, 0);
+  }
+  const modal = document.getElementById('modal-import-elements');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeImportElementsModal() {
+  const modal = document.getElementById('modal-import-elements');
+  if (modal) modal.classList.add('hidden');
+  _importElementsTargetId = null;
+}
+
+function confirmImportElements() {
+  if (!_importElementsTargetId) return;
+  const sel = document.getElementById('import-elements-source-select');
+  const sourceRootId = sel ? sel.value : '';
+  if (!sourceRootId) return;
+  const added = importElements(sourceRootId, _importElementsTargetId);
+  closeImportElementsModal();
+  if (added === 0) {
+    alert('Toutes les cases existent déjà dans ce dossier.');
+  }
+}
+
+(function() {
+  const modal = document.getElementById('modal-import-elements');
+  const btnClose = document.getElementById('btn-close-import-elements-modal');
+  const btnConfirm = document.getElementById('btn-confirm-import-elements');
+  const btnCancel = document.getElementById('btn-cancel-import-elements');
+  if (btnClose) btnClose.addEventListener('click', closeImportElementsModal);
+  if (btnConfirm) btnConfirm.addEventListener('click', confirmImportElements);
+  if (btnCancel) btnCancel.addEventListener('click', closeImportElementsModal);
+  if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeImportElementsModal(); });
+})();
+
+// ──────────────────────────────────────────────
 // Onglets actifs / archivés
 // ──────────────────────────────────────────────
 tabBtns.forEach(btn => {
@@ -2796,17 +3165,27 @@ chkLockGenerate.addEventListener('change', () => {
   renderGrid();
 });
 
+let _isDraggingElement = false;
+
 function openCasesPanel() {
-  document.getElementById('cases-panel').classList.add('open');
-  document.getElementById('cases-panel-overlay').classList.add('open');
+  const panel = document.getElementById('cases-panel');
+  _initPanelPosition(panel, 'left');
+  _makePanelDraggable(panel);
+  panel.classList.add('open');
 }
 function closeCasesPanel() {
+  if (_isDraggingElement) return;
   document.getElementById('cases-panel').classList.remove('open');
-  document.getElementById('cases-panel-overlay').classList.remove('open');
 }
-document.getElementById('btn-cases-panel').addEventListener('click', openCasesPanel);
-document.getElementById('cases-panel-close').addEventListener('click', closeCasesPanel);
-document.getElementById('cases-panel-overlay').addEventListener('click', closeCasesPanel);
+document.getElementById('btn-cases-panel').addEventListener('click', () => {
+  const panel = document.getElementById('cases-panel');
+  if (panel.classList.contains('open')) closeCasesPanel();
+  else openCasesPanel();
+});
+document.getElementById('cases-panel-close').addEventListener('click', () => {
+  _isDraggingElement = false;
+  document.getElementById('cases-panel').classList.remove('open');
+});
 
 
 // ──────────────────────────────────────────────
@@ -3108,6 +3487,61 @@ document.getElementById('modal-confirm-reset').addEventListener('click', e => {
   if (e.target === document.getElementById('modal-confirm-reset'))
     document.getElementById('modal-confirm-reset').classList.add('hidden');
 });
+// Bouton global "Vider"
+const btnClearGrids = document.getElementById('btn-clear-grids');
+let _clearGridsTarget = 'visible'; // 'visible' ou gridId pour per-grille
+
+function updateClearGridsButton() {
+  const btn = document.getElementById('btn-clear-grids');
+  if (!btn) return;
+  const t = activeTheme();
+  const locked = !t || t.locked;
+  btn.disabled = locked;
+  btn.classList.toggle('btn-disabled', locked);
+}
+
+btnClearGrids.addEventListener('click', () => {
+  const t = activeTheme();
+  if (!t || t.locked) return;
+  _clearGridsTarget = 'visible';
+  const grids = getVisibleGrids().filter(gx => !gx.locked);
+  const count = grids.length;
+  document.getElementById('modal-clear-msg').textContent =
+    count === 1 ? 'Vider la grille affichée ?' : `Vider les ${count} grilles affichées ?`;
+  document.getElementById('modal-confirm-clear').classList.remove('hidden');
+});
+
+document.getElementById('btn-confirm-clear').addEventListener('click', () => {
+  document.getElementById('modal-confirm-clear').classList.add('hidden');
+  if (_clearCellCallback) {
+    _clearCellCallback();
+    _clearCellCallback = null;
+    return;
+  }
+  const t = activeTheme();
+  if (!t || t.locked) return;
+  const grids = getVisibleGrids().filter(gx => !gx.locked);
+  grids.forEach(gx => { gx.grid = gx.grid.map(() => ({ elementId: null, checked: false })); });
+  saveState();
+  renderGrid();
+  renderElements();
+});
+
+document.getElementById('btn-cancel-clear').addEventListener('click', () => {
+  document.getElementById('modal-confirm-clear').classList.add('hidden');
+  _clearCellCallback = null;
+});
+document.getElementById('btn-close-confirm-clear').addEventListener('click', () => {
+  document.getElementById('modal-confirm-clear').classList.add('hidden');
+  _clearCellCallback = null;
+});
+document.getElementById('modal-confirm-clear').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-confirm-clear')) {
+    document.getElementById('modal-confirm-clear').classList.add('hidden');
+    _clearCellCallback = null;
+  }
+});
+
 btnScreenshot.addEventListener('click', bingoScreenshot);
 
 // Modal nouvelle grille
@@ -3238,8 +3672,19 @@ function renderArchivesUnified() {
       folderRow.appendChild(_makeArchiveButtons([
         { text: '↩ Restaurer', cls: 'restore', disabled: parentArchived,
           onClick: () => { archiveFolder(f.id); renderArchivesUnified(); } },
+        { text: '📂 Déplacer', cls: 'move',
+          onClick: () => openMoveFolderModal(f.id) },
+        { text: '📥 Importer', cls: 'import',
+          onClick: () => openImportElementsModal(f.id) },
         { text: '🗑 Supprimer', cls: 'del',
           onClick: () => { deleteFolder(f.id); renderArchivesUnified(); } }
+      ]));
+    } else {
+      folderRow.appendChild(_makeArchiveButtons([
+        { text: '📂 Déplacer', cls: 'move',
+          onClick: () => openMoveFolderModal(f.id) },
+        { text: '📥 Importer', cls: 'import',
+          onClick: () => openImportElementsModal(f.id) }
       ]));
     }
     container.appendChild(folderRow);
@@ -3274,21 +3719,28 @@ function renderArchivesUnified() {
 
 function openArchivesUnified() {
   renderArchivesUnified();
-  modalArchivesUnified.classList.remove('hidden');
+  _initPanelPosition(modalArchivesUnified, 'right');
+  _makePanelDraggable(modalArchivesUnified);
+  modalArchivesUnified.classList.add('open');
 }
 
 function closeArchivesUnified() {
-  modalArchivesUnified.classList.add('hidden');
+  modalArchivesUnified.classList.remove('open');
 }
 
-document.getElementById('btn-archives-unified').addEventListener('click', openArchivesUnified);
+document.getElementById('btn-archives-unified').addEventListener('click', () => {
+  if (modalArchivesUnified.classList.contains('open')) closeArchivesUnified();
+  else openArchivesUnified();
+});
 document.getElementById('btn-close-archives-unified').addEventListener('click', closeArchivesUnified);
-modalArchivesUnified.addEventListener('click', e => { if (e.target === modalArchivesUnified) closeArchivesUnified(); });
 
 // ── Panneau dossiers ──
-document.getElementById('btn-folders-panel').addEventListener('click', openFoldersPanel);
+document.getElementById('btn-folders-panel').addEventListener('click', () => {
+  const panel = document.getElementById('folders-panel');
+  if (panel.classList.contains('open')) closeFoldersPanel();
+  else openFoldersPanel();
+});
 document.getElementById('folders-panel-close').addEventListener('click', closeFoldersPanel);
-document.getElementById('folders-panel-overlay').addEventListener('click', closeFoldersPanel);
 
 // ── Corbeille unifiée ──────────────────────────────────────────────────────────
 const modalTrashUnified = document.getElementById('modal-trash-unified');
@@ -3411,16 +3863,20 @@ function renderTrashList() {
 
 function openTrashUnified() {
   renderTrashList();
-  modalTrashUnified.classList.remove('hidden');
+  _initPanelPosition(modalTrashUnified, 'right');
+  _makePanelDraggable(modalTrashUnified);
+  modalTrashUnified.classList.add('open');
 }
 
 function closeTrashUnified() {
-  modalTrashUnified.classList.add('hidden');
+  modalTrashUnified.classList.remove('open');
 }
 
-document.getElementById('btn-trash-unified').addEventListener('click', openTrashUnified);
+document.getElementById('btn-trash-unified').addEventListener('click', () => {
+  if (modalTrashUnified.classList.contains('open')) closeTrashUnified();
+  else openTrashUnified();
+});
 document.getElementById('btn-close-trash-unified').addEventListener('click', closeTrashUnified);
-modalTrashUnified.addEventListener('click', e => { if (e.target === modalTrashUnified) closeTrashUnified(); });
 
 document.getElementById('btn-trash-empty-all').addEventListener('click', () => {
   if ((state.trash || []).length === 0) return;

@@ -27,6 +27,8 @@
 - **Archivage par dossier** : chaque dossier a ses propres cases archivées, indépendant des autres dossiers
 - **Corbeille** : les éléments supprimés sont conservés temporairement, restaurables ou supprimables définitivement
 - **Génération sélective** : option pour remplir uniquement les cases vides, laisser les cases existantes intactes
+- **Déplacer un dossier** : via drag & drop (poignée `⠿`) dans le panneau Dossiers ou via l'option "Déplacer" du menu contextuel — avec choix de conserver ou adopter les cases du dossier d'arrivée
+- **Importer des cases** : copie les cases d'un autre dossier dans le dossier actif (sans doublon), accessible depuis le menu contextuel
 
 ### Tier List
 - Création et gestion de tier lists avec dossiers
@@ -65,3 +67,13 @@ LesMichels/
 - Firebase SDK 10.12.2 chargé via CDN
 - Police : Space Mono (logo), Arial (interface)
 - Assets versionnés via `?v=N` pour invalidation du cache navigateur
+
+## Notes à moi même
+
+Infobulles — où se trouvent les lignes :
+
+Les infobulles utilisent uniquement l'attribut HTML natif title="". Il n'y a aucun CSS personnalisé pour les infobulles — elles sont gérées par le navigateur.
+
+Dans index.html : chaque <button ... title="..."> entre les lignes ~51 à ~174 (la zone panneau de contrôle Bingo et la sidebar Tier List).
+Dans app.js : partout où du HTML est créé dynamiquement, par exemple ligne 1021 (li.title = 'Clic gauche ...'), ligne 1034 (handle.title = 'Glisser-déposer...'), et d'autres éléments créés dans renderGrid() (~ligne 2260–2500).
+Pour les modifier, tu changes simplement le contenu entre guillemets de l'attribut title="" directement dans ces fichiers.

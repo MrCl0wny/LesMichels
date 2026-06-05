@@ -229,46 +229,56 @@ body {
 }
 
 /* ── Drawer panneau dossiers ── */
-.folders-panel-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  background: rgba(0,0,0,0.45);
-  display: none;
-}
-.folders-panel-overlay.open { display: block; }
+/* Overlay (inutilisé, conservé pour compat JS) */
+.folders-panel-overlay { display: none; }
+
+/* Panneaux flottants déplaçables */
 .folders-panel {
   position: fixed;
-  top: 0;
-  left: -100vw;
-  bottom: 0;
   z-index: 201;
   width: 300px;
   max-width: 90vw;
+  max-height: 80vh;
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  box-shadow: 4px 0 24px rgba(0,0,0,0.4);
-  transition: left 0.22s ease;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  /* masqué par défaut via transform hors écran */
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, visibility 0.18s ease;
 }
 .folders-panel.open {
-  left: 0;
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 .folders-panel-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 14px 12px;
+  padding: 10px 12px 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  cursor: grab;
+  user-select: none;
 }
+.folders-panel-header:active { cursor: grabbing; }
 .folders-panel-title {
   flex: 1;
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--text);
   letter-spacing: 0.04em;
+}
+.cases-panel-folder-name {
+  font-weight: 400;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  letter-spacing: 0;
 }
 .folders-panel-new-root {
   display: inline-flex;
@@ -308,8 +318,9 @@ body {
   user-select: none;
   transition: var(--transition);
 }
-.fp-folder-row:hover { border-color: var(--accent-dim); background: var(--surface-3); }
-.fp-folder-row.active { border-color: var(--accent); background: var(--accent-glow); }
+.fp-folder-row:hover { border-color: #60a5fa; background: var(--surface-3); }
+.fp-folder-row.active { border-color: #3b82f6; background: rgba(59,130,246,0.18); }
+.fp-folder-row.ancestor { border-color: #1e3a5f; background: rgba(30,58,95,0.45); }
 .fp-folder-icon { font-size: 0.8rem; flex-shrink: 0; }
 .fp-folder-name {
   flex: 1;
@@ -320,7 +331,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.fp-folder-row.active .fp-folder-name { color: var(--accent); }
+.fp-folder-row.active .fp-folder-name { color: #93c5fd; }
+.fp-folder-row.ancestor .fp-folder-name { color: #60a5fa; }
 .fp-folder-arrow {
   font-size: 0.6rem;
   color: var(--text-faint);
@@ -346,6 +358,39 @@ body {
 }
 .fp-folder-row:hover .fp-folder-ctx-btn { opacity: 1; }
 .fp-folder-ctx-btn:hover { color: var(--text); background: var(--surface-3); }
+
+/* Poignée drag dossier */
+.fp-folder-drag-handle {
+  font-size: 1rem;
+  color: var(--text-faint);
+  cursor: grab;
+  opacity: 0.25;
+  transition: opacity var(--transition), color var(--transition);
+  flex-shrink: 0;
+  padding: 0 4px;
+  user-select: none;
+  letter-spacing: 0.05em;
+}
+.fp-folder-row:hover .fp-folder-drag-handle { opacity: 0.75; color: var(--text-dim); }
+.fp-folder-drag-handle:hover { opacity: 1 !important; color: var(--accent); }
+.fp-folder-drag-handle:active { cursor: grabbing; }
+
+/* États drag des lignes dossier */
+.fp-folder-row.fp-folder-dragging { opacity: 0.4; }
+.fp-folder-row.fp-folder-drag-over { border-color: var(--accent); background: var(--accent-glow); }
+
+/* Modal déplacer dossier — radios */
+.move-folder-elements-choice { margin-bottom: 4px; }
+.move-folder-radio-group { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.move-folder-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: var(--text-dim);
+}
+.move-folder-radio-label input[type="radio"] { accent-color: var(--accent); cursor: pointer; }
 
 .fp-children {
   display: flex;
@@ -556,6 +601,9 @@ body {
 
 /* Icone "+" verte */
 .btn-plus-green { color: #3ecf6e; font-weight: 900; }
+
+/* "+ Dossier" en bleu dans la ligne grilles */
+.btn-new-folder-in-grids .btn-plus-green { color: #60a5fa; }
 
 /* ── Boutons de réordonnancement des grilles ── */
 .btn-grid-move {
@@ -787,6 +835,20 @@ textarea.element-edit-input {
 .element-text { cursor: pointer; }
 .element-item:not(.archived) .element-text:hover { color: var(--accent); }
 
+.elem-drag-handle {
+  color: var(--text-faint);
+  cursor: grab;
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+  user-select: none;
+  padding: 0 2px;
+  transition: color 0.15s;
+}
+.elem-drag-handle:hover { color: var(--accent); }
+.elem-drag-handle:active { cursor: grabbing; }
+.element-item.elem-dragging { opacity: 0.45; }
+
 .hidden { display: none !important; }
 
 /* ── Grilles ── */
@@ -858,8 +920,12 @@ textarea.element-edit-input {
 .ctrl-row-toolbar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 10px;
+}
+
+.toolbar-spacer {
+  flex: 1;
 }
 
 .grid-toolbar-sep {
@@ -980,19 +1046,19 @@ textarea.element-edit-input {
 
 /* Bouton Générer grille */
 .btn-action.btn-generate-global {
-  background: #1a4f8b;
-  color: #b8d4f5;
-  border: 1px solid #2060a8;
+  background: #6d28d9;
+  color: #ede9fe;
+  border: 1px solid #7c3aed;
 }
-.btn-action.btn-generate-global:hover { background: #2060a8; color: #fff; border-color: #2a72c4; }
+.btn-action.btn-generate-global:hover { background: #7c3aed; color: #fff; border-color: #8b5cf6; }
 
-/* Bouton Générer cases vides (bleu plus clair) */
+/* Bouton Générer cases vides (violet plus clair) */
 .btn-action.btn-generate-fill-empty {
-  background: #2a6bc4;
-  color: #d0e8ff;
-  border: 1px solid #3a7fe8;
+  background: #8b5cf6;
+  color: #ede9fe;
+  border: 1px solid #a78bfa;
 }
-.btn-action.btn-generate-fill-empty:hover:not(:disabled) { background: #3a7fe8; color: #fff; border-color: #4a95ff; }
+.btn-action.btn-generate-fill-empty:hover:not(:disabled) { background: #a78bfa; color: #fff; border-color: #c4b5fd; }
 .btn-action.btn-generate-fill-empty:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -1001,20 +1067,41 @@ textarea.element-edit-input {
 
 /* Bouton Générer sous-grille (🎲) */
 .btn-action.btn-subgrid-gen {
-  background: #1a4f8b;
-  color: #b8d4f5;
-  border: 1px solid #2060a8;
+  background: #6d28d9;
+  color: #ede9fe;
+  border: 1px solid #7c3aed;
 }
-.btn-action.btn-subgrid-gen:hover:not(:disabled) { background: #2060a8; color: #fff; border-color: #2a72c4; }
+.btn-action.btn-subgrid-gen:hover:not(:disabled) { background: #7c3aed; color: #fff; border-color: #8b5cf6; }
 
 /* Bouton Générer cases vides sous-grille (📝) */
 .btn-action.btn-subgrid-fill-empty {
-  background: #2a6bc4;
-  color: #d0e8ff;
-  border: 1px solid #3a7fe8;
+  background: #8b5cf6;
+  color: #ede9fe;
+  border: 1px solid #a78bfa;
 }
-.btn-action.btn-subgrid-fill-empty:hover:not(:disabled) { background: #3a7fe8; color: #fff; border-color: #4a95ff; }
+.btn-action.btn-subgrid-fill-empty:hover:not(:disabled) { background: #a78bfa; color: #fff; border-color: #c4b5fd; }
 .btn-action.btn-subgrid-fill-empty:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Bouton Vider global */
+.btn-action.btn-clear-grids {
+  background: #7a3e00;
+  color: #ffd6a0;
+  border: 1px solid #c46000;
+}
+.btn-action.btn-clear-grids:hover:not(:disabled) { background: #c46000; color: #fff; border-color: #e07800; }
+
+/* Bouton Vider par grille (⊘) */
+.btn-action.btn-subgrid-clear {
+  background: #7a3e00;
+  color: #ffd6a0;
+  border: 1px solid #c46000;
+}
+.btn-action.btn-subgrid-clear:hover:not(:disabled) { background: #c46000; color: #fff; border-color: #e07800; }
+.btn-action.btn-subgrid-clear:disabled {
   opacity: 0.4;
   cursor: not-allowed;
   pointer-events: none;
@@ -1553,6 +1640,10 @@ textarea.element-edit-input {
 .archived-theme-btn.restore:hover { background: rgba(71, 200, 135, 0.12); border-color: var(--success); }
 .archived-theme-btn.del { color: var(--danger); }
 .archived-theme-btn.del:hover { background: rgba(232, 91, 71, 0.12); border-color: var(--danger); }
+.archived-theme-btn.move { color: #60a5fa; }
+.archived-theme-btn.move:hover { background: rgba(96, 165, 250, 0.12); border-color: #60a5fa; }
+.archived-theme-btn.import { color: #a78bfa; }
+.archived-theme-btn.import:hover { background: rgba(167, 139, 250, 0.12); border-color: #a78bfa; }
 
 .archived-empty {
   text-align: center;
@@ -2631,44 +2722,24 @@ textarea.element-edit-input {
   background: rgba(58,106,191,0.12) !important;
 }
 
-/* ── Boutons Archives & Corbeille unifiés ── */
+/* ── Boutons Archives & Corbeille — même style que btn-action ── */
 .btn-archives-unified {
   background: var(--surface-2);
   color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: Arial, sans-serif;
-  font-size: 0.82rem;
-  font-weight: 700;
-  padding: 7px 16px;
-  cursor: pointer;
-  transition: var(--transition);
-  white-space: nowrap;
-  flex-shrink: 0;
-  margin-left: auto;
+  border: 1px solid var(--border) !important;
 }
+.btn-archives-unified:hover { border-color: var(--accent-dim) !important; color: var(--accent) !important; background: var(--accent-glow) !important; opacity: 1; }
 .btn-trash-unified {
   background: var(--surface-2);
   color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: Arial, sans-serif;
-  font-size: 0.82rem;
-  font-weight: 700;
-  padding: 7px 16px;
-  cursor: pointer;
-  transition: var(--transition);
-  white-space: nowrap;
-  flex-shrink: 0;
+  border: 1px solid var(--border) !important;
 }
-.btn-archives-unified:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
-.btn-trash-unified:hover { border-color: var(--danger); color: var(--danger); background: rgba(232,91,71,0.08); }
+.btn-trash-unified:hover { border-color: var(--danger) !important; color: var(--danger) !important; background: rgba(232,91,71,0.08) !important; opacity: 1; }
 
-/* ── Modale Archives / Corbeille unifiée ── */
-.modal-archives-box {
-  min-width: 420px;
-  max-width: 620px;
-  width: 95%;
+/* ── Drawers Archives & Corbeille (même base que .folders-panel) ── */
+.archives-panel,
+.trash-panel {
+  width: 360px;
 }
 
 .modal-archives-sections {
@@ -2716,8 +2787,7 @@ textarea.element-edit-input {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 70vh;
-  overflow-y: auto;
+  overflow-y: visible;
   padding-right: 4px;
 }
 

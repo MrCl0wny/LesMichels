@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=60" />
+  <link rel="stylesheet" href="style.css?v=71" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -138,6 +138,7 @@
           <div class="ctrl-row ctrl-row-toolbar">
             <button class="btn-action btn-folders-panel" id="btn-folders-panel" title="Ouvrir le panneau dossiers">📁 Dossiers</button>
             <button class="btn-action btn-cases-panel" id="btn-cases-panel" title="Ouvrir/fermer le panneau cases">📋 Cases</button>
+            <div class="toolbar-spacer"></div>
             <div class="ctrl-row-sep"></div>
             <div class="grid-size-control grid-size-control-slider">
               <label class="slider-label">Grille</label>
@@ -165,11 +166,14 @@
               </label>
               <button class="btn-action btn-generate-global" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées">🎲 Générer grille</button>
               <button class="btn-action btn-generate-fill-empty" id="btn-generate-fill-empty" title="Générer aléatoirement seulement les cases vides, laisser les cases existantes intactes">📝 Générer cases vides</button>
+              <button class="btn-action btn-clear-grids" id="btn-clear-grids" title="Vider toutes les grilles affichées">⊘ Vider</button>
               <button class="btn-action btn-reset" id="btn-reset" title="Réinitialise toutes les cases du sous-thème">↺ Reset</button>
             </div>
             <button class="btn-action btn-screenshot-bingo" id="btn-screenshot-bingo" title="Copier les grilles dans le presse-papier">📷 Capture</button>
-            <button class="btn-archives-unified" id="btn-archives-unified" title="Eléments archivés">📦 Archives</button>
-            <button class="btn-trash-unified" id="btn-trash-unified" title="Éléments supprimés">🗑 Corbeille</button>
+            <div class="toolbar-spacer"></div>
+            <div class="ctrl-row-sep"></div>
+            <button class="btn-action btn-archives-unified" id="btn-archives-unified" title="Éléments archivés">📦 Archives</button>
+            <button class="btn-action btn-trash-unified" id="btn-trash-unified" title="Éléments supprimés">🗑 Corbeille</button>
           </div>
 
         </div>
@@ -333,8 +337,8 @@
   <div id="cases-panel-overlay" class="folders-panel-overlay"></div>
   <div id="cases-panel" class="folders-panel cases-panel">
     <div class="folders-panel-header">
-      <span class="folders-panel-title">📋 Cases</span>
-      <span class="element-count" id="element-count" title="Nombre de cases">0</span>
+      <span class="folders-panel-title">📋 Cases <span id="cases-panel-folder-name" class="cases-panel-folder-name"></span></span>
+      <span id="element-count" style="display:none">0</span>
       <button class="modal-close" id="cases-panel-close">✕</button>
     </div>
     <div id="panel-elements-body" class="folders-panel-tree panel-elements-body">
@@ -414,13 +418,13 @@
     </div>
   </div>
 
-  <!-- Modal Archives unifiée -->
-  <div id="modal-archives-unified" class="modal-overlay hidden">
-    <div class="modal-box modal-archives-box">
-      <div class="modal-header">
-        <h3>📦 Archives</h3>
-        <button class="modal-close" id="btn-close-archives-unified">✕</button>
-      </div>
+  <!-- Panneau Archives (drawer flottant) -->
+  <div id="modal-archives-unified" class="folders-panel archives-panel">
+    <div class="folders-panel-header">
+      <span class="folders-panel-title">📦 Archives</span>
+      <button class="modal-close" id="btn-close-archives-unified">✕</button>
+    </div>
+    <div class="folders-panel-tree">
       <div id="archives-tree" class="archives-tree"></div>
     </div>
   </div>
@@ -429,13 +433,13 @@
   <div id="archived-subthemes-list" style="display:none"></div>
   <div id="archived-grids-list" style="display:none"></div>
 
-  <!-- Modal Corbeille unifiée -->
-  <div id="modal-trash-unified" class="modal-overlay hidden">
-    <div class="modal-box modal-archives-box">
-      <div class="modal-header">
-        <h3>🗑 Corbeille</h3>
-        <button class="modal-close" id="btn-close-trash-unified">✕</button>
-      </div>
+  <!-- Panneau Corbeille (drawer flottant) -->
+  <div id="modal-trash-unified" class="folders-panel trash-panel">
+    <div class="folders-panel-header">
+      <span class="folders-panel-title">🗑 Corbeille</span>
+      <button class="modal-close" id="btn-close-trash-unified">✕</button>
+    </div>
+    <div class="folders-panel-tree">
       <div class="modal-trash-actions-top">
         <button class="btn-action btn-danger-action" id="btn-trash-empty-all">🗑 Vider la corbeille</button>
       </div>
@@ -463,6 +467,60 @@
   <!-- Modales legacy conservées pour compatibilité JS (cachées, non utilisées) -->
   <div id="modal-archived-themes" class="hidden" style="display:none!important"></div>
   <div id="modal-archived-grids" class="hidden" style="display:none!important"></div>
+
+  <!-- Modal déplacer dossier -->
+  <div id="modal-move-folder" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Déplacer le dossier</h3>
+        <button class="modal-close" id="btn-close-move-folder-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom:12px">
+          <span class="modal-folder-select-label">Déplacer vers</span>
+          <select id="move-folder-target-select" class="modal-folder-select"></select>
+        </div>
+        <div id="move-folder-elements-choice" class="move-folder-elements-choice">
+          <span class="modal-folder-select-label">Cases du dossier d'arrivée</span>
+          <div class="move-folder-radio-group">
+            <label class="move-folder-radio-label">
+              <input type="radio" name="move-folder-elements" value="keep" checked />
+              <span>Conserver mes cases actuelles</span>
+            </label>
+            <label class="move-folder-radio-label">
+              <input type="radio" name="move-folder-elements" value="adopt" />
+              <span>Adopter les cases du dossier d'arrivée</span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-action" id="btn-confirm-move-folder">Déplacer</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-move-folder">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal importer les cases d'un autre dossier -->
+  <div id="modal-import-elements" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Importer des cases</h3>
+        <button class="modal-close" id="btn-close-import-elements-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom:12px">
+          <span class="modal-folder-select-label">Importer depuis</span>
+          <select id="import-elements-source-select" class="modal-folder-select"></select>
+        </div>
+        <p id="import-elements-info" style="font-size:0.82rem;color:var(--text-faint);margin-bottom:16px;">Les cases déjà présentes ne seront pas dupliquées.</p>
+        <div class="modal-actions">
+          <button class="btn-action" id="btn-confirm-import-elements">Importer</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-import-elements">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Modal renommer dossier -->
   <div id="modal-rename-folder" class="modal-overlay hidden">
@@ -598,6 +656,23 @@
     </div>
   </div>
 
+  <!-- Modal confirmation Vider grilles -->
+  <div id="modal-confirm-clear" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Confirmer le vidage</h3>
+        <button class="modal-close" id="btn-close-confirm-clear">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;" id="modal-clear-msg">Vider les grilles affichées ?</p>
+        <div class="modal-actions">
+          <button class="btn-action btn-danger-action" id="btn-confirm-clear">⊘ Vider</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-clear">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal confirmation Reset Tier List -->
   <div id="tl-modal-confirm-reset" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -648,6 +723,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=92"></script>
+  <script src="app.js?v=103"></script>
 </body>
 </html>
