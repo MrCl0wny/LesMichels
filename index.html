@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=79" />
+  <link rel="stylesheet" href="style.css?v=82" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -123,12 +123,14 @@
 
       <!-- ── Panneau de contrôle unifié (rétractable) ── -->
       <div class="bingo-control-panel" id="bingo-control-panel">
+        <button class="btn-current-event" id="btn-current-event" title="Aller à la soirée en cours" style="display:none">🎉 <span id="btn-current-event-label">Soirée en cours</span></button>
         <div class="bingo-control-panel-body" id="bingo-control-panel-body">
 
           <!-- Ligne 1 : Grilles (dans le dossier actif) -->
           <div class="ctrl-row ctrl-row-grids">
             <div id="grids-breadcrumb" class="grids-breadcrumb"></div>
             <div id="grids-list" class="grids-list"></div>
+            <button class="btn-new-grid-inline" id="btn-new-grid-inline" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
           </div>
 
           <!-- Ligne 3 : Toolbar -->
@@ -371,6 +373,7 @@
     <button class="ctx-menu-item" id="ctx-folder-new-child">📁 Nouveau dossier enfant</button>
     <button class="ctx-menu-item" id="ctx-folder-rename">✎ Renommer</button>
     <button class="ctx-menu-item" id="ctx-folder-duplicate">❐ Dupliquer</button>
+    <button class="ctx-menu-item" id="ctx-folder-set-current-event">🎉 Définir comme soirée en cours</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-folder-archive">📦 Archiver</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-folder-delete">🗑 Supprimer</button>
   </div>
@@ -723,6 +726,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=113"></script>
+  <script src="app.js?v=116"></script>
 </body>
 </html>

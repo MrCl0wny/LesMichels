@@ -123,6 +123,8 @@ function loadUserPrefs() {
       _localActiveFolderId = prefs.activeThemeId;
       saveUserPrefs({ activeFolderId: _localActiveFolderId, activeThemeId: null, activeSubthemeId: null });
     }
+    // Soirée en cours
+    if (prefs.currentEventFolderId != null) _currentEventFolderId = prefs.currentEventFolderId;
     // Prefs tierlist
     if (prefs.tlShowLabels        != null) _tlLocalShowLabels       = !!prefs.tlShowLabels;
     if (prefs.tlImgSize           != null) _tlLocalImgSize          = prefs.tlImgSize;
@@ -177,6 +179,7 @@ function _applyPrefsAndRender() {
   renderElements();
   renderGridsList();
   renderGrid();
+  renderCurrentEventButton();
   // Appliquer les prefs tierlist aux controls UI
   if (_tlLocalShowLabels !== null) tlShowLabelsToggle.checked = _tlLocalShowLabels;
   if (_tlLocalImgSize    !== null) tlImgSizeSlider.value       = _tlLocalImgSize;
@@ -242,6 +245,7 @@ function defaultFolder(name, withGrid = false) {
     locked: false,
     elements: [],
     archivedElementIds: [],
+    persistentCheckedIds: [],
     folders: [],      // sous-dossiers
     grids: [],        // grilles directes
     children: []      // références ordonnées
@@ -424,6 +428,7 @@ let _firebaseReady = false;
 let _prefsReady    = false;
 // activeFolderId est chargé depuis Firebase /users/{uid}/prefs
 let _localActiveFolderId   = null;
+let _currentEventFolderId  = null;
 
 function initState() {
   return { folders: [], trash: [] };
@@ -508,6 +513,33 @@ function activeTheme() {
 function activeSubtheme() {
   // "sous-thème" = le dossier actif lui-même (contient les grilles et archivedElementIds)
   return activeFolder();
+}
+
+function renderCurrentEventButton() {
+  const btn = document.getElementById('btn-current-event');
+  const lbl = document.getElementById('btn-current-event-label');
+  if (!btn) return;
+  if (!_currentEventFolderId) { btn.style.display = 'none'; return; }
+  const folder = findFolderById(state.folders, _currentEventFolderId);
+  if (!folder || folder.archived) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  if (lbl) {
+    const path = getFolderPath(state.folders, _currentEventFolderId);
+    const pathStr = path.map(f => f.name).join(' › ');
+    lbl.textContent = 'Soirée en cours : ' + pathStr;
+  }
+}
+
+function setCurrentEventFolder(id) {
+  if (_currentEventFolderId === id) {
+    _currentEventFolderId = null;
+    saveUserPrefs({ currentEventFolderId: null });
+  } else {
+    _currentEventFolderId = id;
+    saveUserPrefs({ currentEventFolderId: id });
+  }
+  renderCurrentEventButton();
+  renderFoldersPanelTree();
 }
 
 function defaultTheme(name) {
@@ -1333,6 +1365,7 @@ function duplicateTheme(id) { duplicateFolder(id); }
 function renderAllFolders() {
   renderFoldersPanelTree();
   renderGridsBreadcrumb();
+  renderCurrentEventButton();
 }
 
 // ──────────────────────────────────────────────
@@ -1348,7 +1381,7 @@ function renderGridsBreadcrumb() {
     if (i > 0) {
       const sep = document.createElement('span');
       sep.className = 'grids-breadcrumb-sep';
-      sep.textContent = ' › ';
+      sep.textContent = '›';
       container.appendChild(sep);
     }
     const span = document.createElement('span');
@@ -1579,6 +1612,8 @@ function renderFoldersPanelTree() {
       addItem('✎ Renommer',             false, () => openRenameFolderModal(f.id));
       addItem('❐ Dupliquer',            false, () => duplicateFolder(f.id));
       addItem('📂 Déplacer',            false, () => openMoveFolderModal(f.id));
+      const ceLabel = _currentEventFolderId === f.id ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
+      addItem(ceLabel,                  false, () => setCurrentEventFolder(f.id));
 
       addItem('📦 Archiver',            true,  () => archiveFolder(f.id));
       addItem('🗑 Supprimer',           true,  () => deleteFolder(f.id));
@@ -1967,6 +2002,10 @@ function getGlobalCheckedElementIds(t) {
         checked.add(c.elementId);
       }
     });
+  });
+  // Inclure les IDs validés persistants (conservés même après vidage)
+  (s.persistentCheckedIds || []).forEach(id => {
+    if (!archivedIds.includes(id)) checked.add(id);
   });
   return checked;
 }
@@ -2573,6 +2612,13 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     if (!tNow || tNow.locked || !sNow) return;
     const gNow = sNow.grids.find(x => x.id === g.id);
     if (!gNow || gNow.locked) return;
+    // Conserver les IDs validés avant de vider
+    if (!sNow.persistentCheckedIds) sNow.persistentCheckedIds = [];
+    gNow.grid.forEach(c => {
+      if (c.checked && c.elementId && !sNow.persistentCheckedIds.includes(c.elementId)) {
+        sNow.persistentCheckedIds.push(c.elementId);
+      }
+    });
     gNow.grid = gNow.grid.map(() => ({ elementId: null, checked: false }));
     saveState();
     renderGrid();
@@ -2660,6 +2706,13 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
           });
           const elObj = (sNow.elements || []).find(e => e.id === cell.elementId);
           if (elObj) elObj.checked = newChecked;
+          // Synchroniser persistentCheckedIds
+          if (!sNow.persistentCheckedIds) sNow.persistentCheckedIds = [];
+          if (newChecked) {
+            if (!sNow.persistentCheckedIds.includes(cell.elementId)) sNow.persistentCheckedIds.push(cell.elementId);
+          } else {
+            sNow.persistentCheckedIds = sNow.persistentCheckedIds.filter(id => id !== cell.elementId);
+          }
         }
         saveState();
         renderGrid();
@@ -2676,6 +2729,11 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
             if (!sNow) return;
             const gNow = sNow.grids.find(x => x.id === g.id);
             if (!gNow || gNow.locked) return;
+            // Conserver la validation dans persistentCheckedIds avant de vider
+            if (cell.checked && cell.elementId) {
+              if (!sNow.persistentCheckedIds) sNow.persistentCheckedIds = [];
+              if (!sNow.persistentCheckedIds.includes(cell.elementId)) sNow.persistentCheckedIds.push(cell.elementId);
+            }
             gNow.grid[i] = { elementId: null, checked: false };
             saveState();
             renderGrid();
@@ -3261,6 +3319,11 @@ function closeCtxMenuTheme() { closeCtxMenuFolder(); }
 function openCtxMenuFolder(id, e, anchorEl) {
   closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
   _ctxThemeId = id;
+  const _ceBtn = document.getElementById('ctx-folder-set-current-event');
+  if (_ceBtn) {
+    const isCurrentEvent = _currentEventFolderId === id;
+    _ceBtn.textContent = isCurrentEvent ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
+  }
   if (ctxMenuTheme) { positionCtxMenu(ctxMenuTheme, e, anchorEl); ctxMenuTheme.classList.remove('hidden'); }
 }
 
@@ -3292,6 +3355,13 @@ if (_ctxFolderNewChildBtn) _ctxFolderNewChildBtn.addEventListener('click', () =>
   closeCtxMenuFolder();
   if (parentId) openNewFolderModal(parentId);
 });
+const _ctxFolderSetCurrentEventBtn = document.getElementById('ctx-folder-set-current-event');
+if (_ctxFolderSetCurrentEventBtn) _ctxFolderSetCurrentEventBtn.addEventListener('click', () => {
+  const id = _ctxThemeId;
+  closeCtxMenuFolder();
+  if (id) setCurrentEventFolder(id);
+});
+
 const _ctxFolderCancelBtn = document.getElementById('ctx-folder-cancel');
 if (_ctxFolderCancelBtn) _ctxFolderCancelBtn.addEventListener('click', () => closeCtxMenuFolder());
 
@@ -3530,6 +3600,7 @@ document.getElementById('btn-confirm-reset').addEventListener('click', () => {
     gx.grid = gx.grid.map(c => ({ ...c, checked: false }));
   });
   (s.elements || []).forEach(el => { el.checked = false; });
+  s.persistentCheckedIds = [];
   saveState();
   renderGrid();
   renderElements();
@@ -3578,7 +3649,19 @@ document.getElementById('btn-confirm-clear').addEventListener('click', () => {
   }
   const t = activeTheme();
   if (!t || t.locked) return;
+  const sNow = activeSubtheme();
   const grids = getVisibleGrids().filter(gx => !gx.locked);
+  // Conserver les IDs validés avant de vider
+  if (sNow) {
+    if (!sNow.persistentCheckedIds) sNow.persistentCheckedIds = [];
+    grids.forEach(gx => {
+      gx.grid.forEach(c => {
+        if (c.checked && c.elementId && !sNow.persistentCheckedIds.includes(c.elementId)) {
+          sNow.persistentCheckedIds.push(c.elementId);
+        }
+      });
+    });
+  }
   grids.forEach(gx => { gx.grid = gx.grid.map(() => ({ elementId: null, checked: false })); });
   saveState();
   renderGrid();
@@ -3642,6 +3725,21 @@ btnNewGrid.addEventListener('click', () => {
   if (!activeSubtheme()) return;
   openNewGridModal();
 });
+
+const _btnNewGridInline = document.getElementById('btn-new-grid-inline');
+if (_btnNewGridInline) {
+  _btnNewGridInline.addEventListener('click', () => {
+    if (!activeSubtheme()) return;
+    openNewGridModal();
+  });
+}
+
+const _btnCurrentEvent = document.getElementById('btn-current-event');
+if (_btnCurrentEvent) {
+  _btnCurrentEvent.addEventListener('click', () => {
+    if (_currentEventFolderId) switchFolder(_currentEventFolderId);
+  });
+}
 
 const _btnNewFolderInGrids = document.getElementById('btn-new-folder-in-grids');
 if (_btnNewFolderInGrids) {

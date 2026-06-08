@@ -148,6 +148,27 @@ body {
   position: relative;
 }
 
+.btn-current-event {
+  position: absolute;
+  top: 8px;
+  right: 44px;
+  background: rgba(255, 185, 0, 0.12);
+  border: 1px solid rgba(255, 185, 0, 0.4);
+  border-radius: var(--radius);
+  color: #ffb900;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+  z-index: 2;
+}
+.btn-current-event:hover {
+  background: rgba(255, 185, 0, 0.22);
+  border-color: #ffb900;
+}
+
 .bingo-control-panel-body {
   display: flex;
   flex-direction: column;
@@ -184,7 +205,7 @@ body {
 .ctrl-row-breadcrumb    { padding-bottom: 4px; min-height: 20px; }
 .ctrl-row-root-folders  { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
 .ctrl-row-folders       { border-bottom: 1px solid var(--border); padding-bottom: 8px; padding-left: 12px; }
-.ctrl-row-grids         { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.ctrl-row-grids         { border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .ctrl-row-toolbar       { padding-bottom: 4px; }
 
 /* ── Boutons Dossiers / Cases toolbar ── */
@@ -226,6 +247,7 @@ body {
 .grids-breadcrumb-sep {
   color: var(--text-faint);
   flex-shrink: 0;
+  padding: 0 3px;
 }
 
 /* ── Drawer panneau dossiers ── */
@@ -888,7 +910,6 @@ textarea.element-edit-input {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  flex: 1;
 }
 
 .grid-tab {
@@ -946,6 +967,27 @@ textarea.element-edit-input {
 }
 .btn-new-grid:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
 .btn-new-grid:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+
+.btn-new-grid-inline {
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: #3ecf6e;
+  font-family: Arial, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+  align-self: center;
+}
+.btn-new-grid-inline:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
+.btn-new-grid-inline:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
 
 /* ── Toolbar ── */
