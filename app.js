@@ -3,6 +3,140 @@
 ═══════════════════════════════════════════════ */
 
 // ──────────────────────────────────────────────
+// Audio singleton + effets Bingo
+// ──────────────────────────────────────────────
+function playBingoSound() {
+  try {
+    const ctx = _getAudioCtx();
+    // Mélodie "ouverture de coffre" Zelda : E4 A4 C#5 E5 + accord final
+    const sequence = [
+      { freq: 329.63, dur: 0.10, t: 0.00 },  // E4
+      { freq: 440.00, dur: 0.10, t: 0.10 },  // A4
+      { freq: 554.37, dur: 0.10, t: 0.20 },  // C#5
+      { freq: 659.25, dur: 0.50, t: 0.30 },  // E5 (tenu)
+      // Accord final (E5 + A5 + C#6)
+      { freq: 659.25, dur: 0.60, t: 0.85 },
+      { freq: 880.00, dur: 0.60, t: 0.85 },
+      { freq: 1108.73, dur: 0.60, t: 0.85 },
+    ];
+    sequence.forEach(({ freq, dur, t }) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'square';
+      osc.frequency.value = freq;
+      const start = ctx.currentTime + t;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.005, start + 0.01);
+      gain.gain.setValueAtTime(0.005, start + dur - 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+      osc.start(start);
+      osc.stop(start + dur);
+    });
+  } catch (e) { /* contexte audio non disponible */ }
+}
+
+function launchConfetti(targetEl, gridId) {
+  const rect = targetEl ? targetEl.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  const canvas = document.createElement('canvas');
+  canvas.width  = Math.round(rect.width);
+  canvas.height = Math.round(rect.height);
+  canvas.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;width:${rect.width}px;height:${rect.height}px;pointer-events:none;z-index:9999;`;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  const colors = ['#f94144','#f3722c','#f9c74f','#90be6d','#43aa8b','#577590','#e07be5','#ffffff','#ff85e1'];
+
+  // Chaque fusée explose en étoile de particules
+  function makeFirework() {
+    const x = canvas.width  * (0.10 + Math.random() * 0.80);
+    const y = canvas.height * (0.05 + Math.random() * 0.60);
+    const color  = colors[Math.floor(Math.random() * colors.length)];
+    const color2 = colors[Math.floor(Math.random() * colors.length)];
+    const count  = 50 + Math.floor(Math.random() * 30);
+    return Array.from({ length: count }, (_, i) => {
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.2;
+      const speed = 2.5 + Math.random() * 5;
+      // Alterner deux couleurs pour un effet bicolore
+      const col = i % 2 === 0 ? color : color2;
+      return { x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, color: col, life: 1, decay: 0.008 + Math.random() * 0.007, size: 2 + Math.random() * 2.5 };
+    });
+  }
+
+  let particles = [];
+  // 4 explosions immédiates au départ
+  for (let i = 0; i < 4; i++) particles.push(...makeFirework());
+
+  const totalDuration = 10000; // 10s exactement
+  const burstInterval = 500;
+  let lastBurst = performance.now();
+  const startTime = performance.now();
+
+  function step(now) {
+    const elapsed = now - startTime;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Nouvelles salves jusqu'à 9s pour laisser les dernières particules finir dans les 10s
+    if (now - lastBurst > burstInterval && elapsed < 9000) {
+      const count = 2 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < count; i++) particles.push(...makeFirework());
+      lastBurst = now;
+    }
+
+    particles.forEach(p => {
+      p.x  += p.vx;
+      p.y  += p.vy;
+      p.vy += 0.06;
+      p.vx *= 0.96;
+      p.vy *= 0.96;
+      p.life -= p.decay;
+      const a = Math.max(0, p.life * p.life);
+      ctx.globalAlpha = a;
+      // Halo lumineux
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.fill();
+    });
+    ctx.shadowBlur = 0;
+
+    particles = particles.filter(p => p.life > 0);
+
+    if (elapsed < totalDuration || particles.length > 0) {
+      requestAnimationFrame(step);
+    } else {
+      canvas.remove();
+      _fireworksActiveByGrid[gridId] = false;
+    }
+  }
+  _fireworksActiveByGrid[gridId] = true;
+  requestAnimationFrame(step);
+}
+
+// Suivi du nombre de lignes bingo par grille pour ne déclencher qu'au changement
+const _prevBingoLines = {};
+let _bingoReadyForEffect = false; // évite le déclenchement au premier rendu (chargement)
+const _fireworksActiveByGrid = {};
+
+function triggerBingoEffectIfNew(gridId, lineCount) {
+  const prev = _prevBingoLines[gridId] !== undefined ? _prevBingoLines[gridId] : lineCount;
+  _prevBingoLines[gridId] = lineCount;
+  if (_bingoReadyForEffect && lineCount > prev && lineCount > 0) {
+    playBingoSound();
+    if (!_fireworksActiveByGrid[gridId]) {
+      const wrapperEl = document.querySelector(`.grid-view-wrapper[data-grid-id="${gridId}"]`);
+      launchConfetti(wrapperEl, gridId);
+    }
+  }
+}
+
+function setBingoReadyForEffect() {
+  _bingoReadyForEffect = true;
+}
+
+// ──────────────────────────────────────────────
 // Authentification Firebase Google
 // ──────────────────────────────────────────────
 let currentUser = null;
@@ -179,6 +313,7 @@ function _applyPrefsAndRender() {
   renderElements();
   renderGridsList();
   renderGrid();
+  setTimeout(setBingoReadyForEffect, 0);
   renderCurrentEventButton();
   // Appliquer les prefs tierlist aux controls UI
   if (_tlLocalShowLabels !== null) tlShowLabelsToggle.checked = _tlLocalShowLabels;
@@ -1756,14 +1891,15 @@ function closeCtxMenuSubtheme() { closeCtxMenuFolder(); }
 // ──────────────────────────────────────────────
 // Export PNG de la grille bingo
 // ──────────────────────────────────────────────
-function renderGridToCanvas(t, g) {
+function renderGridToCanvas(t, g, cellSize = 120) {
   const n = g.gridSize;
-  const cellSize = 120;
   const gap = 3;
-  const titleH = g.title ? 32 : 0;
-  const headerH = 44;
+  const pathFontPx  = Math.max(10, Math.round(cellSize * 0.11));
+  const nameFontPx  = Math.max(13, Math.round(cellSize * 0.15));
+  const lineGap     = Math.round(cellSize * 0.04);
+  const headerH     = pathFontPx + lineGap + nameFontPx + Math.round(cellSize * 0.1) * 2;
   const totalW = n * cellSize + (n - 1) * gap;
-  const totalH = titleH + headerH + n * cellSize + (n - 1) * gap;
+  const totalH = headerH + n * cellSize + (n - 1) * gap;
 
   const canvas = document.createElement('canvas');
   canvas.width = totalW;
@@ -1773,32 +1909,30 @@ function renderGridToCanvas(t, g) {
   ctx.fillStyle = '#18181c';
   ctx.fillRect(0, 0, totalW, totalH);
 
-  // Titre personnalisé (au dessus)
-  let offsetY = 0;
-  if (g.title) {
-    ctx.fillStyle = '#e8c547';
-    ctx.font = 'bold 15px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(g.title, totalW / 2, titleH / 2);
-    offsetY = titleH;
-  }
+  const padV = Math.round(cellSize * 0.1);
+  // Ligne 1 : chemin du dossier (petit, à gauche)
+  const path = getFolderPath(state.folders, _localActiveFolderId);
+  const pathStr = path.map(f => f.name).join(' › ');
+  ctx.fillStyle = '#9090a8';
+  ctx.font = `${pathFontPx}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(pathStr, totalW / 2, padV);
 
-  // Sous-titre : "ThèmeName — GridName"
-  ctx.fillStyle = '#e8e8f0';
-  ctx.font = 'bold 16px Arial';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`${t.name}  —  ${g.name}`, 8, offsetY + headerH / 2);
+  // Ligne 2 : nom de la grille (plus grand, centré, en jaune)
+  ctx.fillStyle = '#e8c547';
+  ctx.font = `bold ${nameFontPx}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(g.name, totalW / 2, padV + pathFontPx + lineGap);
 
   const { indices: bingoIdx } = getBingoResult(n, g.grid.slice(0, n * n));
-  const scale = _localFontScale;
 
   for (let i = 0; i < n * n; i++) {
     const row = Math.floor(i / n);
     const col = i % n;
     const x = col * (cellSize + gap);
-    const y = offsetY + headerH + row * (cellSize + gap);
+    const y = headerH + row * (cellSize + gap);
     const cell = g.grid[i];
     const el = cell && cell.elementId ? (activeSubtheme()?.elements || []).find(e => e.id === cell.elementId) : null;
 
@@ -1821,38 +1955,50 @@ function renderGridToCanvas(t, g) {
 
     ctx.fillStyle = (bingoIdx.has(i) || (cell && cell.checked)) ? '#fff' : '#d0d0e8';
     const lenText = el.text.length;
-    let basePx;
-    if (lenText <= 6)       basePx = 20;
-    else if (lenText <= 12) basePx = 16;
-    else if (lenText <= 22) basePx = 13;
-    else if (lenText <= 40) basePx = 11;
-    else                    basePx = 9;
-    const fontSize = Math.max(8, Math.round(basePx * scale));
+    let baseRatio;
+    if (lenText <= 6)       baseRatio = 0.185;
+    else if (lenText <= 12) baseRatio = 0.145;
+    else if (lenText <= 22) baseRatio = 0.113;
+    else if (lenText <= 40) baseRatio = 0.093;
+    else                    baseRatio = 0.077;
+    let fontSize = Math.max(7, Math.round(baseRatio * cellSize));
     ctx.font = `bold ${fontSize}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
 
-    // Word-wrap avec respect de la hauteur de cellule
-    const maxW = cellSize - 14;
-    const words = el.text.split(' ');
-    const lines = [];
-    let line = '';
-    for (const word of words) {
-      const test = line ? line + ' ' + word : word;
-      if (ctx.measureText(test).width > maxW && line) {
-        lines.push(line);
-        line = word;
-      } else {
-        line = test;
-      }
-    }
-    if (line) lines.push(line);
+    // Word-wrap — réduire la taille si le texte ne rentre pas
+    const padding = cellSize * 0.1;
+    const maxW = cellSize - padding * 2;
+    const lineH = fontSize * 1.2;
 
-    const lineH = fontSize + 4;
-    const totalTextH = lines.length * lineH;
+    function wrapText(fs) {
+      ctx.font = `bold ${fs}px Arial`;
+      const words = el.text.split(' ');
+      const result = [];
+      let line = '';
+      for (const word of words) {
+        const test = line ? line + ' ' + word : word;
+        if (ctx.measureText(test).width > maxW && line) { result.push(line); line = word; }
+        else line = test;
+      }
+      if (line) result.push(line);
+      return result;
+    }
+
+    let lines = wrapText(fontSize);
+    // Réduire la taille si le texte dépasse la hauteur de cellule
+    let fsFinal = fontSize;
+    while (fsFinal > 8 && lines.length * fsFinal * 1.2 > cellSize - padding * 2) {
+      fsFinal--;
+      lines = wrapText(fsFinal);
+    }
+    if (fsFinal !== fontSize) ctx.font = `bold ${fsFinal}px Arial`;
+    const lineHFinal = fsFinal * 1.2;
+
+    const totalTextH = lines.length * lineHFinal;
     const startY = y + (cellSize - totalTextH) / 2;
     lines.forEach((l, li) => {
-      ctx.fillText(l, x + cellSize / 2, startY + li * lineH);
+      ctx.fillText(l, x + cellSize / 2, startY + li * lineHFinal);
     });
   }
 
@@ -1904,13 +2050,20 @@ function playCaptureSound() {
 function copyGridToClipboard(grids) {
   const t = activeTheme();
   if (!t || grids.length === 0) return;
+  // Largeur cible : 600px par grille
+  const TARGET_PER_GRID = 600;
+  const outerGap = 16;
+  const n = grids[0].gridSize;
+  const gridGap = 3;
+  const availPerGrid = TARGET_PER_GRID - gridGap * (n - 1);
+  const cellSize = Math.floor(availPerGrid / n);
+
   let canvas;
   if (grids.length === 1) {
-    canvas = renderGridToCanvas(t, grids[0]);
+    canvas = renderGridToCanvas(t, grids[0], cellSize);
   } else {
-    const canvases = grids.map(gx => renderGridToCanvas(t, gx));
-    const gap = 12;
-    const totalW = canvases.reduce((s, c) => s + c.width, 0) + gap * (canvases.length - 1);
+    const canvases = grids.map(gx => renderGridToCanvas(t, gx, cellSize));
+    const totalW = canvases.reduce((s, c) => s + c.width, 0) + outerGap * (canvases.length - 1);
     const totalH = Math.max(...canvases.map(c => c.height));
     canvas = document.createElement('canvas');
     canvas.width = totalW;
@@ -1919,7 +2072,7 @@ function copyGridToClipboard(grids) {
     ctx.fillStyle = '#0e0e10';
     ctx.fillRect(0, 0, totalW, totalH);
     let xOff = 0;
-    canvases.forEach(c => { ctx.drawImage(c, xOff, 0); xOff += c.width + gap; });
+    canvases.forEach(c => { ctx.drawImage(c, xOff, 0); xOff += c.width + outerGap; });
   }
   canvas.toBlob(blob => {
     if (!blob) return;
@@ -2873,9 +3026,11 @@ function renderGrid() {
   // Le message global est désormais remplacé par des messages individuels par grille
   bingoMsg.classList.add('hidden');
 
+  const _pendingBingoEffects = [];
+
   gridsToShow.forEach(gridItem => {
     const isActive = gridItem.id === (g?.id);
-    const { wrapper } = buildSingleGrid(t, gridItem, isActive, gridsToShow.length);
+    const { wrapper, bingoLines } = buildSingleGrid(t, gridItem, isActive, gridsToShow.length);
 
     // Drag & drop pour réordonner les grilles affichées
     if (gridsToShow.length > 1) {
@@ -2907,10 +3062,18 @@ function renderGrid() {
     }
 
     gridWrapper.appendChild(wrapper);
+    _pendingBingoEffects.push({ gridId: gridItem.id, lineCount: bingoLines.length });
   });
 
   applyFontScale();
   updateFillEmptyButtonState();
+
+  // Déclencher après que les wrappers sont dans le DOM et que le layout est calculé
+  setTimeout(() => {
+    _pendingBingoEffects.forEach(({ gridId, lineCount }) => {
+      triggerBingoEffectIfNew(gridId, lineCount);
+    });
+  }, 0);
 }
 
 // ──────────────────────────────────────────────
@@ -6090,6 +6253,7 @@ _dbBingo.on('value', snapshot => {
     renderElements();
     renderGridsList();
     renderGrid();
+    setTimeout(setBingoReadyForEffect, 0);
   }
   // Si _prefsReady est false mais currentUser existe : loadUserPrefs() appellera _applyPrefsAndRender() lui-même
   _bingoRemoteUpdate = false;

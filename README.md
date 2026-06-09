@@ -68,6 +68,15 @@ LesMichels/
 - Police : Space Mono (logo), Arial (interface)
 - Assets versionnés via `?v=N` pour invalidation du cache navigateur
 
+## 🗓️ Idées & todo
+
+- [ ] **Statistiques par dossier** : taux de remplissage des grilles, cases les plus cochées, nombre de bingos par soirée
+- [ ] **Recherche de cases** : champ de recherche dans le panneau Cases pour filtrer rapidement
+- [ ] **Animations de bingo** : confettis / flash / son au moment de la détection d'un bingo
+- [ ] **Tier List → Firebase** : partager les tier lists entre utilisateurs en temps réel
+
+---
+
 ## Notes à moi même
 
 Infobulles — où se trouvent les lignes :
