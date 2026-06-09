@@ -53,7 +53,7 @@ function launchConfetti(targetEl, gridId) {
     const y = canvas.height * (0.05 + Math.random() * 0.60);
     const color  = colors[Math.floor(Math.random() * colors.length)];
     const color2 = colors[Math.floor(Math.random() * colors.length)];
-    const count  = 50 + Math.floor(Math.random() * 30);
+    const count  = 20 + Math.floor(Math.random() * 15);
     return Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.2;
       const speed = 2.5 + Math.random() * 5;
@@ -64,11 +64,11 @@ function launchConfetti(targetEl, gridId) {
   }
 
   let particles = [];
-  // 4 explosions immédiates au départ
-  for (let i = 0; i < 4; i++) particles.push(...makeFirework());
+  // 3 explosions immédiates au départ
+  for (let i = 0; i < 3; i++) particles.push(...makeFirework());
 
-  const totalDuration = 10000; // 10s exactement
-  const burstInterval = 500;
+  const totalDuration = 3000;
+  const burstInterval = 600;
   let lastBurst = performance.now();
   const startTime = performance.now();
 
@@ -76,9 +76,9 @@ function launchConfetti(targetEl, gridId) {
     const elapsed = now - startTime;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Nouvelles salves jusqu'à 9s pour laisser les dernières particules finir dans les 10s
-    if (now - lastBurst > burstInterval && elapsed < 9000) {
-      const count = 2 + Math.floor(Math.random() * 2);
+    // Nouvelles salves jusqu'à 2.4s pour laisser les dernières particules finir dans les 3s
+    if (now - lastBurst > burstInterval && elapsed < 2400) {
+      const count = 1 + Math.floor(Math.random() * 2);
       for (let i = 0; i < count; i++) particles.push(...makeFirework());
       lastBurst = now;
     }
@@ -92,8 +92,7 @@ function launchConfetti(targetEl, gridId) {
       p.life -= p.decay;
       const a = Math.max(0, p.life * p.life);
       ctx.globalAlpha = a;
-      // Halo lumineux
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 2;
       ctx.shadowColor = p.color;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
@@ -257,8 +256,7 @@ function loadUserPrefs() {
       _localActiveFolderId = prefs.activeThemeId;
       saveUserPrefs({ activeFolderId: _localActiveFolderId, activeThemeId: null, activeSubthemeId: null });
     }
-    // Soirée en cours
-    if (prefs.currentEventFolderId != null) _currentEventFolderId = prefs.currentEventFolderId;
+    // Soirée en cours : stockée dans state (Firebase partagé), pas dans les prefs
     // Prefs tierlist
     if (prefs.tlShowLabels        != null) _tlLocalShowLabels       = !!prefs.tlShowLabels;
     if (prefs.tlImgSize           != null) _tlLocalImgSize          = prefs.tlImgSize;
@@ -563,10 +561,9 @@ let _firebaseReady = false;
 let _prefsReady    = false;
 // activeFolderId est chargé depuis Firebase /users/{uid}/prefs
 let _localActiveFolderId   = null;
-let _currentEventFolderId  = null;
 
 function initState() {
-  return { folders: [], trash: [] };
+  return { folders: [], trash: [], currentEventFolderId: null };
 }
 
 // ──────────────────────────────────────────────
@@ -654,25 +651,25 @@ function renderCurrentEventButton() {
   const btn = document.getElementById('btn-current-event');
   const lbl = document.getElementById('btn-current-event-label');
   if (!btn) return;
-  if (!_currentEventFolderId) { btn.style.display = 'none'; return; }
-  const folder = findFolderById(state.folders, _currentEventFolderId);
+  const cef = state.currentEventFolderId;
+  if (!cef) { btn.style.display = 'none'; return; }
+  const folder = findFolderById(state.folders, cef);
   if (!folder || folder.archived) { btn.style.display = 'none'; return; }
   btn.style.display = '';
   if (lbl) {
-    const path = getFolderPath(state.folders, _currentEventFolderId);
+    const path = getFolderPath(state.folders, cef);
     const pathStr = path.map(f => f.name).join(' › ');
     lbl.textContent = 'Soirée en cours : ' + pathStr;
   }
 }
 
 function setCurrentEventFolder(id) {
-  if (_currentEventFolderId === id) {
-    _currentEventFolderId = null;
-    saveUserPrefs({ currentEventFolderId: null });
+  if (state.currentEventFolderId === id) {
+    state.currentEventFolderId = null;
   } else {
-    _currentEventFolderId = id;
-    saveUserPrefs({ currentEventFolderId: id });
+    state.currentEventFolderId = id;
   }
+  saveState();
   renderCurrentEventButton();
   renderFoldersPanelTree();
 }
@@ -1747,7 +1744,7 @@ function renderFoldersPanelTree() {
       addItem('✎ Renommer',             false, () => openRenameFolderModal(f.id));
       addItem('❐ Dupliquer',            false, () => duplicateFolder(f.id));
       addItem('📂 Déplacer',            false, () => openMoveFolderModal(f.id));
-      const ceLabel = _currentEventFolderId === f.id ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
+      const ceLabel = state.currentEventFolderId === f.id ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
       addItem(ceLabel,                  false, () => setCurrentEventFolder(f.id));
 
       addItem('📦 Archiver',            true,  () => archiveFolder(f.id));
@@ -3484,7 +3481,7 @@ function openCtxMenuFolder(id, e, anchorEl) {
   _ctxThemeId = id;
   const _ceBtn = document.getElementById('ctx-folder-set-current-event');
   if (_ceBtn) {
-    const isCurrentEvent = _currentEventFolderId === id;
+    const isCurrentEvent = state.currentEventFolderId === id;
     _ceBtn.textContent = isCurrentEvent ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
   }
   if (ctxMenuTheme) { positionCtxMenu(ctxMenuTheme, e, anchorEl); ctxMenuTheme.classList.remove('hidden'); }
@@ -3900,7 +3897,7 @@ if (_btnNewGridInline) {
 const _btnCurrentEvent = document.getElementById('btn-current-event');
 if (_btnCurrentEvent) {
   _btnCurrentEvent.addEventListener('click', () => {
-    if (_currentEventFolderId) switchFolder(_currentEventFolderId);
+    if (state.currentEventFolderId) switchFolder(state.currentEventFolderId);
   });
 }
 
@@ -6223,6 +6220,7 @@ _dbBingo.on('value', snapshot => {
 
   // Normaliser l'état (nouvelle structure dossiers)
   if (!state.folders) state.folders = [];
+  if (state.currentEventFolderId === undefined) state.currentEventFolderId = null;
   function _normalizeFolder(f) {
     if (!f.elements)          f.elements          = [];
     if (!f.archivedElementIds) f.archivedElementIds = [];
