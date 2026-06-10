@@ -400,16 +400,6 @@ function migrateState(raw) {
 
   // Si on a déjà des dossiers, c'est du nouveau format
   if (raw.folders) {
-    // Migration éléments : propager les éléments de la racine vers les enfants qui n'en ont pas
-    function _propagateElements(folders, parentElements) {
-      (folders || []).forEach(f => {
-        if ((!f.elements || f.elements.length === 0) && parentElements && parentElements.length > 0) {
-          f.elements = JSON.parse(JSON.stringify(parentElements));
-        }
-        _propagateElements(f.folders, f.elements);
-      });
-    }
-    _propagateElements(raw.folders, null);
     return raw;
   }
 
@@ -1399,6 +1389,7 @@ function startEditElement(id, span, clickEvent) {
 
   textarea.addEventListener('blur', commit);
   textarea.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); textarea.blur(); }
     if (e.key === 'Escape') { textarea.value = el.text; textarea.blur(); }
   });
 
@@ -1607,9 +1598,10 @@ function renderFoldersPanelTree() {
     row.appendChild(ctxBtn);
 
     // Drag & drop pour réordonner / déplacer
-    row.draggable = true;
+    row.draggable = false;
     row.dataset.folderId = f.id;
     dragHandle.addEventListener('mousedown', () => { row.draggable = true; });
+    dragHandle.addEventListener('mouseleave', () => { if (!row.classList.contains('fp-folder-dragging')) row.draggable = false; });
     row.addEventListener('dragstart', e => {
       e.dataTransfer.setData('text/plain', f.id);
       e.dataTransfer.effectAllowed = 'move';
@@ -1617,6 +1609,7 @@ function renderFoldersPanelTree() {
       setTimeout(() => row.classList.add('fp-folder-dragging'), 0);
     });
     row.addEventListener('dragend', () => {
+      row.draggable = false;
       row.classList.remove('fp-folder-dragging');
       document.querySelectorAll('.fp-folder-drag-over, .fp-folder-drop-before, .fp-folder-drop-after, .fp-folder-drop-inside').forEach(el => {
         el.classList.remove('fp-folder-drag-over', 'fp-folder-drop-before', 'fp-folder-drop-after', 'fp-folder-drop-inside');

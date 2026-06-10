@@ -846,10 +846,10 @@ body {
 }
 
 textarea.element-edit-input {
-  resize: vertical;
-  min-height: 3.5em;
-  max-height: 10em;
-  overflow: auto;
+  resize: none;
+  min-height: unset;
+  max-height: unset;
+  overflow: hidden;
   white-space: pre-wrap;
   word-wrap: break-word;
 }
