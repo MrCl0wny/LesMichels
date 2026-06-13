@@ -316,6 +316,8 @@ function _applyPrefsAndRender() {
   // Appliquer les prefs tierlist aux controls UI
   if (_tlLocalShowLabels !== null) tlShowLabelsToggle.checked = _tlLocalShowLabels;
   if (_tlLocalImgSize    !== null) tlImgSizeSlider.value       = _tlLocalImgSize;
+  // Re-render la Tier List avec la bonne tierlist active
+  if (typeof tlRender === 'function') tlRender();
 }
 
 // ──────────────────────────────────────────────
@@ -6258,19 +6260,22 @@ _dbTierlist.on('value', snapshot => {
   // Alimenter le cache src depuis les données Firebase
   tlState.tierlists.forEach(_tlCacheSrcs);
   // Valider que la tierlist active de cet utilisateur existe encore
-  if (!_tlLocalNoSelection && _tlLocalActiveTierlistId) {
-    const still = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId && !t.archived);
-    if (!still) {
+  // Attendre que les prefs soient chargées avant toute sélection automatique
+  if (_prefsReady) {
+    if (!_tlLocalNoSelection && _tlLocalActiveTierlistId) {
+      const still = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId && !t.archived);
+      if (!still) {
+        const first = tlState.tierlists.find(t => !t.archived);
+        _tlLocalActiveTierlistId = first ? first.id : null;
+        if (_tlLocalActiveTierlistId) saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId });
+      }
+    } else if (!_tlLocalNoSelection && !_tlLocalActiveTierlistId) {
+      // Première connexion / première fois : sélectionner la première tierlist dispo
       const first = tlState.tierlists.find(t => !t.archived);
-      _tlLocalActiveTierlistId = first ? first.id : null;
-      if (_tlLocalActiveTierlistId) saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId });
-    }
-  } else if (!_tlLocalNoSelection && !_tlLocalActiveTierlistId) {
-    // Première connexion / première fois : sélectionner la première tierlist dispo
-    const first = tlState.tierlists.find(t => !t.archived);
-    if (first) {
-      _tlLocalActiveTierlistId = first.id;
-      saveUserPrefs({ tlActiveTierlistId: first.id, tlNoSelection: false });
+      if (first) {
+        _tlLocalActiveTierlistId = first.id;
+        saveUserPrefs({ tlActiveTierlistId: first.id, tlNoSelection: false });
+      }
     }
   }
   tlRender();
