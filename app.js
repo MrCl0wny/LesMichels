@@ -646,12 +646,14 @@ function renderCurrentEventButton() {
   if (!cef) { btn.style.display = 'none'; return; }
   const folder = findFolderById(state.folders, cef);
   if (!folder || folder.archived) { btn.style.display = 'none'; return; }
-  btn.style.display = '';
+  btn.style.display = 'flex';
   if (lbl) {
     const path = getFolderPath(state.folders, cef);
     const pathStr = path.map(f => f.name).join(' › ');
     lbl.textContent = 'Soirée en cours : ' + pathStr;
   }
+  const isActive = _localActiveFolderId === cef;
+  btn.classList.toggle('is-active', isActive);
 }
 
 function setCurrentEventFolder(id) {
@@ -805,19 +807,24 @@ function renameFolder(id, newName) {
   renderAllFolders();
 }
 
-function duplicateFolder(id) {
+function duplicateFolder(id, name) {
   const src = findFolderById(state.folders, id);
   if (!src) return;
   const copy = JSON.parse(JSON.stringify(src));
   function remapIds(f) {
     f.id = uid();
     f.archived = false;
-    (f.grids || []).forEach(g => { g.id = uid(); });
+    (f.grids || []).forEach(g => {
+      g.id = uid();
+      g.grid = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false, color: null }));
+    });
+    f.persistentCheckedIds = [];
+    (f.elements || []).forEach(el => { el.checked = false; });
     (f.folders || []).forEach(remapIds);
     f.children = [...(f.grids || []).map(g => ({ type: 'grid', id: g.id })), ...(f.folders || []).map(sf => ({ type: 'folder', id: sf.id }))];
   }
   remapIds(copy);
-  copy.name = src.name + ' (copie)';
+  copy.name = name || src.name + ' (copie)';
   const parent = findParentFolder(state.folders, id);
   if (parent) {
     parent.folders.push(copy);
@@ -1109,7 +1116,7 @@ function createSubtheme(name) { createFolder(name, _localActiveFolderId || null)
 function deleteSubtheme(id) { deleteFolder(id); }
 function archiveSubtheme(id) { archiveFolder(id); }
 function renameSubtheme(id, newName) { renameFolder(id, newName); }
-function duplicateSubtheme(id) { duplicateFolder(id); }
+function duplicateSubtheme(id) { openDuplicateFolderModal(id); }
 function openRenameSubthemeModal(id) { openRenameFolderModal(id); }
 function closeRenameSubthemeModal() { closeRenameThemeModal(); }
 function confirmRenameSubtheme() { confirmRenameTheme(); }
@@ -1482,7 +1489,7 @@ function switchTheme(id) { switchFolder(id); }
 function deleteTheme(id) { deleteFolder(id); }
 function archiveTheme(id) { archiveFolder(id); }
 function renameTheme(id, newName) { renameFolder(id, newName); }
-function duplicateTheme(id) { duplicateFolder(id); }
+function duplicateTheme(id) { openDuplicateFolderModal(id); }
 
 
 function renderAllFolders() {
@@ -1735,7 +1742,7 @@ function renderFoldersPanelTree() {
       const { addItem } = _tlMakeCtxMenu(anchor, e);
       addItem('📁 Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
       addItem('✎ Renommer',             false, () => openRenameFolderModal(f.id));
-      addItem('❐ Dupliquer',            false, () => duplicateFolder(f.id));
+      addItem('❐ Dupliquer',            false, () => openDuplicateFolderModal(f.id));
       addItem('📂 Déplacer',            false, () => openMoveFolderModal(f.id));
       const ceLabel = state.currentEventFolderId === f.id ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
       addItem(ceLabel,                  false, () => setCurrentEventFolder(f.id));
@@ -1819,7 +1826,7 @@ function switchSubtheme(id) { switchFolder(id); }
 function deleteSubtheme(id) { deleteFolder(id); }
 function archiveSubtheme(id) { archiveFolder(id); }
 function renameSubtheme(id, newName) { renameFolder(id, newName); }
-function duplicateSubtheme(id) { duplicateFolder(id); }
+function duplicateSubtheme(id) { openDuplicateFolderModal(id); }
 
 function renderSubthemesList() {
   renderAllFolders();
@@ -3141,7 +3148,7 @@ function openNewThemeModal(parentId = null) {
   const parent = parentId ? findFolderById(state.folders, parentId) : null;
   const siblings = parent ? (parent.folders || []) : (state.folders || []);
   const n = siblings.length + 1;
-  newThemeNameInput.value = `Dossier ${n}`;
+  newThemeNameInput.value = '';
   modalNewTheme.classList.remove('hidden');
   setTimeout(() => { newThemeNameInput.focus(); newThemeNameInput.select(); }, 50);
 }
@@ -3172,28 +3179,51 @@ if (newThemeNameInput) newThemeNameInput.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeNewThemeModal();
 });
 
-// Modale renommer dossier
+// Modale renommer / dupliquer dossier
 let _renameFolderId = null;
+let _renameFolderMode = 'rename'; // 'rename' | 'duplicate'
 function openRenameFolderModal(id) {
   const folder = findFolderById(state.folders, id);
   if (!folder) return;
   _renameFolderId = id;
+  _renameFolderMode = 'rename';
+  const title = document.getElementById('rename-folder-modal-title');
+  if (title) title.textContent = 'Renommer le dossier';
   if (renameThemeInput) renameThemeInput.value = folder.name;
   if (modalRenameTheme) modalRenameTheme.classList.remove('hidden');
   setTimeout(() => { if (renameThemeInput) { renameThemeInput.focus(); renameThemeInput.select(); } }, 50);
+}
+function openDuplicateFolderModal(id) {
+  const folder = findFolderById(state.folders, id);
+  if (!folder) return;
+  _renameFolderId = id;
+  _renameFolderMode = 'duplicate';
+  const title = document.getElementById('rename-folder-modal-title');
+  if (title) title.textContent = 'Dupliquer le dossier';
+  if (renameThemeInput) renameThemeInput.value = '';
+  if (renameThemeInput) renameThemeInput.placeholder = 'Nom du nouveau dossier...';
+  if (modalRenameTheme) modalRenameTheme.classList.remove('hidden');
+  setTimeout(() => { if (renameThemeInput) renameThemeInput.focus(); }, 50);
 }
 function openRenameThemeModal(id) { openRenameFolderModal(id); }
 function closeRenameThemeModal() {
   if (modalRenameTheme) modalRenameTheme.classList.add('hidden');
   _renameFolderId = null;
+  _renameFolderMode = 'rename';
 }
 function confirmRenameTheme() {
   if (!_renameFolderId) return;
-  renameFolder(_renameFolderId, renameThemeInput?.value || '');
+  const name = renameThemeInput?.value.trim() || '';
+  if (!name) return;
+  if (_renameFolderMode === 'duplicate') {
+    duplicateFolder(_renameFolderId, name);
+  } else {
+    renameFolder(_renameFolderId, name);
+  }
   closeRenameThemeModal();
 }
 function renameTheme(id, newName) { renameFolder(id, newName); }
-function duplicateTheme(id) { duplicateFolder(id); }
+function duplicateTheme(id) { openDuplicateFolderModal(id); }
 function deleteTheme(id) { deleteFolder(id); }
 function archiveTheme(id) { archiveFolder(id); }
 
@@ -3490,7 +3520,7 @@ if (ctxThemeRename) ctxThemeRename.addEventListener('click', () => {
   closeCtxMenuFolder();
 });
 if (ctxThemeDuplicate) ctxThemeDuplicate.addEventListener('click', () => {
-  if (_ctxThemeId) duplicateFolder(_ctxThemeId);
+  if (_ctxThemeId) openDuplicateFolderModal(_ctxThemeId);
   closeCtxMenuFolder();
 });
 if (ctxThemeArchive) ctxThemeArchive.addEventListener('click', () => {
@@ -3850,6 +3880,7 @@ function openNewGridModal() {
   if (!s) return;
   const count = s.grids.filter(g => !g.archived).length + 1;
   newGridNameInput.value = `Grille ${count}`;
+  document.querySelectorAll('.grid-name-preset-check input').forEach(cb => { cb.checked = false; });
   modalNewGrid.classList.remove('hidden');
   setTimeout(() => { newGridNameInput.focus(); newGridNameInput.select(); }, 50);
 }
@@ -3859,10 +3890,16 @@ function closeNewGridModal() {
 }
 
 function confirmNewGrid() {
-  const name = newGridNameInput.value.trim();
-  if (!name) return;
-  closeNewGridModal();
-  createGrid(name);
+  const checked = [...document.querySelectorAll('.grid-name-preset-check input:checked')].map(cb => cb.value);
+  if (checked.length > 0) {
+    closeNewGridModal();
+    checked.forEach(name => createGrid(name));
+  } else {
+    const name = newGridNameInput.value.trim();
+    if (!name) return;
+    closeNewGridModal();
+    createGrid(name);
+  }
 }
 
 btnConfirmNewGrid.addEventListener('click', confirmNewGrid);
@@ -3887,10 +3924,16 @@ if (_btnNewGridInline) {
   });
 }
 
-const _btnCurrentEvent = document.getElementById('btn-current-event');
-if (_btnCurrentEvent) {
-  _btnCurrentEvent.addEventListener('click', () => {
+const _btnCeNavigate = document.getElementById('btn-ce-navigate');
+if (_btnCeNavigate) {
+  _btnCeNavigate.addEventListener('click', () => {
     if (state.currentEventFolderId) switchFolder(state.currentEventFolderId);
+  });
+}
+const _btnCeSet = document.getElementById('btn-ce-set');
+if (_btnCeSet) {
+  _btnCeSet.addEventListener('click', () => {
+    if (_localActiveFolderId) setCurrentEventFolder(_localActiveFolderId);
   });
 }
 
