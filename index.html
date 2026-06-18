@@ -286,6 +286,10 @@
       </div>
       <div class="modal-body">
         <input type="text" id="tl-modal-folder-input" class="modal-text-input" placeholder="Nom du dossier..." maxlength="60" />
+        <div id="tl-modal-folder-parent-wrap" style="margin-top:8px;">
+          <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Dossier parent</label>
+          <select id="tl-modal-folder-parent-select" class="modal-folder-select"></select>
+        </div>
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-folder-confirm">Créer</button>
           <button class="btn-action btn-secondary" id="tl-modal-folder-cancel">Annuler</button>
@@ -726,6 +730,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=138"></script>
+  <script src="app.js?v=143"></script>
 </body>
 </html>
