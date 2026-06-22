@@ -350,6 +350,7 @@ function applyGridHeight() {
 // Stocké par dossier : { [folderId]: [gridId, ...] }
 let _selectedGridIds = [];
 let _selectedGridsByFolder = {};
+let _draggingGridWrapper = false;
 
 const _EMPTY_SELECTION = '__empty__';
 
@@ -554,7 +555,7 @@ let _prefsReady    = false;
 let _localActiveFolderId   = null;
 
 function initState() {
-  return { folders: [], trash: [], currentEventFolderId: null };
+  return { folders: [], trash: [], currentEventFolderId: null, currentEventTierlistId: null };
 }
 
 // ──────────────────────────────────────────────
@@ -642,18 +643,68 @@ function renderCurrentEventButton() {
   const btn = document.getElementById('btn-current-event');
   const lbl = document.getElementById('btn-current-event-label');
   if (!btn) return;
+
+  // Priorité : tierlist active > bingo actif
+  const ceTl = state.currentEventTierlistId;
+  if (ceTl) {
+    const tl = (typeof tlState !== 'undefined' ? tlState.tierlists || [] : []).find(t => t.id === ceTl && !t.archived);
+    if (tl) {
+      btn.style.display = 'flex';
+      if (lbl) {
+        let pathStr = 'Tier List';
+        // Remonter le chemin du dossier si la TL est dans un dossier
+        if (tl.folderId && typeof tlState !== 'undefined') {
+          const parts = [];
+          let current = (tlState.folders || []).find(f => f.id === tl.folderId);
+          while (current) {
+            parts.unshift(current.name);
+            current = (tlState.folders || []).find(f => f.id === current.parentId);
+          }
+          if (parts.length) pathStr += ' › ' + parts.join(' › ');
+        }
+        pathStr += ' › ' + tl.name;
+        lbl.textContent = 'Soirée en cours : ' + pathStr;
+      }
+      const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
+      const alreadyHere = onTlPage && _tlLocalActiveTierlistId === ceTl;
+      btn.classList.toggle('ce-nav-disabled', alreadyHere);
+      _updateTlCeSetBtn();
+      return;
+    }
+    // TL introuvable ou archivée — nettoyer
+    state.currentEventTierlistId = null;
+    saveState();
+  }
+
   const cef = state.currentEventFolderId;
-  if (!cef) { btn.style.display = 'none'; return; }
+  if (!cef) { btn.style.display = 'none'; _updateBingoCeSetBtn(); return; }
   const folder = findFolderById(state.folders, cef);
-  if (!folder || folder.archived) { btn.style.display = 'none'; return; }
+  if (!folder || folder.archived) { btn.style.display = 'none'; _updateBingoCeSetBtn(); return; }
   btn.style.display = 'flex';
   if (lbl) {
     const path = getFolderPath(state.folders, cef);
-    const pathStr = path.map(f => f.name).join(' › ');
+    const pathStr = 'Bingo › ' + path.map(f => f.name).join(' › ');
     lbl.textContent = 'Soirée en cours : ' + pathStr;
   }
-  const isActive = _localActiveFolderId === cef;
-  btn.classList.toggle('is-active', isActive);
+  const onBingoPage = document.getElementById('page-bingo')?.classList.contains('active');
+  const alreadyHereBingo = onBingoPage && _localActiveFolderId === cef;
+  btn.classList.toggle('ce-nav-disabled', alreadyHereBingo);
+  _updateBingoCeSetBtn();
+}
+
+function _updateBingoCeSetBtn() {
+  const ceSet = document.getElementById('btn-ce-set');
+  if (!ceSet) return;
+  const isCurrentEvent = _localActiveFolderId && state.currentEventFolderId === _localActiveFolderId;
+  ceSet.classList.toggle('ce-set-disabled', !!isCurrentEvent);
+}
+
+function _updateTlCeSetBtn() {
+  const ceSet = document.getElementById('tl-btn-ce-set');
+  if (!ceSet) return;
+  const tl = (typeof tlActiveTierlist === 'function') ? tlActiveTierlist() : null;
+  const isCurrentEvent = tl && state.currentEventTierlistId === tl.id;
+  ceSet.classList.toggle('ce-set-disabled', !!isCurrentEvent);
 }
 
 function setCurrentEventFolder(id) {
@@ -661,10 +712,23 @@ function setCurrentEventFolder(id) {
     state.currentEventFolderId = null;
   } else {
     state.currentEventFolderId = id;
+    state.currentEventTierlistId = null; // exclusif
   }
   saveState();
   renderCurrentEventButton();
   renderFoldersPanelTree();
+}
+
+function setCurrentEventTierlist(id) {
+  if (state.currentEventTierlistId === id) {
+    state.currentEventTierlistId = null;
+  } else {
+    state.currentEventTierlistId = id;
+    state.currentEventFolderId = null; // exclusif
+  }
+  saveState();
+  renderCurrentEventButton();
+  if (typeof renderFoldersPanelTree === 'function') renderFoldersPanelTree();
 }
 
 function defaultTheme(name) {
@@ -1849,7 +1913,6 @@ function confirmRenameSubtheme() { if (!_renameSubthemeId) return; renameSubthem
 btnConfirmRenameSubtheme.addEventListener('click', confirmRenameSubtheme);
 btnCancelRenameSubtheme.addEventListener('click', closeRenameSubthemeModal);
 btnCloseRenameSubthemeModal.addEventListener('click', closeRenameSubthemeModal);
-modalRenameSubtheme.addEventListener('click', e => { if (e.target === modalRenameSubtheme) closeRenameSubthemeModal(); });
 renameSubthemeInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmRenameSubtheme(); if (e.key === 'Escape') closeRenameSubthemeModal(); });
 
 // Modale nouveau sous-thème — stubs legacy (la modale modal-new-subtheme est cachée)
@@ -2230,6 +2293,7 @@ function toggleHideGrid(id) {
 
 function renderGridsList() {
   renderGridsBreadcrumb();
+  _updateBingoCeSetBtn();
   gridsList.innerHTML = '';
   const s = activeSubtheme();
   if (!s) return;
@@ -2810,24 +2874,51 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     div.className = 'bingo-cell';
     div.dataset.index = i;
 
-    // Drop depuis le drawer (actif si grille non bloquée et élément absent de cette grille)
+    // Drag & drop (actif si grille non bloquée)
     if (!gridLocked) {
-      div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
+      div.draggable = true;
+      div.addEventListener('dragstart', e => {
+        e.stopPropagation();
+        e.dataTransfer.setData('text/plain', `cell:${g.id}:${i}`);
+        div.classList.add('cell-dragging');
+      });
+      div.addEventListener('dragend', () => div.classList.remove('cell-dragging'));
+      div.addEventListener('dragover', e => { if (_draggingGridWrapper) return; e.preventDefault(); div.classList.add('drag-over'); });
       div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
       div.addEventListener('drop', e => {
+        if (_draggingGridWrapper) return;
         e.preventDefault();
         div.classList.remove('drag-over');
-        const elId = e.dataTransfer.getData('text/plain');
+        const data = e.dataTransfer.getData('text/plain');
         const targetIdx = parseInt(div.dataset.index);
-        if (!elId || isNaN(targetIdx)) return;
-        // Refuser si l'élément est déjà présent dans cette grille spécifique
-        const alreadyInGrid = g.grid.some(c => c.elementId === elId);
-        if (alreadyInGrid) return;
-        const prevChecked = g.grid[targetIdx]?.checked || false;
-        g.grid[targetIdx] = { elementId: elId, checked: prevChecked };
-        saveState();
-        renderGrid();
-        renderElements();
+        if (isNaN(targetIdx)) return;
+
+        if (data.startsWith('cell:')) {
+          // Swap intra-grille
+          const parts = data.split(':');
+          if (parts[1] !== g.id) return; // grilles différentes → ignorer
+          const srcIdx = parseInt(parts[2]);
+          if (isNaN(srcIdx) || srcIdx === targetIdx) return;
+          const sNow = activeSubtheme();
+          if (!sNow) return;
+          const gNow = sNow.grids.find(x => x.id === g.id);
+          if (!gNow || gNow.locked) return;
+          [gNow.grid[srcIdx], gNow.grid[targetIdx]] = [gNow.grid[targetIdx], gNow.grid[srcIdx]];
+          saveState();
+          renderGrid();
+          renderElements();
+        } else {
+          // Drop depuis le drawer
+          const elId = data;
+          if (!elId) return;
+          const alreadyInGrid = g.grid.some(c => c.elementId === elId);
+          if (alreadyInGrid) return;
+          const prevChecked = g.grid[targetIdx]?.checked || false;
+          g.grid[targetIdx] = { elementId: elId, checked: prevChecked };
+          saveState();
+          renderGrid();
+          renderElements();
+        }
       });
     }
 
@@ -3037,8 +3128,12 @@ function renderGrid() {
       wrapper.addEventListener('dragstart', e => {
         e.dataTransfer.setData('text/plain', gridItem.id);
         wrapper.classList.add('grid-wrapper-dragging');
+        _draggingGridWrapper = true;
       });
-      wrapper.addEventListener('dragend', () => wrapper.classList.remove('grid-wrapper-dragging'));
+      wrapper.addEventListener('dragend', () => {
+        wrapper.classList.remove('grid-wrapper-dragging');
+        _draggingGridWrapper = false;
+      });
       wrapper.addEventListener('dragover', e => {
         e.preventDefault();
         wrapper.classList.add('grid-wrapper-drag-over');
@@ -3048,6 +3143,7 @@ function renderGrid() {
         e.preventDefault();
         wrapper.classList.remove('grid-wrapper-drag-over');
         const srcId = e.dataTransfer.getData('text/plain');
+        if (srcId.startsWith('cell:')) return; // drag depuis une case → ignorer
         if (srcId === gridItem.id) return;
         const srcIdx = _selectedGridIds.indexOf(srcId);
         const dstIdx = _selectedGridIds.indexOf(gridItem.id);
@@ -3173,7 +3269,6 @@ function createTheme(name) { createFolder(name, null); }
 if (btnConfirmNewTheme) btnConfirmNewTheme.addEventListener('click', confirmNewTheme);
 if (btnCancelNewTheme) btnCancelNewTheme.addEventListener('click', closeNewThemeModal);
 if (btnCloseNewThemeModal) btnCloseNewThemeModal.addEventListener('click', closeNewThemeModal);
-if (modalNewTheme) modalNewTheme.addEventListener('click', e => { if (e.target === modalNewTheme) closeNewThemeModal(); });
 if (newThemeNameInput) newThemeNameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmNewTheme();
   if (e.key === 'Escape') closeNewThemeModal();
@@ -3291,7 +3386,6 @@ function confirmMoveFolder() {
   if (btnClose) btnClose.addEventListener('click', closeMoveFolderModal);
   if (btnConfirm) btnConfirm.addEventListener('click', confirmMoveFolder);
   if (btnCancel) btnCancel.addEventListener('click', closeMoveFolderModal);
-  if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeMoveFolderModal(); });
 })();
 
 // ──────────────────────────────────────────────
@@ -3351,7 +3445,6 @@ function confirmImportElements() {
   if (btnClose) btnClose.addEventListener('click', closeImportElementsModal);
   if (btnConfirm) btnConfirm.addEventListener('click', confirmImportElements);
   if (btnCancel) btnCancel.addEventListener('click', closeImportElementsModal);
-  if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeImportElementsModal(); });
 })();
 
 // ──────────────────────────────────────────────
@@ -3412,7 +3505,6 @@ function confirmBulkAdd() {
 btnConfirmBulkAdd.addEventListener('click', confirmBulkAdd);
 btnCancelBulkAdd.addEventListener('click', closeBulkAddModal);
 btnCloseBulkAdd.addEventListener('click', closeBulkAddModal);
-modalBulkAdd.addEventListener('click', e => { if (e.target === modalBulkAdd) closeBulkAddModal(); });
 bulkAddCountInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmBulkAdd();
   if (e.key === 'Escape') closeBulkAddModal();
@@ -3795,10 +3887,6 @@ document.getElementById('btn-cancel-reset').addEventListener('click', () => {
 document.getElementById('btn-close-confirm-reset').addEventListener('click', () => {
   document.getElementById('modal-confirm-reset').classList.add('hidden');
 });
-document.getElementById('modal-confirm-reset').addEventListener('click', e => {
-  if (e.target === document.getElementById('modal-confirm-reset'))
-    document.getElementById('modal-confirm-reset').classList.add('hidden');
-});
 // Bouton global "Vider"
 const btnClearGrids = document.getElementById('btn-clear-grids');
 let _clearGridsTarget = 'visible'; // 'visible' ou gridId pour per-grille
@@ -3859,12 +3947,6 @@ document.getElementById('btn-close-confirm-clear').addEventListener('click', () 
   document.getElementById('modal-confirm-clear').classList.add('hidden');
   _clearCellCallback = null;
 });
-document.getElementById('modal-confirm-clear').addEventListener('click', e => {
-  if (e.target === document.getElementById('modal-confirm-clear')) {
-    document.getElementById('modal-confirm-clear').classList.add('hidden');
-    _clearCellCallback = null;
-  }
-});
 
 btnScreenshot.addEventListener('click', bingoScreenshot);
 
@@ -3905,7 +3987,6 @@ function confirmNewGrid() {
 btnConfirmNewGrid.addEventListener('click', confirmNewGrid);
 btnCancelNewGrid.addEventListener('click', closeNewGridModal);
 btnCloseNewGridModal.addEventListener('click', closeNewGridModal);
-modalNewGrid.addEventListener('click', e => { if (e.target === modalNewGrid) closeNewGridModal(); });
 newGridNameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmNewGrid();
   if (e.key === 'Escape') closeNewGridModal();
@@ -3927,7 +4008,26 @@ if (_btnNewGridInline) {
 const _btnCeNavigate = document.getElementById('btn-ce-navigate');
 if (_btnCeNavigate) {
   _btnCeNavigate.addEventListener('click', () => {
-    if (state.currentEventFolderId) switchFolder(state.currentEventFolderId);
+    if (state.currentEventTierlistId) {
+      if (window._switchPage) window._switchPage('tierlist');
+      // Navigation directe sans toggle
+      _tlLocalActiveTierlistId = state.currentEventTierlistId;
+      _tlLocalNoSelection = false;
+      saveUserPrefs({ tlActiveTierlistId: state.currentEventTierlistId, tlNoSelection: false });
+      if (typeof tlRender === 'function') tlRender();
+    } else if (state.currentEventFolderId) {
+      if (window._switchPage) window._switchPage('bingo');
+      // Navigation directe sans toggle
+      _localActiveFolderId = state.currentEventFolderId;
+      _saveLocalActiveFolderId(state.currentEventFolderId);
+      const folder = findFolderById(state.folders, state.currentEventFolderId);
+      _selectedGridIds = folder?.grids?.filter(g => !g.archived).slice(0, 1).map(g => g.id) || [];
+      saveLocalSelectedGrids(_selectedGridIds);
+      renderAllFolders();
+      renderElements();
+      renderGridsList();
+      renderGrid();
+    }
   });
 }
 const _btnCeSet = document.getElementById('btn-ce-set');
@@ -4231,13 +4331,11 @@ document.getElementById('btn-confirm-trash-empty').addEventListener('click', () 
   modalConfirmTrashEmpty.classList.add('hidden');
   renderTrashList();
 });
-modalConfirmTrashEmpty.addEventListener('click', e => { if (e.target === modalConfirmTrashEmpty) modalConfirmTrashEmpty.classList.add('hidden'); });
 
 // Modales renommage dossier
 if (btnConfirmRenameTheme) btnConfirmRenameTheme.addEventListener('click', confirmRenameTheme);
 if (btnCancelRenameTheme) btnCancelRenameTheme.addEventListener('click', closeRenameThemeModal);
 if (btnCloseRenameThemeModal) btnCloseRenameThemeModal.addEventListener('click', closeRenameThemeModal);
-if (modalRenameTheme) modalRenameTheme.addEventListener('click', e => { if (e.target === modalRenameTheme) closeRenameThemeModal(); });
 if (renameThemeInput) renameThemeInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmRenameTheme();
   if (e.key === 'Escape') closeRenameThemeModal();
@@ -4247,7 +4345,6 @@ if (renameThemeInput) renameThemeInput.addEventListener('keydown', e => {
 btnConfirmRenameGrid.addEventListener('click', confirmRenameGrid);
 btnCancelRenameGrid.addEventListener('click', closeRenameGridModal);
 btnCloseRenameGridModal.addEventListener('click', closeRenameGridModal);
-modalRenameGrid.addEventListener('click', e => { if (e.target === modalRenameGrid) closeRenameGridModal(); });
 renameGridInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmRenameGrid();
   if (e.key === 'Escape') closeRenameGridModal();
@@ -4270,6 +4367,7 @@ renameGridInput.addEventListener('keydown', e => {
     navBtns.forEach(b => b.classList.toggle('active', b.dataset.page === target));
     pages.forEach(p => p.classList.toggle('active', p.id === `page-${target}`));
     if (logoTag) logoTag.textContent = pageLabels[target] || target;
+    if (typeof renderCurrentEventButton === 'function') renderCurrentEventButton();
   };
 
   navBtns.forEach(btn => {
@@ -4705,6 +4803,8 @@ function _tlSidebarDropOnItem(e, targetId, targetType, targetEl) {
 function tlRender() {
   tlUpdateUndoBtn();
   tlRenderList();
+  renderCurrentEventButton();
+  _updateTlCeSetBtn();
   const tl = tlActiveTierlist();
   if (!tl || tl.archived) {
     tlEmptyState.classList.remove('hidden');
@@ -6105,7 +6205,6 @@ function tlConfirmFolderModal() {
 tlModalFolderConfirm.addEventListener('click', tlConfirmFolderModal);
 tlModalFolderCancel.addEventListener('click', () => tlModalFolder.classList.add('hidden'));
 tlModalFolderClose.addEventListener('click', () => tlModalFolder.classList.add('hidden'));
-tlModalFolder.addEventListener('click', e => { if (e.target === tlModalFolder) tlModalFolder.classList.add('hidden'); });
 tlModalFolderInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmFolderModal();
   if (e.key === 'Escape') tlModalFolder.classList.add('hidden');
@@ -6124,6 +6223,8 @@ function tlOpenManageModal(id, anchorEl) {
   addItem('✏ Renommer', false, () => tlOpenRenameModal(id));
   addItem('❐ Dupliquer', false, () => tlCopy(id));
   addItem('📂 Ranger dans un dossier', false, () => tlOpenMoveModal(id));
+  const ceLabel = state.currentEventTierlistId === id ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
+  addItem(ceLabel, false, () => setCurrentEventTierlist(id));
   addSep();
   addItem('📦 Archiver', true, () => tlArchive(id));
 }
@@ -6187,6 +6288,14 @@ document.getElementById('tl-btn-folders').addEventListener('click', () => {
 document.getElementById('tl-empty-btn-folders').addEventListener('click', openTlSidebar);
 document.getElementById('tl-sidebar-close').addEventListener('click', closeTlSidebar);
 
+const _tlBtnCeSet = document.getElementById('tl-btn-ce-set');
+if (_tlBtnCeSet) {
+  _tlBtnCeSet.addEventListener('click', () => {
+    const tl = tlActiveTierlist();
+    if (tl) setCurrentEventTierlist(tl.id);
+  });
+}
+
 // Fermer le menu contextuel TL actif sur Escape
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && _tlActiveCtxMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; }
@@ -6200,7 +6309,6 @@ document.getElementById('tl-empty-btn-folder').addEventListener('click', () => t
 tlModalNewConfirm.addEventListener('click', tlConfirmNewModal);
 tlModalNewCancel.addEventListener('click', () => tlModalNew.classList.add('hidden'));
 tlModalNewClose.addEventListener('click', () => tlModalNew.classList.add('hidden'));
-tlModalNew.addEventListener('click', e => { if (e.target === tlModalNew) tlModalNew.classList.add('hidden'); });
 tlModalNewInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmNewModal();
   if (e.key === 'Escape') tlModalNew.classList.add('hidden');
@@ -6265,14 +6373,12 @@ tlModalMoveConfirm.addEventListener('click', () => {
 });
 tlModalMoveCancel.addEventListener('click', () => { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; });
 tlModalMoveClose.addEventListener('click', () => { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; });
-tlModalMove.addEventListener('click', e => { if (e.target === tlModalMove) { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; } });
 
 tlBtnAddTier.addEventListener('click', () => tlOpenTierModal({ mode: 'create' }));
 document.getElementById('tl-btn-undo').addEventListener('click', tlUndo);
 tlModalTierConfirm.addEventListener('click', tlConfirmTierModal);
 tlModalTierCancel.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
 tlModalTierClose.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
-tlModalTier.addEventListener('click', e => { if (e.target === tlModalTier) { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; } });
 tlModalTierLabel.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmTierModal();
   if (e.key === 'Escape') { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; }
@@ -6293,7 +6399,6 @@ const _tlModalConfirmReset = document.getElementById('tl-modal-confirm-reset');
 document.getElementById('tl-btn-confirm-reset').addEventListener('click', () => { _tlModalConfirmReset.classList.add('hidden'); _tlDoReset(); });
 document.getElementById('tl-btn-cancel-reset').addEventListener('click', () => _tlModalConfirmReset.classList.add('hidden'));
 document.getElementById('tl-btn-close-confirm-reset').addEventListener('click', () => _tlModalConfirmReset.classList.add('hidden'));
-_tlModalConfirmReset.addEventListener('click', e => { if (e.target === _tlModalConfirmReset) _tlModalConfirmReset.classList.add('hidden'); });
 
 tlBtnExport.addEventListener('click', tlExport);
 tlBtnCapture.addEventListener('click', tlCapture);
@@ -6315,12 +6420,10 @@ tlBtnShowArchived.addEventListener('click', () => {
   tlModalArchived.classList.remove('hidden');
 });
 tlModalArchivedClose.addEventListener('click', () => tlModalArchived.classList.add('hidden'));
-tlModalArchived.addEventListener('click', e => { if (e.target === tlModalArchived) tlModalArchived.classList.add('hidden'); });
 
 tlModalImgNameConfirm.addEventListener('click', tlConfirmRenameImg);
 tlModalImgNameCancel.addEventListener('click', () => { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; });
 tlModalImgNameClose.addEventListener('click', () => { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; });
-tlModalImgName.addEventListener('click', e => { if (e.target === tlModalImgName) { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; } });
 tlModalImgNameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmRenameImg();
   if (e.key === 'Escape') { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; }
@@ -6398,7 +6501,8 @@ _dbBingo.on('value', snapshot => {
 
   // Normaliser l'état (nouvelle structure dossiers)
   if (!state.folders) state.folders = [];
-  if (state.currentEventFolderId === undefined) state.currentEventFolderId = null;
+  if (state.currentEventFolderId  === undefined) state.currentEventFolderId  = null;
+  if (state.currentEventTierlistId === undefined) state.currentEventTierlistId = null;
   function _normalizeFolder(f) {
     if (!f.elements)          f.elements          = [];
     if (!f.archivedElementIds) f.archivedElementIds = [];

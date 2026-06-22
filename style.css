@@ -96,6 +96,13 @@ body {
   border-radius: 4px;
 }
 
+.nav-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  justify-content: center;
+}
 .nav { display: flex; gap: 6px; }
 .nav-btn {
   background: none;
@@ -149,14 +156,13 @@ body {
 }
 
 .btn-current-event {
-  position: absolute;
-  top: 8px;
-  right: 44px;
   display: flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
-  z-index: 2;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 .btn-ce-label {
   background: rgba(255, 185, 0, 0.12);
@@ -169,6 +175,9 @@ body {
   cursor: pointer;
   transition: var(--transition);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 480px;
 }
 .btn-ce-label:hover { background: rgba(255, 185, 0, 0.22); border-color: #ffb900; }
 .btn-ce-set {
@@ -184,9 +193,8 @@ body {
   white-space: nowrap;
 }
 .btn-ce-set:hover { background: rgba(99, 102, 241, 0.28); border-color: #818cf8; }
-
-.btn-current-event.is-active .btn-ce-label,
-.btn-current-event.is-active .btn-ce-set {
+.btn-ce-set.ce-set-disabled,
+.btn-current-event.ce-nav-disabled .btn-ce-label {
   opacity: 0.45;
   cursor: default;
   pointer-events: none;
@@ -1522,6 +1530,10 @@ textarea.element-edit-input {
 .bingo-cell.drag-over {
   border-color: var(--accent) !important;
   background: var(--accent-glow) !important;
+}
+.bingo-cell.cell-dragging {
+  opacity: 0.4;
+  cursor: grabbing;
 }
 
 .bingo-cell.cell-red {
