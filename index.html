@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=92" />
+  <link rel="stylesheet" href="style.css?v=94" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -110,6 +110,8 @@
               <div class="tl-unplaced-header">
                 <span class="tl-unplaced-label">Images non placées</span>
                 <span id="tl-unplaced-count" class="tl-unplaced-count">0</span>
+                <span class="tl-max-images-label">Images max :</span>
+                <input type="number" id="tl-max-images-input" class="tl-max-images-input" min="1" max="200" step="1" value="50" title="Cliquer pour modifier la limite d'images (max 200)" />
               </div>
               <div id="tl-unplaced-zone" class="tl-unplaced-zone"
                    data-dropzone="unplaced"
@@ -745,6 +747,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=159"></script>
+  <script src="app.js?v=162"></script>
 </body>
 </html>

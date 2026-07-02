@@ -34,6 +34,9 @@
 - Création et gestion de tier lists avec dossiers
 - Import d'images, drag & drop entre tiers, export PNG
 - Sauvegarde locale (non partagée entre utilisateurs)
+- **Limite d'images personnalisable** : 50 images par tierlist par défaut ; champ "Images max" éditable à côté du compteur "Images non placées", modifiable jusqu'à 200, propre à chaque tierlist
+- **Anti-doublon à l'import** : une image déjà présente dans la tierlist (même contenu) n'est pas réimportée
+- **Suppression rapide** : clic gauche sur une image pour la sélectionner, puis touche Suppr/Retour arrière pour la supprimer
 
 ---
 
@@ -79,9 +82,11 @@ LesMichels/
 
 ## Notes à moi même
 
-Infobulles — où se trouvent les lignes :
+Infobulles — désactivées (mais code conservé) :
 
 Les infobulles utilisent uniquement l'attribut HTML natif title="". Il n'y a aucun CSS personnalisé pour les infobulles — elles sont gérées par le navigateur.
+
+Elles sont désormais désactivées globalement via un flag en haut d'app.js : `const DISABLE_TITLE_TOOLTIPS = true;`. Ce code neutralise l'écriture de `title` sur tous les éléments (JS dynamique) et vide les `title="..."` déjà présents dans le HTML au chargement — sans supprimer les attributs source. Pour les réactiver : repasser le flag à `false`.
 
 Dans index.html : chaque <button ... title="..."> entre les lignes ~51 à ~174 (la zone panneau de contrôle Bingo et la sidebar Tier List).
 Dans app.js : partout où du HTML est créé dynamiquement, par exemple ligne 1021 (li.title = 'Clic gauche ...'), ligne 1034 (handle.title = 'Glisser-déposer...'), et d'autres éléments créés dans renderGrid() (~ligne 2260–2500).

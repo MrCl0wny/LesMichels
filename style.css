@@ -2337,6 +2337,7 @@ textarea.element-edit-input {
 }
 .tl-img-card:hover { border-color: var(--accent-dim); }
 .tl-img-card.dragging { opacity: 0.4; cursor: grabbing; transform: scale(0.95); }
+.tl-img-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); }
 
 .tl-img-card img {
   display: block;
@@ -2421,6 +2422,33 @@ textarea.element-edit-input {
   padding: 1px 7px;
   border-radius: 20px;
   border: 1px solid var(--border);
+}
+
+.tl-max-images-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.tl-max-images-input {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.72rem;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  padding: 1px 4px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  width: 48px;
+  text-align: center;
+}
+
+.tl-max-images-input:focus {
+  color: var(--text);
+  border-color: var(--accent, var(--border));
+  outline: none;
 }
 
 .tl-import-btn {

@@ -3,6 +3,28 @@
 ═══════════════════════════════════════════════ */
 
 // ──────────────────────────────────────────────
+// Désactivation des bulles d'aide (tooltips title="...")
+// Pour les réactiver : mettre DISABLE_TITLE_TOOLTIPS à false
+// ──────────────────────────────────────────────
+const DISABLE_TITLE_TOOLTIPS = true;
+if (DISABLE_TITLE_TOOLTIPS) {
+  const _titleDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'title')
+    || Object.getOwnPropertyDescriptor(Element.prototype, 'title');
+  if (_titleDesc && _titleDesc.set) {
+    Object.defineProperty(HTMLElement.prototype, 'title', {
+      configurable: true,
+      enumerable: _titleDesc.enumerable,
+      get: _titleDesc.get,
+      set() { /* bulles d'aide désactivées */ }
+    });
+  }
+  // Vide aussi les title="..." déjà présents dans le HTML statique
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[title]').forEach(el => el.removeAttribute('title'));
+  });
+}
+
+// ──────────────────────────────────────────────
 // Audio singleton + effets Bingo
 // ──────────────────────────────────────────────
 function playBingoSound() {
@@ -4643,6 +4665,7 @@ const tlBtnCapture        = document.getElementById('tl-btn-capture');
 const tlTiersZone         = document.getElementById('tl-tiers-zone');
 const tlUnplacedZone      = document.getElementById('tl-unplaced-zone');
 const tlUnplacedCount     = document.getElementById('tl-unplaced-count');
+const tlMaxImagesInput    = document.getElementById('tl-max-images-input');
 
 // Modals
 const tlModalNew          = document.getElementById('tl-modal-new');
@@ -4673,6 +4696,9 @@ const tlModalImgNameClose   = document.getElementById('tl-modal-imgname-close');
 
 // ── Drag state ────────────────────────────────────────────────────────────────
 let tlDragImgId = null;
+
+// ── Sélection image (pour suppression au clavier) ──────────────────────────────
+let _tlSelectedImgId = null;
 
 // ── Drag & drop sidebar (tierlists & dossiers) ────────────────────────────────
 let _tlSidebarDragId   = null; // id de la tierlist ou du dossier draggé
@@ -5249,6 +5275,7 @@ function tlRenderUnplaced(tl) {
     });
   }
   tlUnplacedCount.textContent = tl.unplaced.length;
+  tlMaxImagesInput.value = tlEffectiveMaxImages(tl);
 }
 
 function _tlShowImportMenu(anchorEl) {
@@ -5263,8 +5290,9 @@ function _tlPasteFromClipboard(tl) {
     const imageItems = items.filter(item => item.types.some(t => t.startsWith('image/')));
     if (imageItems.length === 0) { alert('Aucune image dans le presse-papier.'); return; }
     if (!tl.images) tl.images = [];
-    if (tl.images.length >= TL_MAX_IMAGES) {
-      alert(`Limite atteinte — maximum ${TL_MAX_IMAGES} images par tierlist.`); return;
+    const maxImages = tlEffectiveMaxImages(tl);
+    if (tl.images.length >= maxImages) {
+      alert(`Limite atteinte — maximum ${maxImages} images par tierlist.`); return;
     }
     const now = new Date();
     const promises = imageItems.map(item => {
@@ -5272,7 +5300,8 @@ function _tlPasteFromClipboard(tl) {
       return item.getType(type).then(blob => {
         const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
         return _tlCompressToBase64(blob).then(src => {
-          if (tl.images.length >= TL_MAX_IMAGES) return;
+          if (tl.images.length >= maxImages) return;
+          if (tl.images.some(i => i.src === src)) return;
           const img = { id: uid(), src, name };
           _tlSrcCache[img.id] = src;
           tl.images.push(img);
@@ -5290,9 +5319,16 @@ function _tlPasteFromClipboard(tl) {
 function tlBuildImgCard(tl, img, size) {
   const card = document.createElement('div');
   card.className = 'tl-img-card';
+  if (img.id === _tlSelectedImgId) card.classList.add('selected');
   card.draggable = true;
   card.dataset.imgId = img.id;
-  card.title = img.name + '\nGlisser pour déplacer · Clic droit : renommer / supprimer';
+  card.title = img.name + '\nClic gauche : sélectionner (Suppr pour supprimer) · Glisser pour déplacer · Clic droit : renommer / supprimer';
+
+  card.addEventListener('click', e => {
+    e.stopPropagation();
+    _tlSelectedImgId = (_tlSelectedImgId === img.id) ? null : img.id;
+    tlRender();
+  });
 
   card.addEventListener('dragstart', e => {
     tlDragImgId = img.id;
@@ -5564,24 +5600,42 @@ function _tlCompressToBase64(file, maxPx = 400, quality = 0.82) {
 }
 
 const TL_MAX_IMAGES = 50;
+const TL_MAX_IMAGES_CAP = 200;
+
+// Retourne la limite effective pour une tierlist (personnalisable par l'utilisateur, jusqu'à TL_MAX_IMAGES_CAP)
+function tlEffectiveMaxImages(tl) {
+  return tl.maxImagesOverride || TL_MAX_IMAGES;
+}
+
+function tlSetMaxImages(tl, value) {
+  let n = parseInt(value, 10);
+  if (isNaN(n) || n < 1) n = TL_MAX_IMAGES;
+  n = Math.min(n, TL_MAX_IMAGES_CAP);
+  tl.maxImagesOverride = n;
+  tlSave();
+  return n;
+}
 
 function tlImportImages(files) {
   const tl = tlActiveTierlist();
   if (!tl) return;
   if (!tl.images) tl.images = [];
 
-  const remaining = TL_MAX_IMAGES - tl.images.length;
+  const maxImages = tlEffectiveMaxImages(tl);
+  const remaining = maxImages - tl.images.length;
   if (remaining <= 0) {
-    alert(`Limite atteinte — maximum ${TL_MAX_IMAGES} images par tierlist.`);
+    alert(`Limite atteinte — maximum ${maxImages} images par tierlist.`);
     return;
   }
 
   const fileArray = Array.from(files).slice(0, remaining);
-  const ignored = files.length - fileArray.length;
+  const ignoredByLimit = files.length - fileArray.length;
+  let ignoredByDuplicate = 0;
 
   const processFile = (file) => {
     const name = file.name.replace(/\.[^.]+$/, '');
     return _tlCompressToBase64(file).then(src => {
+      if (tl.images.some(i => i.src === src)) { ignoredByDuplicate++; return; }
       const img = { id: uid(), src, name };
       _tlSrcCache[img.id] = src;
       tl.images.push(img);
@@ -5592,7 +5646,10 @@ function tlImportImages(files) {
   Promise.all(fileArray.map(processFile)).then(() => {
     tlSave();
     tlRender();
-    if (ignored > 0) alert(`${ignored} image${ignored > 1 ? 's ignorées' : ' ignorée'} — limite de ${TL_MAX_IMAGES} images atteinte.`);
+    const msgs = [];
+    if (ignoredByLimit > 0) msgs.push(`${ignoredByLimit} image${ignoredByLimit > 1 ? 's ignorées' : ' ignorée'} — limite de ${maxImages} images atteinte.`);
+    if (ignoredByDuplicate > 0) msgs.push(`${ignoredByDuplicate} image${ignoredByDuplicate > 1 ? 's déjà présentes ignorées' : ' déjà présente ignorée'} (doublon).`);
+    if (msgs.length) alert(msgs.join('\n'));
   }).catch(e => console.warn('TL import error:', e));
 }
 
@@ -6301,6 +6358,30 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && _tlActiveCtxMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; }
 });
 
+// Désélectionner l'image en cliquant ailleurs
+document.addEventListener('click', e => {
+  if (_tlSelectedImgId && !e.target.closest('.tl-img-card')) {
+    _tlSelectedImgId = null;
+    tlRender();
+  }
+});
+
+// Supprimer l'image sélectionnée avec Suppr/Retour arrière
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && _tlSelectedImgId) {
+    const tag = document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const tl = tlActiveTierlist();
+    if (!tl) return;
+    const img = tlFindImage(tl, _tlSelectedImgId);
+    if (!img) return;
+    e.preventDefault();
+    const imgId = _tlSelectedImgId;
+    _tlSelectedImgId = null;
+    tlDeleteImage(tl, imgId);
+  }
+});
+
 // ── Listeners ─────────────────────────────────────────────────────────────────
 tlBtnNew.addEventListener('click', tlOpenNewModal);
 document.getElementById('tl-empty-btn-new').addEventListener('click', tlOpenNewModal);
@@ -6443,6 +6524,13 @@ tlUnplacedZone.addEventListener('drop', e => {
 });
 tlUnplacedZone.addEventListener('dragleave', tlDragLeave);
 
+// ── Limite d'images personnalisable ───────────────────────────────────────────
+tlMaxImagesInput.addEventListener('change', () => {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  tlMaxImagesInput.value = tlSetMaxImages(tl, tlMaxImagesInput.value);
+});
+
 // ── Coller depuis le presse-papier ────────────────────────────────────────────
 document.addEventListener('paste', e => {
   const tl = tlActiveTierlist();
@@ -6460,8 +6548,9 @@ document.addEventListener('paste', e => {
   if (imageItems.length === 0) return;
 
   if (!tl.images) tl.images = [];
-  if (tl.images.length >= TL_MAX_IMAGES) {
-    alert(`Limite atteinte — maximum ${TL_MAX_IMAGES} images par tierlist.`);
+  const maxImages = tlEffectiveMaxImages(tl);
+  if (tl.images.length >= maxImages) {
+    alert(`Limite atteinte — maximum ${maxImages} images par tierlist.`);
     return;
   }
   const now = new Date();
@@ -6470,7 +6559,8 @@ document.addEventListener('paste', e => {
     if (!file) return Promise.resolve();
     const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
     return _tlCompressToBase64(file).then(src => {
-      if (tl.images.length >= TL_MAX_IMAGES) return;
+      if (tl.images.length >= maxImages) return;
+      if (tl.images.some(i => i.src === src)) return;
       const img = { id: uid(), src, name };
       _tlSrcCache[img.id] = src;
       tl.images.push(img);
