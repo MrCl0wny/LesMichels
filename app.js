@@ -164,6 +164,7 @@ let currentUser = null;
 let currentPseudo = null;
 
 const _auth = firebase.auth();
+const _functions = firebase.app().functions('europe-west1');
 
 function setupAuth() {
   const modalAuth    = document.getElementById('modal-auth');
@@ -4675,6 +4676,14 @@ const tlModalNewConfirm   = document.getElementById('tl-modal-new-confirm');
 const tlModalNewCancel    = document.getElementById('tl-modal-new-cancel');
 const tlModalNewClose     = document.getElementById('tl-modal-new-close');
 
+const tlModalTiermaker         = document.getElementById('tl-modal-tiermaker');
+const tlModalTiermakerInput    = document.getElementById('tl-modal-tiermaker-input');
+const tlModalTiermakerFolderSelect = document.getElementById('tl-modal-tiermaker-folder-select');
+const tlModalTiermakerStatus   = document.getElementById('tl-modal-tiermaker-status');
+const tlModalTiermakerConfirm  = document.getElementById('tl-modal-tiermaker-confirm');
+const tlModalTiermakerCancel   = document.getElementById('tl-modal-tiermaker-cancel');
+const tlModalTiermakerClose    = document.getElementById('tl-modal-tiermaker-close');
+
 const tlModalTier         = document.getElementById('tl-modal-tier');
 const tlModalTierLabel    = document.getElementById('tl-modal-tier-label');
 const tlModalTierColor    = document.getElementById('tl-modal-tier-color');
@@ -5282,6 +5291,7 @@ function _tlShowImportMenu(anchorEl) {
   const { addItem } = _tlMakeCtxMenu(anchorEl, null);
   addItem('📂 Importer des fichiers', false, () => tlFileInput.click());
   addItem('📋 Coller depuis le presse-papier', false, () => _tlPasteFromClipboard(tlActiveTierlist()));
+  // Import TierMaker masqué temporairement (chantier en pause, cf. CLAUDE.md)
 }
 
 function _tlPasteFromClipboard(tl) {
@@ -5422,6 +5432,53 @@ function tlCreate(name, folderId) {
   saveUserPrefs({ tlActiveTierlistId: tl.id, tlNoSelection: false });
   tlSave();
   tlRender();
+}
+
+async function tlImportFromTiermaker(url, folderId, onProgress) {
+  onProgress && onProgress('Récupération du template TierMaker...');
+  const call = _functions.httpsCallable('importTiermakerTierlist', { timeout: 300000 });
+  const result = await call({ url });
+  const data = result.data;
+
+  const compressedSrcs = [];
+  for (let i = 0; i < data.images.length; i++) {
+    onProgress && onProgress(`Compression des images... ${i + 1}/${data.images.length}`);
+    const blob = await (await fetch(data.images[i].src)).blob();
+    compressedSrcs.push(await _tlCompressToBase64(blob));
+  }
+
+  tlPushUndo();
+  const tl = tlDefaultTierlist(data.name || 'Import TierMaker');
+  if (data.tiers.length > 0) {
+    tl.tiers = data.tiers.map(t => ({ id: uid(), label: t.label, color: t.color, items: [] }));
+  }
+  tl.images = [];
+  tl.unplaced = [];
+
+  data.tiers.forEach((t, tierIdx) => {
+    t.images.forEach(imgIdx => {
+      const img = { id: uid(), src: compressedSrcs[imgIdx], name: data.images[imgIdx].name };
+      tl.images.push(img);
+      _tlSrcCache[img.id] = img.src;
+      tl.tiers[tierIdx].items.push(img.id);
+    });
+  });
+
+  (data.unplaced || []).forEach(imgIdx => {
+    const img = { id: uid(), src: compressedSrcs[imgIdx], name: data.images[imgIdx].name };
+    tl.images.push(img);
+    _tlSrcCache[img.id] = img.src;
+    tl.unplaced.push(img.id);
+  });
+
+  if (folderId) tl.folderId = folderId;
+  tlState.tierlists.push(tl);
+  _tlLocalActiveTierlistId = tl.id;
+  _tlLocalNoSelection = false;
+  saveUserPrefs({ tlActiveTierlistId: tl.id, tlNoSelection: false });
+  tlSave();
+  tlRender();
+  return { truncated: data.truncated, count: data.images.length };
 }
 
 function tlSwitch(id) {
@@ -6114,6 +6171,39 @@ function tlConfirmNewModal() {
   }
 }
 
+function tlOpenTiermakerModal() {
+  tlModalTiermakerInput.value = '';
+  tlModalTiermakerStatus.classList.add('hidden');
+  tlModalTiermakerStatus.textContent = '';
+  tlPopulateFolderSelect(tlModalTiermakerFolderSelect, '');
+  tlModalTiermaker.classList.remove('hidden');
+  setTimeout(() => tlModalTiermakerInput.focus(), 50);
+}
+
+async function tlConfirmTiermakerModal() {
+  const url = tlModalTiermakerInput.value.trim();
+  if (!url) return;
+
+  tlModalTiermakerStatus.classList.remove('hidden');
+  tlModalTiermakerStatus.textContent = 'Récupération du template TierMaker...';
+  tlModalTiermakerConfirm.disabled = true;
+
+  const folderId = tlModalTiermakerFolderSelect.value || null;
+
+  try {
+    const res = await tlImportFromTiermaker(url, folderId, msg => { tlModalTiermakerStatus.textContent = msg; });
+    tlModalTiermaker.classList.add('hidden');
+    if (res.truncated) {
+      alert('Import terminé, mais la tierlist source a plus de 200 images : seules les 200 premières ont été importées.');
+    }
+  } catch (e) {
+    console.error('Import TierMaker échoué:', e);
+    tlModalTiermakerStatus.textContent = '❌ ' + (e.message || 'Échec de l\'import.') + (e.code ? ` (${e.code})` : '');
+  } finally {
+    tlModalTiermakerConfirm.disabled = false;
+  }
+}
+
 // ── Modal nouveau/modifier tier ───────────────────────────────────────────────
 const tlModalTierTitle = document.getElementById('tl-modal-tier-title');
 const tlColorSwatches  = document.getElementById('tl-color-swatches');
@@ -6393,6 +6483,15 @@ tlModalNewClose.addEventListener('click', () => tlModalNew.classList.add('hidden
 tlModalNewInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmNewModal();
   if (e.key === 'Escape') tlModalNew.classList.add('hidden');
+});
+
+document.getElementById('tl-btn-new-tiermaker').addEventListener('click', tlOpenTiermakerModal);
+tlModalTiermakerConfirm.addEventListener('click', tlConfirmTiermakerModal);
+tlModalTiermakerCancel.addEventListener('click', () => tlModalTiermaker.classList.add('hidden'));
+tlModalTiermakerClose.addEventListener('click', () => tlModalTiermaker.classList.add('hidden'));
+tlModalTiermakerInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') tlConfirmTiermakerModal();
+  if (e.key === 'Escape') tlModalTiermaker.classList.add('hidden');
 });
 
 // Titre inline edit

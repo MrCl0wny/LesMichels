@@ -1963,6 +1963,37 @@ textarea.element-edit-input {
 }
 .tl-btn-new:hover { background: #2fa96e; }
 
+.tl-sidebar .tl-btn-new-tiermaker {
+  flex-shrink: 0;
+}
+
+.tl-btn-new-tiermaker {
+  height: 28px;
+  padding: 0 10px;
+  background: #8239B9;
+  border: none;
+  border-radius: var(--radius);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  line-height: 1;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.tl-btn-new-tiermaker:hover { background: #9950d1; }
+
+.tl-modal-tiermaker-status {
+  font-size: 0.85rem;
+  color: #999;
+  padding: 6px 2px;
+  min-height: 1.2em;
+}
+
 .tl-list {
   display: flex;
   flex-direction: column;

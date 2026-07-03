@@ -33,10 +33,11 @@
 ### Tier List
 - Création et gestion de tier lists avec dossiers
 - Import d'images, drag & drop entre tiers, export PNG
-- Sauvegarde locale (non partagée entre utilisateurs)
+- Synchronisation temps réel entre tous les appareils connectés (images stockées en base64 dans Firebase Realtime DB)
 - **Limite d'images personnalisable** : 50 images par tierlist par défaut ; champ "Images max" éditable à côté du compteur "Images non placées", modifiable jusqu'à 200, propre à chaque tierlist
 - **Anti-doublon à l'import** : une image déjà présente dans la tierlist (même contenu) n'est pas réimportée
 - **Suppression rapide** : clic gauche sur une image pour la sélectionner, puis touche Suppr/Retour arrière pour la supprimer
+- **Import depuis TierMaker** : colle l'URL d'un template ou d'une tierlist TierMaker.com (bouton "🏆 Depuis TierMaker" dans le panneau Dossiers, ou depuis le menu Importer) → crée une nouvelle tierlist avec les mêmes tiers et images, rapatriées et stockées chez nous (plus aucune dépendance à TierMaker après l'import). Passe par une Cloud Function (`functions/importTiermakerTierlist`) qui sert de relais car TierMaker bloque les requêtes directes depuis un navigateur externe (CORS).
 
 ---
 
@@ -45,7 +46,7 @@
 | Module | Stockage | Partagé |
 |---|---|---|
 | Bingo | Firebase Realtime DB (`/bingo`) | ✅ Temps réel |
-| Tier List | LocalStorage | ❌ Local uniquement |
+| Tier List | Firebase Realtime DB (`/tierlist`), images en base64 | ✅ Temps réel |
 
 ---
 
@@ -57,8 +58,9 @@ LesMichels/
 ├── style.css           → Thème sombre
 ├── app.js              → Logique JS : auth, bingo, tier list
 ├── 404.html            → Page d'erreur Firebase Hosting
-├── firebase.json       → Configuration Firebase Hosting + cache HTTP
+├── firebase.json       → Configuration Firebase Hosting + Functions + cache HTTP
 ├── database.rules.json → Règles d'accès Firebase (authentifiés uniquement)
+├── functions/          → Cloud Function (import TierMaker), plan Blaze requis
 └── README.md           → Ce fichier
 ```
 
@@ -76,7 +78,6 @@ LesMichels/
 - [ ] **Statistiques par dossier** : taux de remplissage des grilles, cases les plus cochées, nombre de bingos par soirée
 - [ ] **Recherche de cases** : champ de recherche dans le panneau Cases pour filtrer rapidement
 - [ ] **Animations de bingo** : confettis / flash / son au moment de la détection d'un bingo
-- [ ] **Tier List → Firebase** : partager les tier lists entre utilisateurs en temps réel
 
 ---
 
