@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=95" />
+  <link rel="stylesheet" href="style.css?v=101" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -59,6 +59,7 @@
             <span class="folders-panel-title">📁 Dossiers</span>
             <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
             <button id="tl-btn-new" class="tl-btn-new" title="Créer une nouvelle tier list">+ Tier list</button>
+            <button id="tl-btn-new-template" class="tl-btn-new" title="Créer un nouveau template">+ Template</button>
             <button id="tl-btn-new-tiermaker" class="tl-btn-new-tiermaker" title="Importer une tier list depuis TierMaker.com" style="display:none">🏆 Depuis TierMaker</button>
             <button class="modal-close tl-sidebar-close" id="tl-sidebar-close">✕</button>
           </div>
@@ -81,6 +82,7 @@
             <!-- Header éditeur -->
             <div class="tl-editor-header">
               <div class="tl-title-row">
+                <span id="tl-title-prefix" class="tl-title-prefix hidden"></span>
                 <span id="tl-title-display" class="tl-title-display tl-title-editable" title="Clic gauche : renommer la tier list"></span>
                 <input type="text" id="tl-title-input" class="tl-title-input hidden" maxlength="60" />
               </div>
@@ -112,6 +114,7 @@
               <div class="tl-unplaced-header">
                 <span class="tl-unplaced-label">Images non placées</span>
                 <span id="tl-unplaced-count" class="tl-unplaced-count">0</span>
+                <button id="tl-unplaced-sort-btn" class="tl-unplaced-sort-btn" title="Choisir le tri des images non placées">↕️</button>
                 <span class="tl-max-images-label">Images max :</span>
                 <input type="number" id="tl-max-images-input" class="tl-max-images-input" min="1" max="200" step="1" value="50" title="Cliquer pour modifier la limite d'images (max 200)" />
               </div>
@@ -276,6 +279,29 @@
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-tier-confirm">Ajouter</button>
           <button class="btn-action btn-secondary" id="tl-modal-tier-cancel">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal générer une tierlist depuis un template -->
+  <div id="tl-modal-generate-from-template" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Générer depuis ce template</h3>
+        <button class="modal-close" id="tl-modal-generate-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="grid-name-presets">
+          <span class="grid-name-preset-label">Noms prédéfinis :</span>
+          <label class="grid-name-preset-check"><input type="checkbox" value="Jérôme"> Jérôme</label>
+          <label class="grid-name-preset-check"><input type="checkbox" value="Adrien"> Adrien</label>
+          <label class="grid-name-preset-check"><input type="checkbox" value="Damien"> Damien</label>
+        </div>
+        <input type="text" id="tl-generate-name-input" class="modal-text-input" placeholder="Ou saisir un nom..." maxlength="60" />
+        <div class="modal-actions">
+          <button class="btn-action" id="tl-btn-confirm-generate">Générer</button>
+          <button class="btn-action btn-secondary" id="tl-btn-cancel-generate">Annuler</button>
         </div>
       </div>
     </div>
@@ -773,6 +799,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=167"></script>
+  <script src="app.js?v=173"></script>
 </body>
 </html>

@@ -4489,7 +4489,10 @@ function _tlStateWithoutSrc(state) {
     ...state,
     tierlists: state.tierlists.map(tl => ({
       ...tl,
-      images: (tl.images || []).map(img => ({ id: img.id, name: img.name }))
+      images: (tl.images || []).map(img => {
+        const { src, ...rest } = img;
+        return rest;
+      })
     }))
   });
 }
@@ -4536,17 +4539,34 @@ function tlActiveTierlist() {
   return tlState.tierlists.find(tl => tl.id === _tlLocalActiveTierlistId) || null;
 }
 
-function tlDefaultTierlist(name) {
+function tlDefaultTierlist(name, isTemplate = false) {
   return {
     id: uid(),
     name,
     archived: false,
     showLabels: true,
     imgSize: 80,
+    unplacedSort: 'manual',
+    isTemplate,
     tiers: TL_DEFAULT_TIERS.map(t => ({ id: uid(), label: t.label, color: t.color, items: [] })),
     unplaced: [],
     images: [],
   };
+}
+
+// Copie triée de tl.unplaced pour l'affichage — ne mute jamais tl.unplaced (le drag&drop manuel s'appuie dessus)
+// Modes : 'manual' (ordre réel de tl.unplaced) | 'alpha' (nom) | 'date' (ordre d'ajout = ordre réel, comme 'manual')
+function _tlGetSortedUnplaced(tl) {
+  const ids = tl.unplaced.slice();
+  const mode = tl.unplacedSort || 'manual';
+  if (mode === 'alpha') {
+    return ids.sort((a, b) => {
+      const ia = tlFindImage(tl, a), ib = tlFindImage(tl, b);
+      return (ia ? ia.name : '').localeCompare(ib ? ib.name : '', 'fr', { sensitivity: 'base' });
+    });
+  }
+  // 'manual' et 'date' : ordre réel de tl.unplaced (pas de timestamp stocké, l'ordre d'ajout se confond avec l'ordre actuel)
+  return ids;
 }
 
 // ── Dossiers ──────────────────────────────────────────────────────────────────
@@ -4649,11 +4669,13 @@ function tlMoveTierlistToFolder(tlId, folderId) {
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const tlBtnNew            = document.getElementById('tl-btn-new');
+const tlBtnNewTemplate    = document.getElementById('tl-btn-new-template');
 const tlModalNewFolderSelect = document.getElementById('tl-modal-new-folder-select');
 const tlList              = document.getElementById('tl-list');
 const tlBtnShowArchived   = document.getElementById('tl-btn-show-archived');
 const tlEmptyState        = document.getElementById('tl-empty-state');
 const tlEditor            = document.getElementById('tl-editor');
+const tlTitlePrefix       = document.getElementById('tl-title-prefix');
 const tlTitleDisplay      = document.getElementById('tl-title-display');
 const tlTitleInput        = document.getElementById('tl-title-input');
 const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
@@ -4666,6 +4688,7 @@ const tlBtnCapture        = document.getElementById('tl-btn-capture');
 const tlTiersZone         = document.getElementById('tl-tiers-zone');
 const tlUnplacedZone      = document.getElementById('tl-unplaced-zone');
 const tlUnplacedCount     = document.getElementById('tl-unplaced-count');
+const tlUnplacedSortBtn   = document.getElementById('tl-unplaced-sort-btn');
 const tlMaxImagesInput    = document.getElementById('tl-max-images-input');
 
 // Modals
@@ -4851,6 +4874,13 @@ function tlRender() {
 
   tlTitleDisplay.textContent = tl.name;
   tlTitleInput.value = tl.name;
+  if (tl.templateId) {
+    const template = tlState.tierlists.find(t => t.id === tl.templateId && t.isTemplate);
+    tlTitlePrefix.textContent = template ? template.name + ' › ' : '';
+    tlTitlePrefix.classList.toggle('hidden', !template);
+  } else {
+    tlTitlePrefix.classList.add('hidden');
+  }
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
   const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
   const imgSize    = _tlLocalImgSize    !== null ? _tlLocalImgSize    : (tl.imgSize || 80);
@@ -4869,7 +4899,7 @@ function tlBuildTierlistItem(tl) {
 
   const icon = document.createElement('span');
   icon.className = 'tl-list-item-icon';
-  icon.textContent = '📜';
+  icon.textContent = tl.isTemplate ? '🧩' : '📜';
   icon.style.cssText = 'font-size:0.78rem;flex-shrink:0;opacity:0.8;';
   item.appendChild(icon);
 
@@ -4890,6 +4920,76 @@ function tlBuildTierlistItem(tl) {
   item.addEventListener('drop', e => _tlSidebarDropOnItem(e, tl.id, 'tierlist', item));
 
   return item;
+}
+
+// Une tierlist générée n'est "rattachée" à son template que si celui-ci existe encore et n'est pas archivé
+function _tlHasLiveTemplate(tl) {
+  if (!tl.templateId) return false;
+  return tlState.tierlists.some(t => t.id === tl.templateId && t.isTemplate && !t.archived);
+}
+
+// Rendu d'un template comme "dossier virtuel" repliable, contenant ses tierlists générées
+function _tlBuildTemplateGroupEl(template, depth) {
+  const collapseKey = 'tl_tplgroup_open_' + template.id;
+  const groupOpen = sessionStorage.getItem(collapseKey) === '1';
+  const isActive = template.id === _tlLocalActiveTierlistId
+    || tlState.tierlists.some(t => t.id === _tlLocalActiveTierlistId && t.templateId === template.id);
+
+  const groupEl = document.createElement('div');
+  groupEl.className = 'tl-folder' + (groupOpen ? ' open' : '') + (isActive ? ' active-folder' : '');
+  groupEl.dataset.templateId = template.id;
+  if (depth > 0) groupEl.style.marginLeft = (depth * 10) + 'px';
+
+  const header = document.createElement('div');
+  header.className = 'tl-folder-header';
+
+  const arrow = document.createElement('span');
+  arrow.className = 'tl-folder-arrow';
+  arrow.textContent = '▶';
+  arrow.style.cursor = 'pointer';
+  arrow.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = sessionStorage.getItem(collapseKey) === '1';
+    sessionStorage.setItem(collapseKey, isOpen ? '0' : '1');
+    groupEl.classList.toggle('open', !isOpen);
+  });
+
+  const icon = document.createElement('span');
+  icon.className = 'tl-folder-icon';
+  icon.textContent = '🧩';
+
+  const name = document.createElement('span');
+  name.className = 'tl-folder-name';
+  name.textContent = template.name;
+  name.title = template.name + '\nClic gauche : ouvrir le template\nClic droit : renommer, générer, archiver';
+
+  header.appendChild(arrow);
+  header.appendChild(icon);
+  header.appendChild(name);
+
+  header.addEventListener('click', () => tlSwitch(template.id));
+  header.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    tlOpenManageModal(template.id, header);
+  });
+
+  groupEl.appendChild(header);
+
+  const children = document.createElement('div');
+  children.className = 'tl-folder-children';
+  const generated = tlState.tierlists.filter(t => !t.archived && t.templateId === template.id);
+  if (generated.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'color:var(--text-faint);font-style:italic;font-size:0.75rem;padding:3px 4px;';
+    empty.textContent = 'Aucune tier list générée';
+    children.appendChild(empty);
+  } else {
+    generated.forEach(t => children.appendChild(tlBuildTierlistItem(t)));
+  }
+  groupEl.appendChild(children);
+
+  return groupEl;
 }
 
 function _tlBuildFolderEl(folder, depth) {
@@ -4993,15 +5093,18 @@ function _tlBuildFolderEl(folder, depth) {
   const subFolders = (tlState.folders || []).filter(f => !f.archived && f.parentId === folder.id);
   subFolders.forEach(sf => children.appendChild(_tlBuildFolderEl(sf, depth + 1)));
 
-  // Tierlists du dossier
-  const folderTierlists = tlState.tierlists.filter(tl => !tl.archived && tl.folderId === folder.id);
+  // Tierlists/templates du dossier — les tierlists rattachées à un template vivant
+  // n'apparaissent jamais à plat, seulement sous leur groupe de template (voir tlRenderList)
+  const folderTierlists = tlState.tierlists.filter(tl => !tl.archived && tl.folderId === folder.id && !_tlHasLiveTemplate(tl));
   if (subFolders.length === 0 && folderTierlists.length === 0) {
     const empty = document.createElement('div');
     empty.style.cssText = 'color:var(--text-faint);font-style:italic;font-size:0.75rem;padding:3px 4px;';
     empty.textContent = 'Vide';
     children.appendChild(empty);
   } else {
-    folderTierlists.forEach(tl => children.appendChild(tlBuildTierlistItem(tl)));
+    folderTierlists.forEach(tl => children.appendChild(
+      tl.isTemplate ? _tlBuildTemplateGroupEl(tl, depth + 1) : tlBuildTierlistItem(tl)
+    ));
   }
 
   folderEl.appendChild(children);
@@ -5012,7 +5115,9 @@ function tlRenderList() {
   tlList.innerHTML = '';
   if (!tlState.folders) tlState.folders = [];
   const rootFolders = tlState.folders.filter(f => !f.archived && !f.parentId);
-  const activeToplevel = tlState.tierlists.filter(tl => !tl.archived && !tl.folderId);
+  // Tierlists/templates sans dossier — les tierlists rattachées à un template vivant
+  // n'apparaissent jamais à plat, seulement sous leur groupe de template
+  const activeToplevel = tlState.tierlists.filter(tl => !tl.archived && !tl.folderId && !_tlHasLiveTemplate(tl));
   const hasContent = rootFolders.length > 0 || activeToplevel.length > 0;
 
   if (!hasContent) {
@@ -5027,8 +5132,11 @@ function tlRenderList() {
   // Dossiers racine d'abord (récursif)
   rootFolders.forEach(folder => tlList.appendChild(_tlBuildFolderEl(folder, 0)));
 
-  // Tierlists sans dossier APRÈS les dossiers
-  activeToplevel.forEach(tl => tlList.appendChild(tlBuildTierlistItem(tl)));
+  // Templates (groupes repliables) puis tierlists isolées, sans dossier ni template
+  const toplevelTemplates = activeToplevel.filter(tl => tl.isTemplate);
+  const toplevelPlain = activeToplevel.filter(tl => !tl.isTemplate);
+  toplevelTemplates.forEach(tpl => tlList.appendChild(_tlBuildTemplateGroupEl(tpl, 0)));
+  toplevelPlain.forEach(tl => tlList.appendChild(tlBuildTierlistItem(tl)));
 }
 
 // ── Drag & drop réordonnement des tiers ───────────────────────────────────────
@@ -5268,9 +5376,26 @@ function tlRenderUnplaced(tl) {
   btnImport.title = 'Ajouter des images\nClic : importer des fichiers ou coller depuis le presse-papier';
   btnImport.style.width = imgSize + 'px';
   btnImport.style.height = imgSize + 'px';
-  btnImport.innerHTML = '<span class="tl-import-plus">+</span>';
+  btnImport.innerHTML = '<span class="tl-import-icon">🖼️</span><span class="tl-import-label">Image</span>';
   btnImport.addEventListener('click', () => _tlShowImportMenu(btnImport));
   tlUnplacedZone.appendChild(btnImport);
+
+  // Barre de saisie texte inline — ajout rapide d'une carte texte (Entrée pour valider)
+  const textInput = document.createElement('input');
+  textInput.type = 'text';
+  textInput.className = 'tl-add-text-input';
+  textInput.placeholder = '+ Texte...';
+  textInput.title = 'Taper un texte puis Entrée pour ajouter une carte';
+  textInput.style.height = imgSize + 'px';
+  textInput.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      const text = textInput.value.trim();
+      if (!text) return;
+      _tlAddTextCard(tl, text);
+    }
+  });
+  tlUnplacedZone.appendChild(textInput);
 
   if (tl.unplaced.length === 0) {
     const hint = document.createElement('div');
@@ -5278,12 +5403,14 @@ function tlRenderUnplaced(tl) {
     hint.textContent = 'Dépose des images ici ou importe-en';
     tlUnplacedZone.appendChild(hint);
   } else {
-    tl.unplaced.forEach(imgId => {
+    _tlGetSortedUnplaced(tl).forEach(imgId => {
       const img = tlFindImage(tl, imgId);
       if (img) tlUnplacedZone.appendChild(tlBuildImgCard(tl, img, imgSize));
     });
   }
   tlUnplacedCount.textContent = tl.unplaced.length;
+  const _sortIcons = { manual: '✋', alpha: '🔤', date: '🕒' };
+  tlUnplacedSortBtn.textContent = _sortIcons[tl.unplacedSort || 'manual'] || '✋';
   tlMaxImagesInput.value = tlEffectiveMaxImages(tl);
 }
 
@@ -5350,15 +5477,27 @@ function tlBuildImgCard(tl, img, size) {
     tlDragImgId = null;
   });
 
-  const imgEl = document.createElement('img');
-  imgEl.src = img.src;
-  imgEl.style.width = size + 'px';
-  imgEl.style.height = size + 'px';
-  imgEl.draggable = false;
-  card.appendChild(imgEl);
+  const isText = (img.type || 'image') === 'text';
+  if (isText) {
+    card.classList.add('tl-img-card--text');
+    const textEl = document.createElement('div');
+    textEl.className = 'tl-text-card-content';
+    textEl.style.width = size + 'px';
+    textEl.style.height = size + 'px';
+    textEl.style.background = img.color || '#3a3a42';
+    textEl.textContent = img.name;
+    card.appendChild(textEl);
+  } else {
+    const imgEl = document.createElement('img');
+    imgEl.src = img.src;
+    imgEl.style.width = size + 'px';
+    imgEl.style.height = size + 'px';
+    imgEl.draggable = false;
+    card.appendChild(imgEl);
+  }
 
   const _showLbls = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
-  if (_showLbls) {
+  if (_showLbls && !isText) {
     const label = document.createElement('div');
     label.className = 'tl-img-label';
     label.style.width = size + 'px';
@@ -5422,9 +5561,9 @@ function tlFindImage(tl, imgId) {
 }
 
 // ── Actions sur les tierlists ─────────────────────────────────────────────────
-function tlCreate(name, folderId) {
+function tlCreate(name, folderId, isTemplate = false) {
   tlPushUndo();
-  const tl = tlDefaultTierlist(name);
+  const tl = tlDefaultTierlist(name, isTemplate);
   if (folderId) tl.folderId = folderId;
   tlState.tierlists.push(tl);
   _tlLocalActiveTierlistId = tl.id;
@@ -5519,6 +5658,26 @@ function tlArchive(id) {
     _tlLocalNoSelection = false;
     saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: false });
   }
+  tlSave();
+  tlRender();
+}
+
+// Convertit une tierlist normale en template : un template n'a jamais d'image classée dans un tier,
+// donc toute image déjà placée est renvoyée en zone non placée.
+function tlConvertToTemplate(id) {
+  const tl = tlState.tierlists.find(t => t.id === id);
+  if (!tl) return;
+  const placedCount = tl.tiers.reduce((n, t) => n + t.items.length, 0);
+  if (placedCount > 0) {
+    const ok = confirm(`Convertir "${tl.name}" en template va renvoyer ses ${placedCount} image(s) classée(s) en zone non placée (un template n'a jamais d'image dans un tier). Continuer ?`);
+    if (!ok) return;
+  }
+  tlPushUndo();
+  tl.tiers.forEach(t => {
+    t.items.forEach(imgId => { if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId); });
+    t.items = [];
+  });
+  tl.isTemplate = true;
   tlSave();
   tlRender();
 }
@@ -5764,6 +5923,7 @@ function tlDrop(e, targetZoneId) {
   if (!imgId) return;
   const tl = tlActiveTierlist();
   if (!tl) return;
+  if (tl.isTemplate && targetZoneId !== '__unplaced__') return;
   tlPushUndo();
 
   // Retirer de partout
@@ -5771,6 +5931,8 @@ function tlDrop(e, targetZoneId) {
   tl.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
 
   if (targetZoneId === '__unplaced__') {
+    // Tout réordonnancement manuel repasse le tri en mode "manuel"
+    if ((tl.unplacedSort || 'manual') !== 'manual') tl.unplacedSort = 'manual';
     // Insertion à la position du curseur dans la zone unplaced
     const insertIdx = tlDropInsertIndex(tlUnplacedZone, e.clientX, e.clientY);
     tl.unplaced.splice(insertIdx, 0, imgId);
@@ -5870,9 +6032,19 @@ async function _tlBuildCanvas(tl) {
       const imgData = tl.images ? tl.images.find(i => i.id === imgId) : null;
       if (!imgData) continue;
       if (x + imgSize > totalWidth - padding) { x = labelW + padding; rowY += imgSize + imgGap; }
-      const imgEl = await loadImage(imgData.src);
-      if (imgEl) ctx.drawImage(imgEl, x, rowY, imgSize, imgSize);
-      if (tl.showLabels) {
+      if ((imgData.type || 'image') === 'text') {
+        ctx.fillStyle = imgData.color || '#3a3a42';
+        ctx.fillRect(x, rowY, imgSize, imgSize);
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.round(imgSize * 0.16)}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(imgData.name.slice(0, 20), x + imgSize / 2, rowY + imgSize / 2, imgSize - 8);
+      } else {
+        const imgEl = await loadImage(imgData.src);
+        if (imgEl) ctx.drawImage(imgEl, x, rowY, imgSize, imgSize);
+      }
+      if (tl.showLabels && (imgData.type || 'image') !== 'text') {
         ctx.fillStyle = 'rgba(0,0,0,0.72)';
         ctx.fillRect(x, rowY + imgSize - 16, imgSize, 16);
         ctx.fillStyle = '#e8e8f0';
@@ -6108,7 +6280,7 @@ function tlRenderArchivedModal() {
 }
 
 // ── Modal nouvelle tierlist ───────────────────────────────────────────────────
-let tlModalNewMode = 'create'; // 'create' | 'rename'
+let tlModalNewMode = 'create'; // 'create' | 'rename' | 'create-template'
 let tlModalNewTargetId = null;
 
 function tlPopulateFolderSelect(selectEl, selectedId, excludeId) {
@@ -6145,6 +6317,21 @@ function tlOpenNewModal() {
   setTimeout(() => { tlModalNewInput.focus(); tlModalNewInput.select(); }, 50);
 }
 
+function tlOpenNewTemplateModal() {
+  tlModalNewMode = 'create-template';
+  tlModalNewTargetId = null;
+  tlModalNewTitle.textContent = 'Nouveau template';
+  const n = (tlState.tierlists || []).filter(t => !t.archived && t.isTemplate).length + 1;
+  tlModalNewInput.value = `Template ${n}`;
+  const wrap = document.getElementById('tl-modal-new-folder-wrap');
+  if (wrap) {
+    wrap.style.display = '';
+    tlPopulateFolderSelect(tlModalNewFolderSelect, '');
+  }
+  tlModalNew.classList.remove('hidden');
+  setTimeout(() => { tlModalNewInput.focus(); tlModalNewInput.select(); }, 50);
+}
+
 function tlOpenRenameModal(id) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
@@ -6165,7 +6352,10 @@ function tlConfirmNewModal() {
   tlModalNew.classList.add('hidden');
   if (tlModalNewMode === 'create') {
     const folderId = tlModalNewFolderSelect ? tlModalNewFolderSelect.value || null : null;
-    tlCreate(val, folderId);
+    tlCreate(val, folderId, false);
+  } else if (tlModalNewMode === 'create-template') {
+    const folderId = tlModalNewFolderSelect ? tlModalNewFolderSelect.value || null : null;
+    tlCreate(val, folderId, true);
   } else if (tlModalNewMode === 'rename') {
     tlRename(tlModalNewTargetId, val);
   }
@@ -6370,8 +6560,13 @@ function tlOpenManageModal(id, anchorEl) {
   addItem('✏ Renommer', false, () => tlOpenRenameModal(id));
   addItem('❐ Dupliquer', false, () => tlCopy(id));
   addItem('📂 Ranger dans un dossier', false, () => tlOpenMoveModal(id));
-  const ceLabel = state.currentEventTierlistId === id ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
-  addItem(ceLabel, false, () => setCurrentEventTierlist(id));
+  if (!tl.isTemplate) {
+    const ceLabel = state.currentEventTierlistId === id ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
+    addItem(ceLabel, false, () => setCurrentEventTierlist(id));
+    if (!tl.templateId) addItem('🧩 Convertir en template', false, () => tlConvertToTemplate(id));
+  } else {
+    addItem('🎲 Générer depuis ce template', false, () => tlOpenGenerateFromTemplateModal(id));
+  }
   addSep();
   addItem('📦 Archiver', true, () => tlArchive(id));
 }
@@ -6474,6 +6669,7 @@ document.addEventListener('keydown', e => {
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
 tlBtnNew.addEventListener('click', tlOpenNewModal);
+tlBtnNewTemplate.addEventListener('click', tlOpenNewTemplateModal);
 document.getElementById('tl-empty-btn-new').addEventListener('click', tlOpenNewModal);
 document.getElementById('tl-empty-btn-folder').addEventListener('click', () => tlOpenFolderModal('create'));
 
@@ -6571,6 +6767,93 @@ tlModalTierColor.addEventListener('input', () => {
 // Init swatches au démarrage
 tlInitSwatches();
 
+// ── Ajout rapide d'une carte texte (barre inline, couleur fixe) ──────────────
+const TL_TEXT_CARD_COLOR = '#3a3a42';
+
+function _tlAddTextCard(tl, text) {
+  if (!tl.images) tl.images = [];
+  const maxImages = tlEffectiveMaxImages(tl);
+  if (tl.images.length >= maxImages) {
+    alert(`Limite atteinte — maximum ${maxImages} éléments par tierlist.`);
+    return;
+  }
+  const img = { id: uid(), type: 'text', name: text, color: TL_TEXT_CARD_COLOR };
+  tl.images.push(img);
+  tl.unplaced.push(img.id);
+  tlSave();
+  tlRender();
+  const input = document.querySelector('.tl-add-text-input');
+  if (input) input.focus();
+}
+
+// ── Génération de tierlists depuis un template (façon Bingo Jérôme/Adrien/Damien) ──
+const tlModalGenerate        = document.getElementById('tl-modal-generate-from-template');
+const tlGenerateNameInput    = document.getElementById('tl-generate-name-input');
+const tlBtnConfirmGenerate   = document.getElementById('tl-btn-confirm-generate');
+const tlBtnCancelGenerate    = document.getElementById('tl-btn-cancel-generate');
+const tlModalGenerateClose   = document.getElementById('tl-modal-generate-close');
+
+let _tlGenerateTemplateId = null;
+
+function tlOpenGenerateFromTemplateModal(templateId) {
+  _tlGenerateTemplateId = templateId;
+  tlGenerateNameInput.value = '';
+  document.querySelectorAll('#tl-modal-generate-from-template .grid-name-preset-check input')
+    .forEach(cb => { cb.checked = false; });
+  tlModalGenerate.classList.remove('hidden');
+}
+
+function _tlCreateFromTemplate(templateId, name) {
+  const template = tlState.tierlists.find(t => t.id === templateId);
+  if (!template) return null;
+  const copy = JSON.parse(JSON.stringify(template));
+  copy.id = uid();
+  copy.name = name;
+  copy.isTemplate = false;
+  copy.templateId = templateId;
+  const idMap = {};
+  copy.images = (copy.images || []).map(img => {
+    const newId = uid();
+    idMap[img.id] = newId;
+    return { ...img, id: newId };
+  });
+  copy.tiers = (copy.tiers || []).map(t => ({ ...t, id: uid(), items: [] }));
+  copy.unplaced = (template.unplaced || []).map(oid => idMap[oid]).filter(Boolean);
+  tlState.tierlists.push(copy);
+  return copy;
+}
+
+function tlConfirmGenerateFromTemplate() {
+  if (!_tlGenerateTemplateId) return;
+  const checked = [...document.querySelectorAll('#tl-modal-generate-from-template .grid-name-preset-check input:checked')].map(cb => cb.value);
+  tlModalGenerate.classList.add('hidden');
+  tlPushUndo();
+  let lastCreated = null;
+  if (checked.length > 0) {
+    checked.forEach(name => { lastCreated = _tlCreateFromTemplate(_tlGenerateTemplateId, name); });
+  } else {
+    const name = tlGenerateNameInput.value.trim();
+    if (!name) return;
+    lastCreated = _tlCreateFromTemplate(_tlGenerateTemplateId, name);
+  }
+  if (lastCreated) {
+    _tlLocalActiveTierlistId = lastCreated.id;
+    _tlLocalNoSelection = false;
+    saveUserPrefs({ tlActiveTierlistId: lastCreated.id, tlNoSelection: false });
+  }
+  _tlGenerateTemplateId = null;
+  tlSave();
+  tlRender();
+}
+
+tlBtnConfirmGenerate.addEventListener('click', tlConfirmGenerateFromTemplate);
+tlBtnCancelGenerate.addEventListener('click', () => tlModalGenerate.classList.add('hidden'));
+tlModalGenerateClose.addEventListener('click', () => tlModalGenerate.classList.add('hidden'));
+tlGenerateNameInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') tlConfirmGenerateFromTemplate();
+  if (e.key === 'Escape') tlModalGenerate.classList.add('hidden');
+});
+
 // (tlBtnImportImages supprimé — le bouton est maintenant dans le panneau images non placées)
 tlFileInput.addEventListener('change', () => { if (tlFileInput.files.length) tlImportImages(tlFileInput.files); tlFileInput.value = ''; });
 
@@ -6628,6 +6911,17 @@ tlMaxImagesInput.addEventListener('change', () => {
   const tl = tlActiveTierlist();
   if (!tl) return;
   tlMaxImagesInput.value = tlSetMaxImages(tl, tlMaxImagesInput.value);
+});
+
+tlUnplacedSortBtn.addEventListener('click', () => {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  const current = tl.unplacedSort || 'manual';
+  const setSort = mode => { tl.unplacedSort = mode; tlSave(); tlRender(); };
+  const { addItem } = _tlMakeCtxMenu(tlUnplacedSortBtn, null);
+  addItem((current === 'manual' ? '✓ ' : '') + '✋ Manuel', false, () => setSort('manual'));
+  addItem((current === 'alpha' ? '✓ ' : '') + '🔤 Alphabétique', false, () => setSort('alpha'));
+  addItem((current === 'date' ? '✓ ' : '') + '🕒 Date d\'ajout', false, () => setSort('date'));
 });
 
 // ── Coller depuis le presse-papier ────────────────────────────────────────────
