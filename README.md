@@ -37,7 +37,6 @@
 - **Limite d'images personnalisable** : 50 images par tierlist par défaut ; champ "Images max" éditable à côté du compteur "Images non placées", modifiable jusqu'à 200, propre à chaque tierlist
 - **Anti-doublon à l'import** : une image déjà présente dans la tierlist (même contenu) n'est pas réimportée
 - **Suppression rapide** : clic gauche sur une image pour la sélectionner, puis touche Suppr/Retour arrière pour la supprimer
-- **Import depuis TierMaker** : colle l'URL d'un template ou d'une tierlist TierMaker.com (bouton "🏆 Depuis TierMaker" dans le panneau Dossiers, ou depuis le menu Importer) → crée une nouvelle tierlist avec les mêmes tiers et images, rapatriées et stockées chez nous (plus aucune dépendance à TierMaker après l'import). Passe par une Cloud Function (`functions/importTiermakerTierlist`) qui sert de relais car TierMaker bloque les requêtes directes depuis un navigateur externe (CORS).
 - **Tri des images non placées** : par défaut, ordre manuel (réordonnable librement par drag & drop). Icône ↕️ à côté du compteur ouvre un menu pour choisir Manuel / Alphabétique / Date d'ajout ; dès qu'une image est de nouveau glissée pour être repositionnée, le tri repasse automatiquement en mode manuel.
 - **Images non rognées** : les images non carrées s'affichent désormais en entier (letterboxées) au lieu d'être coupées.
 - **Cartes texte** : une petite barre "+ Texte..." toujours visible à côté du bouton d'import (s'agrandit légèrement quand on clique dedans) — tape un texte, Entrée pour l'ajouter (fond gris foncé fixe), classable comme une image dans les tiers.
@@ -65,7 +64,6 @@ LesMichels/
 ├── 404.html            → Page d'erreur Firebase Hosting
 ├── firebase.json       → Configuration Firebase Hosting + Functions + cache HTTP
 ├── database.rules.json → Règles d'accès Firebase (authentifiés uniquement)
-├── functions/          → Cloud Function (import TierMaker), plan Blaze requis
 └── README.md           → Ce fichier
 ```
 
