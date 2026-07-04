@@ -30,6 +30,17 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Icônes Lucide */
+[data-lucide] {
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+  margin-right: 4px;
+  fill: none;
+  stroke: currentColor;
+}
+[data-lucide="folder"] { stroke: var(--accent) !important; fill: var(--accent-glow) !important; }
+
 html { height: 100%; overflow-x: hidden; }
 
 body {
@@ -239,12 +250,22 @@ body {
 .ctrl-row-grids         { border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .ctrl-row-toolbar       { padding-bottom: 4px; }
 
-/* ── Boutons Dossiers / Cases toolbar ── */
+/* ── Boutons Dossiers / Cases toolbar — même style que Archives/Corbeille ── */
 .btn-folders-panel,
 .btn-cases-panel {
   font-size: 0.82rem;
   padding: 5px 12px;
   flex-shrink: 0;
+  background: var(--surface-2) !important;
+  color: var(--text-muted) !important;
+  border: 1px solid var(--border) !important;
+}
+.btn-folders-panel:hover,
+.btn-cases-panel:hover {
+  border-color: var(--accent-dim) !important;
+  color: var(--accent) !important;
+  background: var(--accent-glow) !important;
+  opacity: 1;
 }
 .ctrl-row-sep {
   width: 1px;

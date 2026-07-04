@@ -76,6 +76,14 @@ LesMichels/
 - Police : Space Mono (logo), Arial (interface)
 - Assets versionnés via `?v=N` pour invalidation du cache navigateur
 
+### Icônes (Lucide)
+
+Le CDN Lucide est chargé dans `index.html` (`<script src="https://unpkg.com/lucide@latest">`), en remplacement progressif des emojis actuels (🗑, 📁, 🎲...). Rien n'est encore remplacé — les emojis restent en place jusqu'à migration.
+
+**Choisir une icône** : aller sur [lucide.dev/icons](https://lucide.dev/icons), chercher un mot-clé (ex. "trash", "folder", "dice"), cliquer sur l'icône qui plaît pour récupérer son nom exact (ex. `trash-2`, `folder`, `dices`).
+
+**Utilisation** : remplacer l'emoji par `<i data-lucide="nom-de-l-icone"></i>`, puis appeler `lucide.createIcons()` pour que Lucide transforme les balises en SVG (à refaire après tout ajout dynamique de boutons, ex. menus contextuels).
+
 ## 🗓️ Idées & todo
 
 - [ ] **Statistiques par dossier** : taux de remplissage des grilles, cases les plus cochées, nombre de bingos par soirée

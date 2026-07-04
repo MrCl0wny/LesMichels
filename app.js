@@ -25,6 +25,14 @@ if (DISABLE_TITLE_TOOLTIPS) {
 }
 
 // ──────────────────────────────────────────────
+// Icônes Lucide (remplacement progressif des emojis)
+// Ré-appeler lucide.createIcons() après tout ajout dynamique de <i data-lucide>
+// ──────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.lucide) lucide.createIcons();
+});
+
+// ──────────────────────────────────────────────
 // Audio singleton + effets Bingo
 // ──────────────────────────────────────────────
 function playBingoSound() {
