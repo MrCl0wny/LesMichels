@@ -303,9 +303,6 @@ body {
 }
 
 /* ── Drawer panneau dossiers ── */
-/* Overlay (inutilisé, conservé pour compat JS) */
-.folders-panel-overlay { display: none; }
-
 /* Panneaux flottants déplaçables */
 .folders-panel {
   position: fixed;
@@ -553,95 +550,7 @@ body {
   font-style: italic;
 }
 
-/* Fil d'Ariane dossiers */
-.folders-breadcrumb {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 2px;
-  font-size: 0.75rem;
-  color: var(--text-faint);
-  min-height: 18px;
-}
-.breadcrumb-item {
-  color: var(--text-dim);
-  transition: var(--transition);
-}
-.breadcrumb-item.active {
-  color: var(--text);
-  font-weight: 600;
-}
-.breadcrumb-item:hover:not(.active) { color: var(--accent); }
-.breadcrumb-sep { color: var(--text-faint); }
-
-/* Onglets dossiers racines */
-.root-folders-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-.root-folder-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: var(--transition);
-  user-select: none;
-}
-.root-folder-tab::before { content: '📁'; font-size: 0.8rem; }
-.root-folder-tab:hover { border-color: var(--accent-dim); color: var(--text); background: var(--surface-3); }
-.root-folder-tab.active {
-  border-color: var(--accent);
-  background: var(--accent-glow);
-  color: var(--accent);
-}
-.root-folder-tab.active::before { content: '📂'; }
-.root-folder-tab.dragging { opacity: 0.4; }
-.root-folder-tab.drag-over-tab { border-color: var(--accent); background: var(--accent-glow); }
-
-/* Onglets sous-dossiers */
-.folder-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: var(--transition);
-  user-select: none;
-}
-.folder-tab::before { content: '╴'; font-size: 0.75rem; color: var(--text-faint); }
-.folder-tab:hover { border-color: var(--accent-dim); color: var(--text); background: var(--surface-3); }
-.folder-tab.active {
-  border-color: var(--accent);
-  background: var(--accent-glow);
-  color: var(--accent);
-  font-weight: 600;
-}
-.folder-tab.active::before { content: '╴'; }
-.folder-tab-name { white-space: nowrap; }
-.folder-tab.dragging { opacity: 0.4; }
-.folder-tab.drag-over-tab { border-color: var(--accent); background: var(--accent-glow); }
-
 /* Bouton "+ Dossier" / "+ Sous-dossier" dans ctrl-row */
-.folders-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
 .btn-new-folder-in-grids,
 .btn-new-folder-bingo {
   display: inline-flex;
