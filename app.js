@@ -177,8 +177,6 @@ function setupAuth() {
   const modalAuth    = document.getElementById('modal-auth');
   const btnGoogle    = document.getElementById('btn-google-signin');
   const userBadge    = document.getElementById('user-badge');
-  const userAvatar   = document.getElementById('user-avatar');
-  const userDropdown = document.getElementById('user-dropdown');
   const btnSignout   = document.getElementById('btn-signout');
 
   btnGoogle.addEventListener('click', () => {
@@ -189,20 +187,8 @@ function setupAuth() {
     });
   });
 
-  // Toggle dropdown au clic sur l'avatar
-  userAvatar.addEventListener('click', (e) => {
-    e.stopPropagation();
-    userDropdown.classList.toggle('hidden');
-  });
-
-  // Fermer le dropdown si on clique ailleurs
-  document.addEventListener('click', () => {
-    userDropdown.classList.add('hidden');
-  });
-
   btnSignout.addEventListener('click', () => {
-    userDropdown.classList.add('hidden');
-    _auth.signOut();
+    document.getElementById('modal-confirm-signout').classList.remove('hidden');
   });
 
   const ALLOWED_UIDS = [
@@ -224,8 +210,6 @@ function setupAuth() {
       currentPseudo = user.displayName || user.email;
       modalAuth.classList.add('hidden');
       userBadge.classList.remove('hidden');
-      userAvatar.src = user.photoURL || '';
-      userAvatar.style.display = user.photoURL ? 'block' : 'none';
       loadUserPrefs();
     } else {
       currentUser   = null;
@@ -674,19 +658,21 @@ function renderCurrentEventButton() {
     if (tl) {
       btn.style.display = 'flex';
       if (lbl) {
-        let pathStr = 'Tier List';
         // Remonter le chemin du dossier si la TL est dans un dossier
+        const parts = ['Tier List'];
         if (tl.folderId && typeof tlState !== 'undefined') {
-          const parts = [];
+          const folderParts = [];
           let current = (tlState.folders || []).find(f => f.id === tl.folderId);
           while (current) {
-            parts.unshift(current.name);
+            folderParts.unshift(current.name);
             current = (tlState.folders || []).find(f => f.id === current.parentId);
           }
-          if (parts.length) pathStr += ' › ' + parts.join(' › ');
+          parts.push(...folderParts);
         }
-        pathStr += ' › ' + tl.name;
-        lbl.textContent = 'Soirée en cours : ' + pathStr;
+        parts.push(tl.name);
+        const fullPath = parts.join(' › ');
+        lbl.textContent = fullPath;
+        document.getElementById('btn-ce-navigate').title = 'Aller à la soirée en cours\n' + fullPath;
       }
       const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
       const alreadyHere = onTlPage && _tlLocalActiveTierlistId === ceTl;
@@ -706,8 +692,9 @@ function renderCurrentEventButton() {
   btn.style.display = 'flex';
   if (lbl) {
     const path = getFolderPath(state.folders, cef);
-    const pathStr = 'Bingo › ' + path.map(f => f.name).join(' › ');
-    lbl.textContent = 'Soirée en cours : ' + pathStr;
+    const fullPath = 'Bingo › ' + path.map(f => f.name).join(' › ');
+    lbl.textContent = fullPath;
+    document.getElementById('btn-ce-navigate').title = 'Aller à la soirée en cours\n' + fullPath;
   }
   const onBingoPage = document.getElementById('page-bingo')?.classList.contains('active');
   const alreadyHereBingo = onBingoPage && _localActiveFolderId === cef;
@@ -1194,6 +1181,7 @@ function renderElements() {
   archived.forEach(el => {
     listArchived.appendChild(buildElementItem(el, true));
   });
+  if (window.lucide) lucide.createIcons();
 }
 
 function buildElementItem(el, isArchived) {
@@ -1225,7 +1213,7 @@ function buildElementItem(el, isArchived) {
   if (canDragToAny) {
     const handle = document.createElement('span');
     handle.className = 'elem-drag-handle';
-    handle.textContent = '⠿';
+    handle.innerHTML = '<i data-lucide="grip"></i>';
     handle.title = 'Glisser-déposer vers une case de la grille';
     handle.draggable = true;
     handle.addEventListener('dragstart', e => {
@@ -1251,7 +1239,7 @@ function buildElementItem(el, isArchived) {
   // Bouton "..." options
   const menuBtn = document.createElement('button');
   menuBtn.className = 'elem-menu-btn';
-  menuBtn.textContent = '···';
+  menuBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
   menuBtn.title = 'Options';
   menuBtn.addEventListener('click', e => {
     e.stopPropagation();
@@ -1473,7 +1461,7 @@ function renderFoldersPanelTree() {
 
     const arrow = document.createElement('span');
     arrow.className = 'fp-folder-arrow' + (collapsed ? ' collapsed' : '');
-    arrow.textContent = '▼';
+    arrow.innerHTML = '<i data-lucide="chevron-down"></i>';
     if (!hasChildren) arrow.style.visibility = 'hidden';
 
     const icon = document.createElement('span');
@@ -1486,12 +1474,12 @@ function renderFoldersPanelTree() {
 
     const dragHandle = document.createElement('span');
     dragHandle.className = 'fp-folder-drag-handle';
-    dragHandle.textContent = '⠿';
+    dragHandle.innerHTML = '<i data-lucide="grip"></i>';
     dragHandle.title = 'Glisser pour déplacer';
 
     const ctxBtn = document.createElement('button');
     ctxBtn.className = 'fp-folder-ctx-btn';
-    ctxBtn.textContent = '•••';
+    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
     ctxBtn.title = 'Options';
 
     row.appendChild(dragHandle);
@@ -1567,7 +1555,7 @@ function renderFoldersPanelTree() {
 
       const gIcon = document.createElement('span');
       gIcon.className = 'fp-grid-icon';
-      gIcon.textContent = '▪';
+      gIcon.innerHTML = '<i data-lucide="grid-3x3"></i>';
 
       const gName = document.createElement('span');
       gName.className = 'fp-grid-name';
@@ -1575,7 +1563,7 @@ function renderFoldersPanelTree() {
 
       const gCtx = document.createElement('button');
       gCtx.className = 'fp-grid-ctx-btn';
-      gCtx.textContent = '•••';
+      gCtx.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
       gCtx.title = 'Options';
 
       gRow.appendChild(gIcon);
@@ -2099,6 +2087,17 @@ function renderGridsList() {
     nameSpan.textContent = g.name;
     item.appendChild(nameSpan);
 
+    const ctxBtn = document.createElement('button');
+    ctxBtn.className = 'grid-tab-ctx-btn';
+    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+    ctxBtn.title = 'Options';
+    ctxBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (_clickTimer) { clearTimeout(_clickTimer); _clickTimer = null; }
+      openCtxMenuGrid(g.id, e, item);
+    });
+    item.appendChild(ctxBtn);
+
     // Drag & drop pour réordonner
     item.addEventListener('dragstart', e => {
       e.dataTransfer.setData('text/plain', g.id);
@@ -2550,7 +2549,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const btnSubClear = document.createElement('button');
   btnSubClear.className = 'btn-action btn-subgrid btn-subgrid-clear' + (gridLocked ? ' btn-disabled' : '');
   btnSubClear.disabled = gridLocked;
-  btnSubClear.textContent = '⊘';
+  btnSubClear.innerHTML = '<i data-lucide="eraser"></i>';
   btnSubClear.title = gridLocked ? 'Grille bloquée' : 'Vider cette grille';
   btnSubClear.addEventListener('click', () => {
     const tNow = activeTheme();
@@ -3548,6 +3547,17 @@ function updateFillEmptyButtonState() {
 }
 
 
+document.getElementById('btn-confirm-signout').addEventListener('click', () => {
+  document.getElementById('modal-confirm-signout').classList.add('hidden');
+  _auth.signOut();
+});
+document.getElementById('btn-cancel-signout').addEventListener('click', () => {
+  document.getElementById('modal-confirm-signout').classList.add('hidden');
+});
+document.getElementById('btn-close-confirm-signout').addEventListener('click', () => {
+  document.getElementById('modal-confirm-signout').classList.add('hidden');
+});
+
 btnReset.addEventListener('click', () => {
   const t = activeTheme();
   const s = activeSubtheme();
@@ -3741,7 +3751,7 @@ function _makeTreeNode(label, depth, collapsed, onToggle) {
 
   const arrow = document.createElement('span');
   arrow.className = 'tree-arrow' + (collapsed ? ' collapsed' : '');
-  arrow.textContent = '▼';
+  arrow.innerHTML = '<i data-lucide="chevron-down"></i>';
   arrow.addEventListener('click', onToggle);
   row.appendChild(arrow);
 
@@ -3812,7 +3822,7 @@ function renderArchivesUnified() {
 
     if (fArchived) {
       folderRow.appendChild(_makeArchiveButtons([
-        { text: '↩ Restaurer', cls: 'restore', disabled: parentArchived,
+        { text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore', disabled: parentArchived,
           onClick: () => { archiveFolder(f.id); renderArchivesUnified(); } },
         { text: '<i data-lucide="trash-2"></i> Supprimer', cls: 'del',
           onClick: () => { deleteFolder(f.id); renderArchivesUnified(); } }
@@ -3823,7 +3833,7 @@ function renderArchivesUnified() {
 
     archivedGrids.forEach(g => {
       const leafRow = _makeLeafRow(g.name, depth + 1, [
-        { text: '↩ Restaurer', cls: 'restore', disabled: fArchived || parentArchived,
+        { text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore', disabled: fArchived || parentArchived,
           onClick: () => { g.archived = false; saveState(); renderGridsList(); renderArchivesUnified(); } },
         { text: '<i data-lucide="trash-2"></i> Supprimer', cls: 'del',
           onClick: () => {
@@ -3954,7 +3964,7 @@ function renderTrashList() {
     });
     if (tNode.themeEntry) {
       themeRow.appendChild(_makeArchiveButtons([{
-        text: '↩ Restaurer', cls: 'restore',
+        text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore',
         onClick: () => { trashRestore(tNode.themeEntry.origIdx); renderTrashList(); }
       }]));
     }
@@ -3973,7 +3983,7 @@ function renderTrashList() {
       if (sNode.subEntry) {
         const parentExists = !!findFolderById(state.folders, sNode.subEntry.entry.themeId);
         subRow.appendChild(_makeArchiveButtons([{
-          text: '↩ Restaurer', cls: 'restore',
+          text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore',
           disabled: !parentExists,
           onClick: () => { trashRestore(sNode.subEntry.origIdx); renderTrashList(); }
         }]));
@@ -3983,7 +3993,7 @@ function renderTrashList() {
 
       sNode.grids.forEach(g => {
         const actions = g.fromParent ? [] : [{
-          text: '↩ Restaurer', cls: 'restore',
+          text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore',
           disabled: !g.canRestore,
           onClick: () => { trashRestore(g.origIdx); renderTrashList(); }
         }];
@@ -3991,6 +4001,7 @@ function renderTrashList() {
       });
     });
   });
+  if (window.lucide) lucide.createIcons();
 }
 
 function openTrashUnified() {
@@ -4562,6 +4573,16 @@ function tlBuildTierlistItem(tl) {
   nameSpan.title = tl.name + '\nClic gauche : sélectionner / désélectionner\nClic droit : renommer, dupliquer, archiver\nGlisser : réordonner';
   item.appendChild(nameSpan);
 
+  const ctxBtn = document.createElement('button');
+  ctxBtn.className = 'tl-list-item-btn';
+  ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+  ctxBtn.title = 'Options';
+  ctxBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    tlOpenManageModal(tl.id, item);
+  });
+  item.appendChild(ctxBtn);
+
   item.addEventListener('click', () => tlSwitch(tl.id));
   item.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); tlOpenManageModal(tl.id, item); });
 
@@ -4598,7 +4619,7 @@ function _tlBuildTemplateGroupEl(template, depth) {
 
   const arrow = document.createElement('span');
   arrow.className = 'tl-folder-arrow';
-  arrow.textContent = '▶';
+  arrow.innerHTML = '<i data-lucide="chevron-right"></i>';
   arrow.style.cursor = 'pointer';
   arrow.addEventListener('click', e => {
     e.stopPropagation();
@@ -4616,9 +4637,19 @@ function _tlBuildTemplateGroupEl(template, depth) {
   name.textContent = template.name;
   name.title = template.name + '\nClic gauche : ouvrir le template\nClic droit : renommer, générer, archiver';
 
+  const ctxBtn = document.createElement('button');
+  ctxBtn.className = 'tl-folder-ctx-btn';
+  ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+  ctxBtn.title = 'Options';
+  ctxBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    tlOpenManageModal(template.id, header);
+  });
+
   header.appendChild(arrow);
   header.appendChild(icon);
   header.appendChild(name);
+  header.appendChild(ctxBtn);
 
   header.addEventListener('click', () => tlSwitch(template.id));
   header.addEventListener('contextmenu', e => {
@@ -4663,7 +4694,7 @@ function _tlBuildFolderEl(folder, depth) {
 
   const arrow = document.createElement('span');
   arrow.className = 'tl-folder-arrow';
-  arrow.textContent = '▶';
+  arrow.innerHTML = '<i data-lucide="chevron-right"></i>';
   arrow.style.cursor = 'pointer';
   arrow.addEventListener('click', e => {
     e.stopPropagation();
@@ -4682,9 +4713,19 @@ function _tlBuildFolderEl(folder, depth) {
   name.textContent = folder.name;
   name.title = folder.name + '\nClic droit : renommer, déplacer, archiver\nGlisser : réordonner';
 
+  const ctxBtn = document.createElement('button');
+  ctxBtn.className = 'tl-folder-ctx-btn';
+  ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+  ctxBtn.title = 'Options';
+  ctxBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    tlOpenFolderManageModal(folder.id, header);
+  });
+
   header.appendChild(arrow);
   header.appendChild(icon);
   header.appendChild(name);
+  header.appendChild(ctxBtn);
 
   header.addEventListener('contextmenu', e => {
     e.preventDefault();
@@ -5040,12 +5081,16 @@ function tlRenderUnplaced(tl) {
   tlUnplacedZone.appendChild(btnImport);
 
   // Barre de saisie texte inline — ajout rapide d'une carte texte (Entrée pour valider)
+  const textInputWrap = document.createElement('span');
+  textInputWrap.className = 'tl-add-text-wrap';
+  textInputWrap.style.height = imgSize + 'px';
+  textInputWrap.innerHTML = '<i data-lucide="a-large-small"></i>';
+
   const textInput = document.createElement('input');
   textInput.type = 'text';
   textInput.className = 'tl-add-text-input';
-  textInput.placeholder = '+ Texte...';
+  textInput.placeholder = 'Texte...';
   textInput.title = 'Taper un texte puis Entrée pour ajouter une carte';
-  textInput.style.height = imgSize + 'px';
   textInput.addEventListener('keydown', e => {
     e.stopPropagation();
     if (e.key === 'Enter') {
@@ -5054,7 +5099,8 @@ function tlRenderUnplaced(tl) {
       _tlAddTextCard(tl, text);
     }
   });
-  tlUnplacedZone.appendChild(textInput);
+  textInputWrap.appendChild(textInput);
+  tlUnplacedZone.appendChild(textInputWrap);
 
   if (tl.unplaced.length === 0) {
     const hint = document.createElement('div');
@@ -5678,7 +5724,7 @@ function tlBuildArchivedTierlistItem(tl) {
 
   const btnRestore = document.createElement('button');
   btnRestore.className = 'archived-theme-btn restore';
-  btnRestore.textContent = '↩ Restaurer';
+  btnRestore.innerHTML = '<i data-lucide="corner-down-left"></i> Restaurer';
   btnRestore.addEventListener('click', () => {
     // Restaurer sans dossier (détacher du dossier)
     tlPushUndo();
@@ -5742,7 +5788,7 @@ function tlRenderArchivedModal() {
       if (hasChildren) {
         const arrowBtn = document.createElement('button');
         arrowBtn.style.cssText = 'background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:0.65rem;padding:0 4px;transition:transform 0.15s;flex-shrink:0;';
-        arrowBtn.textContent = '▶';
+        arrowBtn.innerHTML = '<i data-lucide="chevron-right"></i>';
         arrowBtn.title = 'Voir le contenu';
         childrenDiv = document.createElement('div');
         childrenDiv.style.cssText = 'display:none;flex-direction:column;gap:4px;padding:4px 0 0 14px;border-left:2px solid var(--border);margin-left:6px;';
@@ -5763,7 +5809,7 @@ function tlRenderArchivedModal() {
 
       const btnRestore = document.createElement('button');
       btnRestore.className = 'archived-theme-btn restore';
-      btnRestore.textContent = '↩ Restaurer';
+      btnRestore.innerHTML = '<i data-lucide="corner-down-left"></i> Restaurer';
       btnRestore.addEventListener('click', () => tlUnarchiveFolder(folder.id));
       topRow.appendChild(btnRestore);
 
@@ -5796,7 +5842,7 @@ function tlRenderArchivedModal() {
           sfRow.appendChild(sfName);
           const sfRestore = document.createElement('button');
           sfRestore.className = 'archived-theme-btn restore';
-          sfRestore.textContent = '↩ Restaurer';
+          sfRestore.innerHTML = '<i data-lucide="corner-down-left"></i> Restaurer';
           sfRestore.addEventListener('click', () => tlUnarchiveFolder(sf.id));
           sfRow.appendChild(sfRestore);
           const sfDel = document.createElement('button');
@@ -5851,7 +5897,7 @@ function tlRenderArchivedModal() {
 
       const arrowBtn = document.createElement('button');
       arrowBtn.style.cssText = 'background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:0.65rem;padding:0 4px;transition:transform 0.15s;flex-shrink:0;';
-      arrowBtn.textContent = '▶';
+      arrowBtn.innerHTML = '<i data-lucide="chevron-right"></i>';
       arrowBtn.title = 'Voir les tier lists';
       const childrenDiv = document.createElement('div');
       childrenDiv.style.cssText = 'display:none;flex-direction:column;gap:4px;padding:4px 0 0 14px;border-left:2px solid var(--border);margin-left:6px;';
