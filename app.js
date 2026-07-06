@@ -1128,6 +1128,16 @@ const gridHeightInput    = document.getElementById('grid-height-input');
 const fontScaleInput     = document.getElementById('font-scale-input');
 const gridWrapper        = document.getElementById('grid-wrapper');
 const chkLockGenerate          = document.getElementById('chk-lock-generate');
+// chkLockGenerate est un <button> (icône verrou cliquable) — état stocké via aria-pressed
+function _setLockGenerateChecked(locked) {
+  chkLockGenerate.setAttribute('aria-pressed', locked ? 'true' : 'false');
+  const icon = chkLockGenerate.querySelector('[data-lucide]');
+  if (icon) icon.setAttribute('data-lucide', locked ? 'lock-keyhole' : 'lock-keyhole-open');
+  if (window.lucide) lucide.createIcons();
+}
+function _isLockGenerateChecked() {
+  return chkLockGenerate.getAttribute('aria-pressed') === 'true';
+}
 const panelElementsBody        = document.getElementById('panel-elements-body');
 const bingoLayout              = document.getElementById('bingo-layout');
 const bingoControlPanel        = document.getElementById('bingo-control-panel');
@@ -1381,6 +1391,7 @@ function renderAllFolders() {
   const btnNewFolderBingo = document.getElementById('btn-new-folder-bingo');
   if (btnNewFolderBingo) btnNewFolderBingo.dataset.parentId = _localActiveFolderId || '';
   if (btnNewGrid) btnNewGrid.disabled = !_localActiveFolderId;
+  if (window.lucide) lucide.createIcons();
 }
 
 // ──────────────────────────────────────────────
@@ -1467,7 +1478,7 @@ function renderFoldersPanelTree() {
 
     const icon = document.createElement('span');
     icon.className = 'fp-folder-icon';
-    icon.textContent = (isActive || isAncestor) ? '📂' : '📁';
+    icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
 
     const name = document.createElement('span');
     name.className = 'fp-folder-name';
@@ -1593,10 +1604,10 @@ function renderFoldersPanelTree() {
       const openGridMenu = (e, anchor) => {
         e.stopPropagation();
         const { addItem } = _tlMakeCtxMenu(anchor, e);
-        addItem('✎ Renommer',   false, () => openRenameGridModal(g.id));
-        addItem('❐ Dupliquer',  false, () => duplicateGrid(g.id));
-        addItem('📦 Archiver',  true,  () => archiveGrid(g.id));
-        addItem('🗑 Supprimer', true,  () => deleteGrid(g.id));
+        addItem('pencil', 'Renommer',   false, () => openRenameGridModal(g.id));
+        addItem('copy-plus', 'Dupliquer',  false, () => duplicateGrid(g.id));
+        addItem('package', 'Archiver',  true,  () => archiveGrid(g.id));
+        addItem('trash-2', 'Supprimer', true,  () => deleteGrid(g.id));
       };
       gCtx.addEventListener('click', e => openGridMenu(e, gRow));
       gRow.addEventListener('contextmenu', e => { e.preventDefault(); openGridMenu(e, null); });
@@ -1614,6 +1625,8 @@ function renderFoldersPanelTree() {
       sessionStorage.setItem(collapseKey, collapsed ? '1' : '0');
       arrow.classList.toggle('collapsed', collapsed);
       childrenEl.classList.toggle('collapsed', collapsed);
+      icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
+      if (window.lucide) lucide.createIcons();
     };
     arrow.addEventListener('click', toggleCollapse);
 
@@ -1625,15 +1638,16 @@ function renderFoldersPanelTree() {
     const openFolderMenu = (e, anchor) => {
       e.stopPropagation();
       const { addItem } = _tlMakeCtxMenu(anchor, e);
-      addItem('📁 Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
-      addItem('✎ Renommer',             false, () => openRenameFolderModal(f.id));
-      addItem('❐ Dupliquer',            false, () => openDuplicateFolderModal(f.id));
-      addItem('📂 Déplacer',            false, () => openMoveFolderModal(f.id));
-      const ceLabel = state.currentEventFolderId === f.id ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
-      addItem(ceLabel,                  false, () => setCurrentEventFolder(f.id));
+      addItem('folder-closed', 'Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
+      addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
+      addItem('copy-plus', 'Dupliquer',            false, () => openDuplicateFolderModal(f.id));
+      addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
+      const ceIsActive = state.currentEventFolderId === f.id;
+      const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
+      addItem('party-popper', ceLabel,                  false, () => setCurrentEventFolder(f.id));
 
-      addItem('📦 Archiver',            true,  () => archiveFolder(f.id));
-      addItem('🗑 Supprimer',           true,  () => deleteFolder(f.id));
+      addItem('package', 'Archiver',            true,  () => archiveFolder(f.id));
+      addItem('trash-2', 'Supprimer',           true,  () => deleteFolder(f.id));
     };
     ctxBtn.addEventListener('click', e => openFolderMenu(e, row));
     row.addEventListener('contextmenu', e => { e.preventDefault(); openFolderMenu(e, null); });
@@ -1644,6 +1658,7 @@ function renderFoldersPanelTree() {
   }
 
   roots.forEach(f => _renderFolder(f, container, 0));
+  if (window.lucide) lucide.createIcons();
 }
 
 function _initPanelPosition(panel, side) {
@@ -2416,22 +2431,22 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   sizeCtrl.appendChild(btnSzPlus);
   subCtrl.appendChild(sizeCtrl);
 
-  const lblLock = document.createElement('label');
+  const lblLock = document.createElement('button');
+  lblLock.type = 'button';
   lblLock.className = 'subgrid-lock-label';
   lblLock.title = 'Bloquer la génération aléatoire de cette grille';
-  const chkLock = document.createElement('input');
-  chkLock.type = 'checkbox';
-  chkLock.checked = gridLocked;
-  chkLock.disabled = globalLocked;
-  chkLock.addEventListener('change', () => {
+  lblLock.disabled = globalLocked;
+  lblLock.setAttribute('aria-pressed', gridLocked ? 'true' : 'false');
+  const lockIcon = document.createElement('i');
+  lockIcon.setAttribute('data-lucide', gridLocked ? 'lock-keyhole' : 'lock-keyhole-open');
+  lblLock.appendChild(lockIcon);
+  lblLock.addEventListener('click', () => {
     const tNow = activeTheme();
     const sNow = activeSubtheme();
     if (!tNow || tNow.locked || !sNow) return;
     const gNow = sNow.grids.find(x => x.id === g.id);
-    if (gNow) { gNow.locked = chkLock.checked; saveState(); renderGrid(); }
+    if (gNow) { gNow.locked = !gNow.locked; saveState(); renderGrid(); }
   });
-  lblLock.appendChild(chkLock);
-  lblLock.appendChild(document.createTextNode('🔒'));
 
   // Vérifier si assez d'éléments pour cette grille
   const sActive = activeSubtheme();
@@ -2444,7 +2459,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const btnSubGen = document.createElement('button');
   btnSubGen.className = 'btn-action btn-subgrid btn-subgrid-gen' + (genDisabled ? ' btn-disabled' : '');
   btnSubGen.disabled = genDisabled;
-  btnSubGen.textContent = '🎲';
+  btnSubGen.innerHTML = '<i data-lucide="dices"></i>';
   btnSubGen.title = genDisabled && !gridLocked
     ? `Pas assez d'éléments (${activeElemCount}/${cellCount})`
     : 'Générer aléatoirement la grille (ou remplir les cases vides si cochée l\'option)';
@@ -2458,7 +2473,8 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     if (!ok) {
       const n = gNow.gridSize;
       const cellCount = n * n;
-      gridError.textContent = `⚠ Pas assez d'éléments actifs pour générer une grille ${n}×${n}.`;
+      gridError.innerHTML = `<i data-lucide="triangle-alert"></i> Pas assez d'éléments actifs pour générer une grille ${n}×${n}.`;
+      if (window.lucide) lucide.createIcons();
       gridError.classList.remove('hidden');
       return;
     }
@@ -2470,7 +2486,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   // Bouton "Générer cases vides" par grille
   const btnSubFillEmpty = document.createElement('button');
   btnSubFillEmpty.className = 'btn-action btn-subgrid btn-subgrid-fill-empty';
-  btnSubFillEmpty.textContent = '📝';
+  btnSubFillEmpty.innerHTML = '<i data-lucide="dice-1"></i>';
   btnSubFillEmpty.title = 'Générer aléatoirement seulement les cases vides';
 
   // Vérifier si on peut remplir les cases vides
@@ -2517,11 +2533,12 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
       const sNowArchivedIds = (sNow && sNow.archivedElementIds) ? sNow.archivedElementIds : [];
       const activeElemCount = (sNow.elements || []).filter(e => !sNowArchivedIds.includes(e.id)).length;
       const availableCount = activeElemCount - usedIds.size;
-      let msg = `⚠ Impossible de remplir. Cases vides : ${emptyCount}, éléments disponibles : ${availableCount}.`;
+      let msg = `<i data-lucide="triangle-alert"></i> Impossible de remplir. Cases vides : ${emptyCount}, éléments disponibles : ${availableCount}.`;
       if (deletedIds.size > 0) {
         msg += ` (${deletedIds.size} éléments sur la grille ont été supprimés)`;
       }
-      gridError.textContent = msg;
+      gridError.innerHTML = msg;
+      if (window.lucide) lucide.createIcons();
       gridError.classList.remove('hidden');
       return;
     }
@@ -2566,7 +2583,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
 
   const btnSubCapture = document.createElement('button');
   btnSubCapture.className = 'btn-action btn-screenshot-bingo btn-subgrid';
-  btnSubCapture.textContent = '📷';
+  btnSubCapture.innerHTML = '<i data-lucide="camera"></i>';
   btnSubCapture.title = 'Copier la grille dans le presse-papier';
   btnSubCapture.addEventListener('click', () => bingoScreenshotOne(g.id));
   subCtrl.appendChild(btnSubCapture);
@@ -2710,8 +2727,8 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     msg.className = 'bingo-message bingo-message-inline';
     const count = bingoLines.length;
     msg.innerHTML = count === 1
-      ? `🎉 BINGO ! Tu as complété une ligne !`
-      : `🎉 BINGO x${count} ! Tu as complété ${count} lignes !`;
+      ? `<i data-lucide="party-popper"></i> BINGO ! Tu as complété une ligne !`
+      : `<i data-lucide="party-popper"></i> BINGO x${count} ! Tu as complété ${count} lignes !`;
     wrapper.appendChild(msg);
   }
 
@@ -2746,7 +2763,7 @@ function renderGrid() {
     btnGenerate.classList.add('btn-disabled');
     btnReset.disabled = false;
     btnReset.classList.remove('btn-disabled');
-    chkLockGenerate.checked = false;
+    _setLockGenerateChecked(false);
     return;
   }
   bingoLayout.classList.remove('no-theme-layout');
@@ -2766,7 +2783,7 @@ function renderGrid() {
     btnGenerate.classList.add('btn-disabled');
     btnReset.disabled = false;
     btnReset.classList.remove('btn-disabled');
-    chkLockGenerate.checked = false;
+    _setLockGenerateChecked(false);
     return;
   }
 
@@ -2798,9 +2815,9 @@ function renderGrid() {
   const n = (g || s.grids.find(x => !x.archived)).gridSize;
   sizeDisplay.textContent = `${n}×${n}`;
 
-  // Synchroniser le checkbox avec l'état du thème
+  // Synchroniser l'icône verrou avec l'état du thème
   const locked = !!t.locked;
-  chkLockGenerate.checked = locked;
+  _setLockGenerateChecked(locked);
 
   const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
   const activeCount = (s.elements || []).filter(e => !sArchivedIds.includes(e.id)).length;
@@ -2875,6 +2892,7 @@ function renderGrid() {
 
   applyFontScale();
   updateFillEmptyButtonState();
+  if (window.lucide) lucide.createIcons();
 
   // Déclencher après que les wrappers sont dans le DOM et que le layout est calculé
   setTimeout(() => {
@@ -3217,10 +3235,10 @@ fontScaleInput.addEventListener('change', () => {
   saveLocalFontScale(pct / 100);
 });
 
-chkLockGenerate.addEventListener('change', () => {
+chkLockGenerate.addEventListener('click', () => {
   const t = activeTheme();
   if (t) {
-    t.locked = chkLockGenerate.checked;
+    t.locked = !_isLockGenerateChecked();
     saveState();
   }
   renderGrid();
@@ -3266,7 +3284,8 @@ function openCtxMenuFolder(id, e, anchorEl) {
   const _ceBtn = document.getElementById('ctx-folder-set-current-event');
   if (_ceBtn) {
     const isCurrentEvent = state.currentEventFolderId === id;
-    _ceBtn.textContent = isCurrentEvent ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
+    _ceBtn.innerHTML = '<i data-lucide="party-popper"></i> ' + (isCurrentEvent ? 'Retirer soirée en cours' : 'Définir comme soirée en cours');
+    if (window.lucide) lucide.createIcons();
   }
   if (ctxMenuTheme) { positionCtxMenu(ctxMenuTheme, e, anchorEl); ctxMenuTheme.classList.remove('hidden'); }
 }
@@ -3453,7 +3472,8 @@ btnGenerate.addEventListener('click', () => {
   const active = (s.elements || []).filter(e => !sArchivedIds.includes(e.id));
 
   if (active.length < cellCount) {
-    gridError.textContent = `⚠ Il faut au moins ${cellCount} éléments actifs pour générer une grille ${n}×${n} (${active.length}/${cellCount}).`;
+    gridError.innerHTML = `<i data-lucide="triangle-alert"></i> Il faut au moins ${cellCount} éléments actifs pour générer une grille ${n}×${n} (${active.length}/${cellCount}).`;
+    if (window.lucide) lucide.createIcons();
     gridError.classList.remove('hidden');
     return;
   }
@@ -3794,7 +3814,7 @@ function renderArchivesUnified() {
       folderRow.appendChild(_makeArchiveButtons([
         { text: '↩ Restaurer', cls: 'restore', disabled: parentArchived,
           onClick: () => { archiveFolder(f.id); renderArchivesUnified(); } },
-        { text: '🗑 Supprimer', cls: 'del',
+        { text: '<i data-lucide="trash-2"></i> Supprimer', cls: 'del',
           onClick: () => { deleteFolder(f.id); renderArchivesUnified(); } }
       ]));
     }
@@ -3805,7 +3825,7 @@ function renderArchivesUnified() {
       const leafRow = _makeLeafRow(g.name, depth + 1, [
         { text: '↩ Restaurer', cls: 'restore', disabled: fArchived || parentArchived,
           onClick: () => { g.archived = false; saveState(); renderGridsList(); renderArchivesUnified(); } },
-        { text: '🗑 Supprimer', cls: 'del',
+        { text: '<i data-lucide="trash-2"></i> Supprimer', cls: 'del',
           onClick: () => {
             const savedId = _localActiveFolderId;
             _localActiveFolderId = f.id;
@@ -3826,6 +3846,7 @@ function renderArchivesUnified() {
 
   (state.folders || []).forEach(f => _renderFolderArchive(f, 0, false));
   if (!hasAny) container.innerHTML = '<p class="archived-empty">Aucun élément archivé.</p>';
+  if (window.lucide) lucide.createIcons();
 }
 
 function openArchivesUnified() {
@@ -4495,6 +4516,7 @@ function tlRender() {
   if (!tl || tl.archived) {
     tlEmptyState.classList.remove('hidden');
     tlEditor.classList.add('hidden');
+    if (window.lucide) lucide.createIcons();
     return;
   }
   tlEmptyState.classList.add('hidden');
@@ -4517,6 +4539,7 @@ function tlRender() {
 
   tlRenderTiers(tl);
   tlRenderUnplaced(tl);
+  if (window.lucide) lucide.createIcons();
 }
 
 function tlBuildTierlistItem(tl) {
@@ -4527,8 +4550,10 @@ function tlBuildTierlistItem(tl) {
 
   const icon = document.createElement('span');
   icon.className = 'tl-list-item-icon';
-  icon.textContent = tl.isTemplate ? '🧩' : '📜';
-  icon.style.cssText = 'font-size:0.78rem;flex-shrink:0;opacity:0.8;';
+  icon.innerHTML = tl.isTemplate ? '<i data-lucide="scroll"></i>' : '<i data-lucide="scroll-text"></i>';
+  icon.style.cssText = 'flex-shrink:0;opacity:0.8;';
+  const _icn = icon.querySelector('[data-lucide]');
+  if (_icn) _icn.style.marginRight = '0';
   item.appendChild(icon);
 
   const nameSpan = document.createElement('span');
@@ -4584,7 +4609,7 @@ function _tlBuildTemplateGroupEl(template, depth) {
 
   const icon = document.createElement('span');
   icon.className = 'tl-folder-icon';
-  icon.textContent = '🧩';
+  icon.innerHTML = '<i data-lucide="scroll"></i>';
 
   const name = document.createElement('span');
   name.className = 'tl-folder-name';
@@ -4650,7 +4675,7 @@ function _tlBuildFolderEl(folder, depth) {
 
   const icon = document.createElement('span');
   icon.className = 'tl-folder-icon';
-  icon.textContent = '📁';
+  icon.innerHTML = '<i data-lucide="folder-closed"></i>';
 
   const name = document.createElement('span');
   name.className = 'tl-folder-name';
@@ -4923,8 +4948,9 @@ function _tlMakeCtxMenu(anchorEl, e) {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'ctx-close-btn';
   closeBtn.title = 'Fermer';
-  closeBtn.textContent = '✕';
+  closeBtn.innerHTML = '<i data-lucide="x"></i>';
   menu.appendChild(closeBtn);
+  if (window.lucide) lucide.createIcons();
 
   const close = () => {
     menu.remove();
@@ -4935,12 +4961,19 @@ function _tlMakeCtxMenu(anchorEl, e) {
 
   closeBtn.addEventListener('click', e => { e.stopPropagation(); close(); });
 
-  const addItem = (label, danger, fn) => {
+  // iconName: nom d'icône Lucide (ou '' pour aucune icône), text: libellé affiché
+  const addItem = (iconName, text, danger, fn) => {
     const btn = document.createElement('button');
     btn.className = 'ctx-menu-item' + (danger ? ' ctx-danger' : '');
-    btn.textContent = label;
+    if (iconName) {
+      const i = document.createElement('i');
+      i.setAttribute('data-lucide', iconName);
+      btn.appendChild(i);
+    }
+    btn.appendChild(document.createTextNode(text));
     btn.addEventListener('click', () => { close(); fn(); });
     menu.appendChild(btn);
+    if (window.lucide) lucide.createIcons();
     return btn;
   };
 
@@ -4970,26 +5003,26 @@ function _tlMakeCtxMenu(anchorEl, e) {
 function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
   const { addItem, addSep } = _tlMakeCtxMenu(null, e);
 
-  addItem('✏ Renommer', false, () => {
+  addItem('pencil', 'Renommer', false, () => {
     if (labelSpan && document.body.contains(labelSpan)) _tlInlineRenameTier(labelSpan, tl, tier);
     else tlOpenTierModal({ mode: 'edit', tl, tier });
   });
-  addItem('🎨 Modifier la couleur', false, () => tlOpenTierModal({ mode: 'color', tl, tier }));
+  addItem('palette', 'Modifier la couleur', false, () => tlOpenTierModal({ mode: 'color', tl, tier }));
   addSep();
-  addItem('↑ Ajouter un tier au-dessus', false, () => {
+  addItem('', '↑ Ajouter un tier au-dessus', false, () => {
     tlPushUndo();
     tl.tiers.splice(tierIdx, 0, { id: uid(), label: '?', color: '#888888', items: [] });
     tlSave(); tlRender();
     tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx]);
   });
-  addItem('↓ Ajouter un tier en-dessous', false, () => {
+  addItem('', '↓ Ajouter un tier en-dessous', false, () => {
     tlPushUndo();
     tl.tiers.splice(tierIdx + 1, 0, { id: uid(), label: '?', color: '#888888', items: [] });
     tlSave(); tlRender();
     tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx + 1]);
   });
   addSep();
-  addItem('✕ Supprimer ce tier', true, () => tlDeleteTier(tl, tier.id));
+  addItem('x', 'Supprimer ce tier', true, () => tlDeleteTier(tl, tier.id));
 }
 
 function tlRenderUnplaced(tl) {
@@ -5002,7 +5035,7 @@ function tlRenderUnplaced(tl) {
   btnImport.title = 'Ajouter des images\nClic : importer des fichiers ou coller depuis le presse-papier';
   btnImport.style.width = imgSize + 'px';
   btnImport.style.height = imgSize + 'px';
-  btnImport.innerHTML = '<span class="tl-import-icon">🖼️</span><span class="tl-import-label">Image</span>';
+  btnImport.innerHTML = '<span class="tl-import-icon"><i data-lucide="image"></i></span><span class="tl-import-label">Image</span>';
   btnImport.addEventListener('click', () => _tlShowImportMenu(btnImport));
   tlUnplacedZone.appendChild(btnImport);
 
@@ -5035,15 +5068,15 @@ function tlRenderUnplaced(tl) {
     });
   }
   tlUnplacedCount.textContent = tl.unplaced.length;
-  const _sortIcons = { manual: '✋', alpha: '🔤', date: '🕒' };
-  tlUnplacedSortBtn.textContent = _sortIcons[tl.unplacedSort || 'manual'] || '✋';
+  const _sortIcons = { manual: 'hand', alpha: 'arrow-down-a-z', date: 'arrow-down-0-1' };
+  tlUnplacedSortBtn.innerHTML = `<i data-lucide="${_sortIcons[tl.unplacedSort || 'manual'] || 'hand'}"></i>`;
   tlMaxImagesInput.value = tlEffectiveMaxImages(tl);
 }
 
 function _tlShowImportMenu(anchorEl) {
   const { addItem } = _tlMakeCtxMenu(anchorEl, null);
-  addItem('📂 Importer des fichiers', false, () => tlFileInput.click());
-  addItem('📋 Coller depuis le presse-papier', false, () => _tlPasteFromClipboard(tlActiveTierlist()));
+  addItem('import', 'Importer des fichiers', false, () => tlFileInput.click());
+  addItem('square-mouse-pointer', 'Coller depuis le presse-papier', false, () => _tlPasteFromClipboard(tlActiveTierlist()));
 }
 
 function _tlPasteFromClipboard(tl) {
@@ -5174,8 +5207,8 @@ function _tlInlineRenameImg(labelEl, tl, img, size) {
 // ── Menu contextuel image ─────────────────────────────────────────────────────
 function _tlShowImgCtxMenu(e, tl, img) {
   const { addItem } = _tlMakeCtxMenu(null, e);
-  addItem('✏ Renommer', false, () => tlOpenRenameImg(tl, img));
-  addItem('✕ Supprimer', true, () => tlDeleteImage(tl, img.id));
+  addItem('pencil', 'Renommer', false, () => tlOpenRenameImg(tl, img));
+  addItem('x', 'Supprimer', true, () => tlDeleteImage(tl, img.id));
 }
 
 // ── Recherche d'image ─────────────────────────────────────────────────────────
@@ -5639,7 +5672,8 @@ function tlBuildArchivedTierlistItem(tl) {
 
   const name = document.createElement('span');
   name.className = 'archived-theme-name';
-  name.textContent = '📜 ' + tl.name;
+  name.innerHTML = '<i data-lucide="scroll-text"></i> ';
+  name.appendChild(document.createTextNode(tl.name));
   item.appendChild(name);
 
   const btnRestore = document.createElement('button');
@@ -5661,7 +5695,7 @@ function tlBuildArchivedTierlistItem(tl) {
 
   const btnDel = document.createElement('button');
   btnDel.className = 'archived-theme-btn del';
-  btnDel.textContent = '✕ Supprimer';
+  btnDel.innerHTML = '<i data-lucide="x"></i> Supprimer';
   btnDel.addEventListener('click', () => { tlDelete(tl.id); tlRenderArchivedModal(); });
   item.appendChild(btnDel);
 
@@ -5685,7 +5719,7 @@ function tlRenderArchivedModal() {
   if (archivedFolders.length > 0) {
     const sep = document.createElement('p');
     sep.style.cssText = 'font-size:0.72rem;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px;';
-    sep.textContent = '📁 Dossiers archivés';
+    sep.innerHTML = '<i data-lucide="folder-closed"></i> Dossiers archivés';
     tlArchivedList.appendChild(sep);
 
     // Rendre récursivement les dossiers archivés (racine en premier)
@@ -5723,7 +5757,8 @@ function tlRenderArchivedModal() {
 
       const name = document.createElement('span');
       name.className = 'archived-theme-name';
-      name.textContent = '📁 ' + folder.name;
+      name.innerHTML = '<i data-lucide="folder-closed"></i> ';
+      name.appendChild(document.createTextNode(folder.name));
       topRow.appendChild(name);
 
       const btnRestore = document.createElement('button');
@@ -5734,7 +5769,7 @@ function tlRenderArchivedModal() {
 
       const btnDel = document.createElement('button');
       btnDel.className = 'archived-theme-btn del';
-      btnDel.textContent = '✕ Supprimer';
+      btnDel.innerHTML = '<i data-lucide="x"></i> Supprimer';
       btnDel.addEventListener('click', () => { tlDeleteFolder(folder.id); tlRenderArchivedModal(); });
       topRow.appendChild(btnDel);
 
@@ -5756,7 +5791,8 @@ function tlRenderArchivedModal() {
           sfRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
           const sfName = document.createElement('span');
           sfName.className = 'archived-theme-name';
-          sfName.textContent = '📁 ' + sf.name;
+          sfName.innerHTML = '<i data-lucide="folder-closed"></i> ';
+          sfName.appendChild(document.createTextNode(sf.name));
           sfRow.appendChild(sfName);
           const sfRestore = document.createElement('button');
           sfRestore.className = 'archived-theme-btn restore';
@@ -5765,7 +5801,7 @@ function tlRenderArchivedModal() {
           sfRow.appendChild(sfRestore);
           const sfDel = document.createElement('button');
           sfDel.className = 'archived-theme-btn del';
-          sfDel.textContent = '✕ Supprimer';
+          sfDel.innerHTML = '<i data-lucide="x"></i> Supprimer';
           sfDel.addEventListener('click', () => { tlDeleteFolder(sf.id); tlRenderArchivedModal(); });
           sfRow.appendChild(sfDel);
           sfWrap.appendChild(sfRow);
@@ -5788,7 +5824,7 @@ function tlRenderArchivedModal() {
   if (orphanArchivedTL.length > 0) {
     const sep = document.createElement('p');
     sep.style.cssText = 'font-size:0.72rem;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;margin:' + (archivedFolders.length > 0 ? '10px 0 6px' : '0 0 6px') + ';';
-    sep.textContent = '📋 Tier lists archivées';
+    sep.innerHTML = '<i data-lucide="square-mouse-pointer"></i> Tier lists archivées';
     tlArchivedList.appendChild(sep);
 
     // Grouper par dossier actif
@@ -5827,7 +5863,10 @@ function tlRenderArchivedModal() {
       });
 
       folderHeader.appendChild(arrowBtn);
-      folderHeader.appendChild(document.createTextNode('📁 ' + folder.name + ' (' + tlsInFolder.length + ')'));
+      const folderIcon = document.createElement('i');
+      folderIcon.setAttribute('data-lucide', 'folder-closed');
+      folderHeader.appendChild(folderIcon);
+      folderHeader.appendChild(document.createTextNode(' ' + folder.name + ' (' + tlsInFolder.length + ')'));
       folderWrap.appendChild(folderHeader);
 
       tlsInFolder.forEach(tl => childrenDiv.appendChild(tlBuildArchivedTierlistItem(tl)));
@@ -5835,6 +5874,7 @@ function tlRenderArchivedModal() {
       tlArchivedList.appendChild(folderWrap);
     });
   }
+  if (window.lucide) lucide.createIcons();
 }
 
 // ── Modal nouvelle tierlist ───────────────────────────────────────────────────
@@ -6008,10 +6048,10 @@ function tlOpenFolderManageModal(id, anchorEl) {
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
   const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null);
-  addItem('✏ Renommer', false, () => tlOpenFolderModal('rename', id, folder.name));
-  addItem('📂 Déplacer dans un dossier', false, () => tlOpenMoveFolderModal(id));
+  addItem('pencil', 'Renommer', false, () => tlOpenFolderModal('rename', id, folder.name));
+  addItem('move', 'Déplacer dans un dossier', false, () => tlOpenMoveFolderModal(id));
   addSep();
-  addItem('📦 Archiver', true, () => tlArchiveFolder(id));
+  addItem('package', 'Archiver', true, () => tlArchiveFolder(id));
 }
 
 // ── Modal nouveau/renommer dossier ────────────────────────────────────────────
@@ -6080,18 +6120,19 @@ function tlOpenManageModal(id, anchorEl) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
   const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null);
-  addItem('✏ Renommer', false, () => tlOpenRenameModal(id));
-  addItem('❐ Dupliquer', false, () => tlCopy(id));
-  addItem('📂 Ranger dans un dossier', false, () => tlOpenMoveModal(id));
+  addItem('pencil', 'Renommer', false, () => tlOpenRenameModal(id));
+  addItem('copy-plus', 'Dupliquer', false, () => tlCopy(id));
+  addItem('shelving-unit', 'Ranger dans un dossier', false, () => tlOpenMoveModal(id));
   if (!tl.isTemplate) {
-    const ceLabel = state.currentEventTierlistId === id ? '🎉 Retirer soirée en cours' : '🎉 Définir comme soirée en cours';
-    addItem(ceLabel, false, () => setCurrentEventTierlist(id));
-    if (!tl.templateId) addItem('🧩 Convertir en template', false, () => tlConvertToTemplate(id));
+    const ceIsActive = state.currentEventTierlistId === id;
+    const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
+    addItem('party-popper', ceLabel, false, () => setCurrentEventTierlist(id));
+    if (!tl.templateId) addItem('scroll', 'Convertir en template', false, () => tlConvertToTemplate(id));
   } else {
-    addItem('🎲 Générer depuis ce template', false, () => tlOpenGenerateFromTemplateModal(id));
+    addItem('dices', 'Générer depuis ce template', false, () => tlOpenGenerateFromTemplateModal(id));
   }
   addSep();
-  addItem('📦 Archiver', true, () => tlArchive(id));
+  addItem('package', 'Archiver', true, () => tlArchive(id));
 }
 
 // ── Capture Tierlist (presse-papier) ─────────────────────────────────────────
@@ -6433,9 +6474,18 @@ tlUnplacedSortBtn.addEventListener('click', () => {
   const current = tl.unplacedSort || 'manual';
   const setSort = mode => { tl.unplacedSort = mode; tlSave(); tlRender(); };
   const { addItem } = _tlMakeCtxMenu(tlUnplacedSortBtn, null);
-  addItem((current === 'manual' ? '✓ ' : '') + '✋ Manuel', false, () => setSort('manual'));
-  addItem((current === 'alpha' ? '✓ ' : '') + '🔤 Alphabétique', false, () => setSort('alpha'));
-  addItem((current === 'date' ? '✓ ' : '') + '🕒 Date d\'ajout', false, () => setSort('date'));
+  const addSortItem = (mode, iconName, text) => {
+    const btn = addItem(iconName, text, false, () => setSort(mode));
+    if (current === mode) {
+      const check = document.createElement('i');
+      check.setAttribute('data-lucide', 'check');
+      btn.insertBefore(check, btn.firstChild);
+      if (window.lucide) lucide.createIcons();
+    }
+  };
+  addSortItem('manual', 'hand', 'Manuel');
+  addSortItem('alpha', 'arrow-down-a-z', 'Alphabétique');
+  addSortItem('date', 'arrow-down-0-1', 'Date d\'ajout');
 });
 
 // ── Coller depuis le presse-papier ────────────────────────────────────────────

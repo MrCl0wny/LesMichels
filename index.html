@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=111" />
+  <link rel="stylesheet" href="style.css?v=112" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -31,7 +31,7 @@
 
         <!-- Soirée en cours (commun bingo + tierlist) -->
         <div class="btn-current-event" id="btn-current-event" style="display:none">
-          <button class="btn-ce-label" id="btn-ce-navigate" title="Aller à la soirée en cours">🎉 <span id="btn-current-event-label">Soirée en cours</span></button>
+          <button class="btn-ce-label" id="btn-ce-navigate" title="Aller à la soirée en cours"><i data-lucide="party-popper"></i> <span id="btn-current-event-label">Soirée en cours</span></button>
         </div>
       </div>
 
@@ -61,10 +61,10 @@
             <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
             <button id="tl-btn-new" class="tl-btn-new" title="Créer une nouvelle tier list">+ Tier list</button>
             <button id="tl-btn-new-template" class="tl-btn-new" title="Créer un nouveau template">+ Template</button>
-            <button class="modal-close tl-sidebar-close" id="tl-sidebar-close">✕</button>
+            <button class="modal-close tl-sidebar-close" id="tl-sidebar-close"><i data-lucide="x"></i></button>
           </div>
           <div id="tl-list" class="tl-list folders-panel-tree"></div>
-          <button id="tl-btn-show-archived" class="tl-btn-archived-toggle" title="Voir les tier lists et dossiers archivés">📦 Archives</button>
+          <button id="tl-btn-show-archived" class="tl-btn-archived-toggle" title="Voir les tier lists et dossiers archivés"><i data-lucide="package"></i> Archives</button>
         </div>
 
         <!-- ── Zone principale ── -->
@@ -88,7 +88,7 @@
               </div>
               <div class="tl-editor-actions">
                 <button class="tl-toolbar-btn tl-btn-folders" id="tl-btn-folders" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
-                <button class="btn-ce-set" id="tl-btn-ce-set" title="Définir cette tier list comme soirée en cours">🎉 Définir comme soirée en cours</button>
+                <button class="btn-ce-set" id="tl-btn-ce-set" title="Définir cette tier list comme soirée en cours"><i data-lucide="party-popper"></i> Définir comme soirée en cours</button>
                 <label class="tl-toggle-label" title="Afficher ou masquer les noms sous chaque image">
                   <input type="checkbox" id="tl-show-labels-toggle" />
                   <span>Noms</span>
@@ -102,7 +102,7 @@
                 <button class="tl-toolbar-btn tl-btn-reset" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée">⟳ Reset</button>
                 <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
                 <button class="tl-toolbar-btn tl-btn-export" id="tl-btn-export" title="Exporter la tier list en PNG">⬇ Export PNG</button>
-                <button class="tl-toolbar-btn tl-btn-capture" id="tl-btn-capture" title="Copier la tier list dans le presse-papier">📷 Capture</button>
+                <button class="tl-toolbar-btn tl-btn-capture" id="tl-btn-capture" title="Copier la tier list dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
               </div>
             </div>
 
@@ -143,7 +143,7 @@
           <!-- Ligne 1 : Grilles (dans le dossier actif) -->
           <div class="ctrl-row ctrl-row-grids">
             <div id="grids-breadcrumb" class="grids-breadcrumb"></div>
-            <button class="btn-ce-set" id="btn-ce-set" title="Définir le dossier actif comme soirée en cours">🎉 Définir comme soirée en cours</button>
+            <button class="btn-ce-set" id="btn-ce-set" title="Définir le dossier actif comme soirée en cours"><i data-lucide="party-popper"></i> Définir comme soirée en cours</button>
             <div class="ctrl-row-sep"></div>
             <div id="grids-list" class="grids-list"></div>
             <button class="btn-new-grid-inline" id="btn-new-grid-inline" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
@@ -152,7 +152,7 @@
           <!-- Ligne 3 : Toolbar -->
           <div class="ctrl-row ctrl-row-toolbar">
             <button class="btn-action btn-folders-panel" id="btn-folders-panel" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
-            <button class="btn-action btn-cases-panel" id="btn-cases-panel" title="Ouvrir/fermer le panneau cases">📋 Cases</button>
+            <button class="btn-action btn-cases-panel" id="btn-cases-panel" title="Ouvrir/fermer le panneau cases"><i data-lucide="square-mouse-pointer"></i> Cases</button>
             <div class="toolbar-spacer"></div>
             <div class="ctrl-row-sep"></div>
             <div class="grid-size-control grid-size-control-slider">
@@ -170,20 +170,19 @@
             <button class="size-btn" id="btn-size-plus" style="display:none">+</button>
             <div class="grid-toolbar-sep"></div>
             <div class="lock-group">
-              <label class="lock-generate-label" title="Bloquer la génération aléatoire et la réinitialisation de toutes les grilles">
-                <input type="checkbox" id="chk-lock-generate" />
-                🔒
-              </label>
-              <button class="btn-action btn-generate-global" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées">🎲 Générer grille</button>
-              <button class="btn-action btn-generate-fill-empty" id="btn-generate-fill-empty" title="Générer aléatoirement seulement les cases vides, laisser les cases existantes intactes">📝 Générer cases vides</button>
+              <button type="button" class="lock-generate-label" id="chk-lock-generate" title="Bloquer la génération aléatoire et la réinitialisation de toutes les grilles" aria-pressed="false">
+                <i data-lucide="lock-keyhole-open"></i>
+              </button>
+              <button class="btn-action btn-generate-global" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées"><i data-lucide="dices"></i> Générer grille</button>
+              <button class="btn-action btn-generate-fill-empty" id="btn-generate-fill-empty" title="Générer aléatoirement seulement les cases vides, laisser les cases existantes intactes"><i data-lucide="dice-1"></i> Générer cases vides</button>
               <button class="btn-action btn-clear-grids" id="btn-clear-grids" title="Vider toutes les grilles affichées">⊘ Vider</button>
               <button class="btn-action btn-reset" id="btn-reset" title="Réinitialise toutes les cases du sous-thème">↺ Reset</button>
             </div>
-            <button class="btn-action btn-screenshot-bingo" id="btn-screenshot-bingo" title="Copier les grilles dans le presse-papier">📷 Capture</button>
+            <button class="btn-action btn-screenshot-bingo" id="btn-screenshot-bingo" title="Copier les grilles dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
             <div class="toolbar-spacer"></div>
             <div class="ctrl-row-sep"></div>
-            <button class="btn-action btn-archives-unified" id="btn-archives-unified" title="Éléments archivés">📦 Archives</button>
-            <button class="btn-action btn-trash-unified" id="btn-trash-unified" title="Éléments supprimés">🗑 Corbeille</button>
+            <button class="btn-action btn-archives-unified" id="btn-archives-unified" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
+            <button class="btn-action btn-trash-unified" id="btn-trash-unified" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
           </div>
 
         </div>
@@ -212,7 +211,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="tl-modal-new-title">Nouvelle tier list</h3>
-        <button class="modal-close" id="tl-modal-new-close">✕</button>
+        <button class="modal-close" id="tl-modal-new-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="tl-modal-new-input" class="modal-text-input" placeholder="Nom de la tier list..." maxlength="60" />
@@ -235,7 +234,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="tl-modal-tier-title">Nouveau tier</h3>
-        <button class="modal-close" id="tl-modal-tier-close">✕</button>
+        <button class="modal-close" id="tl-modal-tier-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="tl-modal-tier-label" class="modal-text-input" placeholder="Label du tier (ex: S, A, B...)" />
@@ -260,7 +259,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Générer depuis ce template</h3>
-        <button class="modal-close" id="tl-modal-generate-close">✕</button>
+        <button class="modal-close" id="tl-modal-generate-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div class="grid-name-presets">
@@ -284,10 +283,10 @@
     <div id="tl-modal-manage" class="tl-ctx-modal hidden">
       <div class="tl-ctx-modal-title" id="tl-modal-manage-title">Options</div>
       <div class="tl-manage-actions" id="tl-manage-actions">
-        <button class="tl-manage-btn" id="tl-modal-manage-rename">✏ Renommer</button>
+        <button class="tl-manage-btn" id="tl-modal-manage-rename"><i data-lucide="pencil"></i> Renommer</button>
         <button class="tl-manage-btn" id="tl-modal-manage-duplicate">⎘ Dupliquer</button>
-        <button class="tl-manage-btn tl-manage-btn-move" id="tl-modal-manage-move">📂 Ranger</button>
-        <button class="tl-manage-btn tl-manage-btn-archive" id="tl-modal-manage-archive">📦 Archiver</button>
+        <button class="tl-manage-btn tl-manage-btn-move" id="tl-modal-manage-move"><i data-lucide="shelving-unit"></i> Ranger</button>
+        <button class="tl-manage-btn tl-manage-btn-archive" id="tl-modal-manage-archive"><i data-lucide="package"></i> Archiver</button>
       </div>
     </div>
   </div>
@@ -297,7 +296,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="tl-modal-move-title">Ranger</h3>
-        <button class="modal-close" id="tl-modal-move-close">✕</button>
+        <button class="modal-close" id="tl-modal-move-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <select id="tl-modal-move-select" class="modal-folder-select">
@@ -316,7 +315,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="tl-modal-folder-title">Nouveau dossier</h3>
-        <button class="modal-close" id="tl-modal-folder-close">✕</button>
+        <button class="modal-close" id="tl-modal-folder-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="tl-modal-folder-input" class="modal-text-input" placeholder="Nom du dossier..." maxlength="60" />
@@ -337,7 +336,7 @@
     <div class="modal-box">
       <div class="modal-header">
         <h3>Archives</h3>
-        <button class="modal-close" id="tl-modal-archived-close">✕</button>
+        <button class="modal-close" id="tl-modal-archived-close"><i data-lucide="x"></i></button>
       </div>
       <div id="tl-archived-list" class="modal-items-list"></div>
     </div>
@@ -348,7 +347,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Renommer l'image</h3>
-        <button class="modal-close" id="tl-modal-imgname-close">✕</button>
+        <button class="modal-close" id="tl-modal-imgname-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="tl-modal-imgname-input" class="modal-text-input" placeholder="Nom de l'image..." maxlength="80" />
@@ -366,7 +365,7 @@
       <span class="folders-panel-title"><i data-lucide="folder"></i> Dossiers</span>
       <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
       <button class="btn-new-grid hidden" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
-      <button class="modal-close folders-panel-close" id="folders-panel-close">✕</button>
+      <button class="modal-close folders-panel-close" id="folders-panel-close"><i data-lucide="x"></i></button>
     </div>
     <div id="folders-panel-tree" class="folders-panel-tree"></div>
   </div>
@@ -374,15 +373,15 @@
   <!-- Panneau cases (drawer) -->
   <div id="cases-panel" class="folders-panel cases-panel">
     <div class="folders-panel-header">
-      <span class="folders-panel-title">📋 Cases <span id="cases-panel-folder-name" class="cases-panel-folder-name"></span></span>
+      <span class="folders-panel-title"><i data-lucide="square-mouse-pointer"></i> Cases <span id="cases-panel-folder-name" class="cases-panel-folder-name"></span></span>
       <span id="element-count" style="display:none">0</span>
-      <button class="modal-close" id="cases-panel-close">✕</button>
+      <button class="modal-close" id="cases-panel-close"><i data-lucide="x"></i></button>
     </div>
     <div id="panel-elements-body" class="folders-panel-tree panel-elements-body">
       <div class="add-element-form">
         <input type="text" id="new-element-input" placeholder="Ajouter une case..." maxlength="80" />
         <button id="btn-add-element" class="btn-icon" title="Ajouter une case">+</button>
-        <button id="btn-import-elements-panel" class="btn-icon" title="Importer des cases d'un autre dossier">📥</button>
+        <button id="btn-import-elements-panel" class="btn-icon" title="Importer des cases d'un autre dossier"><i data-lucide="import"></i></button>
       </div>
       <div class="elements-tabs">
         <button class="tab-btn active" data-tab="active" title="Clic gauche : afficher les cases actives">Actives</button>
@@ -399,35 +398,35 @@
 
   <!-- Menu contextuel dossier (clic droit) -->
   <div id="ctx-menu-folder" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-folder-cancel" title="Fermer">✕</button>
-    <button class="ctx-menu-item" id="ctx-folder-new-child">📁 Nouveau dossier enfant</button>
-    <button class="ctx-menu-item" id="ctx-folder-rename">✎ Renommer</button>
-    <button class="ctx-menu-item" id="ctx-folder-duplicate">❐ Dupliquer</button>
-    <button class="ctx-menu-item" id="ctx-folder-set-current-event">🎉 Définir comme soirée en cours</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-folder-archive">📦 Archiver</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-folder-delete">🗑 Supprimer</button>
+    <button class="ctx-close-btn" id="ctx-folder-cancel" title="Fermer"><i data-lucide="x"></i></button>
+    <button class="ctx-menu-item" id="ctx-folder-new-child"><i data-lucide="folder-closed"></i> Nouveau dossier enfant</button>
+    <button class="ctx-menu-item" id="ctx-folder-rename"><i data-lucide="pencil"></i> Renommer</button>
+    <button class="ctx-menu-item" id="ctx-folder-duplicate"><i data-lucide="copy-plus"></i> Dupliquer</button>
+    <button class="ctx-menu-item" id="ctx-folder-set-current-event"><i data-lucide="party-popper"></i> Définir comme soirée en cours</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-folder-archive"><i data-lucide="package"></i> Archiver</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-folder-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
 
   <!-- Menu contextuel grille (clic droit) -->
   <div id="ctx-menu-grid" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-grid-cancel" title="Fermer">✕</button>
-    <button class="ctx-menu-item" id="ctx-grid-rename">✎ Renommer</button>
-    <button class="ctx-menu-item" id="ctx-grid-duplicate">❐ Dupliquer</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-grid-archive">📦 Archiver</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-grid-delete">🗑 Supprimer</button>
+    <button class="ctx-close-btn" id="ctx-grid-cancel" title="Fermer"><i data-lucide="x"></i></button>
+    <button class="ctx-menu-item" id="ctx-grid-rename"><i data-lucide="pencil"></i> Renommer</button>
+    <button class="ctx-menu-item" id="ctx-grid-duplicate"><i data-lucide="copy-plus"></i> Dupliquer</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-grid-archive"><i data-lucide="package"></i> Archiver</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-grid-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
 
   <div id="ctx-menu-element" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-element-cancel" title="Fermer">✕</button>
-    <button class="ctx-menu-item" id="ctx-element-edit">✎ Modifier</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-element-archive">📦 Archiver</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-element-delete-active">🗑 Supprimer</button>
+    <button class="ctx-close-btn" id="ctx-element-cancel" title="Fermer"><i data-lucide="x"></i></button>
+    <button class="ctx-menu-item" id="ctx-element-edit"><i data-lucide="pencil"></i> Modifier</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-element-archive"><i data-lucide="package"></i> Archiver</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-element-delete-active"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
 
   <div id="ctx-menu-element-archived" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-element-archived-cancel" title="Fermer">✕</button>
+    <button class="ctx-close-btn" id="ctx-element-archived-cancel" title="Fermer"><i data-lucide="x"></i></button>
     <button class="ctx-menu-item" id="ctx-element-restore">↩ Restaurer</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-element-delete">🗑 Supprimer</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-element-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
 
   <!-- Modal nouveau dossier -->
@@ -435,7 +434,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Nouveau dossier</h3>
-        <button class="modal-close" id="btn-close-new-folder-modal">✕</button>
+        <button class="modal-close" id="btn-close-new-folder-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="new-folder-name-input" class="modal-text-input" placeholder="Nom du dossier..." maxlength="40" />
@@ -454,8 +453,8 @@
   <!-- Panneau Archives (drawer flottant) -->
   <div id="modal-archives-unified" class="folders-panel archives-panel">
     <div class="folders-panel-header">
-      <span class="folders-panel-title">📦 Archives</span>
-      <button class="modal-close" id="btn-close-archives-unified">✕</button>
+      <span class="folders-panel-title"><i data-lucide="package"></i> Archives</span>
+      <button class="modal-close" id="btn-close-archives-unified"><i data-lucide="x"></i></button>
     </div>
     <div class="folders-panel-tree">
       <div id="archives-tree" class="archives-tree"></div>
@@ -464,12 +463,12 @@
   <!-- Panneau Corbeille (drawer flottant) -->
   <div id="modal-trash-unified" class="folders-panel trash-panel">
     <div class="folders-panel-header">
-      <span class="folders-panel-title">🗑 Corbeille</span>
-      <button class="modal-close" id="btn-close-trash-unified">✕</button>
+      <span class="folders-panel-title"><i data-lucide="trash-2"></i> Corbeille</span>
+      <button class="modal-close" id="btn-close-trash-unified"><i data-lucide="x"></i></button>
     </div>
     <div class="folders-panel-tree">
       <div class="modal-trash-actions-top">
-        <button class="btn-action btn-danger-action" id="btn-trash-empty-all">🗑 Vider la corbeille</button>
+        <button class="btn-action btn-danger-action" id="btn-trash-empty-all"><i data-lucide="trash-2"></i> Vider la corbeille</button>
       </div>
       <div id="trash-list" class="modal-items-list"></div>
     </div>
@@ -480,12 +479,12 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Vider la corbeille</h3>
-        <button class="modal-close" id="btn-close-confirm-trash-empty">✕</button>
+        <button class="modal-close" id="btn-close-confirm-trash-empty"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Supprimer définitivement tous les éléments de la corbeille ? Cette action est irréversible.</p>
         <div class="modal-actions">
-          <button class="btn-action btn-danger-action" id="btn-confirm-trash-empty">🗑 Vider</button>
+          <button class="btn-action btn-danger-action" id="btn-confirm-trash-empty"><i data-lucide="trash-2"></i> Vider</button>
           <button class="btn-action btn-secondary" id="btn-cancel-trash-empty">Annuler</button>
         </div>
       </div>
@@ -501,7 +500,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Déplacer le dossier</h3>
-        <button class="modal-close" id="btn-close-move-folder-modal">✕</button>
+        <button class="modal-close" id="btn-close-move-folder-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div style="margin-bottom:12px">
@@ -534,7 +533,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Importer des cases</h3>
-        <button class="modal-close" id="btn-close-import-elements-modal">✕</button>
+        <button class="modal-close" id="btn-close-import-elements-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div style="margin-bottom:12px">
@@ -555,7 +554,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="rename-folder-modal-title">Renommer le dossier</h3>
-        <button class="modal-close" id="btn-close-rename-folder-modal">✕</button>
+        <button class="modal-close" id="btn-close-rename-folder-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="rename-folder-input" class="modal-text-input modal-rename-input" placeholder="Nom du dossier..." maxlength="40" />
@@ -572,7 +571,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Renommer la grille</h3>
-        <button class="modal-close" id="btn-close-rename-grid-modal">✕</button>
+        <button class="modal-close" id="btn-close-rename-grid-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="rename-grid-input" class="modal-text-input modal-rename-input" placeholder="Nom de la grille..." maxlength="40" />
@@ -589,7 +588,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Nouveau sous-thème</h3>
-        <button class="modal-close" id="btn-close-new-subtheme-modal">✕</button>
+        <button class="modal-close" id="btn-close-new-subtheme-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="new-subtheme-name-input" class="modal-text-input" placeholder="Nom du sous-thème..." maxlength="40" />
@@ -611,7 +610,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Renommer le sous-thème</h3>
-        <button class="modal-close" id="btn-close-rename-subtheme-modal">✕</button>
+        <button class="modal-close" id="btn-close-rename-subtheme-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="rename-subtheme-input" class="modal-text-input modal-rename-input" placeholder="Nom du sous-thème..." maxlength="40" />
@@ -625,11 +624,11 @@
 
   <!-- Menu contextuel sous-thème (clic droit) -->
   <div id="ctx-menu-subtheme" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-subtheme-cancel" title="Fermer">✕</button>
-    <button class="ctx-menu-item" id="ctx-subtheme-rename">✎ Renommer</button>
-    <button class="ctx-menu-item" id="ctx-subtheme-duplicate">❐ Dupliquer</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-archive">📦 Archiver</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-delete">🗑 Supprimer</button>
+    <button class="ctx-close-btn" id="ctx-subtheme-cancel" title="Fermer"><i data-lucide="x"></i></button>
+    <button class="ctx-menu-item" id="ctx-subtheme-rename"><i data-lucide="pencil"></i> Renommer</button>
+    <button class="ctx-menu-item" id="ctx-subtheme-duplicate"><i data-lucide="copy-plus"></i> Dupliquer</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-archive"><i data-lucide="package"></i> Archiver</button>
+    <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
 
   <!-- Modal nouvelle grille -->
@@ -637,7 +636,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Nouvelle grille</h3>
-        <button class="modal-close" id="btn-close-new-grid-modal">✕</button>
+        <button class="modal-close" id="btn-close-new-grid-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div class="grid-name-presets">
@@ -660,7 +659,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Confirmer le reset</h3>
-        <button class="modal-close" id="btn-close-confirm-reset">✕</button>
+        <button class="modal-close" id="btn-close-confirm-reset"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Réinitialiser toutes les cases de ce sous-thème ?</p>
@@ -677,7 +676,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Confirmer le vidage</h3>
-        <button class="modal-close" id="btn-close-confirm-clear">✕</button>
+        <button class="modal-close" id="btn-close-confirm-clear"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;" id="modal-clear-msg">Vider les grilles affichées ?</p>
@@ -694,7 +693,7 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Confirmer le reset</h3>
-        <button class="modal-close" id="tl-btn-close-confirm-reset">✕</button>
+        <button class="modal-close" id="tl-btn-close-confirm-reset"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Remettre toutes les images dans « Non placées » ?</p>
@@ -739,6 +738,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=176"></script>
+  <script src="app.js?v=177"></script>
 </body>
 </html>

@@ -404,6 +404,7 @@ body {
 .fp-folder-row.active { border-color: #3b82f6; background: rgba(59,130,246,0.18); }
 .fp-folder-row.ancestor { border-color: #1e3a5f; background: rgba(30,58,95,0.45); }
 .fp-folder-icon { font-size: 0.8rem; flex-shrink: 0; }
+.fp-folder-icon [data-lucide] { margin-right: 0; }
 .fp-folder-name {
   flex: 1;
   font-size: 0.85rem;
@@ -706,6 +707,7 @@ body {
 .btn-icon:hover { background: #2db85a; }
 #btn-import-elements-panel { background: #4b5563; color: #e5e7eb; font-size: 1rem; }
 #btn-import-elements-panel:hover { background: #6b7280; }
+#btn-import-elements-panel [data-lucide] { margin-right: 0; }
 
 /* ── Tabs ── */
 .elements-tabs {
@@ -1160,7 +1162,7 @@ textarea.element-edit-input {
   background: rgba(255,255,255,0.025);
 }
 
-/* ── Checkbox bloquer génération ── */
+/* ── Bouton bloquer génération (icône verrou cliquable) ── */
 .lock-generate-label {
   display: flex;
   align-items: center;
@@ -1171,14 +1173,12 @@ textarea.element-edit-input {
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 0;
 }
-.lock-generate-label input[type="checkbox"] {
-  accent-color: var(--accent);
-  width: 15px;
-  height: 15px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
+.lock-generate-label[aria-pressed="true"] { color: var(--accent); }
+.lock-generate-label [data-lucide] { margin-right: 0; }
 
 /* ── Checkbox remplir cases vides ── */
 .fill-only-empty-label {
@@ -1326,12 +1326,9 @@ textarea.element-edit-input {
   transition: var(--transition);
 }
 .subgrid-lock-label:hover { border-color: var(--accent-dim); color: var(--accent); }
-.subgrid-lock-label input[type="checkbox"] {
-  accent-color: var(--accent);
-  width: 13px;
-  height: 13px;
-  cursor: pointer;
-}
+.subgrid-lock-label[aria-pressed="true"] { color: var(--accent); }
+.subgrid-lock-label:disabled { cursor: not-allowed; opacity: 0.6; }
+.subgrid-lock-label [data-lucide] { margin-right: 0; }
 
 /* Cadre discret autour de Bloquer + Générer (par grille) */
 .subgrid-lock-gen-group {
@@ -1575,6 +1572,7 @@ textarea.element-edit-input {
   transition: color 0.12s;
 }
 .ctx-close-btn:hover { color: var(--danger); }
+.ctx-close-btn [data-lucide] { margin-right: 0; }
 .ctx-menu-item {
   display: block;
   width: 100%;
@@ -1638,6 +1636,7 @@ textarea.element-edit-input {
   transition: var(--transition);
 }
 .modal-close:hover { color: var(--danger); background: rgba(232,91,71,0.12); }
+.modal-close [data-lucide] { margin-right: 0; }
 
 .modal-items-list {
   display: flex;
@@ -2393,6 +2392,7 @@ textarea.element-edit-input {
   padding: 0;
 }
 .tl-unplaced-sort-btn:hover { color: var(--text); border-color: var(--accent-dim); }
+.tl-unplaced-sort-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
 
 .tl-max-images-label {
   font-size: 0.72rem;
@@ -2454,6 +2454,11 @@ textarea.element-edit-input {
 .tl-import-icon {
   font-size: 1.6rem;
   line-height: 1;
+}
+.tl-import-icon [data-lucide] {
+  width: 24px;
+  height: 24px;
+  margin-right: 0;
 }
 .tl-import-label {
   font-size: 0.68rem;
@@ -2643,6 +2648,7 @@ textarea.element-edit-input {
 .tl-folder.open .tl-folder-arrow { transform: rotate(90deg); }
 
 .tl-folder-icon { font-size: 0.85rem; flex-shrink: 0; }
+.tl-folder-icon [data-lucide] { margin-right: 0; }
 
 .tl-folder-name {
   flex: 1;
