@@ -37,14 +37,20 @@
 - Création et gestion de tier lists avec dossiers
 - Import d'images, drag & drop entre tiers, export PNG
 - Synchronisation temps réel entre tous les appareils connectés (images stockées en base64 dans Firebase Realtime DB)
-- **Limite d'images personnalisable** : 50 images par tierlist par défaut ; champ "Images max" éditable à côté du compteur "Images non placées", modifiable jusqu'à 200, propre à chaque tierlist
-- **Anti-doublon à l'import** : une image déjà présente dans la tierlist (même contenu) n'est pas réimportée
-- **Suppression rapide** : clic gauche sur une image pour la sélectionner, puis touche Suppr/Retour arrière pour la supprimer
-- **Tri des images non placées** : par défaut, ordre manuel (réordonnable librement par drag & drop). Icône ↕️ à côté du compteur ouvre un menu pour choisir Manuel / Alphabétique / Date d'ajout ; dès qu'une image est de nouveau glissée pour être repositionnée, le tri repasse automatiquement en mode manuel.
-- **Images non rognées** : les images non carrées s'affichent désormais en entier (letterboxées) au lieu d'être coupées.
-- **Cartes texte** : une petite barre "+ Texte..." toujours visible à côté du bouton d'import (s'agrandit légèrement quand on clique dedans) — tape un texte, Entrée pour l'ajouter (fond gris foncé fixe), classable comme une image dans les tiers.
-- **Templates** : un template est une tierlist dont les images restent toujours en zone "non placée" (impossible de les glisser dans un tier). Sert de base réutilisable. Bouton "+ Template" dans le panneau Dossiers, ou clic droit sur une tierlist existante → "🧩 Convertir en template" (renvoie automatiquement ses images classées en zone non placée).
-- **Génération depuis un template** : clic droit sur un template → "🎲 Générer depuis ce template" ouvre une modal avec noms prédéfinis Jérôme / Adrien / Damien (cases à cocher, comme pour les grilles Bingo) ou un nom personnalisé. Crée une tierlist indépendante par nom coché, avec toutes les images du template en zone non placée. Le template et ses tierlists générées sont regroupés dans le panneau Dossiers (le template s'affiche comme un dossier repliable 🧩), et le titre de l'éditeur affiche "NomTemplate › NomTierlist".
+- **Toute tierlist appartient obligatoirement à un template** : il n'existe plus de création de tierlist libre — seul "+ Template" crée un nouvel objet racine ; les tierlists s'obtiennent via "Générer depuis ce template"
+- **Groupe template partagé** : un template et toutes ses tierlists générées forment un groupe qui partage les mêmes éléments (images/cartes texte), le même nom d'éléments et la même capacité max. Ajouter ou supprimer un élément depuis n'importe quel membre du groupe (template ou tierlist générée) le répercute instantanément sur tous les autres — seul le placement dans les tiers reste propre à chaque tierlist
+- **Capacité max à 4 paliers fixes** : 50 / 100 / 200 / 500 éléments par groupe, choix via un menu au clic sur "Capacité max :"
+- **Anti-doublon à l'import** : une image déjà présente dans le groupe (même contenu) n'est pas réimportée
+- **Suppression rapide** : clic gauche sur un élément pour le sélectionner, puis touche Suppr/Retour arrière pour le supprimer (propagé à tout le groupe)
+- **Compteur "M / N"** : le badge "Éléments non placés" affiche le nombre d'éléments non placés sur le total du groupe
+- **Tri des éléments non placés** : par défaut, ordre manuel (réordonnable librement par drag & drop). Le bouton affiche explicitement le mode actif ("Tri : Manuel" / "Tri : Alphabétique" / "Tri : Date d'ajout") et ouvre un menu pour en changer ; dès qu'un élément est de nouveau glissé pour être repositionné, le tri repasse automatiquement en mode manuel
+- **Images non rognées** : les images non carrées s'affichent en entier (letterboxées) au lieu d'être coupées
+- **Cartes texte** : une petite barre "+ Texte..." toujours visible à côté du bouton d'import — tape un texte, Entrée pour l'ajouter (fond gris foncé fixe), classable comme une image dans les tiers
+- **Génération depuis un template** : sur un template, un bouton "+ Tier list" apparaît dans la toolbar (ou clic droit → "Générer depuis ce template") et ouvre une modal avec noms prédéfinis Jérôme / Adrien / Damien ou un nom personnalisé. Le titre de l'éditeur affiche "NomTemplate › NomTierlist"
+- **Panneau Dossiers fixe (400px)** : même comportement que le Bingo — sidebar qui pousse le contenu au lieu de flotter, ouverture/fermeture via le bouton dédié
+- **Dossiers, tierlists et templates déplaçables par glisser-déposer** : poignée dédiée (icône grip, curseur main) sur chaque ligne du panneau Dossiers
+- **Ouvrir dans une nouvelle fenêtre (gris, comme le Bingo) / Archives / Corbeille** : trois boutons dans la toolbar de l'éditeur, alignés à droite pour Archives/Corbeille (le reste de la toolbar est centré), avec le même comportement que côté Bingo (drawer flottant pour Archives/Corbeille, fenêtre séparée pour l'édition solo)
+- **Suppression définitive** : option "Supprimer" disponible sur les dossiers, templates et tierlists (clic droit), envoie à la Corbeille
 
 ---
 

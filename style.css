@@ -692,6 +692,16 @@ body.solo-grid-mode .ctrl-row-toolbar {
   justify-content: center;
 }
 
+/* ── Mode "fenêtre tier list solo" (popup ouverte via square-arrow-out-up-right) ── */
+body.solo-tierlist-mode .header,
+body.solo-tierlist-mode .tl-btn-folders,
+body.solo-tierlist-mode .tl-btn-open-window {
+  display: none;
+}
+body.solo-tierlist-mode .main {
+  padding: 8px;
+}
+
 /* ── Panneaux ── */
 .panel {
   background: var(--surface);
@@ -1921,14 +1931,18 @@ textarea.element-edit-input {
 
 /* ── Layout principal tierlist ── */
 .tl-layout {
-  display: block;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
   position: relative;
+  width: 100%;
+  min-width: 0;
 }
+.tl-layout > .folders-sidebar.open { margin-right: 12px; }
 
-/* ── Sidebar tierlist (drawer, hérite de .folders-panel) ── */
+/* ── Sidebar tierlist (sidebar fixe qui pousse le contenu, comme le Bingo) ── */
 .tl-sidebar {
-  width: 260px;
-  max-height: 82vh;
+  max-height: none;
   gap: 10px;
 }
 .tl-sidebar .folders-panel-header {
@@ -1987,6 +2001,7 @@ textarea.element-edit-input {
   user-select: none;
 }
 .tl-list-item:hover { border-color: var(--accent-dim); color: var(--text); background: var(--surface-3); }
+.tl-list-item:hover .tl-folder-drag-handle { opacity: 1; color: var(--text); }
 .tl-list-item.active {
   background: var(--accent-glow);
   border-color: var(--accent-dim);
@@ -2043,6 +2058,9 @@ textarea.element-edit-input {
   border-radius: var(--radius-lg);
   padding: 16px;
   min-height: 300px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .tl-empty-state {
@@ -2152,6 +2170,15 @@ textarea.element-edit-input {
   flex-wrap: wrap;
 }
 
+.tl-editor-actions-center {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  justify-content: center;
+}
+
 .tl-toggle-label {
   display: flex;
   align-items: center;
@@ -2206,20 +2233,12 @@ textarea.element-edit-input {
 .tl-btn-export:hover { border-color: var(--success); color: var(--success); background: rgba(71,200,135,0.1); }
 .tl-btn-add-tier { color: var(--success) !important; border-color: var(--success) !important; background: rgba(71,200,135,0.08) !important; font-weight: 700; }
 .tl-btn-add-tier:hover { background: rgba(71,200,135,0.2) !important; }
-/* Bouton Annuler actif : orange foncé */
-.tl-btn-undo { color: var(--text-muted); }
-.tl-btn-undo:not(:disabled) {
-  background: #7a3800 !important;
-  color: #ffb87a !important;
-  border-color: #a34a00 !important;
+.tl-btn-open-window {
+  background: #4b5563;
+  color: #e5e7eb;
+  border: 1px solid #4b5563;
 }
-.tl-btn-undo:not(:disabled):hover {
-  background: #a34a00 !important;
-  color: #ffd0a0 !important;
-  border-color: #c85800 !important;
-}
-.tl-btn-undo:disabled { opacity: 0.4; cursor: not-allowed; }
-.tl-btn-undo:disabled:hover { border-color: var(--border); color: var(--text-muted); background: var(--surface-2); }
+.tl-btn-open-window:hover { background: #6b7280; border-color: #6b7280; color: #e5e7eb; }
 .tl-btn-reset {
   background: rgba(232,91,71,0.12) !important;
   color: var(--danger) !important;
@@ -2446,19 +2465,22 @@ textarea.element-edit-input {
 }
 
 .tl-unplaced-sort-btn {
-  font-size: 0.9rem;
+  font-size: 0.72rem;
+  font-family: 'Space Mono', monospace;
   line-height: 1;
   background: var(--surface-2);
   color: var(--text-muted);
-  width: 22px;
+  width: auto;
   height: 22px;
   display: flex;
   align-items: center;
+  gap: 4px;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 20px;
   border: 1px solid var(--border);
   cursor: pointer;
-  padding: 0;
+  padding: 0 8px;
+  white-space: nowrap;
 }
 .tl-unplaced-sort-btn:hover { color: var(--text); border-color: var(--accent-dim); }
 .tl-unplaced-sort-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
@@ -2477,13 +2499,14 @@ textarea.element-edit-input {
   font-size: 0.72rem;
   background: var(--surface-2);
   color: var(--text-muted);
-  padding: 1px 4px;
+  padding: 1px 10px;
   border-radius: 20px;
   border: 1px solid var(--border);
-  width: 48px;
   text-align: center;
+  cursor: pointer;
 }
 
+.tl-max-images-input:hover,
 .tl-max-images-input:focus {
   color: var(--text);
   border-color: var(--accent, var(--border));
@@ -2726,9 +2749,25 @@ textarea.element-edit-input {
   transition: transform 0.15s;
   flex-shrink: 0;
 }
-.tl-folder.open .tl-folder-arrow { transform: rotate(90deg); }
+.tl-folder.open > .tl-folder-header .tl-folder-arrow { transform: rotate(90deg); }
 
 .tl-folder-icon { font-size: 0.85rem; flex-shrink: 0; }
+
+/* Poignée drag dossier/template */
+.tl-folder-drag-handle {
+  font-size: 1rem;
+  color: var(--text-dim, var(--text-faint));
+  cursor: grab;
+  opacity: 0.6;
+  transition: opacity var(--transition), color var(--transition);
+  flex-shrink: 0;
+  padding: 0 4px;
+  user-select: none;
+}
+.tl-folder-header:hover .tl-folder-drag-handle { opacity: 1; color: var(--text); }
+.tl-folder-drag-handle:hover { opacity: 1 !important; color: var(--accent); }
+.tl-folder-drag-handle:active { cursor: grabbing; }
+.tl-folder-drag-handle [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
 .tl-folder-icon [data-lucide] { margin-right: 0; }
 
 .tl-folder-ctx-btn {
@@ -2761,7 +2800,7 @@ textarea.element-edit-input {
   border-left: 2px solid var(--border);
   margin-left: 10px;
 }
-.tl-folder.open .tl-folder-children { display: flex; }
+.tl-folder.open > .tl-folder-children { display: flex; }
 
 .tl-folder-children .tl-list-item { font-size: 0.78rem; padding: 3px 8px; }
 

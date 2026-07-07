@@ -12,6 +12,9 @@ const _soloGridIds = (_soloGridParams.get('openGrids') || _soloGridParams.get('o
   .filter(Boolean);
 let _soloGridApplied = false;
 
+const _soloTierlistId = _soloGridParams.get('openTierlist') || null;
+let _soloTierlistApplied = false;
+
 // ──────────────────────────────────────────────
 // Désactivation des bulles d'aide (tooltips title="...")
 // Pour les réactiver : mettre DISABLE_TITLE_TOOLTIPS à false
@@ -287,7 +290,7 @@ function loadUserPrefs() {
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
     if (prefs.tlNoSelection       != null) _tlLocalNoSelection      = !!prefs.tlNoSelection;
     // Page active
-    if (prefs.activePage   != null && window._switchPage && _soloGridIds.length === 0) _switchPage(prefs.activePage);
+    if (prefs.activePage   != null && window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId) _switchPage(prefs.activePage);
     _prefsReady = true;
     // Appliquer les prefs visuelles
     gridHeightInput.value = _localGridHeight;
@@ -321,6 +324,18 @@ function _applySoloGridModeIfNeeded() {
       : `${grids.length} grilles`) + ' — LesMichels';
     document.body.classList.add('solo-grid-mode');
   }
+}
+
+function _applySoloTierlistModeIfNeeded() {
+  if (!_soloTierlistId || _soloTierlistApplied) return;
+  const tl = tlState.tierlists.find(t => t.id === _soloTierlistId && !t.archived);
+  if (!tl) return;
+  _soloTierlistApplied = true;
+  _tlLocalActiveTierlistId = tl.id;
+  _tlLocalNoSelection = false;
+  if (window._switchPage) window._switchPage('tierlist');
+  document.title = (tl.name || 'Tier list') + ' — LesMichels';
+  document.body.classList.add('solo-tierlist-mode');
 }
 
 function _applyPrefsAndRender() {
@@ -4176,13 +4191,17 @@ function tlSave() {
   if (_tlRemoteUpdate) return;
   // Ne pas sauvegarder activeTierlistId/noSelection dans les données partagées
   const { activeTierlistId, noSelection, ...shared } = tlState;
-  _dbTierlist.set(shared).catch(e => console.warn('TL save error:', e));
+  // sanitizeForFirebase (JSON.parse/stringify) élimine les éventuels `undefined` — Firebase refuse
+  // toute écriture contenant `undefined` avec une exception SYNCHRONE (non catchable par .catch()),
+  // ce qui plantait tout le script en cours (ex. tlDelete) et laissait l'UI bloquée jusqu'au F5.
+  _dbTierlist.set(sanitizeForFirebase(shared)).catch(e => console.warn('TL save error:', e));
 }
 
 function _tlNormalizeState(parsed) {
-  if (!parsed || typeof parsed !== 'object') return { tierlists: [], folders: [] };
+  if (!parsed || typeof parsed !== 'object') return { tierlists: [], folders: [], trash: [] };
   if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
   if (!Array.isArray(parsed.folders)) parsed.folders = [];
+  if (!Array.isArray(parsed.trash)) parsed.trash = [];
   // Supprimer les anciens champs partagés s'ils existent encore en base
   delete parsed.activeTierlistId;
   delete parsed.noSelection;
@@ -4193,6 +4212,22 @@ function _tlNormalizeState(parsed) {
     if (!Array.isArray(tl.tiers)) tl.tiers = [];
     tl.tiers.forEach(tier => { if (!Array.isArray(tier.items)) tier.items = []; });
   });
+  // Migration : avant l'introduction du groupe partagé, une tierlist générée depuis un template
+  // recevait sa propre copie d'images (ids différents de ceux du template). Le template est
+  // désormais l'unique source lue (_tlGetGroupImages) — on fusionne donc ici, une seule fois,
+  // les images encore locales à une tierlist générée dans les images de son template, en
+  // conservant leurs ids d'origine (référencés par tiers[].items/unplaced).
+  let _tlMigrated = false;
+  parsed.tierlists.forEach(tl => {
+    if (tl.isTemplate || !tl.templateId || tl.images.length === 0) return;
+    const template = parsed.tierlists.find(t => t.id === tl.templateId && t.isTemplate);
+    if (!template) return;
+    const existingIds = new Set(template.images.map(i => i.id));
+    tl.images.forEach(img => { if (!existingIds.has(img.id)) { template.images.push(img); existingIds.add(img.id); } });
+    tl.images = [];
+    _tlMigrated = true;
+  });
+  parsed._tlMigrated = _tlMigrated;
   return parsed;
 }
 
@@ -4361,31 +4396,87 @@ function tlUnarchiveFolder(id) {
   tlRenderArchivedModal();
 }
 
+// ── Corbeille ─────────────────────────────────────────────────────────────────
+function tlTrashPush(entry) {
+  if (!tlState.trash) tlState.trash = [];
+  tlState.trash.push({ ...entry, deletedAt: Date.now() });
+}
+
+function tlTrashRestore(idx) {
+  if (!tlState.trash) return;
+  const entry = tlState.trash[idx];
+  if (!entry) return;
+  tlState.trash.splice(idx, 1);
+  if (entry.type === 'folder') {
+    if (!tlState.folders) tlState.folders = [];
+    tlState.folders.push(entry.data);
+    (entry.data._tierlists || []).forEach(tl => { delete tl._tierlists; tlState.tierlists.push(tl); });
+    delete entry.data._tierlists;
+  } else if (entry.type === 'tierlist') {
+    tlState.tierlists.push(entry.data);
+  }
+  tlSave();
+  tlRender();
+  tlRenderTrashList();
+}
+
+function tlTrashEmpty() {
+  tlState.trash = [];
+  tlSave();
+}
+
 function tlDeleteFolder(id) {
   tlPushUndo();
   const allIds = [id, ..._tlGetDescendantIds(id)];
-  // Détacher les tierlists de tous les dossiers supprimés
+  const folder = (tlState.folders || []).find(f => f.id === id);
+  if (folder) {
+    // Le dossier emporte avec lui les tierlists/templates directement rangés dedans (avec leurs tierlists
+    // générées en cascade si c'est un template), pour permettre une restauration cohérente depuis la corbeille.
+    const directTierlists = tlState.tierlists.filter(tl => tl.folderId === id);
+    const cascaded = [];
+    directTierlists.forEach(tl => {
+      cascaded.push(tl);
+      if (tl.isTemplate) cascaded.push(...tlState.tierlists.filter(t => t.templateId === tl.id));
+    });
+    const cascadedIds = new Set(cascaded.map(t => t.id));
+    tlState.tierlists = tlState.tierlists.filter(t => !cascadedIds.has(t.id));
+    tlTrashPush({ type: 'folder', data: { ...folder, _tierlists: cascaded } });
+    if (cascadedIds.has(_tlLocalActiveTierlistId)) {
+      const remaining = tlState.tierlists.filter(t => !t.archived);
+      _tlLocalActiveTierlistId = remaining.length > 0 ? remaining[0].id : null;
+      _tlLocalNoSelection = false;
+      saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: false });
+    }
+    if (cascadedIds.has(state.currentEventTierlistId)) {
+      state.currentEventTierlistId = null;
+      saveState();
+    }
+  }
+  // Détacher les tierlists des sous-dossiers supprimés (non capturés dans l'entrée de corbeille du dossier racine)
   (tlState.tierlists || []).forEach(tl => { if (allIds.includes(tl.folderId)) tl.folderId = null; });
   tlState.folders = (tlState.folders || []).filter(f => !allIds.includes(f.id));
   tlSave();
   tlRender();
   tlRenderArchivedModal();
+  tlRenderTrashList();
 }
 
 function tlMoveTierlistToFolder(tlId, folderId) {
   tlPushUndo();
   const tl = tlState.tierlists.find(t => t.id === tlId);
-  if (tl) tl.folderId = folderId || null;
+  if (!tl) return;
+  tl.folderId = folderId || null;
+  // Force l'ouverture du dossier cible pour que l'élément déplacé (notamment un groupe template) reste visible
+  if (folderId) sessionStorage.setItem('tl_folder_open_' + folderId, '1');
+  if (tl.isTemplate) sessionStorage.setItem('tl_tplgroup_open_' + tl.id, '1');
   tlSave();
   tlRender();
 }
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
-const tlBtnNew            = document.getElementById('tl-btn-new');
 const tlBtnNewTemplate    = document.getElementById('tl-btn-new-template');
 const tlModalNewFolderSelect = document.getElementById('tl-modal-new-folder-select');
 const tlList              = document.getElementById('tl-list');
-const tlBtnShowArchived   = document.getElementById('tl-btn-show-archived');
 const tlEmptyState        = document.getElementById('tl-empty-state');
 const tlEditor            = document.getElementById('tl-editor');
 const tlTitlePrefix       = document.getElementById('tl-title-prefix');
@@ -4423,6 +4514,11 @@ const tlModalTierClose    = document.getElementById('tl-modal-tier-close');
 const tlModalArchived     = document.getElementById('tl-modal-archived');
 const tlModalArchivedClose= document.getElementById('tl-modal-archived-close');
 const tlArchivedList      = document.getElementById('tl-archived-list');
+
+const tlModalTrash          = document.getElementById('tl-modal-trash');
+const tlModalTrashClose      = document.getElementById('tl-modal-trash-close');
+const tlTrashList            = document.getElementById('tl-trash-list');
+const tlModalConfirmTrashEmpty = document.getElementById('tl-modal-confirm-trash-empty');
 
 const tlModalImgName      = document.getElementById('tl-modal-imgname');
 const tlModalImgNameInput = document.getElementById('tl-modal-imgname-input');
@@ -4588,6 +4684,8 @@ function tlRender() {
   } else {
     tlTitlePrefix.classList.add('hidden');
   }
+  const tlBtnNewFromTemplate = document.getElementById('tl-btn-new-from-template');
+  if (tlBtnNewFromTemplate) tlBtnNewFromTemplate.classList.toggle('hidden', !tl.isTemplate);
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
   const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
   const imgSize    = _tlLocalImgSize    !== null ? _tlLocalImgSize    : (tl.imgSize || 80);
@@ -4603,7 +4701,15 @@ function tlBuildTierlistItem(tl) {
   const item = document.createElement('div');
   item.className = 'tl-list-item' + (tl.id === _tlLocalActiveTierlistId ? ' active' : '');
   item.dataset.id = tl.id;
-  item.draggable = true;
+  item.draggable = false;
+
+  const dragHandle = document.createElement('span');
+  dragHandle.className = 'tl-folder-drag-handle';
+  dragHandle.innerHTML = '<i data-lucide="grip"></i>';
+  dragHandle.title = 'Glisser pour déplacer';
+  dragHandle.addEventListener('mousedown', () => { item.draggable = true; });
+  dragHandle.addEventListener('mouseleave', () => { if (!item.classList.contains('tl-dragging')) item.draggable = false; });
+  item.appendChild(dragHandle);
 
   const icon = document.createElement('span');
   icon.className = 'tl-list-item-icon';
@@ -4646,6 +4752,52 @@ function tlBuildTierlistItem(tl) {
 function _tlHasLiveTemplate(tl) {
   if (!tl.templateId) return false;
   return tlState.tierlists.some(t => t.id === tl.templateId && t.isTemplate && !t.archived);
+}
+
+// Le template est la source de vérité partagée (images, capacité max) de tout son groupe de tierlists générées.
+// Contrairement à _tlHasLiveTemplate, on ne filtre pas !archived ici : un template archivé reste la source
+// d'images de ses tierlists filles (sinon elles perdraient leurs images à l'archivage du template).
+// Les tierlists créées avant l'introduction du système de groupe (sans templateId, ou pointant vers un
+// template supprimé) retombent sur leurs propres champs locaux — comportement inchangé pour elles.
+function _tlGroupRoot(tl) {
+  if (!tl) return null;
+  if (tl.isTemplate) return tl;
+  if (tl.templateId) {
+    const t = tlState.tierlists.find(x => x.id === tl.templateId && x.isTemplate);
+    if (t) return t;
+  }
+  return tl;
+}
+
+function _tlGetGroupImages(tl) {
+  return _tlGroupRoot(tl).images || [];
+}
+
+function _tlGetGroupMaxImages(tl) {
+  return _tlGroupRoot(tl).maxImagesOverride || TL_MAX_IMAGES;
+}
+
+// Le template lui-même + toutes les tierlists générées à partir de lui
+function _tlGetGroupMembers(tl) {
+  const root = _tlGroupRoot(tl);
+  return tlState.tierlists.filter(t => t.id === root.id || t.templateId === root.id);
+}
+
+// Texte "(Template › Dossier)" à afficher à côté d'une tierlist archivée/supprimée, pour donner
+// son contexte d'origine (elle n'apparaît plus dans son emplacement habituel du panneau Dossiers).
+// tl peut être un objet vivant de tlState.tierlists OU un objet figé venant de la corbeille (data).
+// includeFolder=false quand le dossier est déjà visuellement représenté par l'imbrication de l'affichage.
+function _tlContextLabel(tl, includeFolder = true) {
+  const parts = [];
+  if (tl.templateId) {
+    const template = tlState.tierlists.find(t => t.id === tl.templateId && t.isTemplate);
+    parts.push(template ? template.name : '(template supprimé)');
+  }
+  if (includeFolder && tl.folderId) {
+    const folder = (tlState.folders || []).find(f => f.id === tl.folderId);
+    parts.push(folder ? folder.name : '(dossier supprimé)');
+  }
+  return parts.length > 0 ? ' (' + parts.join(' › ') + ')' : '';
 }
 
 // Rendu d'un template comme "dossier virtuel" repliable, contenant ses tierlists générées
@@ -4692,6 +4844,12 @@ function _tlBuildTemplateGroupEl(template, depth) {
     tlOpenManageModal(template.id, header);
   });
 
+  const dragHandle = document.createElement('span');
+  dragHandle.className = 'tl-folder-drag-handle';
+  dragHandle.innerHTML = '<i data-lucide="grip"></i>';
+  dragHandle.title = 'Glisser pour déplacer';
+
+  header.appendChild(dragHandle);
   header.appendChild(arrow);
   header.appendChild(icon);
   header.appendChild(name);
@@ -4703,6 +4861,20 @@ function _tlBuildTemplateGroupEl(template, depth) {
     e.stopPropagation();
     tlOpenManageModal(template.id, header);
   });
+
+  // Drag & drop — un template est une entrée tlState.tierlists (isTemplate:true),
+  // donc _tlSidebarDropOnItem le traite déjà comme type 'tierlist' sans code additionnel
+  groupEl.draggable = false;
+  dragHandle.addEventListener('mousedown', () => { groupEl.draggable = true; });
+  dragHandle.addEventListener('mouseleave', () => { if (!groupEl.classList.contains('tl-dragging')) groupEl.draggable = false; });
+  groupEl.addEventListener('dragstart', e => {
+    if (e.target !== groupEl && e.target.closest('.tl-folder-children')) return;
+    _tlSidebarDragStart(e, template.id, 'tierlist');
+  });
+  groupEl.addEventListener('dragend', _tlSidebarDragEnd);
+  groupEl.addEventListener('dragover', e => _tlSidebarDragOverItem(e, groupEl, template.id, 'tierlist'));
+  groupEl.addEventListener('dragleave', e => _tlSidebarDragLeaveItem(e, groupEl));
+  groupEl.addEventListener('drop', e => _tlSidebarDropOnItem(e, template.id, 'tierlist', groupEl));
 
   groupEl.appendChild(header);
 
@@ -4768,6 +4940,12 @@ function _tlBuildFolderEl(folder, depth) {
     tlOpenFolderManageModal(folder.id, header);
   });
 
+  const dragHandle = document.createElement('span');
+  dragHandle.className = 'tl-folder-drag-handle';
+  dragHandle.innerHTML = '<i data-lucide="grip"></i>';
+  dragHandle.title = 'Glisser pour déplacer';
+
+  header.appendChild(dragHandle);
   header.appendChild(arrow);
   header.appendChild(icon);
   header.appendChild(name);
@@ -4779,8 +4957,10 @@ function _tlBuildFolderEl(folder, depth) {
     tlOpenFolderManageModal(folder.id, header);
   });
 
-  // Drag & drop
-  folderEl.draggable = true;
+  // Drag & drop — activé seulement via la poignée grip
+  folderEl.draggable = false;
+  dragHandle.addEventListener('mousedown', () => { folderEl.draggable = true; });
+  dragHandle.addEventListener('mouseleave', () => { if (!folderEl.classList.contains('tl-dragging')) folderEl.draggable = false; });
   folderEl.addEventListener('dragstart', e => {
     if (e.target !== folderEl && e.target.closest('.tl-folder-children')) return;
     _tlSidebarDragStart(e, folder.id, 'folder');
@@ -5159,10 +5339,13 @@ function tlRenderUnplaced(tl) {
       if (img) tlUnplacedZone.appendChild(tlBuildImgCard(tl, img, imgSize));
     });
   }
-  tlUnplacedCount.textContent = tl.unplaced.length;
+  tlUnplacedCount.textContent = tl.unplaced.length + ' / ' + _tlGetGroupImages(tl).length;
   const _sortIcons = { manual: 'hand', alpha: 'arrow-down-a-z', date: 'arrow-down-0-1' };
-  tlUnplacedSortBtn.innerHTML = `<i data-lucide="${_sortIcons[tl.unplacedSort || 'manual'] || 'hand'}"></i>`;
-  tlMaxImagesInput.value = tlEffectiveMaxImages(tl);
+  const _sortLabels = { manual: 'Manuel', alpha: 'Alphabétique', date: "Date d'ajout" };
+  const _sortMode = tl.unplacedSort || 'manual';
+  tlUnplacedSortBtn.innerHTML = `<i data-lucide="${_sortIcons[_sortMode] || 'hand'}"></i> Tri : ${_sortLabels[_sortMode] || 'Manuel'}`;
+  if (window.lucide) lucide.createIcons();
+  tlMaxImagesInput.textContent = _tlGetGroupMaxImages(tl);
 }
 
 function _tlShowImportMenu(anchorEl) {
@@ -5176,10 +5359,11 @@ function _tlPasteFromClipboard(tl) {
   navigator.clipboard.read().then(items => {
     const imageItems = items.filter(item => item.types.some(t => t.startsWith('image/')));
     if (imageItems.length === 0) { alert('Aucune image dans le presse-papier.'); return; }
-    if (!tl.images) tl.images = [];
+    const root = _tlGroupRoot(tl);
+    if (!root.images) root.images = [];
     const maxImages = tlEffectiveMaxImages(tl);
-    if (tl.images.length >= maxImages) {
-      alert(`Limite atteinte — maximum ${maxImages} images par tierlist.`); return;
+    if (root.images.length >= maxImages) {
+      alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`); return;
     }
     const now = new Date();
     const promises = imageItems.map(item => {
@@ -5187,12 +5371,14 @@ function _tlPasteFromClipboard(tl) {
       return item.getType(type).then(blob => {
         const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
         return _tlCompressToBase64(blob).then(src => {
-          if (tl.images.length >= maxImages) return;
-          if (tl.images.some(i => i.src === src)) return;
+          if (root.images.length >= maxImages) return;
+          if (root.images.some(i => i.src === src)) return;
           const img = { id: uid(), src, name };
           _tlSrcCache[img.id] = src;
-          tl.images.push(img);
-          tl.unplaced.push(img.id);
+          root.images.push(img);
+          _tlGetGroupMembers(tl).forEach(member => {
+            if (!member.unplaced.includes(img.id)) member.unplaced.push(img.id);
+          });
         });
       });
     });
@@ -5305,7 +5491,7 @@ function _tlShowImgCtxMenu(e, tl, img) {
 
 // ── Recherche d'image ─────────────────────────────────────────────────────────
 function tlFindImage(tl, imgId) {
-  return (tl.images || []).find(i => i.id === imgId) || null;
+  return _tlGetGroupImages(tl).find(i => i.id === imgId) || null;
 }
 
 // ── Actions sur les tierlists ─────────────────────────────────────────────────
@@ -5337,15 +5523,27 @@ function tlSwitch(id) {
 
 function tlDelete(id) {
   tlPushUndo();
-  tlState.tierlists = tlState.tierlists.filter(t => t.id !== id);
-  if (_tlLocalActiveTierlistId === id) {
+  const tl = tlState.tierlists.find(t => t.id === id);
+  if (!tl) return;
+  // Suppression d'un template : cascade sur toutes ses tierlists générées, chacune sa propre entrée de corbeille
+  const cascaded = tl.isTemplate ? tlState.tierlists.filter(t => t.templateId === id) : [];
+  tlTrashPush({ type: 'tierlist', data: tl, folderId: tl.folderId || null });
+  cascaded.forEach(t => tlTrashPush({ type: 'tierlist', data: t, folderId: t.folderId || null }));
+  const removedIds = new Set([id, ...cascaded.map(t => t.id)]);
+  tlState.tierlists = tlState.tierlists.filter(t => !removedIds.has(t.id));
+  if (removedIds.has(_tlLocalActiveTierlistId)) {
     const remaining = tlState.tierlists.filter(t => !t.archived);
     _tlLocalActiveTierlistId = remaining.length > 0 ? remaining[0].id : null;
     _tlLocalNoSelection = false;
     saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: false });
   }
+  if (removedIds.has(state.currentEventTierlistId)) {
+    state.currentEventTierlistId = null;
+    saveState();
+  }
   tlSave();
   tlRender();
+  tlRenderTrashList();
 }
 
 function tlArchive(id) {
@@ -5499,18 +5697,19 @@ function _tlCompressToBase64(file, maxPx = 400, quality = 0.82) {
 }
 
 const TL_MAX_IMAGES = 50;
-const TL_MAX_IMAGES_CAP = 200;
+const TL_MAX_IMAGES_CAP = 500;
+const TL_MAX_IMAGES_CHOICES = [50, 100, 200, 500];
 
-// Retourne la limite effective pour une tierlist (personnalisable par l'utilisateur, jusqu'à TL_MAX_IMAGES_CAP)
+// Retourne la limite effective du groupe (template + ses tierlists générées)
 function tlEffectiveMaxImages(tl) {
-  return tl.maxImagesOverride || TL_MAX_IMAGES;
+  return _tlGetGroupMaxImages(tl);
 }
 
 function tlSetMaxImages(tl, value) {
   let n = parseInt(value, 10);
   if (isNaN(n) || n < 1) n = TL_MAX_IMAGES;
   n = Math.min(n, TL_MAX_IMAGES_CAP);
-  tl.maxImagesOverride = n;
+  _tlGroupRoot(tl).maxImagesOverride = n;
   tlSave();
   return n;
 }
@@ -5518,12 +5717,13 @@ function tlSetMaxImages(tl, value) {
 function tlImportImages(files) {
   const tl = tlActiveTierlist();
   if (!tl) return;
-  if (!tl.images) tl.images = [];
+  const root = _tlGroupRoot(tl);
+  if (!root.images) root.images = [];
 
   const maxImages = tlEffectiveMaxImages(tl);
-  const remaining = maxImages - tl.images.length;
+  const remaining = maxImages - root.images.length;
   if (remaining <= 0) {
-    alert(`Limite atteinte — maximum ${maxImages} images par tierlist.`);
+    alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
     return;
   }
 
@@ -5534,11 +5734,13 @@ function tlImportImages(files) {
   const processFile = (file) => {
     const name = file.name.replace(/\.[^.]+$/, '');
     return _tlCompressToBase64(file).then(src => {
-      if (tl.images.some(i => i.src === src)) { ignoredByDuplicate++; return; }
+      if (root.images.some(i => i.src === src)) { ignoredByDuplicate++; return; }
       const img = { id: uid(), src, name };
       _tlSrcCache[img.id] = src;
-      tl.images.push(img);
-      tl.unplaced.push(img.id);
+      root.images.push(img);
+      _tlGetGroupMembers(tl).forEach(member => {
+        if (!member.unplaced.includes(img.id)) member.unplaced.push(img.id);
+      });
     });
   };
 
@@ -5546,17 +5748,20 @@ function tlImportImages(files) {
     tlSave();
     tlRender();
     const msgs = [];
-    if (ignoredByLimit > 0) msgs.push(`${ignoredByLimit} image${ignoredByLimit > 1 ? 's ignorées' : ' ignorée'} — limite de ${maxImages} images atteinte.`);
-    if (ignoredByDuplicate > 0) msgs.push(`${ignoredByDuplicate} image${ignoredByDuplicate > 1 ? 's déjà présentes ignorées' : ' déjà présente ignorée'} (doublon).`);
+    if (ignoredByLimit > 0) msgs.push(`${ignoredByLimit} élément${ignoredByLimit > 1 ? 's ignorés' : ' ignoré'} — limite de ${maxImages} éléments atteinte.`);
+    if (ignoredByDuplicate > 0) msgs.push(`${ignoredByDuplicate} élément${ignoredByDuplicate > 1 ? 's déjà présents ignorés' : ' déjà présent ignoré'} (doublon).`);
     if (msgs.length) alert(msgs.join('\n'));
   }).catch(e => console.warn('TL import error:', e));
 }
 
 function tlDeleteImage(tl, imgId) {
   tlPushUndo();
-  tl.unplaced = tl.unplaced.filter(id => id !== imgId);
-  tl.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
-  if (tl.images) tl.images = tl.images.filter(i => i.id !== imgId);
+  const root = _tlGroupRoot(tl);
+  _tlGetGroupMembers(tl).forEach(member => {
+    member.unplaced = member.unplaced.filter(id => id !== imgId);
+    member.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
+  });
+  if (root.images) root.images = root.images.filter(i => i.id !== imgId);
   tlSave();
   tlRender();
 }
@@ -5712,7 +5917,7 @@ async function _tlBuildCanvas(tl) {
     let x = labelW + padding;
     let rowY = y + padding;
     for (const imgId of tier.items) {
-      const imgData = tl.images ? tl.images.find(i => i.id === imgId) : null;
+      const imgData = _tlGetGroupImages(tl).find(i => i.id === imgId) || null;
       if (!imgData) continue;
       if (x + imgSize > totalWidth - padding) { x = labelW + padding; rowY += imgSize + imgGap; }
       if ((imgData.type || 'image') === 'text') {
@@ -5765,7 +5970,7 @@ function tlBuildArchivedTierlistItem(tl) {
   const name = document.createElement('span');
   name.className = 'archived-theme-name';
   name.innerHTML = '<i data-lucide="scroll-text"></i> ';
-  name.appendChild(document.createTextNode(tl.name));
+  name.appendChild(document.createTextNode(tl.name + _tlContextLabel(tl, false)));
   item.appendChild(name);
 
   const btnRestore = document.createElement('button');
@@ -6144,6 +6349,7 @@ function tlOpenFolderManageModal(id, anchorEl) {
   addItem('move', 'Déplacer dans un dossier', false, () => tlOpenMoveFolderModal(id));
   addSep();
   addItem('package', 'Archiver', true, () => tlArchiveFolder(id));
+  addItem('trash-2', 'Supprimer', true, () => tlDeleteFolder(id));
 }
 
 // ── Modal nouveau/renommer dossier ────────────────────────────────────────────
@@ -6221,10 +6427,11 @@ function tlOpenManageModal(id, anchorEl) {
     addItem('party-popper', ceLabel, false, () => setCurrentEventTierlist(id));
     if (!tl.templateId) addItem('scroll', 'Convertir en template', false, () => tlConvertToTemplate(id));
   } else {
-    addItem('dices', 'Générer depuis ce template', false, () => tlOpenGenerateFromTemplateModal(id));
+    addItem('scroll-text', 'Générer depuis ce template', false, () => tlOpenGenerateFromTemplateModal(id));
   }
   addSep();
   addItem('package', 'Archiver', true, () => tlArchive(id));
+  addItem('trash-2', 'Supprimer', true, () => tlDelete(id));
 }
 
 // ── Capture Tierlist (presse-papier) ─────────────────────────────────────────
@@ -6269,10 +6476,7 @@ function tlCommitTitleEdit() {
 
 // ── Sidebar drawer tierlist ───────────────────────────────────────────────────
 function openTlSidebar() {
-  const panel = document.getElementById('tl-sidebar');
-  _initPanelPosition(panel, 'left');
-  _makePanelDraggable(panel);
-  panel.classList.add('open');
+  document.getElementById('tl-sidebar').classList.add('open');
 }
 function closeTlSidebar() {
   document.getElementById('tl-sidebar').classList.remove('open');
@@ -6286,6 +6490,12 @@ document.getElementById('tl-btn-folders').addEventListener('click', () => {
 document.getElementById('tl-empty-btn-folders').addEventListener('click', openTlSidebar);
 document.getElementById('tl-sidebar-close').addEventListener('click', closeTlSidebar);
 
+document.getElementById('tl-btn-open-window').addEventListener('click', () => {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  window.open(`index.html?openTierlist=${encodeURIComponent(tl.id)}`, '_blank', 'width=1100,height=700');
+});
+
 const _tlBtnCeSet = document.getElementById('tl-btn-ce-set');
 if (_tlBtnCeSet) {
   _tlBtnCeSet.addEventListener('click', () => {
@@ -6293,6 +6503,11 @@ if (_tlBtnCeSet) {
     if (tl) setCurrentEventTierlist(tl.id);
   });
 }
+
+document.getElementById('tl-btn-new-from-template').addEventListener('click', () => {
+  const tl = tlActiveTierlist();
+  if (tl && tl.isTemplate) tlOpenGenerateFromTemplateModal(tl.id);
+});
 
 // Fermer le menu contextuel TL actif sur Escape
 document.addEventListener('keydown', e => {
@@ -6324,9 +6539,8 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
-tlBtnNew.addEventListener('click', tlOpenNewModal);
 tlBtnNewTemplate.addEventListener('click', tlOpenNewTemplateModal);
-document.getElementById('tl-empty-btn-new').addEventListener('click', tlOpenNewModal);
+document.getElementById('tl-empty-btn-new').addEventListener('click', tlOpenNewTemplateModal);
 document.getElementById('tl-empty-btn-folder').addEventListener('click', () => tlOpenFolderModal('create'));
 
 tlModalNewConfirm.addEventListener('click', tlConfirmNewModal);
@@ -6398,7 +6612,6 @@ tlModalMoveCancel.addEventListener('click', () => { tlModalMove.classList.add('h
 tlModalMoveClose.addEventListener('click', () => { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; });
 
 tlBtnAddTier.addEventListener('click', () => tlOpenTierModal({ mode: 'create' }));
-document.getElementById('tl-btn-undo').addEventListener('click', tlUndo);
 tlModalTierConfirm.addEventListener('click', tlConfirmTierModal);
 tlModalTierCancel.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
 tlModalTierClose.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
@@ -6418,15 +6631,18 @@ tlInitSwatches();
 const TL_TEXT_CARD_COLOR = '#3a3a42';
 
 function _tlAddTextCard(tl, text) {
-  if (!tl.images) tl.images = [];
+  const root = _tlGroupRoot(tl);
+  if (!root.images) root.images = [];
   const maxImages = tlEffectiveMaxImages(tl);
-  if (tl.images.length >= maxImages) {
-    alert(`Limite atteinte — maximum ${maxImages} éléments par tierlist.`);
+  if (root.images.length >= maxImages) {
+    alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
     return;
   }
   const img = { id: uid(), type: 'text', name: text, color: TL_TEXT_CARD_COLOR };
-  tl.images.push(img);
-  tl.unplaced.push(img.id);
+  root.images.push(img);
+  _tlGetGroupMembers(tl).forEach(member => {
+    if (!member.unplaced.includes(img.id)) member.unplaced.push(img.id);
+  });
   tlSave();
   tlRender();
   const input = document.querySelector('.tl-add-text-input');
@@ -6453,19 +6669,11 @@ function tlOpenGenerateFromTemplateModal(templateId) {
 function _tlCreateFromTemplate(templateId, name) {
   const template = tlState.tierlists.find(t => t.id === templateId);
   if (!template) return null;
-  const copy = JSON.parse(JSON.stringify(template));
-  copy.id = uid();
-  copy.name = name;
-  copy.isTemplate = false;
+  // Pas de copie des images : la tierlist générée lit les éléments du template en continu (_tlGetGroupImages)
+  const copy = tlDefaultTierlist(name, false);
   copy.templateId = templateId;
-  const idMap = {};
-  copy.images = (copy.images || []).map(img => {
-    const newId = uid();
-    idMap[img.id] = newId;
-    return { ...img, id: newId };
-  });
-  copy.tiers = (copy.tiers || []).map(t => ({ ...t, id: uid(), items: [] }));
-  copy.unplaced = (template.unplaced || []).map(oid => idMap[oid]).filter(Boolean);
+  copy.folderId = template.folderId || null;
+  copy.unplaced = (template.unplaced || []).slice();
   tlState.tierlists.push(copy);
   return copy;
 }
@@ -6510,6 +6718,72 @@ document.getElementById('tl-btn-confirm-reset').addEventListener('click', () => 
 document.getElementById('tl-btn-cancel-reset').addEventListener('click', () => _tlModalConfirmReset.classList.add('hidden'));
 document.getElementById('tl-btn-close-confirm-reset').addEventListener('click', () => _tlModalConfirmReset.classList.add('hidden'));
 
+function tlRenderTrashList() {
+  const container = tlTrashList;
+  container.innerHTML = '';
+  const trash = tlState.trash || [];
+  if (trash.length === 0) {
+    container.innerHTML = '<p class="archived-empty">La corbeille est vide.</p>';
+    return;
+  }
+
+  const treeNodes = []; // { key, label, folderEntry, tierlists: [{ name, origIdx, fromParent }] }
+  function _getOrCreateNode(key, label) {
+    let node = treeNodes.find(n => n.key === key);
+    if (!node) { node = { key, label, folderEntry: null, tierlists: [] }; treeNodes.push(node); }
+    return node;
+  }
+
+  const separateTlIds = new Set(
+    trash.filter(e => e.type === 'tierlist').map(e => e.data?.id).filter(Boolean)
+  );
+
+  trash.forEach((entry, origIdx) => {
+    if (entry.type === 'folder') {
+      const node = _getOrCreateNode('__f__' + origIdx, entry.data?.name || '?');
+      node.folderEntry = { entry, origIdx };
+      (entry.data?._tierlists || []).forEach(tl => {
+        if (!separateTlIds.has(tl.id)) node.tierlists.push({ name: tl.name + _tlContextLabel(tl, false), fromParent: true });
+      });
+    } else if (entry.type === 'tierlist') {
+      const pf = entry.folderId ? (tlState.folders || []).find(f => f.id === entry.folderId) : null;
+      const key = entry.folderId ? entry.folderId : '__root__';
+      const node = _getOrCreateNode(key, pf ? pf.name : (entry.folderId ? '(dossier supprimé)' : '— Sans dossier —'));
+      const canRestore = !entry.folderId || !!pf;
+      node.tierlists.push({ name: (entry.data?.name || '?') + _tlContextLabel(entry.data || {}, false), origIdx, fromParent: false, canRestore });
+    }
+  });
+
+  treeNodes.forEach(node => {
+    const children = document.createElement('div');
+    children.className = 'tree-children tree-hidden';
+    let collapsed = true;
+    const row = _makeTreeNode(node.label, 0, collapsed, () => {
+      collapsed = !collapsed;
+      row.querySelector('.tree-arrow').classList.toggle('collapsed', collapsed);
+      children.classList.toggle('tree-hidden', collapsed);
+    });
+    if (node.folderEntry) {
+      row.appendChild(_makeArchiveButtons([{
+        text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore',
+        onClick: () => { tlTrashRestore(node.folderEntry.origIdx); }
+      }]));
+    }
+    container.appendChild(row);
+    container.appendChild(children);
+
+    node.tierlists.forEach(tl => {
+      const actions = tl.fromParent ? [] : [{
+        text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore',
+        disabled: !tl.canRestore,
+        onClick: () => { tlTrashRestore(tl.origIdx); }
+      }];
+      children.appendChild(_makeLeafRow(tl.name, 1, actions));
+    });
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
 tlBtnExport.addEventListener('click', tlExport);
 tlBtnCapture.addEventListener('click', tlCapture);
 
@@ -6525,11 +6799,47 @@ tlImgSizeSlider.addEventListener('input', () => {
   tlRender();
 });
 
-tlBtnShowArchived.addEventListener('click', () => {
+function tlOpenArchivesUnified() {
   tlRenderArchivedModal();
-  tlModalArchived.classList.remove('hidden');
+  _initPanelPosition(tlModalArchived, 'right');
+  _makePanelDraggable(tlModalArchived);
+  tlModalArchived.classList.add('open');
+}
+function tlCloseArchivesUnified() {
+  tlModalArchived.classList.remove('open');
+}
+document.getElementById('tl-btn-archives-unified').addEventListener('click', () => {
+  if (tlModalArchived.classList.contains('open')) tlCloseArchivesUnified();
+  else tlOpenArchivesUnified();
 });
-tlModalArchivedClose.addEventListener('click', () => tlModalArchived.classList.add('hidden'));
+tlModalArchivedClose.addEventListener('click', tlCloseArchivesUnified);
+
+function tlOpenTrashUnified() {
+  tlRenderTrashList();
+  _initPanelPosition(tlModalTrash, 'right');
+  _makePanelDraggable(tlModalTrash);
+  tlModalTrash.classList.add('open');
+}
+function tlCloseTrashUnified() {
+  tlModalTrash.classList.remove('open');
+}
+document.getElementById('tl-btn-trash-unified').addEventListener('click', () => {
+  if (tlModalTrash.classList.contains('open')) tlCloseTrashUnified();
+  else tlOpenTrashUnified();
+});
+tlModalTrashClose.addEventListener('click', tlCloseTrashUnified);
+
+document.getElementById('tl-btn-trash-empty-all').addEventListener('click', () => {
+  if ((tlState.trash || []).length === 0) return;
+  tlModalConfirmTrashEmpty.classList.remove('hidden');
+});
+document.getElementById('tl-btn-close-confirm-trash-empty').addEventListener('click', () => tlModalConfirmTrashEmpty.classList.add('hidden'));
+document.getElementById('tl-btn-cancel-trash-empty').addEventListener('click', () => tlModalConfirmTrashEmpty.classList.add('hidden'));
+document.getElementById('tl-btn-confirm-trash-empty').addEventListener('click', () => {
+  tlTrashEmpty();
+  tlModalConfirmTrashEmpty.classList.add('hidden');
+  tlRenderTrashList();
+});
 
 tlModalImgNameConfirm.addEventListener('click', tlConfirmRenameImg);
 tlModalImgNameCancel.addEventListener('click', () => { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; });
@@ -6554,10 +6864,20 @@ tlUnplacedZone.addEventListener('drop', e => {
 tlUnplacedZone.addEventListener('dragleave', tlDragLeave);
 
 // ── Limite d'images personnalisable ───────────────────────────────────────────
-tlMaxImagesInput.addEventListener('change', () => {
+tlMaxImagesInput.addEventListener('click', () => {
   const tl = tlActiveTierlist();
   if (!tl) return;
-  tlMaxImagesInput.value = tlSetMaxImages(tl, tlMaxImagesInput.value);
+  const current = tlEffectiveMaxImages(tl);
+  const { addItem } = _tlMakeCtxMenu(tlMaxImagesInput, null);
+  TL_MAX_IMAGES_CHOICES.forEach(n => {
+    const btn = addItem('', String(n), false, () => { tlMaxImagesInput.textContent = tlSetMaxImages(tl, n); tlRender(); });
+    if (current === n) {
+      const check = document.createElement('i');
+      check.setAttribute('data-lucide', 'check');
+      btn.insertBefore(check, btn.firstChild);
+      if (window.lucide) lucide.createIcons();
+    }
+  });
 });
 
 tlUnplacedSortBtn.addEventListener('click', () => {
@@ -6696,6 +7016,8 @@ _dbTierlist.on('value', snapshot => {
   _tlRemoteUpdate = true;
   const raw = snapshot.val();
   tlState = _tlNormalizeState(raw);
+  const _needsMigrationSave = tlState._tlMigrated;
+  delete tlState._tlMigrated;
   // Alimenter le cache src depuis les données Firebase
   tlState.tierlists.forEach(_tlCacheSrcs);
   // Valider que la tierlist active de cet utilisateur existe encore
@@ -6717,6 +7039,8 @@ _dbTierlist.on('value', snapshot => {
       }
     }
   }
+  _applySoloTierlistModeIfNeeded();
   tlRender();
   _tlRemoteUpdate = false;
+  if (_needsMigrationSave) tlSave();
 });
