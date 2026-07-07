@@ -95,17 +95,6 @@ body {
   color: var(--accent);
   letter-spacing: -0.02em;
 }
-.logo-tag {
-  margin-left: 10px;
-  font-size: 0.65rem;
-  font-family: 'Space Mono', monospace;
-  color: var(--text-faint);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border: 1px solid var(--border);
-  padding: 2px 7px;
-  border-radius: 4px;
-}
 
 .nav-group {
   display: flex;
@@ -258,6 +247,22 @@ body {
 .ctrl-row-grids         { border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .ctrl-row-toolbar       { padding-bottom: 4px; }
 
+/* Archives/Corbeille tout à droite de la rangée grilles */
+.ctrl-row-grids .btn-archives-unified { margin-left: auto; }
+
+/* Groupe central (réglages taille → Capture) centré entre Dossiers et Cases */
+.ctrl-row-toolbar-center {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  justify-content: center;
+}
+
+/* Cases tout à droite de la toolbar */
+.ctrl-row-toolbar .btn-cases-panel { flex-shrink: 0; }
+
 /* ── Boutons Dossiers / Cases toolbar — même style que Archives/Corbeille ── */
 .btn-folders-panel,
 .btn-cases-panel {
@@ -275,13 +280,6 @@ body {
   background: var(--accent-glow) !important;
   opacity: 1;
 }
-.ctrl-row-sep {
-  width: 1px;
-  height: 20px;
-  background: var(--border);
-  flex-shrink: 0;
-}
-
 /* ── Breadcrumb dans ctrl-row-grids ── */
 .grids-breadcrumb {
   display: flex;
@@ -393,6 +391,40 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* ── Sidebars fixes Dossiers (gauche) & Cases (droite) dans le layout bingo ── */
+/* Remplacent le comportement "drawer flottant" pour ces deux panneaux précis :
+   ils poussent le contenu au lieu de flotter par-dessus, et se rétractent en largeur 0. */
+.folders-sidebar,
+.cases-sidebar {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  width: 0;
+  max-width: none;
+  max-height: none;
+  border-width: 0;
+  margin: 0;
+  overflow: hidden;
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition: width 0.22s ease, border-width 0.22s ease;
+  align-self: stretch;
+}
+.folders-sidebar.open,
+.cases-sidebar.open {
+  width: 400px;
+  border-width: 1px;
+}
+.folders-sidebar > *,
+.cases-sidebar > * {
+  width: 400px;
+}
+.folders-sidebar .folders-panel-header,
+.cases-sidebar .folders-panel-header {
+  cursor: default;
 }
 
 /* ── Noeuds dans le drawer dossiers ── */
@@ -627,14 +659,37 @@ body {
 
 /* ── Bingo layout ── */
 .bingo-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
   position: relative;
   width: 100%;
   min-width: 0;
-  overflow: hidden;
+}
+.bingo-layout > .folders-sidebar.open { margin-right: 12px; }
+.bingo-layout > .cases-sidebar.open { margin-left: 12px; }
+
+/* ── Mode "fenêtre grille(s) solo" (popup ouverte via square-arrow-out-up-right) ── */
+/* On garde uniquement la toolbar globale utile (verrou + générer/vider/reset + capture) */
+body.solo-grid-mode .header,
+body.solo-grid-mode .ctrl-row-grids {
+  display: none;
+}
+body.solo-grid-mode .main {
+  padding: 8px;
+}
+body.solo-grid-mode .grid-view-theme-subtheme-row {
+  display: none;
+}
+body.solo-grid-mode .btn-open-grids-window {
+  display: none;
+}
+body.solo-grid-mode .ctrl-row-toolbar .btn-folders-panel,
+body.solo-grid-mode .ctrl-row-toolbar .btn-cases-panel {
+  display: none;
+}
+body.solo-grid-mode .ctrl-row-toolbar {
+  justify-content: center;
 }
 
 /* ── Panneaux ── */
@@ -649,6 +704,7 @@ body {
 }
 
 .panel-grid {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
 }
@@ -718,9 +774,19 @@ body {
   line-height: 1;
 }
 .btn-icon:hover { background: #2db85a; }
-#btn-import-elements-panel { background: #4b5563; color: #e5e7eb; font-size: 1rem; }
+#btn-import-elements-panel {
+  width: auto;
+  min-width: 0;
+  padding: 0 12px;
+  gap: 6px;
+  background: #4b5563;
+  color: #e5e7eb;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
 #btn-import-elements-panel:hover { background: #6b7280; }
-#btn-import-elements-panel [data-lucide] { margin-right: 0; }
+#btn-import-elements-panel [data-lucide] { width: 15px; height: 15px; margin-right: 0; }
 
 /* ── Tabs ── */
 .elements-tabs {
@@ -990,18 +1056,6 @@ textarea.element-edit-input {
   gap: 10px;
 }
 
-.toolbar-spacer {
-  flex: 1;
-}
-
-.grid-toolbar-sep {
-  width: 1px;
-  height: 24px;
-  background: var(--border);
-  flex-shrink: 0;
-  margin: 0 4px;
-}
-
 .grid-size-control {
   display: flex;
   align-items: center;
@@ -1179,6 +1233,16 @@ textarea.element-edit-input {
   border: 1px solid var(--border);
 }
 .btn-action.btn-screenshot-bingo:hover { border-color: var(--success); color: var(--success); background: rgba(71,200,135,0.1); }
+
+/* ── Bouton "Ouvrir dans une nouvelle fenêtre" (global) — même gris que "Importer cases" ── */
+.btn-action.btn-open-grids-window {
+  background: #4b5563;
+  color: #e5e7eb;
+  border: 1px solid #4b5563;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-action.btn-open-grids-window:hover { background: #6b7280; border-color: #6b7280; }
 
 /* ── Groupe Bloquer / Générer / Reset ── */
 .lock-group {

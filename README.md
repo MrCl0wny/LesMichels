@@ -29,6 +29,9 @@
 - **Génération sélective** : option pour remplir uniquement les cases vides, laisser les cases existantes intactes
 - **Déplacer un dossier** : via drag & drop (poignée `⠿`) dans le panneau Dossiers ou via l'option "Déplacer" du menu contextuel — avec choix de conserver ou adopter les cases du dossier d'arrivée
 - **Importer des cases** : copie les cases d'un autre dossier dans le dossier actif (sans doublon), accessible depuis le menu contextuel
+- **Panneaux Dossiers / Cases fixes** : sidebars rétractables poussant le contenu (Dossiers s'ouvre à gauche, Cases à droite, toutes deux 400px de large), ouverture/fermeture via leurs boutons dédiés dans la toolbar
+- **Archivage groupé uniquement** : impossible d'archiver une grille seule — l'archivage se fait toujours via le dossier parent (qui archive ses grilles en cascade)
+- **Ouvrir les grilles dans une nouvelle fenêtre** : bouton "Ouvrir dans une nouvelle fenêtre" dans la toolbar globale (avant le cadenas) — ouvre toutes les grilles affichées via `index.html?openGrids=id1,id2,...` dans une fenêtre séparée, déplaçable librement, entièrement interactive et synchronisée Firebase. La fenêtre garde la toolbar globale utile (réglages Grille/Texte, Générer grilles/cases vides, Vider, Reset, Capture) mais masque l'en-tête et la navigation dossiers
 
 ### Tier List
 - Création et gestion de tier lists avec dossiers

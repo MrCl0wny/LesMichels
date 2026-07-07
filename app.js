@@ -3,6 +3,16 @@
 ═══════════════════════════════════════════════ */
 
 // ──────────────────────────────────────────────
+// Mode "fenêtre grille(s) solo" (ouvert via un bouton "nouvelle fenêtre")
+// ──────────────────────────────────────────────
+const _soloGridParams = new URLSearchParams(window.location.search);
+const _soloGridIds = (_soloGridParams.get('openGrids') || _soloGridParams.get('openGrid') || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+let _soloGridApplied = false;
+
+// ──────────────────────────────────────────────
 // Désactivation des bulles d'aide (tooltips title="...")
 // Pour les réactiver : mettre DISABLE_TITLE_TOOLTIPS à false
 // ──────────────────────────────────────────────
@@ -277,7 +287,7 @@ function loadUserPrefs() {
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
     if (prefs.tlNoSelection       != null) _tlLocalNoSelection      = !!prefs.tlNoSelection;
     // Page active
-    if (prefs.activePage   != null && window._switchPage) _switchPage(prefs.activePage);
+    if (prefs.activePage   != null && window._switchPage && _soloGridIds.length === 0) _switchPage(prefs.activePage);
     _prefsReady = true;
     // Appliquer les prefs visuelles
     gridHeightInput.value = _localGridHeight;
@@ -291,6 +301,26 @@ function loadUserPrefs() {
       _applyPrefsAndRender();
     }
   }).catch(e => console.warn('Prefs load error:', e));
+}
+
+function _applySoloGridModeIfNeeded() {
+  if (_soloGridIds.length === 0) return;
+  const firstFolder = findParentFolder(state.folders, _soloGridIds[0]);
+  if (!firstFolder) return;
+  const folderGridIds = new Set((firstFolder.grids || []).map(gx => gx.id));
+  const validIds = _soloGridIds.filter(id => folderGridIds.has(id));
+  if (validIds.length === 0) return;
+  _localActiveFolderId = firstFolder.id;
+  _selectedGridIds = validIds;
+  firstFolder.activeGridId = validIds[0];
+  if (!_soloGridApplied) {
+    _soloGridApplied = true;
+    const grids = (firstFolder.grids || []).filter(gx => validIds.includes(gx.id));
+    document.title = (grids.length === 1
+      ? (grids[0].title || grids[0].name || 'Grille')
+      : `${grids.length} grilles`) + ' — LesMichels';
+    document.body.classList.add('solo-grid-mode');
+  }
 }
 
 function _applyPrefsAndRender() {
@@ -320,6 +350,7 @@ function _applyPrefsAndRender() {
       _selectedGridIds = (folder.grids || []).filter(g => !g.archived).slice(0, 3).map(g => g.id);
     }
   }
+  _applySoloGridModeIfNeeded();
   renderAllFolders();
   renderElements();
   renderGridsList();
@@ -727,6 +758,21 @@ function setCurrentEventFolder(id) {
   saveState();
   renderCurrentEventButton();
   renderFoldersPanelTree();
+}
+
+let _pendingCurrentEventFolderId = null;
+
+function confirmSetCurrentEventFolder(id) {
+  // Retirer la soirée en cours ne nécessite pas de confirmation, seulement la définir
+  if (state.currentEventFolderId === id) {
+    setCurrentEventFolder(id);
+    return;
+  }
+  _pendingCurrentEventFolderId = id;
+  const folder = findFolderById(state.folders, id);
+  const msg = document.getElementById('modal-current-event-msg');
+  if (msg) msg.textContent = folder ? `Définir "${folder.name}" comme soirée en cours ?` : 'Définir ce dossier comme soirée en cours ?';
+  document.getElementById('modal-confirm-current-event').classList.remove('hidden');
 }
 
 function setCurrentEventTierlist(id) {
@@ -1594,7 +1640,6 @@ function renderFoldersPanelTree() {
         const { addItem } = _tlMakeCtxMenu(anchor, e);
         addItem('pencil', 'Renommer',   false, () => openRenameGridModal(g.id));
         addItem('copy-plus', 'Dupliquer',  false, () => duplicateGrid(g.id));
-        addItem('package', 'Archiver',  true,  () => archiveGrid(g.id));
         addItem('trash-2', 'Supprimer', true,  () => deleteGrid(g.id));
       };
       gCtx.addEventListener('click', e => openGridMenu(e, gRow));
@@ -1632,7 +1677,7 @@ function renderFoldersPanelTree() {
       addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
       const ceIsActive = state.currentEventFolderId === f.id;
       const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
-      addItem('party-popper', ceLabel,                  false, () => setCurrentEventFolder(f.id));
+      addItem('party-popper', ceLabel,                  false, () => confirmSetCurrentEventFolder(f.id));
 
       addItem('package', 'Archiver',            true,  () => archiveFolder(f.id));
       addItem('trash-2', 'Supprimer',           true,  () => deleteFolder(f.id));
@@ -1688,10 +1733,7 @@ function _makePanelDraggable(panel) {
 
 function openFoldersPanel() {
   renderFoldersPanelTree();
-  const panel = document.getElementById('folders-panel');
-  _initPanelPosition(panel, 'left');
-  _makePanelDraggable(panel);
-  panel.classList.add('open');
+  document.getElementById('folders-panel').classList.add('open');
 }
 
 function closeFoldersPanel() {
@@ -2179,21 +2221,6 @@ function confirmRenameGrid() {
   if (!_renameGridId) return;
   renameGrid(_renameGridId, renameGridInput.value);
   closeRenameGridModal();
-}
-
-function archiveGrid(id) {
-  const s = activeSubtheme();
-  if (!s) return;
-  const g = s.grids.find(g => g.id === id);
-  if (!g) return;
-  g.archived = true;
-  if (s.activeGridId === id) {
-    const remaining = s.grids.filter(x => !x.archived);
-    s.activeGridId = remaining.length > 0 ? remaining[0].id : null;
-  }
-  saveState();
-  renderGridsList();
-  renderGrid();
 }
 
 
@@ -2740,6 +2767,8 @@ function renderGrid() {
   const g = activeGrid();
 
   updateClearGridsButton();
+  updateFillEmptyButtonState();
+  updateOpenGridsWindowButton();
   gridWrapper.innerHTML = '';
   gridWrapper.style.justifyContent = '';
   gridWrapper.style.alignItems = '';
@@ -2890,7 +2919,6 @@ function renderGrid() {
   });
 
   applyFontScale();
-  updateFillEmptyButtonState();
   if (window.lucide) lucide.createIcons();
 
   // Déclencher après que les wrappers sont dans le DOM et que le layout est calculé
@@ -3246,10 +3274,7 @@ chkLockGenerate.addEventListener('click', () => {
 let _isDraggingElement = false;
 
 function openCasesPanel() {
-  const panel = document.getElementById('cases-panel');
-  _initPanelPosition(panel, 'left');
-  _makePanelDraggable(panel);
-  panel.classList.add('open');
+  document.getElementById('cases-panel').classList.add('open');
 }
 function closeCasesPanel() {
   if (_isDraggingElement) return;
@@ -3321,7 +3346,7 @@ const _ctxFolderSetCurrentEventBtn = document.getElementById('ctx-folder-set-cur
 if (_ctxFolderSetCurrentEventBtn) _ctxFolderSetCurrentEventBtn.addEventListener('click', () => {
   const id = _ctxThemeId;
   closeCtxMenuFolder();
-  if (id) setCurrentEventFolder(id);
+  if (id) confirmSetCurrentEventFolder(id);
 });
 
 const _ctxFolderCancelBtn = document.getElementById('ctx-folder-cancel');
@@ -3333,7 +3358,6 @@ if (_ctxFolderCancelBtn) _ctxFolderCancelBtn.addEventListener('click', () => clo
 const ctxMenuGrid    = document.getElementById('ctx-menu-grid');
 const ctxGridRename    = document.getElementById('ctx-grid-rename');
 const ctxGridDuplicate = document.getElementById('ctx-grid-duplicate');
-const ctxGridArchive   = document.getElementById('ctx-grid-archive');
 let _ctxGridId = null;
 
 function openCtxMenuGrid(id, e, anchorEl) {
@@ -3354,10 +3378,6 @@ ctxGridRename.addEventListener('click', () => {
 });
 ctxGridDuplicate.addEventListener('click', () => {
   if (_ctxGridId) duplicateGrid(_ctxGridId);
-  closeCtxMenuGrid();
-});
-ctxGridArchive.addEventListener('click', () => {
-  if (_ctxGridId) archiveGrid(_ctxGridId);
   closeCtxMenuGrid();
 });
 document.getElementById('ctx-grid-delete').addEventListener('click', () => {
@@ -3458,6 +3478,13 @@ window.addEventListener('scroll', () => {
   closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuSubtheme(); closeCtxMenuElement(); closeCtxMenuElementArchived();
 }, { passive: true });
 
+document.getElementById('btn-open-grids-window').addEventListener('click', () => {
+  const grids = getVisibleGrids();
+  if (grids.length === 0) return;
+  const ids = grids.map(g => g.id).join(',');
+  window.open(`index.html?openGrids=${encodeURIComponent(ids)}`, '_blank', 'width=1100,height=700');
+});
+
 btnGenerate.addEventListener('click', () => {
   if (manualMode) return;
   const t = activeTheme();
@@ -3507,12 +3534,14 @@ function updateFillEmptyButtonState() {
 
   if (!t || t.locked || !s) {
     btn.disabled = true;
+    btn.classList.add('btn-disabled');
     return;
   }
 
   const grids = getVisibleGrids();
   if (grids.length === 0) {
     btn.disabled = true;
+    btn.classList.add('btn-disabled');
     return;
   }
 
@@ -3544,6 +3573,7 @@ function updateFillEmptyButtonState() {
   }
 
   btn.disabled = !canFillEmpty;
+  btn.classList.toggle('btn-disabled', !canFillEmpty);
 }
 
 
@@ -3599,6 +3629,14 @@ function updateClearGridsButton() {
   btn.classList.toggle('btn-disabled', locked);
 }
 
+function updateOpenGridsWindowButton() {
+  const btn = document.getElementById('btn-open-grids-window');
+  if (!btn) return;
+  const noGrids = getVisibleGrids().length === 0;
+  btn.disabled = noGrids;
+  btn.classList.toggle('btn-disabled', noGrids);
+}
+
 btnClearGrids.addEventListener('click', () => {
   const t = activeTheme();
   if (!t || t.locked) return;
@@ -3646,6 +3684,18 @@ document.getElementById('btn-close-confirm-clear').addEventListener('click', () 
   document.getElementById('modal-confirm-clear').classList.add('hidden');
   _clearCellCallback = null;
 });
+
+function closeConfirmCurrentEventModal() {
+  document.getElementById('modal-confirm-current-event').classList.add('hidden');
+  _pendingCurrentEventFolderId = null;
+}
+document.getElementById('btn-confirm-current-event').addEventListener('click', () => {
+  const id = _pendingCurrentEventFolderId;
+  closeConfirmCurrentEventModal();
+  if (id) setCurrentEventFolder(id);
+});
+document.getElementById('btn-cancel-current-event').addEventListener('click', closeConfirmCurrentEventModal);
+document.getElementById('btn-close-confirm-current-event').addEventListener('click', closeConfirmCurrentEventModal);
 
 btnScreenshot.addEventListener('click', bingoScreenshot);
 
@@ -3732,7 +3782,7 @@ if (_btnCeNavigate) {
 const _btnCeSet = document.getElementById('btn-ce-set');
 if (_btnCeSet) {
   _btnCeSet.addEventListener('click', () => {
-    if (_localActiveFolderId) setCurrentEventFolder(_localActiveFolderId);
+    if (_localActiveFolderId) confirmSetCurrentEventFolder(_localActiveFolderId);
   });
 }
 
@@ -4059,15 +4109,11 @@ renameGridInput.addEventListener('keydown', e => {
 (function setupNav() {
   const navBtns = document.querySelectorAll('.nav-btn[data-page]');
   const pages   = document.querySelectorAll('.page');
-  const logoTag = document.querySelector('.logo-tag');
-
-  const pageLabels = { bingo: 'Bingo', tierlist: 'Tier List' };
 
   window._switchPage = (target) => {
     if (!document.getElementById(`page-${target}`)) return;
     navBtns.forEach(b => b.classList.toggle('active', b.dataset.page === target));
     pages.forEach(p => p.classList.toggle('active', p.id === `page-${target}`));
-    if (logoTag) logoTag.textContent = pageLabels[target] || target;
     if (typeof renderCurrentEventButton === 'function') renderCurrentEventButton();
   };
 
@@ -5050,13 +5096,13 @@ function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
   });
   addItem('palette', 'Modifier la couleur', false, () => tlOpenTierModal({ mode: 'color', tl, tier }));
   addSep();
-  addItem('', '↑ Ajouter un tier au-dessus', false, () => {
+  addItem('chevron-up', 'Ajouter un tier au-dessus', false, () => {
     tlPushUndo();
     tl.tiers.splice(tierIdx, 0, { id: uid(), label: '?', color: '#888888', items: [] });
     tlSave(); tlRender();
     tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx]);
   });
-  addItem('', '↓ Ajouter un tier en-dessous', false, () => {
+  addItem('chevron-down', 'Ajouter un tier en-dessous', false, () => {
     tlPushUndo();
     tl.tiers.splice(tierIdx + 1, 0, { id: uid(), label: '?', color: '#888888', items: [] });
     tlSave(); tlRender();
