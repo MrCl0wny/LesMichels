@@ -5339,7 +5339,27 @@ function tlRenderUnplaced(tl) {
       if (img) tlUnplacedZone.appendChild(tlBuildImgCard(tl, img, imgSize));
     });
   }
-  tlUnplacedCount.textContent = tl.unplaced.length + ' / ' + _tlGetGroupImages(tl).length;
+  const tlOwnTotal = tl.unplaced.length + tl.tiers.reduce((sum, t) => sum + t.items.length, 0);
+  tlUnplacedCount.textContent = tl.unplaced.length + ' / ' + tlOwnTotal;
+  tlUnplacedCount.style.cursor = 'pointer';
+  tlUnplacedCount.title = 'Debug temporaire : clique pour voir le détail';
+  tlUnplacedCount.onclick = () => {
+    const groupImgs = _tlGetGroupImages(tl);
+    const names = groupImgs.map(i => i.name || `[sans nom] ${i.id}`);
+    const counts = {};
+    names.forEach(n => counts[n] = (counts[n] || 0) + 1);
+    const doublons = Object.entries(counts).filter(([, c]) => c > 1);
+    let msg = `Total images dans le template (racine du groupe) : ${groupImgs.length}\n`;
+    msg += `Non placées dans CETTE tierlist : ${tl.unplaced.length}\n\n`;
+    if (doublons.length) {
+      msg += `⚠️ Doublons détectés :\n` + doublons.map(([n, c]) => `  - "${n}" x${c}`).join('\n') + '\n\n';
+    } else {
+      msg += `Aucun doublon de nom détecté.\n\n`;
+    }
+    msg += `Liste complète (${groupImgs.length}) :\n` + names.join('\n');
+    alert(msg);
+    console.log('DEBUG groupImages', groupImgs);
+  };
   const _sortIcons = { manual: 'hand', alpha: 'arrow-down-a-z', date: 'arrow-down-0-1' };
   const _sortLabels = { manual: 'Manuel', alpha: 'Alphabétique', date: "Date d'ajout" };
   const _sortMode = tl.unplacedSort || 'manual';
