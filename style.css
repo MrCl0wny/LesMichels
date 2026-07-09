@@ -155,6 +155,15 @@ body {
   position: relative;
 }
 
+.tl-control-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  position: relative;
+}
+
 .btn-current-event {
   display: flex;
   align-items: center;
@@ -246,9 +255,6 @@ body {
 .ctrl-row-folders       { border-bottom: 1px solid var(--border); padding-bottom: 8px; padding-left: 12px; }
 .ctrl-row-grids         { border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .ctrl-row-toolbar       { padding-bottom: 4px; }
-
-/* Archives/Corbeille tout à droite de la rangée grilles */
-.ctrl-row-grids .btn-archives-unified { margin-left: auto; }
 
 /* Groupe central (réglages taille → Capture) centré entre Dossiers et Cases */
 .ctrl-row-toolbar-center {
@@ -391,6 +397,18 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.folders-panel-footer {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+.folders-panel-footer .btn-action {
+  flex: 1;
+  text-align: center;
 }
 
 /* ── Sidebars fixes Dossiers (gauche) & Cases (droite) dans le layout bingo ── */
@@ -2250,6 +2268,36 @@ textarea.element-edit-input {
   border-color: #ff6050 !important;
 }
 
+/* ── Corps éditeur (tiers + non placés) ── */
+.tl-editor-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Template : ni image ni placement possible dans les tiers — panneau Tiers (labels seuls,
+   largeur réduite) et panneau Éléments non placés affichés côte à côte plutôt qu'empilés. */
+.tl-editor-body--template {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 16px;
+}
+.tl-editor-body--template .tl-tiers-zone {
+  width: 220px;
+  flex-shrink: 0;
+}
+.tl-editor-body--template .tl-tier-row { min-height: 56px; }
+.tl-editor-body--template .tl-tier-label-cell { width: 100%; min-width: 0; }
+.tl-editor-body--template .tl-tier-images { display: none; }
+.tl-editor-body--template .tl-unplaced-section {
+  flex: 1;
+  min-width: 0;
+  height: 60vh;
+}
+.tl-editor-body--template .tl-unplaced-zone {
+  flex: 1;
+  overflow-y: auto;
+}
+
 /* ── Zone des tiers ── */
 .tl-tiers-zone {
   display: flex;
@@ -2307,12 +2355,17 @@ textarea.element-edit-input {
   border: 1px solid rgba(255,255,255,0.6);
   border-radius: 3px;
   color: #111;
+  font-family: inherit;
   font-size: 1.1rem;
   font-weight: 800;
+  line-height: 1.1;
   text-align: center;
   padding: 2px 4px;
   outline: none;
   box-sizing: border-box;
+  resize: none;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 .tl-tier-label-dragging { opacity: 0.4; }

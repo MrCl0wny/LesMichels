@@ -29,7 +29,7 @@
 - **Génération sélective** : option pour remplir uniquement les cases vides, laisser les cases existantes intactes
 - **Déplacer un dossier** : via drag & drop (poignée `⠿`) dans le panneau Dossiers ou via l'option "Déplacer" du menu contextuel — avec choix de conserver ou adopter les cases du dossier d'arrivée
 - **Importer des cases** : copie les cases d'un autre dossier dans le dossier actif (sans doublon), accessible depuis le menu contextuel
-- **Panneaux Dossiers / Cases fixes** : sidebars rétractables poussant le contenu (Dossiers s'ouvre à gauche, Cases à droite, toutes deux 400px de large), ouverture/fermeture via leurs boutons dédiés dans la toolbar
+- **Panneaux Dossiers / Cases fixes** : sidebars rétractables poussant le contenu (Dossiers s'ouvre à gauche, Cases à droite, toutes deux 400px de large), ouverture/fermeture via leurs boutons dédiés dans la toolbar. Archives et Corbeille sont accessibles tout en bas du panneau Dossiers
 - **Archivage groupé uniquement** : impossible d'archiver une grille seule — l'archivage se fait toujours via le dossier parent (qui archive ses grilles en cascade)
 - **Ouvrir les grilles dans une nouvelle fenêtre** : bouton "Ouvrir dans une nouvelle fenêtre" dans la toolbar globale (avant le cadenas) — ouvre toutes les grilles affichées via `index.html?openGrids=id1,id2,...` dans une fenêtre séparée, déplaçable librement, entièrement interactive et synchronisée Firebase. La fenêtre garde la toolbar globale utile (réglages Grille/Texte, Générer grilles/cases vides, Vider, Reset, Capture) mais masque l'en-tête et la navigation dossiers
 
@@ -42,15 +42,19 @@
 - **Capacité max à 4 paliers fixes** : 50 / 100 / 200 / 500 éléments par groupe, choix via un menu au clic sur "Capacité max :"
 - **Anti-doublon à l'import** : une image déjà présente dans le groupe (même contenu) n'est pas réimportée
 - **Suppression rapide** : clic gauche sur un élément pour le sélectionner, puis touche Suppr/Retour arrière pour le supprimer (propagé à tout le groupe)
-- **Compteur "M / N"** : le badge "Éléments non placés" affiche le nombre d'éléments non placés sur le total du groupe
+- **Compteur "M / N"** : le badge "Éléments non placés" affiche le nombre d'éléments non placés sur le total propre à la tierlist affichée (pas le total de tout le groupe) — un nettoyage automatique au chargement déduplique les éventuels éléments en double accumulés par le passé dans un template
 - **Tri des éléments non placés** : par défaut, ordre manuel (réordonnable librement par drag & drop). Le bouton affiche explicitement le mode actif ("Tri : Manuel" / "Tri : Alphabétique" / "Tri : Date d'ajout") et ouvre un menu pour en changer ; dès qu'un élément est de nouveau glissé pour être repositionné, le tri repasse automatiquement en mode manuel
 - **Images non rognées** : les images non carrées s'affichent en entier (letterboxées) au lieu d'être coupées
 - **Cartes texte** : une petite barre "+ Texte..." toujours visible à côté du bouton d'import — tape un texte, Entrée pour l'ajouter (fond gris foncé fixe), classable comme une image dans les tiers
-- **Génération depuis un template** : sur un template, un bouton "+ Tier list" apparaît dans la toolbar (ou clic droit → "Générer depuis ce template") et ouvre une modal avec noms prédéfinis Jérôme / Adrien / Damien ou un nom personnalisé. Le titre de l'éditeur affiche "NomTemplate › NomTierlist"
-- **Panneau Dossiers fixe (400px)** : même comportement que le Bingo — sidebar qui pousse le contenu au lieu de flotter, ouverture/fermeture via le bouton dédié
+- **Génération depuis un template** : sur un template, un bouton "+ Tier list" apparaît dans la toolbar (ou clic droit → "Générer depuis ce template") et ouvre une modal avec noms prédéfinis Jérôme / Adrien / Damien ou un nom personnalisé. Le titre de l'éditeur affiche "NomTemplate › NomTierlist". Les tiers (labels et couleurs) du template sont hérités par la tierlist générée
+- **Panneau de contrôle Tier List** : au-dessus de l'éditeur, affiche des bulles pour naviguer entre le template et ses tierlists générées (sélection unique — cliquer une bulle ouvre directement cette tierlist), visible uniquement quand la tierlist active fait partie d'un tel groupe. Chaque bulle a un bouton "options" (3 points, clic droit possible aussi) donnant accès à Renommer/Dupliquer/Ranger/Soirée en cours/Archiver/Supprimer, comme les grilles côté Bingo
+- **Un template peut être défini comme soirée en cours**, comme n'importe quelle tierlist
+- **Panneau Dossiers fixe (400px)** : même comportement que le Bingo — sidebar qui pousse le contenu au lieu de flotter, ouverture/fermeture via le bouton dédié. Archives et Corbeille sont accessibles tout en bas de ce panneau
 - **Dossiers, tierlists et templates déplaçables par glisser-déposer** : poignée dédiée (icône grip, curseur main) sur chaque ligne du panneau Dossiers
-- **Ouvrir dans une nouvelle fenêtre (gris, comme le Bingo) / Archives / Corbeille** : trois boutons dans la toolbar de l'éditeur, alignés à droite pour Archives/Corbeille (le reste de la toolbar est centré), avec le même comportement que côté Bingo (drawer flottant pour Archives/Corbeille, fenêtre séparée pour l'édition solo)
+- **Ouvrir dans une nouvelle fenêtre (gris, comme le Bingo)** : bouton dans la toolbar de l'éditeur, avec le même comportement que côté Bingo (fenêtre séparée pour l'édition solo)
+- **Bouton Annuler** : annule la dernière action (ajout/suppression d'élément, de tier, drag & drop, etc.)
 - **Suppression définitive** : option "Supprimer" disponible sur les dossiers, templates et tierlists (clic droit), envoie à la Corbeille
+- **Affichage dédié pour un template** : les tiers (labels/couleurs uniquement, sans zone de dépose ni hint — un template ne peut de toute façon jamais recevoir d'élément classé dans un tier) sont affichés dans une colonne étroite à gauche, et "Éléments non placés" occupe le reste de l'espace à droite, côte à côte plutôt qu'empilés. Une tierlist normale (générée depuis un template) garde l'affichage classique empilé
 
 ---
 

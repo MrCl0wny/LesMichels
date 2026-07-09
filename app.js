@@ -2776,6 +2776,24 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   return { wrapper, bingoLines };
 }
 
+// "Reset" décoche toutes les cases de toutes les grilles non archivées du sous-thème actif — inutile
+// (et donc désactivé) s'il n'y a ni dossier/sous-thème actif, si le dossier est verrouillé, ou si rien
+// n'est actuellement coché (grilles ET persistentCheckedIds, que Reset vide aussi).
+function updateResetButton() {
+  const t = activeTheme();
+  const s = activeSubtheme();
+  if (!t || t.locked || !s) {
+    btnReset.disabled = true;
+    btnReset.classList.add('btn-disabled');
+    return;
+  }
+  const hasCheckedCell = (s.grids || []).some(gx => !gx.archived && gx.grid.some(c => c.checked));
+  const hasPersistent = (s.persistentCheckedIds || []).length > 0;
+  const nothingToReset = !hasCheckedCell && !hasPersistent;
+  btnReset.disabled = nothingToReset;
+  btnReset.classList.toggle('btn-disabled', nothingToReset);
+}
+
 function renderGrid() {
   const t = activeTheme();
   const s = activeSubtheme();
@@ -2784,6 +2802,7 @@ function renderGrid() {
   updateClearGridsButton();
   updateFillEmptyButtonState();
   updateOpenGridsWindowButton();
+  updateResetButton();
   gridWrapper.innerHTML = '';
   gridWrapper.style.justifyContent = '';
   gridWrapper.style.alignItems = '';
@@ -2804,8 +2823,6 @@ function renderGrid() {
     bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
-    btnReset.disabled = false;
-    btnReset.classList.remove('btn-disabled');
     _setLockGenerateChecked(false);
     return;
   }
@@ -2824,8 +2841,6 @@ function renderGrid() {
     bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
-    btnReset.disabled = false;
-    btnReset.classList.remove('btn-disabled');
     _setLockGenerateChecked(false);
     return;
   }
@@ -2850,8 +2865,6 @@ function renderGrid() {
     bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
-    btnReset.disabled = false;
-    btnReset.classList.remove('btn-disabled');
     return;
   }
 
@@ -2865,9 +2878,6 @@ function renderGrid() {
   const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
   const activeCount = (s.elements || []).filter(e => !sArchivedIds.includes(e.id)).length;
   const enoughElements = activeCount >= n * n;
-  btnReset.disabled = locked;
-  btnReset.classList.toggle('btn-disabled', locked);
-  updateClearGridsButton();
   if (enoughElements) gridError.classList.add('hidden');
 
   const gridsToShow = getVisibleGrids();
@@ -3635,13 +3645,17 @@ document.getElementById('btn-close-confirm-reset').addEventListener('click', () 
 const btnClearGrids = document.getElementById('btn-clear-grids');
 let _clearGridsTarget = 'visible'; // 'visible' ou gridId pour per-grille
 
+// "Vider" remet à vide toutes les cases remplies des grilles affichées non verrouillées — inutile
+// (et donc désactivé) si le dossier est verrouillé, ou si aucune grille éligible n'a de case remplie.
 function updateClearGridsButton() {
   const btn = document.getElementById('btn-clear-grids');
   if (!btn) return;
   const t = activeTheme();
   const locked = !t || t.locked;
-  btn.disabled = locked;
-  btn.classList.toggle('btn-disabled', locked);
+  const grids = locked ? [] : getVisibleGrids().filter(gx => !gx.locked);
+  const nothingToClear = locked || grids.every(gx => gx.grid.every(c => !c.elementId));
+  btn.disabled = nothingToClear;
+  btn.classList.toggle('btn-disabled', nothingToClear);
 }
 
 function updateOpenGridsWindowButton() {
@@ -4186,6 +4200,10 @@ let _tlLocalShowLabels      = null; // null = pas encore chargé
 let _tlLocalImgSize         = null;
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
 let _tlLocalNoSelection     = false; // true = l'utilisateur a délibérément désélectionné
+// Dernier groupe (id du template racine) affiché dans le panneau de contrôle — reste mémorisé même
+// quand _tlLocalActiveTierlistId passe à null (désélection), pour garder les bulles du groupe visibles
+// (comme le Bingo garde les bulles de grilles du dossier actif même quand aucune grille n'est affichée).
+let _tlLastGroupRootId = null;
 
 function tlSave() {
   if (_tlRemoteUpdate) return;
@@ -4225,6 +4243,46 @@ function _tlNormalizeState(parsed) {
     const existingIds = new Set(template.images.map(i => i.id));
     tl.images.forEach(img => { if (!existingIds.has(img.id)) { template.images.push(img); existingIds.add(img.id); } });
     tl.images = [];
+    _tlMigrated = true;
+  });
+  // Nettoyage : la migration ci-dessus a pu, par le passé, dupliquer des images identiques (même
+  // contenu, ids différents) venant de plusieurs tierlists générées dans un même template — gonflant
+  // artificiellement son compteur d'éléments. On déduplique chaque template par contenu réel (src pour
+  // une image, name+color pour une carte texte), en remappant toutes les références (unplaced/tiers)
+  // de tous les membres du groupe vers l'id conservé, puis on retire les ids orphelins (qui ne
+  // pointent plus vers aucune image existante).
+  parsed.tierlists.forEach(template => {
+    if (!template.isTemplate || !Array.isArray(template.images) || template.images.length === 0) return;
+    const keyOf = img => img.type === 'text' ? 'text:' + img.name + ':' + img.color : 'img:' + img.src;
+    const seen = new Map(); // clé de contenu -> id conservé
+    const idRemap = new Map(); // id dupliqué -> id conservé
+    const dedupedImages = [];
+    template.images.forEach(img => {
+      const key = keyOf(img);
+      if (seen.has(key)) {
+        idRemap.set(img.id, seen.get(key));
+      } else {
+        seen.set(key, img.id);
+        dedupedImages.push(img);
+      }
+    });
+    if (idRemap.size === 0) return;
+    template.images = dedupedImages;
+    const validIds = new Set(dedupedImages.map(i => i.id));
+    const members = parsed.tierlists.filter(t => t.id === template.id || t.templateId === template.id);
+    members.forEach(member => {
+      const remapAndDedupe = ids => {
+        const out = [];
+        const outSeen = new Set();
+        ids.forEach(id => {
+          const realId = idRemap.get(id) || id;
+          if (validIds.has(realId) && !outSeen.has(realId)) { out.push(realId); outSeen.add(realId); }
+        });
+        return out;
+      };
+      member.unplaced = remapAndDedupe(member.unplaced || []);
+      (member.tiers || []).forEach(tier => { tier.items = remapAndDedupe(tier.items || []); });
+    });
     _tlMigrated = true;
   });
   parsed._tlMigrated = _tlMigrated;
@@ -4479,12 +4537,14 @@ const tlModalNewFolderSelect = document.getElementById('tl-modal-new-folder-sele
 const tlList              = document.getElementById('tl-list');
 const tlEmptyState        = document.getElementById('tl-empty-state');
 const tlEditor            = document.getElementById('tl-editor');
+const tlEditorBody        = document.getElementById('tl-editor-body');
 const tlTitlePrefix       = document.getElementById('tl-title-prefix');
 const tlTitleDisplay      = document.getElementById('tl-title-display');
 const tlTitleInput        = document.getElementById('tl-title-input');
 const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
 const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
+const tlBtnUndo           = document.getElementById('tl-btn-undo');
 const tlBtnReset          = document.getElementById('tl-btn-reset');
 const tlFileInput         = document.getElementById('tl-file-input');
 const tlBtnExport         = document.getElementById('tl-btn-export');
@@ -4494,6 +4554,8 @@ const tlUnplacedZone      = document.getElementById('tl-unplaced-zone');
 const tlUnplacedCount     = document.getElementById('tl-unplaced-count');
 const tlUnplacedSortBtn   = document.getElementById('tl-unplaced-sort-btn');
 const tlMaxImagesInput    = document.getElementById('tl-max-images-input');
+const tlControlPanel      = document.getElementById('tl-control-panel');
+const tlGroupList         = document.getElementById('tl-group-list');
 
 // Modals
 const tlModalNew          = document.getElementById('tl-modal-new');
@@ -4669,11 +4731,14 @@ function tlRender() {
   if (!tl || tl.archived) {
     tlEmptyState.classList.remove('hidden');
     tlEditor.classList.add('hidden');
+    tlRenderGroupPanel(null);
     if (window.lucide) lucide.createIcons();
     return;
   }
   tlEmptyState.classList.add('hidden');
   tlEditor.classList.remove('hidden');
+  tlEditorBody.classList.toggle('tl-editor-body--template', !!tl.isTemplate);
+  tlRenderGroupPanel(tl);
 
   tlTitleDisplay.textContent = tl.name;
   tlTitleInput.value = tl.name;
@@ -4685,7 +4750,7 @@ function tlRender() {
     tlTitlePrefix.classList.add('hidden');
   }
   const tlBtnNewFromTemplate = document.getElementById('tl-btn-new-from-template');
-  if (tlBtnNewFromTemplate) tlBtnNewFromTemplate.classList.toggle('hidden', !tl.isTemplate);
+  if (tlBtnNewFromTemplate) tlBtnNewFromTemplate.classList.toggle('hidden', !_tlGroupRoot(tl).isTemplate);
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
   const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
   const imgSize    = _tlLocalImgSize    !== null ? _tlLocalImgSize    : (tl.imgSize || 80);
@@ -4694,6 +4759,56 @@ function tlRender() {
 
   tlRenderTiers(tl);
   tlRenderUnplaced(tl);
+  if (window.lucide) lucide.createIcons();
+}
+
+// Panneau de contrôle tier list : bulles des tierlists d'un même groupe (template + générées),
+// sélection unique — cliquer une bulle ouvre directement cette tierlist (pas de multi-affichage
+// comme pour les grilles bingo, une tier list ne s'affiche jamais qu'une à la fois).
+// tl peut être null (tierlist désélectionnée) : dans ce cas on continue d'afficher les bulles du
+// dernier groupe ouvert (_tlLastGroupRootId), sans bulle active — comme le Bingo garde les bulles de
+// grilles visibles même quand aucune grille n'est affichée dans le dossier actif.
+function tlRenderGroupPanel(tl) {
+  const root = tl ? _tlGroupRoot(tl) : tlState.tierlists.find(t => t.id === _tlLastGroupRootId && t.isTemplate) || null;
+  if (!root || !root.isTemplate || root.archived) {
+    tlControlPanel.classList.add('hidden');
+    _tlLastGroupRootId = null;
+    return;
+  }
+  _tlLastGroupRootId = root.id;
+  const members = tlState.tierlists.filter(t => !t.archived && (t.id === root.id || t.templateId === root.id));
+  tlControlPanel.classList.remove('hidden');
+  tlGroupList.innerHTML = '';
+  members.forEach(member => {
+    const item = document.createElement('div');
+    item.className = 'grid-tab' + (tl && member.id === tl.id ? ' active' : '');
+    item.dataset.id = member.id;
+    item.title = (member.isTemplate ? 'Template' : 'Clic gauche : ouvrir cette tier list') + '\nClic droit : options';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'grid-tab-name';
+    nameSpan.textContent = member.name + (member.isTemplate ? ' (template)' : '');
+    item.appendChild(nameSpan);
+
+    const ctxBtn = document.createElement('button');
+    ctxBtn.className = 'grid-tab-ctx-btn';
+    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+    ctxBtn.title = 'Options';
+    ctxBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      tlOpenManageModal(member.id, item);
+    });
+    item.appendChild(ctxBtn);
+
+    item.addEventListener('click', () => tlSwitch(member.id));
+    item.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      tlOpenManageModal(member.id, item);
+    });
+
+    tlGroupList.appendChild(item);
+  });
   if (window.lucide) lucide.createIcons();
 }
 
@@ -5081,10 +5196,21 @@ function tlRenderTiers(tl) {
     const labelText = document.createElement('span');
     labelText.className = 'tl-tier-label-text';
     labelText.textContent = tier.label;
-    labelText.title = 'Clic pour renommer · Clic droit pour les options · Glisser pour réordonner';
+    labelText.title = 'Clic pour renommer (double-clic : tout sélectionner) · Clic droit pour les options · Glisser pour réordonner';
+    let _tierRenameClickTimer = null;
     labelText.addEventListener('click', e => {
       e.stopPropagation();
-      _tlInlineRenameTier(labelText, tl, tier);
+      if (_tierRenameClickTimer) { clearTimeout(_tierRenameClickTimer); _tierRenameClickTimer = null; return; }
+      const caretOffset = _tlCaretOffsetFromClick(labelText, e.clientX, e.clientY);
+      _tierRenameClickTimer = setTimeout(() => {
+        _tierRenameClickTimer = null;
+        _tlInlineRenameTier(labelText, tl, tier, caretOffset);
+      }, 220);
+    });
+    labelText.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      if (_tierRenameClickTimer) { clearTimeout(_tierRenameClickTimer); _tierRenameClickTimer = null; }
+      _tlInlineRenameTier(labelText, tl, tier, null);
     });
     labelText.addEventListener('mousedown', e => e.stopPropagation()); // empêche drag depuis le texte
     labelCell.appendChild(labelText);
@@ -5158,10 +5284,12 @@ function tlRenderTiers(tl) {
     });
 
     if (tier.items.length === 0) {
-      const hint = document.createElement('span');
-      hint.className = 'tl-tier-images-empty';
-      hint.textContent = 'Dépose des images ici';
-      imgsDiv.appendChild(hint);
+      if (!tl.isTemplate) {
+        const hint = document.createElement('span');
+        hint.className = 'tl-tier-images-empty';
+        hint.textContent = 'Dépose des images ici';
+        imgsDiv.appendChild(hint);
+      }
     } else {
       tier.items.forEach(itemId => {
         const img = tlFindImage(tl, itemId);
@@ -5175,14 +5303,34 @@ function tlRenderTiers(tl) {
 }
 
 // ── Renommage inline tier ─────────────────────────────────────────────────────
-function _tlInlineRenameTier(spanEl, tl, tier) {
-  const input = document.createElement('input');
-  input.type = 'text';
+// Place le curseur dans `input` au caractère le plus proche du point (clientX, clientY) où l'utilisateur
+// a cliqué sur `spanEl` (mesuré avant son remplacement) — sinon le clic qui déclenche le renommage
+// sélectionnerait tout le texte au lieu de placer le curseur comme un clic normal dans un champ.
+function _tlCaretOffsetFromClick(spanEl, clientX, clientY) {
+  if (document.caretRangeFromPoint) {
+    const range = document.caretRangeFromPoint(clientX, clientY);
+    if (range && spanEl.contains(range.startContainer)) return range.startOffset;
+  } else if (document.caretPositionFromPoint) {
+    const pos = document.caretPositionFromPoint(clientX, clientY);
+    if (pos && spanEl.contains(pos.offsetNode)) return pos.offset;
+  }
+  return null;
+}
+
+function _tlInlineRenameTier(spanEl, tl, tier, caretOffset) {
+  // textarea plutôt qu'input : un label de tier peut passer sur plusieurs lignes (word-break selon la
+  // largeur de la colonne) — un input single-line ne wrap pas et tronque visuellement le texte affiché.
+  const input = document.createElement('textarea');
   input.value = tier.label;
+  input.rows = 1;
   input.className = 'tl-tier-label-input';
   spanEl.replaceWith(input);
+  const autoGrow = () => { input.style.height = 'auto'; input.style.height = input.scrollHeight + 'px'; };
+  autoGrow();
+  input.addEventListener('input', autoGrow);
   input.focus();
-  input.select();
+  if (caretOffset !== null) input.setSelectionRange(caretOffset, caretOffset);
+  else input.select();
 
   const commit = () => {
     const newLabel = input.value.trim();
@@ -5341,25 +5489,6 @@ function tlRenderUnplaced(tl) {
   }
   const tlOwnTotal = tl.unplaced.length + tl.tiers.reduce((sum, t) => sum + t.items.length, 0);
   tlUnplacedCount.textContent = tl.unplaced.length + ' / ' + tlOwnTotal;
-  tlUnplacedCount.style.cursor = 'pointer';
-  tlUnplacedCount.title = 'Debug temporaire : clique pour voir le détail';
-  tlUnplacedCount.onclick = () => {
-    const groupImgs = _tlGetGroupImages(tl);
-    const names = groupImgs.map(i => i.name || `[sans nom] ${i.id}`);
-    const counts = {};
-    names.forEach(n => counts[n] = (counts[n] || 0) + 1);
-    const doublons = Object.entries(counts).filter(([, c]) => c > 1);
-    let msg = `Total images dans le template (racine du groupe) : ${groupImgs.length}\n`;
-    msg += `Non placées dans CETTE tierlist : ${tl.unplaced.length}\n\n`;
-    if (doublons.length) {
-      msg += `⚠️ Doublons détectés :\n` + doublons.map(([n, c]) => `  - "${n}" x${c}`).join('\n') + '\n\n';
-    } else {
-      msg += `Aucun doublon de nom détecté.\n\n`;
-    }
-    msg += `Liste complète (${groupImgs.length}) :\n` + names.join('\n');
-    alert(msg);
-    console.log('DEBUG groupImages', groupImgs);
-  };
   const _sortIcons = { manual: 'hand', alpha: 'arrow-down-a-z', date: 'arrow-down-0-1' };
   const _sortLabels = { manual: 'Manuel', alpha: 'Alphabétique', date: "Date d'ajout" };
   const _sortMode = tl.unplacedSort || 'manual';
@@ -5385,6 +5514,7 @@ function _tlPasteFromClipboard(tl) {
     if (root.images.length >= maxImages) {
       alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`); return;
     }
+    tlPushUndo();
     const now = new Date();
     const promises = imageItems.map(item => {
       const type = item.types.find(t => t.startsWith('image/'));
@@ -5458,10 +5588,21 @@ function tlBuildImgCard(tl, img, size) {
     label.className = 'tl-img-label';
     label.style.width = size + 'px';
     label.textContent = img.name;
-    label.title = 'Clic gauche : renommer · Clic droit : options';
+    label.title = 'Clic gauche : renommer (double-clic : tout sélectionner) · Clic droit : options';
+    let _imgRenameClickTimer = null;
     label.addEventListener('click', e => {
       e.stopPropagation();
-      _tlInlineRenameImg(label, tl, img, size);
+      if (_imgRenameClickTimer) { clearTimeout(_imgRenameClickTimer); _imgRenameClickTimer = null; return; }
+      const caretOffset = _tlCaretOffsetFromClick(label, e.clientX, e.clientY);
+      _imgRenameClickTimer = setTimeout(() => {
+        _imgRenameClickTimer = null;
+        _tlInlineRenameImg(label, tl, img, size, caretOffset);
+      }, 220);
+    });
+    label.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      if (_imgRenameClickTimer) { clearTimeout(_imgRenameClickTimer); _imgRenameClickTimer = null; }
+      _tlInlineRenameImg(label, tl, img, size, null);
     });
     card.appendChild(label);
   }
@@ -5476,7 +5617,7 @@ function tlBuildImgCard(tl, img, size) {
 }
 
 // ── Renommage inline image ────────────────────────────────────────────────────
-function _tlInlineRenameImg(labelEl, tl, img, size) {
+function _tlInlineRenameImg(labelEl, tl, img, size, caretOffset) {
   const input = document.createElement('input');
   input.type = 'text';
   input.value = img.name;
@@ -5484,7 +5625,8 @@ function _tlInlineRenameImg(labelEl, tl, img, size) {
   input.style.width = size + 'px';
   labelEl.replaceWith(input);
   input.focus();
-  input.select();
+  if (caretOffset !== null && caretOffset !== undefined) input.setSelectionRange(caretOffset, caretOffset);
+  else input.select();
 
   const commit = () => {
     const newName = input.value.trim();
@@ -5750,6 +5892,7 @@ function tlImportImages(files) {
   const fileArray = Array.from(files).slice(0, remaining);
   const ignoredByLimit = files.length - fileArray.length;
   let ignoredByDuplicate = 0;
+  tlPushUndo();
 
   const processFile = (file) => {
     const name = file.name.replace(/\.[^.]+$/, '');
@@ -6441,10 +6584,10 @@ function tlOpenManageModal(id, anchorEl) {
   addItem('pencil', 'Renommer', false, () => tlOpenRenameModal(id));
   addItem('copy-plus', 'Dupliquer', false, () => tlCopy(id));
   addItem('shelving-unit', 'Ranger dans un dossier', false, () => tlOpenMoveModal(id));
+  const ceIsActive = state.currentEventTierlistId === id;
+  const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
+  addItem('party-popper', ceLabel, false, () => setCurrentEventTierlist(id));
   if (!tl.isTemplate) {
-    const ceIsActive = state.currentEventTierlistId === id;
-    const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
-    addItem('party-popper', ceLabel, false, () => setCurrentEventTierlist(id));
     if (!tl.templateId) addItem('scroll', 'Convertir en template', false, () => tlConvertToTemplate(id));
   } else {
     addItem('scroll-text', 'Générer depuis ce template', false, () => tlOpenGenerateFromTemplateModal(id));
@@ -6526,7 +6669,9 @@ if (_tlBtnCeSet) {
 
 document.getElementById('tl-btn-new-from-template').addEventListener('click', () => {
   const tl = tlActiveTierlist();
-  if (tl && tl.isTemplate) tlOpenGenerateFromTemplateModal(tl.id);
+  if (!tl) return;
+  const root = _tlGroupRoot(tl);
+  if (root && root.isTemplate) tlOpenGenerateFromTemplateModal(root.id);
 });
 
 // Fermer le menu contextuel TL actif sur Escape
@@ -6658,6 +6803,7 @@ function _tlAddTextCard(tl, text) {
     alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
     return;
   }
+  tlPushUndo();
   const img = { id: uid(), type: 'text', name: text, color: TL_TEXT_CARD_COLOR };
   root.images.push(img);
   _tlGetGroupMembers(tl).forEach(member => {
@@ -6694,6 +6840,8 @@ function _tlCreateFromTemplate(templateId, name) {
   copy.templateId = templateId;
   copy.folderId = template.folderId || null;
   copy.unplaced = (template.unplaced || []).slice();
+  // Conserve les tiers (labels/couleurs) définis sur le template, plutôt que les tiers par défaut
+  copy.tiers = (template.tiers || []).map(t => ({ id: uid(), label: t.label, color: t.color, items: [] }));
   tlState.tierlists.push(copy);
   return copy;
 }
@@ -6733,6 +6881,7 @@ tlGenerateNameInput.addEventListener('keydown', e => {
 tlFileInput.addEventListener('change', () => { if (tlFileInput.files.length) tlImportImages(tlFileInput.files); tlFileInput.value = ''; });
 
 tlBtnReset.addEventListener('click', tlReset);
+tlBtnUndo.addEventListener('click', tlUndo);
 const _tlModalConfirmReset = document.getElementById('tl-modal-confirm-reset');
 document.getElementById('tl-btn-confirm-reset').addEventListener('click', () => { _tlModalConfirmReset.classList.add('hidden'); _tlDoReset(); });
 document.getElementById('tl-btn-cancel-reset').addEventListener('click', () => _tlModalConfirmReset.classList.add('hidden'));
