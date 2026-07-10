@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=134" />
+  <link rel="stylesheet" href="style.css?v=139" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -69,10 +69,38 @@
 
           <!-- ── Panneau de contrôle tier list ── -->
           <div class="tl-control-panel hidden" id="tl-control-panel">
-            <div class="ctrl-row" id="tl-ctrl-row-group">
-              <div id="tl-group-breadcrumb" class="grids-breadcrumb"></div>
-              <div id="tl-group-list" class="grids-list"></div>
-              <button class="btn-new-grid-inline hidden" id="tl-btn-new-from-template" title="Générer une nouvelle tier list depuis ce template">+ Tier list</button>
+            <div class="tl-control-panel-body" id="tl-control-panel-body">
+
+              <!-- Ligne 1 : chemin + bulles du groupe + actions -->
+              <div class="ctrl-row ctrl-row-grids" id="tl-ctrl-row-group">
+                <div id="tl-group-breadcrumb" class="grids-breadcrumb"></div>
+                <div id="tl-group-list" class="grids-list"></div>
+                <button class="btn-new-grid-inline hidden" id="tl-btn-new-from-template" title="Générer une nouvelle tier list depuis ce template">+ Tier list</button>
+                <button class="btn-ce-set" id="tl-btn-ce-set" title="Définir cette tier list comme soirée en cours"><i data-lucide="party-popper"></i> Définir comme soirée en cours</button>
+              </div>
+
+              <!-- Ligne 2 : Dossiers à gauche, reste centré -->
+              <div class="ctrl-row ctrl-row-toolbar">
+                <button class="tl-toolbar-btn tl-btn-folders" id="tl-btn-folders" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
+                <div class="ctrl-row-toolbar-center">
+                  <label class="tl-toggle-label" title="Afficher ou masquer les noms sous chaque image">
+                    <input type="checkbox" id="tl-show-labels-toggle" />
+                    <span>Noms</span>
+                  </label>
+                  <label class="tl-toggle-label" title="Régler la taille des images (48–180 px)">
+                    <span>Taille</span>
+                    <input type="range" id="tl-img-size-slider" min="48" max="180" value="80" class="tl-slider" />
+                  </label>
+                  <button class="tl-toolbar-btn tl-btn-add-tier" id="tl-btn-add-tier" title="Ajouter un tier en bas de la liste">+ Tier</button>
+                  <button class="tl-toolbar-btn tl-btn-undo" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
+                  <button class="tl-toolbar-btn tl-btn-reset" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
+                  <button class="tl-toolbar-btn tl-btn-open-window" id="tl-btn-open-window" title="Ouvrir cette tier list dans une nouvelle fenêtre"><i data-lucide="square-arrow-out-up-right"></i> Ouvrir dans une nouvelle fenêtre</button>
+                  <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
+                  <button class="tl-toolbar-btn tl-btn-export" id="tl-btn-export" title="Exporter la tier list en PNG"><i data-lucide="download"></i> Export PNG</button>
+                  <button class="tl-toolbar-btn tl-btn-capture" id="tl-btn-capture" title="Copier la tier list dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -93,27 +121,6 @@
                 <span id="tl-title-display" class="tl-title-display tl-title-editable" title="Clic gauche : renommer la tier list"></span>
                 <input type="text" id="tl-title-input" class="tl-title-input hidden" maxlength="60" />
               </div>
-              <div class="tl-editor-actions">
-                <div class="tl-editor-actions-center">
-                  <button class="tl-toolbar-btn tl-btn-folders" id="tl-btn-folders" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
-                  <button class="btn-ce-set" id="tl-btn-ce-set" title="Définir cette tier list comme soirée en cours"><i data-lucide="party-popper"></i> Définir comme soirée en cours</button>
-                  <button class="tl-toolbar-btn tl-btn-open-window" id="tl-btn-open-window" title="Ouvrir cette tier list dans une nouvelle fenêtre"><i data-lucide="square-arrow-out-up-right"></i> Ouvrir dans une nouvelle fenêtre</button>
-                  <label class="tl-toggle-label" title="Afficher ou masquer les noms sous chaque image">
-                    <input type="checkbox" id="tl-show-labels-toggle" />
-                    <span>Noms</span>
-                  </label>
-                  <label class="tl-toggle-label" title="Régler la taille des images (48–180 px)">
-                    <span>Taille</span>
-                    <input type="range" id="tl-img-size-slider" min="48" max="180" value="80" class="tl-slider" />
-                  </label>
-                  <button class="tl-toolbar-btn tl-btn-add-tier" id="tl-btn-add-tier" title="Ajouter un tier en bas de la liste">+ Tier</button>
-                  <button class="tl-toolbar-btn tl-btn-undo" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
-                  <button class="tl-toolbar-btn tl-btn-reset" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
-                  <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
-                  <button class="tl-toolbar-btn tl-btn-export" id="tl-btn-export" title="Exporter la tier list en PNG"><i data-lucide="download"></i> Export PNG</button>
-                  <button class="tl-toolbar-btn tl-btn-capture" id="tl-btn-capture" title="Copier la tier list dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
-                </div>
-              </div>
             </div>
 
             <!-- Corps éditeur : tiers + éléments non placés (empilés, ou côte à côte pour un template) -->
@@ -127,7 +134,12 @@
                 <div class="tl-unplaced-header">
                   <span class="tl-unplaced-label">Éléments non placés</span>
                   <span id="tl-unplaced-count" class="tl-unplaced-count">0</span>
-                  <button id="tl-unplaced-sort-btn" class="tl-unplaced-sort-btn" title="Choisir le tri des éléments non placés"><i data-lucide="arrow-up-down"></i></button>
+                  <button id="tl-unplaced-sort-btn" class="tl-unplaced-sort-btn" title="Trier les éléments non placés"><i data-lucide="arrow-down-a-z"></i> Tri</button>
+                  <button id="tl-btn-add-image" class="tl-btn-add-image" title="Ajouter des images&#10;Clic : importer des fichiers ou coller depuis le presse-papier"><i data-lucide="image-plus"></i> Image</button>
+                  <span id="tl-add-text-wrap" class="tl-add-text-wrap">
+                    <i data-lucide="a-large-small"></i>
+                    <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Ajouter un texte..." title="Taper un texte puis Entrée pour ajouter une carte" />
+                  </span>
                   <span class="tl-max-images-label">Capacité max :</span>
                   <button type="button" id="tl-max-images-input" class="tl-max-images-input" title="Choisir la capacité maximale du groupe">50</button>
                 </div>
@@ -814,6 +826,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=207"></script>
+  <script src="app.js?v=218"></script>
 </body>
 </html>

@@ -4389,6 +4389,40 @@ function tlDefaultFolder(name, parentId) {
   return { id: uid(), name, archived: false, open: true, parentId: parentId || null };
 }
 
+// Retourne le chemin complet d'un dossier ("Racine › Enfant › Petit-enfant")
+function _tlFolderPath(folderId) {
+  const chain = [];
+  let current = (tlState.folders || []).find(f => f.id === folderId);
+  while (current) {
+    chain.unshift(current.name);
+    current = current.parentId ? (tlState.folders || []).find(f => f.id === current.parentId) : null;
+  }
+  return chain.join(' › ');
+}
+
+// Préfixe de chemin affiché avant le nom de la tierlist : dossiers › (template) — même logique que
+// le préfixe du titre dans l'éditeur (tlRender), réutilisée pour Export PNG / Capture (_tlBuildCanvas).
+// Retourne '' si la tierlist est à la racine (pas de dossier, pas de template).
+function _tlTitlePathPrefix(tl) {
+  const parts = [];
+  if (tl.templateId) {
+    const template = tlState.tierlists.find(t => t.id === tl.templateId && t.isTemplate);
+    const templateFolderPath = template ? _tlFolderPath(template.folderId) : '';
+    if (templateFolderPath) parts.push(templateFolderPath);
+    if (template) parts.push(template.name);
+  } else {
+    const folderPath = _tlFolderPath(tl.folderId);
+    if (folderPath) parts.push(folderPath);
+  }
+  return parts.join(' › ');
+}
+
+// Chemin complet affiché en titre : dossiers › (template ›) nom de la tierlist.
+function _tlFullTitlePath(tl) {
+  const prefix = _tlTitlePathPrefix(tl);
+  return prefix ? prefix + ' › ' + tl.name : tl.name;
+}
+
 // Retourne tous les ids descendants d'un dossier (récursif)
 function _tlGetDescendantIds(id) {
   const children = (tlState.folders || []).filter(f => f.parentId === id);
@@ -4553,8 +4587,12 @@ const tlTiersZone         = document.getElementById('tl-tiers-zone');
 const tlUnplacedZone      = document.getElementById('tl-unplaced-zone');
 const tlUnplacedCount     = document.getElementById('tl-unplaced-count');
 const tlUnplacedSortBtn   = document.getElementById('tl-unplaced-sort-btn');
+const tlBtnAddImage       = document.getElementById('tl-btn-add-image');
+const tlAddTextInput      = document.getElementById('tl-add-text-input');
 const tlMaxImagesInput    = document.getElementById('tl-max-images-input');
 const tlControlPanel      = document.getElementById('tl-control-panel');
+const tlCtrlRowGroup      = document.getElementById('tl-ctrl-row-group');
+const tlGroupBreadcrumb   = document.getElementById('tl-group-breadcrumb');
 const tlGroupList         = document.getElementById('tl-group-list');
 
 // Modals
@@ -4731,24 +4769,22 @@ function tlRender() {
   if (!tl || tl.archived) {
     tlEmptyState.classList.remove('hidden');
     tlEditor.classList.add('hidden');
+    tlControlPanel.classList.add('hidden');
     tlRenderGroupPanel(null);
     if (window.lucide) lucide.createIcons();
     return;
   }
   tlEmptyState.classList.add('hidden');
   tlEditor.classList.remove('hidden');
+  tlControlPanel.classList.remove('hidden');
   tlEditorBody.classList.toggle('tl-editor-body--template', !!tl.isTemplate);
   tlRenderGroupPanel(tl);
 
   tlTitleDisplay.textContent = tl.name;
   tlTitleInput.value = tl.name;
-  if (tl.templateId) {
-    const template = tlState.tierlists.find(t => t.id === tl.templateId && t.isTemplate);
-    tlTitlePrefix.textContent = template ? template.name + ' › ' : '';
-    tlTitlePrefix.classList.toggle('hidden', !template);
-  } else {
-    tlTitlePrefix.classList.add('hidden');
-  }
+  const prefixPath = _tlTitlePathPrefix(tl);
+  tlTitlePrefix.textContent = prefixPath ? prefixPath + ' › ' : '';
+  tlTitlePrefix.classList.toggle('hidden', !prefixPath);
   const tlBtnNewFromTemplate = document.getElementById('tl-btn-new-from-template');
   if (tlBtnNewFromTemplate) tlBtnNewFromTemplate.classList.toggle('hidden', !_tlGroupRoot(tl).isTemplate);
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
@@ -4771,13 +4807,31 @@ function tlRender() {
 function tlRenderGroupPanel(tl) {
   const root = tl ? _tlGroupRoot(tl) : tlState.tierlists.find(t => t.id === _tlLastGroupRootId && t.isTemplate) || null;
   if (!root || !root.isTemplate || root.archived) {
-    tlControlPanel.classList.add('hidden');
+    tlCtrlRowGroup.classList.add('hidden');
     _tlLastGroupRootId = null;
     return;
   }
   _tlLastGroupRootId = root.id;
   const members = tlState.tierlists.filter(t => !t.archived && (t.id === root.id || t.templateId === root.id));
-  tlControlPanel.classList.remove('hidden');
+  tlCtrlRowGroup.classList.remove('hidden');
+
+  tlGroupBreadcrumb.innerHTML = '';
+  const folderPath = _tlFolderPath(root.folderId);
+  if (folderPath) {
+    folderPath.split(' › ').forEach((name, idx, arr) => {
+      const item = document.createElement('span');
+      item.className = 'grids-breadcrumb-item' + (idx === arr.length - 1 ? ' last' : '');
+      item.textContent = name;
+      tlGroupBreadcrumb.appendChild(item);
+      if (idx < arr.length - 1) {
+        const sep = document.createElement('span');
+        sep.className = 'grids-breadcrumb-sep';
+        sep.textContent = '›';
+        tlGroupBreadcrumb.appendChild(sep);
+      }
+    });
+  }
+
   tlGroupList.innerHTML = '';
   members.forEach(member => {
     const item = document.createElement('div');
@@ -5182,21 +5236,48 @@ function tlRenderTiers(tl) {
   const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
 
   tl.tiers.forEach((tier, tierIdx) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'tl-tier-wrap';
+    wrap.dataset.tierId = tier.id;
+    wrap.draggable = false;
+
+    // Colonne grip + settings — en dehors du carré coloré du tier
+    const controls = document.createElement('div');
+    controls.className = 'tl-tier-controls';
+
+    const dragHandle = document.createElement('span');
+    dragHandle.className = 'tl-tier-drag-handle';
+    dragHandle.innerHTML = '<i data-lucide="grip"></i>';
+    dragHandle.title = 'Glisser pour réordonner';
+    dragHandle.addEventListener('mousedown', () => { wrap.draggable = true; });
+    dragHandle.addEventListener('mouseleave', () => { if (!wrap.classList.contains('tl-tier-label-dragging')) wrap.draggable = false; });
+    controls.appendChild(dragHandle);
+
+    const settingsBtn = document.createElement('button');
+    settingsBtn.className = 'tl-tier-settings-btn';
+    settingsBtn.innerHTML = '<i data-lucide="settings"></i>';
+    settingsBtn.title = 'Options du tier';
+    settingsBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelText);
+    });
+    controls.appendChild(settingsBtn);
+
+    wrap.appendChild(controls);
+
     const row = document.createElement('div');
     row.className = 'tl-tier-row';
-    row.dataset.tierId = tier.id;
 
-    // Cellule label — draggable pour réordonner
+    // Cellule label
     const labelCell = document.createElement('div');
     labelCell.className = 'tl-tier-label-cell';
     labelCell.style.background = tier.color;
-    labelCell.draggable = true;
-    labelCell.title = 'Clic droit pour les options · Glisser pour réordonner';
+    labelCell.title = 'Clic droit pour les options · Glisser la poignée pour réordonner';
 
     const labelText = document.createElement('span');
     labelText.className = 'tl-tier-label-text';
     labelText.textContent = tier.label;
-    labelText.title = 'Clic pour renommer (double-clic : tout sélectionner) · Clic droit pour les options · Glisser pour réordonner';
+    labelText.title = 'Clic pour renommer (double-clic : tout sélectionner) · Clic droit pour les options';
     let _tierRenameClickTimer = null;
     labelText.addEventListener('click', e => {
       e.stopPropagation();
@@ -5212,41 +5293,40 @@ function tlRenderTiers(tl) {
       if (_tierRenameClickTimer) { clearTimeout(_tierRenameClickTimer); _tierRenameClickTimer = null; }
       _tlInlineRenameTier(labelText, tl, tier, null);
     });
-    labelText.addEventListener('mousedown', e => e.stopPropagation()); // empêche drag depuis le texte
     labelCell.appendChild(labelText);
 
-    // Drag & drop réordonnement tiers
-    labelCell.addEventListener('dragstart', e => {
+    // Drag & drop réordonnement tiers — déclenché uniquement depuis la poignée (wrap.draggable)
+    wrap.addEventListener('dragstart', e => {
       _tlTierDragId = tier.id;
       e.dataTransfer.effectAllowed = 'move';
-      setTimeout(() => labelCell.classList.add('tl-tier-label-dragging'), 0);
+      setTimeout(() => wrap.classList.add('tl-tier-label-dragging'), 0);
     });
-    labelCell.addEventListener('dragend', () => {
+    wrap.addEventListener('dragend', () => {
       _tlTierDragId = null;
-      labelCell.classList.remove('tl-tier-label-dragging');
-      document.querySelectorAll('.tl-tier-row').forEach(r => r.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below'));
+      wrap.draggable = false;
+      wrap.classList.remove('tl-tier-label-dragging');
+      document.querySelectorAll('.tl-tier-wrap').forEach(r => r.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below'));
     });
-    row.addEventListener('dragover', e => {
+    wrap.addEventListener('dragover', e => {
       if (!_tlTierDragId || _tlTierDragId === tier.id) return;
       e.preventDefault();
-      const rect = row.getBoundingClientRect();
+      const rect = wrap.getBoundingClientRect();
       const mid = rect.top + rect.height / 2;
-      row.classList.toggle('tl-tier-drop-above', e.clientY < mid);
-      row.classList.toggle('tl-tier-drop-below', e.clientY >= mid);
+      wrap.classList.toggle('tl-tier-drop-above', e.clientY < mid);
+      wrap.classList.toggle('tl-tier-drop-below', e.clientY >= mid);
     });
-    row.addEventListener('dragleave', e => {
-      if (!row.contains(e.relatedTarget)) {
-        row.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below');
+    wrap.addEventListener('dragleave', e => {
+      if (!wrap.contains(e.relatedTarget)) {
+        wrap.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below');
       }
     });
-    row.addEventListener('drop', e => {
+    wrap.addEventListener('drop', e => {
       if (!_tlTierDragId || _tlTierDragId === tier.id) return;
       e.preventDefault();
-      row.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below');
-      const rect = row.getBoundingClientRect();
+      wrap.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below');
+      const rect = wrap.getBoundingClientRect();
       const before = e.clientY < rect.top + rect.height / 2;
       const fromIdx = tl.tiers.findIndex(t => t.id === _tlTierDragId);
-      let toIdx = tierIdx;
       if (fromIdx === -1) return;
       tlPushUndo();
       const [moved] = tl.tiers.splice(fromIdx, 1);
@@ -5298,8 +5378,10 @@ function tlRenderTiers(tl) {
     }
 
     row.appendChild(imgsDiv);
-    tlTiersZone.appendChild(row);
+    wrap.appendChild(row);
+    tlTiersZone.appendChild(wrap);
   });
+  if (window.lucide) lucide.createIcons();
 }
 
 // ── Renommage inline tier ─────────────────────────────────────────────────────
@@ -5444,38 +5526,6 @@ function tlRenderUnplaced(tl) {
   tlUnplacedZone.innerHTML = '';
   const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
 
-  // Bouton "+" import — gros bouton vert avec menu contextuel (fichiers / presse-papier)
-  const btnImport = document.createElement('button');
-  btnImport.className = 'tl-import-btn tl-import-btn--plus';
-  btnImport.title = 'Ajouter des images\nClic : importer des fichiers ou coller depuis le presse-papier';
-  btnImport.style.width = imgSize + 'px';
-  btnImport.style.height = imgSize + 'px';
-  btnImport.innerHTML = '<span class="tl-import-icon"><i data-lucide="image"></i></span><span class="tl-import-label">Image</span>';
-  btnImport.addEventListener('click', () => _tlShowImportMenu(btnImport));
-  tlUnplacedZone.appendChild(btnImport);
-
-  // Barre de saisie texte inline — ajout rapide d'une carte texte (Entrée pour valider)
-  const textInputWrap = document.createElement('span');
-  textInputWrap.className = 'tl-add-text-wrap';
-  textInputWrap.style.height = imgSize + 'px';
-  textInputWrap.innerHTML = '<i data-lucide="a-large-small"></i>';
-
-  const textInput = document.createElement('input');
-  textInput.type = 'text';
-  textInput.className = 'tl-add-text-input';
-  textInput.placeholder = 'Texte...';
-  textInput.title = 'Taper un texte puis Entrée pour ajouter une carte';
-  textInput.addEventListener('keydown', e => {
-    e.stopPropagation();
-    if (e.key === 'Enter') {
-      const text = textInput.value.trim();
-      if (!text) return;
-      _tlAddTextCard(tl, text);
-    }
-  });
-  textInputWrap.appendChild(textInput);
-  tlUnplacedZone.appendChild(textInputWrap);
-
   if (tl.unplaced.length === 0) {
     const hint = document.createElement('div');
     hint.className = 'tl-unplaced-hint';
@@ -5489,10 +5539,6 @@ function tlRenderUnplaced(tl) {
   }
   const tlOwnTotal = tl.unplaced.length + tl.tiers.reduce((sum, t) => sum + t.items.length, 0);
   tlUnplacedCount.textContent = tl.unplaced.length + ' / ' + tlOwnTotal;
-  const _sortIcons = { manual: 'hand', alpha: 'arrow-down-a-z', date: 'arrow-down-0-1' };
-  const _sortLabels = { manual: 'Manuel', alpha: 'Alphabétique', date: "Date d'ajout" };
-  const _sortMode = tl.unplacedSort || 'manual';
-  tlUnplacedSortBtn.innerHTML = `<i data-lucide="${_sortIcons[_sortMode] || 'hand'}"></i> Tri : ${_sortLabels[_sortMode] || 'Manuel'}`;
   if (window.lucide) lucide.createIcons();
   tlMaxImagesInput.textContent = _tlGetGroupMaxImages(tl);
 }
@@ -5966,6 +6012,15 @@ function tlDropInsertIndex(zone, clientX, clientY) {
   return cards.length;
 }
 
+// Comme tlDropInsertIndex, mais retourne l'id de l'image affichée juste après le point de dépôt
+// (ou null si en fin de liste) plutôt qu'un index brut — nécessaire pour la zone non placée quand
+// l'ordre affiché (alpha/date) diffère de l'ordre réel de tl.unplaced (cf. tlDrop).
+function tlDropInsertBeforeId(zone, clientX, clientY) {
+  const cards = Array.from(zone.querySelectorAll('.tl-img-card'));
+  const idx = tlDropInsertIndex(zone, clientX, clientY);
+  return idx < cards.length ? cards[idx].dataset.imgId : null;
+}
+
 function tlDrop(e, targetZoneId) {
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
@@ -5982,10 +6037,15 @@ function tlDrop(e, targetZoneId) {
   tl.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
 
   if (targetZoneId === '__unplaced__') {
-    // Tout réordonnancement manuel repasse le tri en mode "manuel"
-    if ((tl.unplacedSort || 'manual') !== 'manual') tl.unplacedSort = 'manual';
-    // Insertion à la position du curseur dans la zone unplaced
-    const insertIdx = tlDropInsertIndex(tlUnplacedZone, e.clientX, e.clientY);
+    // "Tri" est une action ponctuelle qui fige déjà l'ordre manuel (cf. tlUnplacedSortBtn) : la zone
+    // affichée reflète donc toujours tl.unplaced, sauf appel externe laissant unplacedSort non-manuel.
+    const beforeId = tlDropInsertBeforeId(tlUnplacedZone, e.clientX, e.clientY);
+    if ((tl.unplacedSort || 'manual') !== 'manual') {
+      tl.unplaced = _tlGetSortedUnplaced(tl);
+      tl.unplacedSort = 'manual';
+    }
+    let insertIdx = beforeId ? tl.unplaced.indexOf(beforeId) : tl.unplaced.length;
+    if (insertIdx === -1) insertIdx = tl.unplaced.length;
     tl.unplaced.splice(insertIdx, 0, imgId);
   } else {
     const tier = tl.tiers.find(t => t.id === targetZoneId);
@@ -6030,14 +6090,83 @@ function tlConfirmRenameImg() {
   tlRender();
 }
 
+// Dessine une image dans un carré size×size en respectant son ratio (comme object-fit:contain
+// sur .tl-img-card img à l'écran), fond surface pour les bandes vides plutôt que d'étirer/déformer.
+function _tlDrawImageContain(ctx, img, x, y, size) {
+  ctx.fillStyle = '#2a2a32';
+  ctx.fillRect(x, y, size, size);
+  const ratio = Math.min(size / img.width, size / img.height);
+  const w = img.width * ratio;
+  const h = img.height * ratio;
+  ctx.drawImage(img, x + (size - w) / 2, y + (size - h) / 2, w, h);
+}
+
+// Découpe un texte en lignes tenant dans maxWidth (mot par mot, coupe un mot trop long au caractère
+// près) — reproduit le word-break:break-word de .tl-tier-label-text, qui wrappe au lieu de déborder.
+function _tlWrapText(ctx, text, maxWidth) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  const pushWord = (word) => {
+    const test = line ? line + ' ' + word : word;
+    if (ctx.measureText(test).width <= maxWidth || !line) {
+      line = test;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+  };
+  words.forEach(word => {
+    if (ctx.measureText(word).width <= maxWidth) { pushWord(word); return; }
+    // Mot seul plus large que maxWidth : le couper caractère par caractère
+    if (line) { lines.push(line); line = ''; }
+    let chunk = '';
+    for (const ch of word) {
+      const test = chunk + ch;
+      if (ctx.measureText(test).width > maxWidth && chunk) { lines.push(chunk); chunk = ch; }
+      else chunk = test;
+    }
+    line = chunk;
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+
+// Dessine tier.label centré dans labelW, multi-ligne (comme .tl-tier-label-text à l'écran :
+// word-break: break-word, max-width 128px, line-height 1.1) ; réduit la police en dernier recours
+// seulement si le label ne tient vraiment pas dans tierH (tier très bas + label très long).
+function _tlDrawTierLabel(ctx, label, x, y, labelW, tierH, baseFontSize) {
+  const maxTextWidth = labelW - 12;
+  let fontSize = baseFontSize;
+  let lines;
+  do {
+    ctx.font = `bold ${fontSize}px Arial`;
+    lines = _tlWrapText(ctx, label, maxTextWidth);
+    if (lines.length * fontSize * 1.1 <= tierH - 8 || fontSize <= 10) break;
+    fontSize -= 2;
+  } while (true);
+  ctx.font = `bold ${fontSize}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lineHeight = fontSize * 1.1;
+  const startY = y + tierH / 2 - (lines.length - 1) * lineHeight / 2;
+  lines.forEach((l, i) => ctx.fillText(l, x + labelW / 2, startY + i * lineHeight, maxTextWidth));
+}
+
 // ── Canvas partagé Export/Capture ────────────────────────────────────────────
 async function _tlBuildCanvas(tl) {
-  const imgSize = tl.imgSize || 80;
+  // Même taille que celle affichée à l'écran : la préférence locale (slider "Taille") prévaut sur
+  // tl.imgSize, comme dans tlRender()/tlRenderTiers()/tlRenderUnplaced() — sinon l'export ne
+  // correspond plus à ce que l'utilisateur voit s'il n'a pas sauvegardé cette taille sur la tierlist.
+  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
+  const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
   const labelW = 140;
   const padding = 6;
   const rowGap = 4;
   const imgGap = 4;
-  const labelFontSize = Math.round(imgSize * 0.35);
+  // .tl-tier-label-cell a une taille fixe (1.1rem = 17.6px), indépendante de la taille des images
+  // (contrairement à ce que labelFontSize proportionnel à imgSize laissait croire à l'écran).
+  const labelFontSize = 17.6;
   const totalWidth = 860;
 
   const tierHeights = tl.tiers.map(tier => {
@@ -6055,7 +6184,9 @@ async function _tlBuildCanvas(tl) {
   ctx.fillRect(0, 0, totalWidth, canvas.height);
   ctx.fillStyle = '#e8e8f0';
   ctx.font = 'bold 18px Arial';
-  ctx.fillText(tl.name, 12, 26);
+  // Titre = chemin complet (dossiers › template › nom), comme affiché dans l'éditeur (tl-title-prefix
+  // + tl-title-display) — pas seulement le nom de la tierlist.
+  ctx.fillText(_tlFullTitlePath(tl), 12, 26, totalWidth - 24);
 
   const loadImage = (src) => new Promise((resolve) => {
     const img = new Image();
@@ -6071,10 +6202,7 @@ async function _tlBuildCanvas(tl) {
     ctx.fillStyle = tier.color;
     ctx.fillRect(0, y, labelW, tierH);
     ctx.fillStyle = '#111';
-    ctx.font = `bold ${labelFontSize}px Arial`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(tier.label, labelW / 2, y + tierH / 2);
+    _tlDrawTierLabel(ctx, tier.label, 0, y, labelW, tierH, labelFontSize);
     ctx.fillStyle = '#22222a';
     ctx.fillRect(labelW, y, totalWidth - labelW, tierH);
     let x = labelW + padding;
@@ -6093,9 +6221,9 @@ async function _tlBuildCanvas(tl) {
         ctx.fillText(imgData.name.slice(0, 20), x + imgSize / 2, rowY + imgSize / 2, imgSize - 8);
       } else {
         const imgEl = await loadImage(imgData.src);
-        if (imgEl) ctx.drawImage(imgEl, x, rowY, imgSize, imgSize);
+        if (imgEl) _tlDrawImageContain(ctx, imgEl, x, rowY, imgSize);
       }
-      if (tl.showLabels && (imgData.type || 'image') !== 'text') {
+      if (showLabels && (imgData.type || 'image') !== 'text') {
         ctx.fillStyle = 'rgba(0,0,0,0.72)';
         ctx.fillRect(x, rowY + imgSize - 16, imgSize, 16);
         ctx.fillStyle = '#e8e8f0';
@@ -6811,8 +6939,8 @@ function _tlAddTextCard(tl, text) {
   });
   tlSave();
   tlRender();
-  const input = document.querySelector('.tl-add-text-input');
-  if (input) input.focus();
+  tlAddTextInput.value = '';
+  tlAddTextInput.focus();
 }
 
 // ── Génération de tierlists depuis un template (façon Bingo Jérôme/Adrien/Damien) ──
@@ -7049,24 +7177,33 @@ tlMaxImagesInput.addEventListener('click', () => {
   });
 });
 
+// "Tri" est une action ponctuelle (pas un mode persistant) : trier fige immédiatement l'ordre
+// choisi comme nouvel ordre manuel (tl.unplaced), sans état de tri à retenir ensuite.
 tlUnplacedSortBtn.addEventListener('click', () => {
   const tl = tlActiveTierlist();
   if (!tl) return;
-  const current = tl.unplacedSort || 'manual';
-  const setSort = mode => { tl.unplacedSort = mode; tlSave(); tlRender(); };
-  const { addItem } = _tlMakeCtxMenu(tlUnplacedSortBtn, null);
-  const addSortItem = (mode, iconName, text) => {
-    const btn = addItem(iconName, text, false, () => setSort(mode));
-    if (current === mode) {
-      const check = document.createElement('i');
-      check.setAttribute('data-lucide', 'check');
-      btn.insertBefore(check, btn.firstChild);
-      if (window.lucide) lucide.createIcons();
-    }
+  const applySort = mode => {
+    tl.unplacedSort = mode;
+    tl.unplaced = _tlGetSortedUnplaced(tl);
+    tl.unplacedSort = 'manual';
+    tlSave();
+    tlRender();
   };
-  addSortItem('manual', 'hand', 'Manuel');
-  addSortItem('alpha', 'arrow-down-a-z', 'Alphabétique');
-  addSortItem('date', 'arrow-down-0-1', 'Date d\'ajout');
+  const { addItem } = _tlMakeCtxMenu(tlUnplacedSortBtn, null);
+  addItem('arrow-down-a-z', 'Alphabétique', false, () => applySort('alpha'));
+  addItem('arrow-down-0-1', 'Date d\'ajout', false, () => applySort('date'));
+});
+
+// ── Ajout d'images / texte (barre du header non placés) ───────────────────────
+tlBtnAddImage.addEventListener('click', () => _tlShowImportMenu(tlBtnAddImage));
+tlAddTextInput.addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') {
+    const tl = tlActiveTierlist();
+    const text = tlAddTextInput.value.trim();
+    if (!tl || !text) return;
+    _tlAddTextCard(tl, text);
+  }
 });
 
 // ── Coller depuis le presse-papier ────────────────────────────────────────────
