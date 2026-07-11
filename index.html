@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=139" />
+  <link rel="stylesheet" href="style.css?v=140" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -808,6 +808,12 @@
             Se connecter avec Google
           </button>
         </div>
+        <div class="auth-separator"><span>ou</span></div>
+        <form id="form-email-signin" class="auth-email-form">
+          <input type="email" id="input-email-signin" placeholder="Email" autocomplete="username" required />
+          <input type="password" id="input-password-signin" placeholder="Mot de passe" autocomplete="current-password" required />
+          <button type="submit" class="btn-action" id="btn-email-signin">Se connecter</button>
+        </form>
       </div>
     </div>
   </div>
@@ -826,6 +832,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=220"></script>
+  <script src="app.js?v=221"></script>
 </body>
 </html>

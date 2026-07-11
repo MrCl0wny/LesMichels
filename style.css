@@ -1923,6 +1923,38 @@ textarea.element-edit-input {
 }
 .btn-google:hover { background: #f0f0f0; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
 
+.auth-separator {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+  margin: 14px 0;
+}
+.auth-separator::before,
+.auth-separator::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--border);
+}
+.auth-separator span { padding: 0 10px; }
+
+.auth-email-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+.auth-email-form input {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  width: 100%;
+}
+
 .user-badge {
   position: relative;
   display: flex;

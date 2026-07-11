@@ -200,6 +200,19 @@ function setupAuth() {
     });
   });
 
+  const formEmail    = document.getElementById('form-email-signin');
+  const inputEmail   = document.getElementById('input-email-signin');
+  const inputPassword = document.getElementById('input-password-signin');
+
+  formEmail.addEventListener('submit', (e) => {
+    e.preventDefault();
+    document.getElementById('auth-error').textContent = '';
+    _auth.signInWithEmailAndPassword(inputEmail.value, inputPassword.value).catch(err => {
+      console.error('Erreur connexion email:', err);
+      document.getElementById('auth-error').textContent = 'Email ou mot de passe incorrect.';
+    });
+  });
+
   btnSignout.addEventListener('click', () => {
     document.getElementById('modal-confirm-signout').classList.remove('hidden');
   });
