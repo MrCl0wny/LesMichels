@@ -1,7 +1,7 @@
 {
   "rules": {
-    ".read": "auth != null && (auth.uid === 'qvXEXn9zarMPaK0l9AH4PDtxsVG3' || auth.uid === 'VDpOI5BckhR7cmu3Bl7lzWj0wpH2' || auth.uid === 'KXEWIJplDrdqGnUSJA7Pvnr7aRx2')",
-    ".write": "auth != null && (auth.uid === 'qvXEXn9zarMPaK0l9AH4PDtxsVG3' || auth.uid === 'VDpOI5BckhR7cmu3Bl7lzWj0wpH2' || auth.uid === 'KXEWIJplDrdqGnUSJA7Pvnr7aRx2')",
+    ".read": "auth != null && (auth.uid === 'qvXEXn9zarMPaK0l9AH4PDtxsVG3' || auth.uid === 'VDpOI5BckhR7cmu3Bl7lzWj0wpH2' || auth.uid === 'KXEWIJplDrdqGnUSJA7Pvnr7aRx2' || auth.uid === 'Ju1gJx4dqmW2OwHcE1sDdq7Odff1' || auth.uid === 'GZ1u5gEoVBSC3Ujgd1coPDui0Qu2' || auth.uid === 'DF7RxxHCcLWRU3dKFRaamEjR1so1')",
+    ".write": "auth != null && (auth.uid === 'qvXEXn9zarMPaK0l9AH4PDtxsVG3' || auth.uid === 'VDpOI5BckhR7cmu3Bl7lzWj0wpH2' || auth.uid === 'KXEWIJplDrdqGnUSJA7Pvnr7aRx2' || auth.uid === 'Ju1gJx4dqmW2OwHcE1sDdq7Odff1' || auth.uid === 'GZ1u5gEoVBSC3Ujgd1coPDui0Qu2' || auth.uid === 'DF7RxxHCcLWRU3dKFRaamEjR1so1')",
     "users": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",

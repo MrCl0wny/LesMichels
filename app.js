@@ -207,9 +207,10 @@ function setupAuth() {
   formEmail.addEventListener('submit', (e) => {
     e.preventDefault();
     document.getElementById('auth-error').textContent = '';
-    _auth.signInWithEmailAndPassword(inputEmail.value, inputPassword.value).catch(err => {
-      console.error('Erreur connexion email:', err);
-      document.getElementById('auth-error').textContent = 'Email ou mot de passe incorrect.';
+    const pseudoEmail = inputEmail.value.trim().toLowerCase() + '@lesmichels.local';
+    _auth.signInWithEmailAndPassword(pseudoEmail, inputPassword.value).catch(err => {
+      console.error('Erreur connexion pseudo:', err);
+      document.getElementById('auth-error').textContent = 'Pseudo ou mot de passe incorrect.';
     });
   });
 
@@ -220,7 +221,10 @@ function setupAuth() {
   const ALLOWED_UIDS = [
     'qvXEXn9zarMPaK0l9AH4PDtxsVG3',
     'VDpOI5BckhR7cmu3Bl7lzWj0wpH2',
-    'KXEWIJplDrdqGnUSJA7Pvnr7aRx2'
+    'KXEWIJplDrdqGnUSJA7Pvnr7aRx2',
+    'Ju1gJx4dqmW2OwHcE1sDdq7Odff1',
+    'GZ1u5gEoVBSC3Ujgd1coPDui0Qu2',
+    'DF7RxxHCcLWRU3dKFRaamEjR1so1'
   ];
 
   _auth.onAuthStateChanged(user => {
