@@ -52,8 +52,10 @@
 - **Panneau Dossiers fixe (400px)** : même comportement que le Bingo — sidebar qui pousse le contenu au lieu de flotter, ouverture/fermeture via le bouton dédié. Archives et Corbeille sont accessibles tout en bas de ce panneau
 - **Dossiers, tierlists et templates déplaçables par glisser-déposer** : poignée dédiée (icône grip, curseur main) sur chaque ligne du panneau Dossiers
 - **Ouvrir dans une nouvelle fenêtre (gris, comme le Bingo)** : bouton dans la toolbar de l'éditeur, avec le même comportement que côté Bingo (fenêtre séparée pour l'édition solo)
-- **Bouton Annuler** : annule la dernière action (ajout/suppression d'élément, de tier, drag & drop, etc.)
+- **Bouton Annuler propre à chaque utilisateur** : n'annule que les actions de la personne qui clique (déplacer/ajouter/supprimer/renommer un élément, ajouter/modifier/supprimer/réordonner un tier) — jamais celles d'un autre appareil connecté en même temps. Ne couvre volontairement pas les actions plus rares (dossiers, tierlists entières, archivage)
 - **Suppression définitive** : option "Supprimer" disponible sur les dossiers, templates et tierlists (clic droit), envoie à la Corbeille
+- **Dupliquer un dossier** : copie récursive du dossier avec tout son contenu (sous-dossiers, tierlists, templates et leurs tierlists générées), accessible depuis le menu contextuel du dossier
+- **Ajouter un template depuis un dossier** : option "Ajouter un template" dans le menu contextuel du dossier, pré-remplit le dossier de destination dans la modal de création
 - **Affichage dédié pour un template** : les tiers (labels/couleurs uniquement, sans zone de dépose ni hint — un template ne peut de toute façon jamais recevoir d'élément classé dans un tier) sont affichés dans une colonne étroite à gauche, et "Éléments non placés" occupe le reste de l'espace à droite, côte à côte plutôt qu'empilés. Une tierlist normale (générée depuis un template) garde l'affichage classique empilé
 
 ---

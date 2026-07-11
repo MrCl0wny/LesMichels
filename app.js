@@ -4290,8 +4290,15 @@ function _tlNormalizeState(parsed) {
 }
 
 // ── Stack Undo ─────────────────────────────────────────────────────────────────
-const _TL_UNDO_MAX = 5;
-let _tlUndoStack = []; // chaque entrée = snapshot JSON de tlState
+// Historique local à CET utilisateur (jamais synchronisé) : chaque entrée décrit une opération
+// inverse ciblée (déplacer/ajouter/supprimer/renommer une image, ajouter/modifier/supprimer/réordonner
+// un tier) plutôt qu'un snapshot complet de tlState. Un snapshot global se rejouait par-dessus l'état
+// reçu entre-temps d'un autre utilisateur (via _dbTierlist.on('value')), écrasant son travail — une
+// opération ciblée se réapplique sur l'état COURANT et ne touche que ce qu'elle décrit, donc les actions
+// d'un autre utilisateur survenues entre-temps restent intactes. Portée volontairement limitée à
+// images + tiers (le reste — dossiers, tierlists entières, archivage... — n'est pas couvert par Annuler).
+const _TL_UNDO_MAX = 10;
+let _tlUndoStack = []; // chaque entrée = { tierlistId, groupRootId, type, ...payload }
 
 // Cache global id→src : alimenté à chaque import/paste, jamais vidé.
 // Permet de restaurer les src même si l'image a été supprimée de tlState.
@@ -4301,38 +4308,88 @@ function _tlCacheSrcs(tl) {
   (tl.images || []).forEach(img => { if (img.src) _tlSrcCache[img.id] = img.src; });
 }
 
-function _tlStateWithoutSrc(state) {
-  return JSON.stringify({
-    ...state,
-    tierlists: state.tierlists.map(tl => ({
-      ...tl,
-      images: (tl.images || []).map(img => {
-        const { src, ...rest } = img;
-        return rest;
-      })
-    }))
-  });
-}
-
-function _tlRestoreWithSrc(snapshot) {
-  snapshot.tierlists.forEach(tl => {
-    tl.images = (tl.images || []).map(img => ({ ...img, src: _tlSrcCache[img.id] || '' }));
-  });
-  return snapshot;
-}
-
-function tlPushUndo() {
-  _tlUndoStack.push(_tlStateWithoutSrc(tlState));
+function _tlPushUndoOp(op) {
+  _tlUndoStack.push(op);
   if (_tlUndoStack.length > _TL_UNDO_MAX) _tlUndoStack.shift();
   tlUpdateUndoBtn();
 }
 
+// Retrouve où se trouve imgId dans la tierlist tl : '__unplaced__' ou l'id d'un tier, avec l'index.
+function _tlLocateImage(tl, imgId) {
+  const uIdx = tl.unplaced.indexOf(imgId);
+  if (uIdx !== -1) return { zone: '__unplaced__', index: uIdx };
+  for (const tier of tl.tiers) {
+    const idx = tier.items.indexOf(imgId);
+    if (idx !== -1) return { zone: tier.id, index: idx };
+  }
+  return null;
+}
+
+function _tlRemoveImageFromAllZones(tl, imgId) {
+  tl.unplaced = tl.unplaced.filter(id => id !== imgId);
+  tl.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
+}
+
+function _tlPlaceImageAt(tl, imgId, zone, index) {
+  const list = zone === '__unplaced__' ? tl.unplaced : (tl.tiers.find(t => t.id === zone) || {}).items;
+  if (!list) { tl.unplaced.push(imgId); return; }
+  const idx = Math.max(0, Math.min(index, list.length));
+  list.splice(idx, 0, imgId);
+}
+
 function tlUndo() {
   if (_tlUndoStack.length === 0) return;
-  const snapshot = _tlUndoStack.pop();
-  try {
-    tlState = _tlRestoreWithSrc(JSON.parse(snapshot));
-  } catch (e) { return; }
+  const op = _tlUndoStack.pop();
+  const tl = tlState.tierlists.find(t => t.id === op.tierlistId);
+  if (!tl) { tlUpdateUndoBtn(); return; }
+  const root = op.groupRootId ? (tlState.tierlists.find(t => t.id === op.groupRootId) || tl) : tl;
+
+  switch (op.type) {
+    case 'moveImage':
+      _tlRemoveImageFromAllZones(tl, op.imgId);
+      _tlPlaceImageAt(tl, op.imgId, op.fromZone, op.fromIndex);
+      break;
+    case 'addImage': {
+      if (!root.images) root.images = [];
+      const idx = root.images.findIndex(i => i.id === op.imgId);
+      if (idx !== -1) root.images.splice(idx, 1);
+      _tlGetGroupMembers(tl).forEach(member => _tlRemoveImageFromAllZones(member, op.imgId));
+      break;
+    }
+    case 'deleteImage':
+      if (op.img.src) _tlSrcCache[op.img.id] = op.img.src;
+      (root.images || (root.images = [])).push(op.img);
+      const member = tlState.tierlists.find(t => t.id === op.tierlistId);
+      if (member) _tlPlaceImageAt(member, op.img.id, op.zone, op.index);
+      break;
+    case 'renameImage': {
+      const img = (root.images || []).find(i => i.id === op.imgId);
+      if (img) img.name = op.oldName;
+      break;
+    }
+    case 'addTier':
+      tl.tiers = tl.tiers.filter(t => t.id !== op.tierId);
+      break;
+    case 'deleteTier': {
+      const idx = Math.max(0, Math.min(op.index, tl.tiers.length));
+      tl.tiers.splice(idx, 0, op.tier);
+      op.tier.items.forEach(imgId => { tl.unplaced = tl.unplaced.filter(id => id !== imgId); });
+      break;
+    }
+    case 'editTier': {
+      const tier = tl.tiers.find(t => t.id === op.tierId);
+      if (tier) { tier.label = op.oldLabel; tier.color = op.oldColor; }
+      break;
+    }
+    case 'reorderTier': {
+      const fromIdx = tl.tiers.findIndex(t => t.id === op.tierId);
+      if (fromIdx !== -1) {
+        const [moved] = tl.tiers.splice(fromIdx, 1);
+        tl.tiers.splice(Math.max(0, Math.min(op.fromIndex, tl.tiers.length)), 0, moved);
+      }
+      break;
+    }
+  }
   tlSave();
   tlRender();
   tlUpdateUndoBtn();
@@ -4432,7 +4489,6 @@ function _tlGetDescendantIds(id) {
 }
 
 function tlCreateFolder(name, parentId) {
-  tlPushUndo();
   if (!tlState.folders) tlState.folders = [];
   const folder = tlDefaultFolder(name, parentId || null);
   tlState.folders.push(folder);
@@ -4441,7 +4497,6 @@ function tlCreateFolder(name, parentId) {
 }
 
 function tlRenameFolder(id, newName) {
-  tlPushUndo();
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (folder && newName.trim()) folder.name = newName.trim();
   tlSave();
@@ -4449,7 +4504,6 @@ function tlRenameFolder(id, newName) {
 }
 
 function tlMoveFolderToParent(id, newParentId) {
-  tlPushUndo();
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
   // Interdire de mettre un dossier dans lui-même ou dans un de ses descendants
@@ -4459,8 +4513,68 @@ function tlMoveFolderToParent(id, newParentId) {
   tlRender();
 }
 
+// Duplique un dossier et tout son contenu (récursif) : sous-dossiers, tierlists, templates avec leurs
+// tierlists générées (repointées vers le template dupliqué, jamais vers l'original). Chaque tierlist/
+// template copié obtient un nouvel id et de nouveaux ids d'image (même remap que tlCopy), pour rester
+// totalement indépendant de l'original.
+function _tlDuplicateTierlistDeep(src, folderId, templateIdOverride) {
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = uid();
+  copy.name = src.name + ' (copie)';
+  copy.archived = false;
+  copy.folderId = folderId;
+  if (templateIdOverride !== undefined) copy.templateId = templateIdOverride;
+  const idMap = {};
+  copy.images = (copy.images || []).map(img => {
+    const newId = uid();
+    idMap[img.id] = newId;
+    return { ...img, id: newId };
+  });
+  copy.tiers = (copy.tiers || []).map(t => ({
+    ...t,
+    id: uid(),
+    items: t.items.map(oid => idMap[oid] || oid),
+  }));
+  copy.unplaced = (copy.unplaced || []).map(oid => idMap[oid] || oid);
+  tlState.tierlists.push(copy);
+  return copy;
+}
+
+function tlDuplicateFolder(id, newParentId) {
+  const folder = (tlState.folders || []).find(f => f.id === id);
+  if (!folder) return;
+  if (!tlState.folders) tlState.folders = [];
+
+  const cloneRecursive = (srcFolder, targetParentId) => {
+    const newFolder = tlDefaultFolder(srcFolder.name, targetParentId);
+    tlState.folders.push(newFolder);
+
+    // Templates + leurs tierlists générées (repointées vers la copie du template)
+    const templates = tlState.tierlists.filter(t => !t.archived && t.folderId === srcFolder.id && t.isTemplate);
+    templates.forEach(tpl => {
+      const tplCopy = _tlDuplicateTierlistDeep(tpl, newFolder.id);
+      const generated = tlState.tierlists.filter(t => !t.archived && t.templateId === tpl.id);
+      generated.forEach(gen => _tlDuplicateTierlistDeep(gen, newFolder.id, tplCopy.id));
+    });
+
+    // Tierlists normales (ni template, ni générées depuis un template déjà traité ci-dessus)
+    const plain = tlState.tierlists.filter(t => !t.archived && t.folderId === srcFolder.id && !t.isTemplate && !t.templateId);
+    plain.forEach(tl => _tlDuplicateTierlistDeep(tl, newFolder.id));
+
+    // Sous-dossiers
+    (tlState.folders || []).filter(f => !f.archived && f.parentId === srcFolder.id && f.id !== newFolder.id)
+      .forEach(sub => cloneRecursive(sub, newFolder.id));
+
+    return newFolder;
+  };
+
+  const result = cloneRecursive(folder, newParentId !== undefined ? newParentId : (folder.parentId || null));
+  tlSave();
+  tlRender();
+  return result;
+}
+
 function tlArchiveFolder(id) {
-  tlPushUndo();
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
   // Archiver en cascade les sous-dossiers
@@ -4474,7 +4588,6 @@ function tlArchiveFolder(id) {
 }
 
 function tlUnarchiveFolder(id) {
-  tlPushUndo();
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
   folder.archived = false;
@@ -4518,7 +4631,6 @@ function tlTrashEmpty() {
 }
 
 function tlDeleteFolder(id) {
-  tlPushUndo();
   const allIds = [id, ..._tlGetDescendantIds(id)];
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (folder) {
@@ -4554,7 +4666,6 @@ function tlDeleteFolder(id) {
 }
 
 function tlMoveTierlistToFolder(tlId, folderId) {
-  tlPushUndo();
   const tl = tlState.tierlists.find(t => t.id === tlId);
   if (!tl) return;
   tl.folderId = folderId || null;
@@ -4695,13 +4806,11 @@ function _tlSidebarDropOnItem(e, targetId, targetType, targetEl) {
 
   if (_tlSidebarDragType === 'tierlist' && targetType === 'folder-header') {
     // Ranger la tierlist dans ce dossier
-    tlPushUndo();
     tlMoveTierlistToFolder(_tlSidebarDragId, targetId);
     return;
   }
 
   // Réordonner : construire un tableau plat de références [{ type, id }]
-  tlPushUndo();
   if (!tlState.folders) tlState.folders = [];
 
   if (_tlSidebarDragType === 'tierlist') {
@@ -5295,13 +5404,18 @@ function tlRenderTiers(tl) {
     });
     labelCell.appendChild(labelText);
 
-    // Drag & drop réordonnement tiers — déclenché uniquement depuis la poignée (wrap.draggable)
+    // Drag & drop réordonnement tiers — déclenché uniquement depuis la poignée (wrap.draggable).
+    // e.target === wrap est indispensable : un dragstart/dragend démarré sur une carte-image à
+    // l'intérieur du tier bubble jusqu'ici, et sans ce garde-fou _tlTierDragId se retrouvait affecté
+    // pendant tout drag d'image (bloquant le drop dans imgsDiv, cf. wrap.addEventListener('drop')).
     wrap.addEventListener('dragstart', e => {
+      if (e.target !== wrap) return;
       _tlTierDragId = tier.id;
       e.dataTransfer.effectAllowed = 'move';
       setTimeout(() => wrap.classList.add('tl-tier-label-dragging'), 0);
     });
-    wrap.addEventListener('dragend', () => {
+    wrap.addEventListener('dragend', e => {
+      if (e.target !== wrap) return;
       _tlTierDragId = null;
       wrap.draggable = false;
       wrap.classList.remove('tl-tier-label-dragging');
@@ -5328,7 +5442,7 @@ function tlRenderTiers(tl) {
       const before = e.clientY < rect.top + rect.height / 2;
       const fromIdx = tl.tiers.findIndex(t => t.id === _tlTierDragId);
       if (fromIdx === -1) return;
-      tlPushUndo();
+      _tlPushUndoOp({ tierlistId: tl.id, type: 'reorderTier', tierId: _tlTierDragId, fromIndex: fromIdx });
       const [moved] = tl.tiers.splice(fromIdx, 1);
       let insertIdx = tl.tiers.findIndex(t => t.id === tier.id);
       if (!before) insertIdx += 1;
@@ -5417,7 +5531,7 @@ function _tlInlineRenameTier(spanEl, tl, tier, caretOffset) {
   const commit = () => {
     const newLabel = input.value.trim();
     if (newLabel && newLabel !== tier.label) {
-      tlPushUndo();
+      _tlPushUndoOp({ tierlistId: tl.id, type: 'editTier', tierId: tier.id, oldLabel: tier.label, oldColor: tier.color });
       tier.label = newLabel;
       tlSave();
     }
@@ -5507,14 +5621,16 @@ function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
   addItem('palette', 'Modifier la couleur', false, () => tlOpenTierModal({ mode: 'color', tl, tier }));
   addSep();
   addItem('chevron-up', 'Ajouter un tier au-dessus', false, () => {
-    tlPushUndo();
-    tl.tiers.splice(tierIdx, 0, { id: uid(), label: '?', color: '#888888', items: [] });
+    const newTier = { id: uid(), label: '?', color: '#888888', items: [] };
+    _tlPushUndoOp({ tierlistId: tl.id, type: 'addTier', tierId: newTier.id });
+    tl.tiers.splice(tierIdx, 0, newTier);
     tlSave(); tlRender();
     tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx]);
   });
   addItem('chevron-down', 'Ajouter un tier en-dessous', false, () => {
-    tlPushUndo();
-    tl.tiers.splice(tierIdx + 1, 0, { id: uid(), label: '?', color: '#888888', items: [] });
+    const newTier = { id: uid(), label: '?', color: '#888888', items: [] };
+    _tlPushUndoOp({ tierlistId: tl.id, type: 'addTier', tierId: newTier.id });
+    tl.tiers.splice(tierIdx + 1, 0, newTier);
     tlSave(); tlRender();
     tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx + 1]);
   });
@@ -5560,7 +5676,6 @@ function _tlPasteFromClipboard(tl) {
     if (root.images.length >= maxImages) {
       alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`); return;
     }
-    tlPushUndo();
     const now = new Date();
     const promises = imageItems.map(item => {
       const type = item.types.find(t => t.startsWith('image/'));
@@ -5571,6 +5686,7 @@ function _tlPasteFromClipboard(tl) {
           if (root.images.some(i => i.src === src)) return;
           const img = { id: uid(), src, name };
           _tlSrcCache[img.id] = src;
+          _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'addImage', imgId: img.id });
           root.images.push(img);
           _tlGetGroupMembers(tl).forEach(member => {
             if (!member.unplaced.includes(img.id)) member.unplaced.push(img.id);
@@ -5677,7 +5793,7 @@ function _tlInlineRenameImg(labelEl, tl, img, size, caretOffset) {
   const commit = () => {
     const newName = input.value.trim();
     if (newName && newName !== img.name) {
-      tlPushUndo();
+      _tlPushUndoOp({ tierlistId: tl.id, groupRootId: _tlGroupRoot(tl).id, type: 'renameImage', imgId: img.id, oldName: img.name });
       img.name = newName;
       tlSave();
     }
@@ -5704,7 +5820,6 @@ function tlFindImage(tl, imgId) {
 
 // ── Actions sur les tierlists ─────────────────────────────────────────────────
 function tlCreate(name, folderId, isTemplate = false) {
-  tlPushUndo();
   const tl = tlDefaultTierlist(name, isTemplate);
   if (folderId) tl.folderId = folderId;
   tlState.tierlists.push(tl);
@@ -5730,7 +5845,6 @@ function tlSwitch(id) {
 }
 
 function tlDelete(id) {
-  tlPushUndo();
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
   // Suppression d'un template : cascade sur toutes ses tierlists générées, chacune sa propre entrée de corbeille
@@ -5755,7 +5869,6 @@ function tlDelete(id) {
 }
 
 function tlArchive(id) {
-  tlPushUndo();
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
   tl.archived = true;
@@ -5779,7 +5892,6 @@ function tlConvertToTemplate(id) {
     const ok = confirm(`Convertir "${tl.name}" en template va renvoyer ses ${placedCount} image(s) classée(s) en zone non placée (un template n'a jamais d'image dans un tier). Continuer ?`);
     if (!ok) return;
   }
-  tlPushUndo();
   tl.tiers.forEach(t => {
     t.items.forEach(imgId => { if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId); });
     t.items = [];
@@ -5800,7 +5912,6 @@ function tlReset() {
 function _tlDoReset() {
   const tl = tlActiveTierlist();
   if (!tl) return;
-  tlPushUndo();
   tl.tiers.forEach(tier => {
     tier.items.forEach(imgId => { if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId); });
     tier.items = [];
@@ -5810,7 +5921,6 @@ function _tlDoReset() {
 }
 
 function tlCopy(id) {
-  tlPushUndo();
   const src = tlState.tierlists.find(t => t.id === id);
   if (!src) return;
   const copy = JSON.parse(JSON.stringify(src));
@@ -5840,7 +5950,6 @@ function tlCopy(id) {
 }
 
 function tlRename(id, newName) {
-  tlPushUndo();
   const tl = tlState.tierlists.find(t => t.id === id);
   if (tl && newName.trim()) tl.name = newName.trim();
   tlSave();
@@ -5849,10 +5958,11 @@ function tlRename(id, newName) {
 
 // ── Actions sur les tiers ─────────────────────────────────────────────────────
 function tlAddTier(label, color) {
-  tlPushUndo();
   const tl = tlActiveTierlist();
   if (!tl) return;
-  tl.tiers.push({ id: uid(), label, color, items: [] });
+  const newTier = { id: uid(), label, color, items: [] };
+  _tlPushUndoOp({ tierlistId: tl.id, type: 'addTier', tierId: newTier.id });
+  tl.tiers.push(newTier);
   tlSave();
   tlRender();
 }
@@ -5863,8 +5973,9 @@ function tlDeleteTier(tl, tierId) {
     const confirmed = confirm(`Ce tier contient ${tier.items.length} image(s). Les supprimer quand même ? (Elles seront renvoyées dans "Images non placées")`);
     if (!confirmed) return;
   }
-  tlPushUndo();
   if (tier) {
+    const tierIdx = tl.tiers.findIndex(t => t.id === tierId);
+    _tlPushUndoOp({ tierlistId: tl.id, type: 'deleteTier', tier: JSON.parse(JSON.stringify(tier)), index: tierIdx });
     tier.items.forEach(imgId => {
       if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId);
     });
@@ -5938,7 +6049,6 @@ function tlImportImages(files) {
   const fileArray = Array.from(files).slice(0, remaining);
   const ignoredByLimit = files.length - fileArray.length;
   let ignoredByDuplicate = 0;
-  tlPushUndo();
 
   const processFile = (file) => {
     const name = file.name.replace(/\.[^.]+$/, '');
@@ -5946,6 +6056,7 @@ function tlImportImages(files) {
       if (root.images.some(i => i.src === src)) { ignoredByDuplicate++; return; }
       const img = { id: uid(), src, name };
       _tlSrcCache[img.id] = src;
+      _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'addImage', imgId: img.id });
       root.images.push(img);
       _tlGetGroupMembers(tl).forEach(member => {
         if (!member.unplaced.includes(img.id)) member.unplaced.push(img.id);
@@ -5964,8 +6075,12 @@ function tlImportImages(files) {
 }
 
 function tlDeleteImage(tl, imgId) {
-  tlPushUndo();
   const root = _tlGroupRoot(tl);
+  const img = (root.images || []).find(i => i.id === imgId);
+  const loc = _tlLocateImage(tl, imgId);
+  if (img && loc) {
+    _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'deleteImage', img: JSON.parse(JSON.stringify(img)), zone: loc.zone, index: loc.index });
+  }
   _tlGetGroupMembers(tl).forEach(member => {
     member.unplaced = member.unplaced.filter(id => id !== imgId);
     member.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
@@ -6030,7 +6145,10 @@ function tlDrop(e, targetZoneId) {
   const tl = tlActiveTierlist();
   if (!tl) return;
   if (tl.isTemplate && targetZoneId !== '__unplaced__') return;
-  tlPushUndo();
+  const from = _tlLocateImage(tl, imgId);
+  if (from) {
+    _tlPushUndoOp({ tierlistId: tl.id, type: 'moveImage', imgId, fromZone: from.zone, fromIndex: from.index });
+  }
 
   // Retirer de partout
   tl.unplaced = tl.unplaced.filter(id => id !== imgId);
@@ -6078,10 +6196,10 @@ function tlOpenRenameImg(tl, img) {
 
 function tlConfirmRenameImg() {
   if (!tlRenameImgContext) return;
-  const { img } = tlRenameImgContext;
+  const { tl, img } = tlRenameImgContext;
   const newName = tlModalImgNameInput.value.trim();
-  if (newName) {
-    tlPushUndo();
+  if (newName && newName !== img.name) {
+    _tlPushUndoOp({ tierlistId: tl.id, groupRootId: _tlGroupRoot(tl).id, type: 'renameImage', imgId: img.id, oldName: img.name });
     img.name = newName;
   }
   tlModalImgName.classList.add('hidden');
@@ -6269,7 +6387,6 @@ function tlBuildArchivedTierlistItem(tl) {
   btnRestore.innerHTML = '<i data-lucide="corner-down-left"></i> Restaurer';
   btnRestore.addEventListener('click', () => {
     // Restaurer sans dossier (détacher du dossier)
-    tlPushUndo();
     const t = tlState.tierlists.find(x => x.id === tl.id);
     if (t) { t.archived = false; t.folderId = null; }
     if (!_tlLocalActiveTierlistId) {
@@ -6487,35 +6604,35 @@ function tlPopulateFolderSelect(selectEl, selectedId, excludeId) {
   addOptions(null, 0);
 }
 
-function tlOpenNewModal() {
+function tlOpenNewModal(presetFolderId) {
   tlModalNewMode = 'create';
   tlModalNewTargetId = null;
   tlModalNewTitle.textContent = 'Nouvelle tier list';
-  const n = (tlState.tierlists || []).filter(t => !t.archived).length + 1;
-  tlModalNewInput.value = `Tierlist ${n}`;
+  tlModalNewInput.value = '';
+  tlModalNewInput.placeholder = 'Nom de la tier list...';
   // Afficher/cacher le select dossier selon le mode
   const wrap = document.getElementById('tl-modal-new-folder-wrap');
   if (wrap) {
     wrap.style.display = '';
-    tlPopulateFolderSelect(tlModalNewFolderSelect, '');
+    tlPopulateFolderSelect(tlModalNewFolderSelect, presetFolderId || '');
   }
   tlModalNew.classList.remove('hidden');
-  setTimeout(() => { tlModalNewInput.focus(); tlModalNewInput.select(); }, 50);
+  setTimeout(() => { tlModalNewInput.focus(); }, 50);
 }
 
-function tlOpenNewTemplateModal() {
+function tlOpenNewTemplateModal(presetFolderId) {
   tlModalNewMode = 'create-template';
   tlModalNewTargetId = null;
   tlModalNewTitle.textContent = 'Nouveau template';
-  const n = (tlState.tierlists || []).filter(t => !t.archived && t.isTemplate).length + 1;
-  tlModalNewInput.value = `Template ${n}`;
+  tlModalNewInput.value = '';
+  tlModalNewInput.placeholder = 'Nom du template...';
   const wrap = document.getElementById('tl-modal-new-folder-wrap');
   if (wrap) {
     wrap.style.display = '';
-    tlPopulateFolderSelect(tlModalNewFolderSelect, '');
+    tlPopulateFolderSelect(tlModalNewFolderSelect, presetFolderId || '');
   }
   tlModalNew.classList.remove('hidden');
-  setTimeout(() => { tlModalNewInput.focus(); tlModalNewInput.select(); }, 50);
+  setTimeout(() => { tlModalNewInput.focus(); }, 50);
 }
 
 function tlOpenRenameModal(id) {
@@ -6525,6 +6642,7 @@ function tlOpenRenameModal(id) {
   tlModalNewTargetId = id;
   tlModalNewTitle.textContent = 'Renommer la tier list';
   tlModalNewInput.value = tl.name;
+  tlModalNewInput.placeholder = 'Nom de la tier list...';
   // Cacher le select dossier en mode rename
   const wrap = document.getElementById('tl-modal-new-folder-wrap');
   if (wrap) wrap.style.display = 'none';
@@ -6609,8 +6727,9 @@ function tlConfirmTierModal() {
   const color = tlTierSelectedColor;
   tlModalTier.classList.add('hidden');
   if (tlTierModalCtx && tlTierModalCtx.mode === 'color') {
-    tlPushUndo();
-    tlTierModalCtx.tier.color = color;
+    const { tl, tier } = tlTierModalCtx;
+    _tlPushUndoOp({ tierlistId: tl.id, type: 'editTier', tierId: tier.id, oldLabel: tier.label, oldColor: tier.color });
+    tier.color = color;
     tlSave();
     tlRender();
     tlTierModalCtx = null;
@@ -6619,9 +6738,10 @@ function tlConfirmTierModal() {
   const label = tlModalTierLabel.value.trim();
   if (!label) return;
   if (tlTierModalCtx && tlTierModalCtx.mode === 'edit') {
-    tlPushUndo();
-    tlTierModalCtx.tier.label = label;
-    tlTierModalCtx.tier.color = color;
+    const { tl, tier } = tlTierModalCtx;
+    _tlPushUndoOp({ tierlistId: tl.id, type: 'editTier', tierId: tier.id, oldLabel: tier.label, oldColor: tier.color });
+    tier.label = label;
+    tier.color = color;
     tlSave();
     tlRender();
   } else {
@@ -6637,7 +6757,9 @@ function tlOpenFolderManageModal(id, anchorEl) {
   if (!folder) return;
   const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null);
   addItem('pencil', 'Renommer', false, () => tlOpenFolderModal('rename', id, folder.name));
+  addItem('copy-plus', 'Dupliquer', false, () => tlDuplicateFolder(id));
   addItem('move', 'Déplacer dans un dossier', false, () => tlOpenMoveFolderModal(id));
+  addItem('scroll', 'Ajouter un template', false, () => tlOpenNewTemplateModal(id));
   addSep();
   addItem('package', 'Archiver', true, () => tlArchiveFolder(id));
   addItem('trash-2', 'Supprimer', true, () => tlDeleteFolder(id));
@@ -6667,8 +6789,7 @@ function tlOpenFolderModal(mode = 'create', id = null, currentName = '') {
   } else {
     tlModalFolderTitle.textContent = 'Nouveau dossier';
     tlModalFolderConfirm.textContent = 'Créer';
-    const n = (tlState.folders || []).length + 1;
-    tlModalFolderInput.value = `Dossier ${n}`;
+    tlModalFolderInput.value = '';
     if (tlModalFolderParentWrap) {
       tlModalFolderParentWrap.style.display = '';
       tlPopulateFolderSelect(tlModalFolderParentSelect, '');
@@ -6676,7 +6797,7 @@ function tlOpenFolderModal(mode = 'create', id = null, currentName = '') {
     }
   }
   tlModalFolder.classList.remove('hidden');
-  setTimeout(() => { tlModalFolderInput.focus(); tlModalFolderInput.select(); }, 50);
+  setTimeout(() => { tlModalFolderInput.focus(); if (mode === 'rename') tlModalFolderInput.select(); }, 50);
 }
 
 function tlConfirmFolderModal() {
@@ -6832,8 +6953,8 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
-tlBtnNewTemplate.addEventListener('click', tlOpenNewTemplateModal);
-document.getElementById('tl-empty-btn-new').addEventListener('click', tlOpenNewTemplateModal);
+tlBtnNewTemplate.addEventListener('click', () => tlOpenNewTemplateModal());
+document.getElementById('tl-empty-btn-new').addEventListener('click', () => tlOpenNewTemplateModal());
 document.getElementById('tl-empty-btn-folder').addEventListener('click', () => tlOpenFolderModal('create'));
 
 tlModalNewConfirm.addEventListener('click', tlConfirmNewModal);
@@ -6931,8 +7052,8 @@ function _tlAddTextCard(tl, text) {
     alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
     return;
   }
-  tlPushUndo();
   const img = { id: uid(), type: 'text', name: text, color: TL_TEXT_CARD_COLOR };
+  _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'addImage', imgId: img.id });
   root.images.push(img);
   _tlGetGroupMembers(tl).forEach(member => {
     if (!member.unplaced.includes(img.id)) member.unplaced.push(img.id);
@@ -6978,7 +7099,6 @@ function tlConfirmGenerateFromTemplate() {
   if (!_tlGenerateTemplateId) return;
   const checked = [...document.querySelectorAll('#tl-modal-generate-from-template .grid-name-preset-check input:checked')].map(cb => cb.value);
   tlModalGenerate.classList.add('hidden');
-  tlPushUndo();
   let lastCreated = null;
   if (checked.length > 0) {
     checked.forEach(name => { lastCreated = _tlCreateFromTemplate(_tlGenerateTemplateId, name); });
