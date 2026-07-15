@@ -727,6 +727,55 @@ body.solo-tierlist-mode .main {
   padding: 8px;
 }
 
+/* ── Mode "comparaison" (popup ouverte via le bouton Comparer, lecture seule) ── */
+body.compare-tierlist-mode .header,
+body.compare-tierlist-mode .tl-sidebar,
+body.compare-tierlist-mode .tl-control-panel,
+body.compare-tierlist-mode #tl-empty-state,
+body.compare-tierlist-mode #tl-editor {
+  display: none !important;
+}
+body.compare-tierlist-mode .main {
+  padding: 8px;
+}
+.tl-compare-toolbar {
+  display: flex;
+  justify-content: center;
+  padding: 10px 12px 0;
+}
+.tl-compare-view {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding: 12px;
+}
+.tl-compare-column {
+  flex: 0 0 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tl-compare-column-title {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  color: var(--text);
+}
+.tl-compare-tier-row {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 60px;
+}
+.tl-compare-tier-row .tl-tier-images {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+}
+
 /* ── Panneaux ── */
 .panel {
   background: var(--surface);
@@ -1774,6 +1823,79 @@ textarea.element-edit-input {
   overflow-y: auto;
 }
 
+.modal-item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tl-preset-row-btn {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+.tl-preset-row-name {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.tl-preset-row-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.tl-preset-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+.tl-preset-dot-btn {
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  padding: 0;
+}
+.tl-preset-dot-btn:hover {
+  border-color: var(--accent-dim);
+}
+
+.tl-preset-color-popover {
+  /* position:fixed + top/left calculés en JS (voir _tlOpenPresetColorPopover) — nécessaire pour
+     échapper à l'overflow-y:auto de la liste de tiers, qui coupait un positionnement absolute. */
+  z-index: 2100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 160px;
+  padding: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
+.tl-preset-color-popover-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tl-preset-color-popover .tl-color-custom-label {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  justify-content: space-between;
+}
+
+.tl-preset-edit-row {
+  cursor: grab;
+}
+.tl-preset-edit-row.dragging {
+  opacity: 0.4;
+}
+
 .archived-theme-item {
   display: flex;
   align-items: center;
@@ -2272,8 +2394,8 @@ textarea.element-edit-input {
 .tl-toolbar-btn:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
 .tl-btn-export { color: var(--text-muted); }
 .tl-btn-export:hover { border-color: var(--success); color: var(--success); background: rgba(71,200,135,0.1); }
-.tl-btn-add-tier { color: var(--success) !important; border-color: var(--success) !important; background: rgba(71,200,135,0.08) !important; font-weight: 700; }
-.tl-btn-add-tier:hover { background: rgba(71,200,135,0.2) !important; }
+.tl-btn-add-tier { color: var(--accent) !important; border-color: var(--accent) !important; background: var(--accent-glow) !important; font-weight: 700; }
+.tl-btn-add-tier:hover { filter: brightness(1.1); }
 .tl-btn-open-window {
   background: #4b5563;
   color: #e5e7eb;
@@ -2475,7 +2597,7 @@ textarea.element-edit-input {
   border: 1.5px solid transparent;
   cursor: grab;
   background: var(--surface-3);
-  transition: border-color 0.15s, transform 0.1s, opacity 0.15s;
+  transition: border-color 0.15s, transform 0.1s, opacity 0.15s, margin-left 0.12s ease, outline-color 0.12s ease;
   position: relative;
   flex-shrink: 0;
   user-select: none;
@@ -2987,10 +3109,30 @@ textarea.element-edit-input {
   background: rgba(240,180,41,0.1) !important;
 }
 
-/* ── Indicateur de position drop ── */
-.tl-img-card.drop-before {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.tl-btn-toggle-labels,
+.tl-btn-toggle-labels.active {
+  background: #f0b429;
+  border-color: #f0b429;
+  color: #1a1a1f;
+}
+.tl-btn-toggle-labels:hover {
+  filter: brightness(1.08);
+}
+
+/* ── Aperçu temps réel du dépôt (placeholder qui pousse les cartes voisines) ── */
+.tl-drop-placeholder {
+  border-radius: 5px;
+  border: 2px dashed var(--accent);
+  background: var(--accent-glow);
+  flex-shrink: 0;
+  animation: tl-drop-placeholder-pulse 0.9s ease-in-out infinite;
+}
+@keyframes tl-drop-placeholder-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
+}
+.tl-img-card.drag-source-hidden {
+  display: none;
 }
 
 /* ── Export canvas (caché) ── */
@@ -3022,6 +3164,56 @@ textarea.element-edit-input {
   font-weight: 700;
   margin-bottom: -8px;
 }
+
+/* ── Dropdown custom pour choisir un preset (nom + pastilles, impossible avec un <select> natif) ── */
+.tl-preset-dropdown {
+  position: relative;
+}
+.tl-preset-dropdown-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.9rem;
+  padding: 9px 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.tl-preset-dropdown-btn:hover { border-color: var(--accent-dim); }
+.tl-preset-dropdown-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  display: flex;
+  flex-direction: column;
+}
+.tl-preset-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+.tl-preset-dropdown-item:hover { background: var(--surface-3); }
 
 /* ── Drag & drop sidebar tierlists/dossiers ── */
 .tl-list-item.tl-dragging,

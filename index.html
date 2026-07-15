@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>LesMichels</title>
-  <link rel="stylesheet" href="style.css?v=141" />
+  <link rel="stylesheet" href="style.css?v=146" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -67,6 +67,15 @@
         <!-- ── Zone principale ── -->
         <div class="tl-main" id="tl-main">
 
+          <!-- ── Vue comparaison (fenêtre séparée, lecture seule) ── -->
+          <div id="tl-compare-toolbar" class="tl-compare-toolbar hidden">
+            <label class="tl-toggle-label" title="Régler la taille des images (48–180 px)">
+              <span>Taille</span>
+              <input type="range" id="tl-compare-img-size-slider" min="48" max="180" value="80" class="tl-slider" />
+            </label>
+          </div>
+          <div id="tl-compare-view" class="tl-compare-view hidden"></div>
+
           <!-- ── Panneau de contrôle tier list ── -->
           <div class="tl-control-panel hidden" id="tl-control-panel">
             <div class="tl-control-panel-body" id="tl-control-panel-body">
@@ -76,6 +85,7 @@
                 <div id="tl-group-breadcrumb" class="grids-breadcrumb"></div>
                 <div id="tl-group-list" class="grids-list"></div>
                 <button class="btn-new-grid-inline hidden" id="tl-btn-new-from-template" title="Générer une nouvelle tier list depuis ce template">+ Tier list</button>
+                <button class="tl-toolbar-btn hidden" id="tl-btn-compare" title="Comparer plusieurs tier lists de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparer</button>
                 <button class="btn-ce-set" id="tl-btn-ce-set" title="Définir cette tier list comme soirée en cours"><i data-lucide="party-popper"></i> Définir comme soirée en cours</button>
               </div>
 
@@ -83,15 +93,12 @@
               <div class="ctrl-row ctrl-row-toolbar">
                 <button class="tl-toolbar-btn tl-btn-folders" id="tl-btn-folders" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
                 <div class="ctrl-row-toolbar-center">
-                  <label class="tl-toggle-label" title="Afficher ou masquer les noms sous chaque image">
-                    <input type="checkbox" id="tl-show-labels-toggle" />
-                    <span>Noms</span>
-                  </label>
+                  <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image">Afficher noms</button>
                   <label class="tl-toggle-label" title="Régler la taille des images (48–180 px)">
                     <span>Taille</span>
                     <input type="range" id="tl-img-size-slider" min="48" max="180" value="80" class="tl-slider" />
                   </label>
-                  <button class="tl-toolbar-btn tl-btn-add-tier" id="tl-btn-add-tier" title="Ajouter un tier en bas de la liste">+ Tier</button>
+                  <button class="tl-toolbar-btn tl-btn-add-tier" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="list-tree"></i> Gérer tiers</button>
                   <button class="tl-toolbar-btn tl-btn-undo" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
                   <button class="tl-toolbar-btn tl-btn-reset" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
                   <button class="tl-toolbar-btn tl-btn-open-window" id="tl-btn-open-window" title="Ouvrir cette tier list dans une nouvelle fenêtre"><i data-lucide="square-arrow-out-up-right"></i> Ouvrir dans une nouvelle fenêtre</button>
@@ -109,6 +116,14 @@
               <button id="tl-empty-btn-folders" class="tl-empty-btn tl-empty-btn--folders"><i data-lucide="folder"></i> Dossiers</button>
               <button id="tl-empty-btn-folder" class="tl-empty-btn tl-empty-btn--folder">+ Nouveau dossier</button>
               <button id="tl-empty-btn-new" class="tl-empty-btn tl-empty-btn--tierlist">+ Nouveau template</button>
+            </div>
+          </div>
+
+          <div id="tl-folder-empty-state" class="tl-empty-state hidden">
+            <div class="tl-empty-actions">
+              <button id="tl-folder-empty-btn-folders" class="tl-empty-btn tl-empty-btn--folders"><i data-lucide="folder"></i> Dossiers</button>
+              <button id="tl-folder-empty-btn-folder" class="tl-empty-btn tl-empty-btn--folder">+ Nouveau dossier</button>
+              <button id="tl-folder-empty-btn-template" class="tl-empty-btn tl-empty-btn--tierlist">+ Nouveau template</button>
             </div>
           </div>
 
@@ -279,6 +294,15 @@
             <option value="">— Aucun dossier —</option>
           </select>
         </div>
+        <div id="tl-modal-new-preset-wrap" style="margin-top:8px;">
+          <span class="modal-folder-select-label">Preset de tiers</span>
+          <select id="tl-modal-new-preset-select" class="modal-folder-select hidden"></select>
+          <div class="tl-preset-dropdown" id="tl-modal-new-preset-dropdown">
+            <button type="button" class="tl-preset-dropdown-btn" id="tl-modal-new-preset-dropdown-btn"></button>
+            <div class="tl-preset-dropdown-list hidden" id="tl-modal-new-preset-dropdown-list"></div>
+          </div>
+          <button type="button" class="btn-action btn-secondary" id="tl-modal-new-import-tiers-btn" style="margin-top:8px;width:100%;">Importer tiers</button>
+        </div>
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-new-confirm">Créer</button>
           <button class="btn-action btn-secondary" id="tl-modal-new-cancel">Annuler</button>
@@ -384,6 +408,90 @@
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-folder-confirm">Créer</button>
           <button class="btn-action btn-secondary" id="tl-modal-folder-cancel">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal gestion des tiers : presets, import, sauvegarde -->
+  <div id="tl-modal-tiers-source" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Gérer les tiers</h3>
+        <button class="modal-close" id="tl-modal-tiers-source-close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <label style="font-size:0.78rem;color:var(--text-muted);">Presets</label>
+          <button class="btn-action btn-secondary" id="tl-tiers-source-new-preset-btn" style="padding:3px 10px;font-size:0.78rem;">+ Nouveau preset</button>
+        </div>
+        <div id="tl-tiers-source-preset-list" class="modal-items-list"></div>
+
+        <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin:12px 0 4px;">Sauvegarder les tiers actuels comme preset</label>
+        <div style="display:flex;gap:6px;">
+          <input type="text" id="tl-tiers-source-save-input" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" style="flex:1;" />
+          <button class="btn-action" id="tl-tiers-source-save-btn">Sauvegarder</button>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-action btn-secondary" id="tl-tiers-source-import-btn">Importer tiers</button>
+          <button class="btn-action btn-secondary" id="tl-modal-tiers-source-cancel">Fermer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal choix de la tier list source pour "Importer tiers" -->
+  <div id="tl-modal-import-tiers" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Importer les tiers</h3>
+        <button class="modal-close" id="tl-modal-import-tiers-close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Copier les tiers depuis</label>
+        <select id="tl-modal-import-tiers-select" class="modal-folder-select">
+          <option value="">— Choisir —</option>
+        </select>
+        <div class="modal-actions">
+          <button class="btn-action" id="tl-modal-import-tiers-confirm">Importer</button>
+          <button class="btn-action btn-secondary" id="tl-modal-import-tiers-cancel">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal édition d'un preset (nom + tiers, tout inline : couleur/renommage/drag&drop) -->
+  <div id="tl-modal-preset-edit" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Modifier le preset</h3>
+        <button class="modal-close" id="tl-modal-preset-edit-close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="tl-modal-preset-edit-name" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" />
+        <div id="tl-modal-preset-edit-tiers" class="modal-items-list" style="margin-top:10px;"></div>
+        <div class="modal-actions">
+          <button class="btn-action btn-secondary" id="tl-modal-preset-edit-add-tier">+ Ajouter un tier</button>
+          <button class="btn-action" id="tl-modal-preset-edit-confirm">Enregistrer</button>
+          <button class="btn-action btn-secondary" id="tl-modal-preset-edit-cancel">Fermer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal sélection des tier lists à comparer -->
+  <div id="tl-modal-compare" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Comparer des tier lists</h3>
+        <button class="modal-close" id="tl-modal-compare-close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div id="tl-compare-checklist" class="modal-items-list"></div>
+        <div class="modal-actions">
+          <button class="btn-action" id="tl-modal-compare-confirm">Comparer</button>
+          <button class="btn-action btn-secondary" id="tl-modal-compare-cancel">Annuler</button>
         </div>
       </div>
     </div>
@@ -832,6 +940,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=224"></script>
+  <script src="app.js?v=232"></script>
 </body>
 </html>

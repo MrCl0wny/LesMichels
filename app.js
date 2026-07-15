@@ -15,6 +15,12 @@ let _soloGridApplied = false;
 const _soloTierlistId = _soloGridParams.get('openTierlist') || null;
 let _soloTierlistApplied = false;
 
+const _compareTierlistIds = (_soloGridParams.get('compareTierlists') || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+let _compareModeApplied = false;
+
 // ──────────────────────────────────────────────
 // Désactivation des bulles d'aide (tooltips title="...")
 // Pour les réactiver : mettre DISABLE_TITLE_TOOLTIPS à false
@@ -253,6 +259,7 @@ function setupAuth() {
       _tlLocalShowLabels       = null;
       _tlLocalImgSize          = null;
       _tlLocalActiveTierlistId = null;
+      _tlLocalActiveFolderId   = null;
       _tlLocalNoSelection      = false;
       modalAuth.classList.remove('hidden');
       userBadge.classList.add('hidden');
@@ -305,6 +312,7 @@ function loadUserPrefs() {
     if (prefs.tlShowLabels        != null) _tlLocalShowLabels       = !!prefs.tlShowLabels;
     if (prefs.tlImgSize           != null) _tlLocalImgSize          = prefs.tlImgSize;
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
+    if (prefs.tlActiveFolderId    != null) _tlLocalActiveFolderId   = prefs.tlActiveFolderId;
     if (prefs.tlNoSelection       != null) _tlLocalNoSelection      = !!prefs.tlNoSelection;
     // Page active
     if (prefs.activePage   != null && window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId) _switchPage(prefs.activePage);
@@ -355,6 +363,20 @@ function _applySoloTierlistModeIfNeeded() {
   document.body.classList.add('solo-tierlist-mode');
 }
 
+function _applyCompareTierlistModeIfNeeded() {
+  if (_compareTierlistIds.length < 2 || _compareModeApplied) return;
+  const tls = _compareTierlistIds
+    .map(id => tlState.tierlists.find(t => t.id === id && !t.archived))
+    .filter(Boolean);
+  if (tls.length < 2) return;
+  _compareModeApplied = true;
+  _tlLocalActiveTierlistId = null;
+  if (window._switchPage) window._switchPage('tierlist');
+  document.title = 'Comparaison — LesMichels';
+  document.body.classList.add('compare-tierlist-mode');
+  _tlRenderCompareView(tls);
+}
+
 function _applyPrefsAndRender() {
   // Valider que le dossier actif existe toujours
   if (_localActiveFolderId) {
@@ -390,7 +412,7 @@ function _applyPrefsAndRender() {
   setTimeout(setBingoReadyForEffect, 0);
   renderCurrentEventButton();
   // Appliquer les prefs tierlist aux controls UI
-  if (_tlLocalShowLabels !== null) tlShowLabelsToggle.checked = _tlLocalShowLabels;
+  if (_tlLocalShowLabels !== null) _tlUpdateShowLabelsBtn(_tlLocalShowLabels);
   if (_tlLocalImgSize    !== null) tlImgSizeSlider.value       = _tlLocalImgSize;
   // Re-render la Tier List avec la bonne tierlist active
   if (typeof tlRender === 'function') tlRender();
@@ -4207,6 +4229,17 @@ const TL_PRESET_COLORS = [
   '#444455', // gris sombre
 ];
 
+// Presets de tiers par défaut — copiés dans tlState.tierPresets au premier chargement (voir
+// _tlNormalizeState), pour que l'utilisateur puisse ensuite les modifier/supprimer comme les siens.
+const TL_SEED_PRESETS = [
+  { name: 'Standard', tiers: TL_DEFAULT_TIERS.map(t => ({ ...t })) },
+  // Même ordre de labels (S→D) que Standard, mais couleurs inversées (bleu→rouge)
+  { name: 'Inversé', tiers: TL_DEFAULT_TIERS.map((t, i) => ({ label: t.label, color: TL_DEFAULT_TIERS[TL_DEFAULT_TIERS.length - 1 - i].color })) },
+];
+function tlGetAllPresets() {
+  return tlState.tierPresets || [];
+}
+
 // ── État ──────────────────────────────────────────────────────────────────────
 let tlState = { tierlists: [], folders: [] };
 let _tlRemoteUpdate = false; // anti-boucle Firebase
@@ -4216,6 +4249,7 @@ const _dbTierlist = firebase.database().ref('tierlist');
 let _tlLocalShowLabels      = null; // null = pas encore chargé
 let _tlLocalImgSize         = null;
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
+let _tlLocalActiveFolderId  = null; // dossier sélectionné (vide) sans tierlist active
 let _tlLocalNoSelection     = false; // true = l'utilisateur a délibérément désélectionné
 // Dernier groupe (id du template racine) affiché dans le panneau de contrôle — reste mémorisé même
 // quand _tlLocalActiveTierlistId passe à null (désélection), pour garder les bulles du groupe visibles
@@ -4233,10 +4267,24 @@ function tlSave() {
 }
 
 function _tlNormalizeState(parsed) {
-  if (!parsed || typeof parsed !== 'object') return { tierlists: [], folders: [], trash: [] };
+  if (!parsed || typeof parsed !== 'object') {
+    return { tierlists: [], folders: [], trash: [], tierPresets: TL_SEED_PRESETS.map(p => ({ id: uid(), name: p.name, tiers: p.tiers.map(t => ({ ...t })) })), tierPresetsSeeded: true };
+  }
   if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
   if (!Array.isArray(parsed.folders)) parsed.folders = [];
   if (!Array.isArray(parsed.trash)) parsed.trash = [];
+  if (!Array.isArray(parsed.tierPresets)) parsed.tierPresets = [];
+  // Injecter les presets par défaut une seule fois (première utilisation) — ensuite l'utilisateur
+  // peut les renommer/recolorer/supprimer librement, comme n'importe quel preset personnalisé.
+  let _tlPresetsSeededNow = false;
+  if (!parsed.tierPresetsSeeded) {
+    parsed.tierPresets = [
+      ...TL_SEED_PRESETS.map(p => ({ id: uid(), name: p.name, tiers: p.tiers.map(t => ({ ...t })) })),
+      ...parsed.tierPresets,
+    ];
+    parsed.tierPresetsSeeded = true;
+    _tlPresetsSeededNow = true;
+  }
   // Supprimer les anciens champs partagés s'ils existent encore en base
   delete parsed.activeTierlistId;
   delete parsed.noSelection;
@@ -4252,7 +4300,7 @@ function _tlNormalizeState(parsed) {
   // désormais l'unique source lue (_tlGetGroupImages) — on fusionne donc ici, une seule fois,
   // les images encore locales à une tierlist générée dans les images de son template, en
   // conservant leurs ids d'origine (référencés par tiers[].items/unplaced).
-  let _tlMigrated = false;
+  let _tlMigrated = _tlPresetsSeededNow;
   parsed.tierlists.forEach(tl => {
     if (tl.isTemplate || !tl.templateId || tl.images.length === 0) return;
     const template = parsed.tierlists.find(t => t.id === tl.templateId && t.isTemplate);
@@ -4406,6 +4454,11 @@ function tlUndo() {
       }
       break;
     }
+    case 'replaceTiers': {
+      tl.tiers = op.oldTiers;
+      tl.unplaced = op.oldUnplaced;
+      break;
+    }
   }
   tlSave();
   tlRender();
@@ -4422,6 +4475,14 @@ function tlUpdateUndoBtn() {
 
 function tlActiveTierlist() {
   return tlState.tierlists.find(tl => tl.id === _tlLocalActiveTierlistId) || null;
+}
+
+// Dossier "actuellement sélectionné" pour préremplir le parent d'un nouveau dossier/template :
+// le dossier vide explicitement cliqué, sinon le dossier de la tierlist/template actif.
+function _tlCurrentSelectedFolderId() {
+  if (_tlLocalActiveFolderId) return _tlLocalActiveFolderId;
+  const tl = tlActiveTierlist();
+  return tl ? (tl.folderId || null) : null;
 }
 
 function tlDefaultTierlist(name, isTemplate = false) {
@@ -4704,6 +4765,11 @@ const tlTitlePrefix       = document.getElementById('tl-title-prefix');
 const tlTitleDisplay      = document.getElementById('tl-title-display');
 const tlTitleInput        = document.getElementById('tl-title-input');
 const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
+
+function _tlUpdateShowLabelsBtn(showLabels) {
+  tlShowLabelsToggle.textContent = showLabels ? 'Masquer noms' : 'Afficher noms';
+  tlShowLabelsToggle.classList.toggle('active', !!showLabels);
+}
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
 const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
 const tlBtnUndo           = document.getElementById('tl-btn-undo');
@@ -4893,13 +4959,23 @@ function tlRender() {
   _updateTlCeSetBtn();
   const tl = tlActiveTierlist();
   if (!tl || tl.archived) {
-    tlEmptyState.classList.remove('hidden');
     tlEditor.classList.add('hidden');
     tlControlPanel.classList.add('hidden');
     tlRenderGroupPanel(null);
+    const activeFolder = _tlLocalActiveFolderId
+      ? (tlState.folders || []).find(f => f.id === _tlLocalActiveFolderId && !f.archived)
+      : null;
+    if (activeFolder && _tlFolderIsEmpty(activeFolder)) {
+      tlEmptyState.classList.add('hidden');
+      _tlRenderFolderEmptyState(activeFolder);
+    } else {
+      _tlHideFolderEmptyState();
+      tlEmptyState.classList.remove('hidden');
+    }
     if (window.lucide) lucide.createIcons();
     return;
   }
+  _tlHideFolderEmptyState();
   tlEmptyState.classList.add('hidden');
   tlEditor.classList.remove('hidden');
   tlControlPanel.classList.remove('hidden');
@@ -4916,7 +4992,7 @@ function tlRender() {
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
   const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
   const imgSize    = _tlLocalImgSize    !== null ? _tlLocalImgSize    : (tl.imgSize || 80);
-  tlShowLabelsToggle.checked = showLabels;
+  _tlUpdateShowLabelsBtn(showLabels);
   tlImgSizeSlider.value      = imgSize;
 
   tlRenderTiers(tl);
@@ -4980,7 +5056,7 @@ function tlRenderGroupPanel(tl) {
     });
     item.appendChild(ctxBtn);
 
-    item.addEventListener('click', () => tlSwitch(member.id));
+    item.addEventListener('click', () => tlSwitch(member.id, false));
     item.addEventListener('contextmenu', e => {
       e.preventDefault();
       e.stopPropagation();
@@ -4989,6 +5065,8 @@ function tlRenderGroupPanel(tl) {
 
     tlGroupList.appendChild(item);
   });
+  const tlBtnCompare = document.getElementById('tl-btn-compare');
+  if (tlBtnCompare) tlBtnCompare.classList.toggle('hidden', members.filter(m => !m.isTemplate).length < 2);
   if (window.lucide) lucide.createIcons();
 }
 
@@ -5189,11 +5267,33 @@ function _tlBuildTemplateGroupEl(template, depth) {
   return groupEl;
 }
 
+function _tlFolderIsEmpty(folder) {
+  const hasSubFolders = (tlState.folders || []).some(f => !f.archived && f.parentId === folder.id);
+  const hasContent = tlState.tierlists.some(t => !t.archived && t.folderId === folder.id);
+  return !hasSubFolders && !hasContent;
+}
+
+function _tlRenderFolderEmptyState(folder) {
+  const el = document.getElementById('tl-folder-empty-state');
+  if (!el) return;
+  el.classList.remove('hidden');
+  document.getElementById('tl-folder-empty-btn-folders').onclick = openTlSidebar;
+  document.getElementById('tl-folder-empty-btn-folder').onclick = () => tlOpenFolderModal('create', null, '', folder.id);
+  document.getElementById('tl-folder-empty-btn-template').onclick = () => tlOpenNewTemplateModal(folder.id);
+}
+
+function _tlHideFolderEmptyState() {
+  const el = document.getElementById('tl-folder-empty-state');
+  if (el) el.classList.add('hidden');
+}
+
 function _tlBuildFolderEl(folder, depth) {
   const activeTl = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId && !t.archived);
-  // Actif si la TL active est dans ce dossier ou dans un descendant
+  // Actif si la TL active est dans ce dossier ou dans un descendant, ou si ce dossier (vide)
+  // a été explicitement sélectionné sans tierlist active
   const allDescIds = [folder.id, ..._tlGetDescendantIds(folder.id)];
-  const folderIsActive = activeTl && allDescIds.includes(activeTl.folderId);
+  const folderIsActive = (activeTl && allDescIds.includes(activeTl.folderId))
+    || (!activeTl && _tlLocalActiveFolderId === folder.id);
   const tlCollapseKey = 'tl_folder_open_' + folder.id;
   const folderOpen = sessionStorage.getItem(tlCollapseKey) === '1';
 
@@ -5250,6 +5350,15 @@ function _tlBuildFolderEl(folder, depth) {
     e.preventDefault();
     e.stopPropagation();
     tlOpenFolderManageModal(folder.id, header);
+  });
+
+  header.addEventListener('click', e => {
+    if (e.target.closest('.tl-folder-arrow, .tl-folder-ctx-btn, .tl-folder-drag-handle')) return;
+    _tlLocalActiveFolderId = folder.id;
+    _tlLocalActiveTierlistId = null;
+    _tlLocalNoSelection = true;
+    saveUserPrefs({ tlActiveFolderId: folder.id, tlActiveTierlistId: null, tlNoSelection: true });
+    tlRender();
   });
 
   // Drag & drop — activé seulement via la poignée grip
@@ -5655,6 +5764,63 @@ function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
   addItem('x', 'Supprimer ce tier', true, () => tlDeleteTier(tl, tier.id));
 }
 
+// ── Mode comparaison (fenêtre séparée, lecture seule) ────────────────────────
+let _tlCompareTierlists = null; // dernière liste rendue, pour re-render au changement de taille
+let _tlCompareImgSize = 80;
+
+function _tlRenderCompareView(tls) {
+  const container = document.getElementById('tl-compare-view');
+  if (!container) return;
+  if (tls) _tlCompareTierlists = tls;
+  else tls = _tlCompareTierlists;
+  if (!tls) return;
+
+  const toolbar = document.getElementById('tl-compare-toolbar');
+  if (toolbar) toolbar.classList.remove('hidden');
+
+  container.classList.remove('hidden');
+  container.innerHTML = '';
+  tls.forEach(tl => {
+    const col = document.createElement('div');
+    col.className = 'tl-compare-column';
+
+    const title = document.createElement('h3');
+    title.className = 'tl-compare-column-title';
+    title.textContent = tl.name;
+    col.appendChild(title);
+
+    const showLabels = !!tl.showLabels;
+    const imgSize = _tlCompareImgSize;
+
+    tl.tiers.forEach(tier => {
+      const row = document.createElement('div');
+      row.className = 'tl-compare-tier-row';
+
+      const labelCell = document.createElement('div');
+      labelCell.className = 'tl-tier-label-cell';
+      labelCell.style.background = tier.color;
+      const labelText = document.createElement('span');
+      labelText.className = 'tl-tier-label-text';
+      labelText.textContent = tier.label;
+      labelCell.appendChild(labelText);
+      row.appendChild(labelCell);
+
+      const imgsDiv = document.createElement('div');
+      imgsDiv.className = 'tl-tier-images';
+      tier.items.forEach(imgId => {
+        const img = tlFindImage(tl, imgId);
+        if (img) imgsDiv.appendChild(tlBuildImgCard(tl, img, imgSize, true));
+      });
+      row.appendChild(imgsDiv);
+
+      col.appendChild(row);
+    });
+
+    container.appendChild(col);
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
 function tlRenderUnplaced(tl) {
   tlUnplacedZone.innerHTML = '';
   const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
@@ -5718,29 +5884,33 @@ function _tlPasteFromClipboard(tl) {
   }).catch(() => alert('Impossible de lire le presse-papier. Essaie Ctrl+V à la place.'));
 }
 
-function tlBuildImgCard(tl, img, size) {
+function tlBuildImgCard(tl, img, size, readOnly = false) {
   const card = document.createElement('div');
   card.className = 'tl-img-card';
-  if (img.id === _tlSelectedImgId) card.classList.add('selected');
-  card.draggable = true;
+  if (!readOnly && img.id === _tlSelectedImgId) card.classList.add('selected');
+  card.draggable = !readOnly;
   card.dataset.imgId = img.id;
-  card.title = img.name + '\nClic gauche : sélectionner (Suppr pour supprimer) · Glisser pour déplacer · Clic droit : renommer / supprimer';
+  card.title = readOnly ? img.name : img.name + '\nClic gauche : sélectionner (Suppr pour supprimer) · Glisser pour déplacer · Clic droit : renommer / supprimer';
 
-  card.addEventListener('click', e => {
-    e.stopPropagation();
-    _tlSelectedImgId = (_tlSelectedImgId === img.id) ? null : img.id;
-    tlRender();
-  });
+  if (!readOnly) {
+    card.addEventListener('click', e => {
+      e.stopPropagation();
+      _tlSelectedImgId = (_tlSelectedImgId === img.id) ? null : img.id;
+      tlRender();
+    });
 
-  card.addEventListener('dragstart', e => {
-    tlDragImgId = img.id;
-    e.dataTransfer.effectAllowed = 'move';
-    setTimeout(() => card.classList.add('dragging'), 0);
-  });
-  card.addEventListener('dragend', () => {
-    card.classList.remove('dragging');
-    tlDragImgId = null;
-  });
+    card.addEventListener('dragstart', e => {
+      tlDragImgId = img.id;
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(() => card.classList.add('dragging'), 0);
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      tlDragImgId = null;
+      tlClearDropBefore();
+      _tlClearDragSourceHidden();
+    });
+  }
 
   const isText = (img.type || 'image') === 'text';
   if (isText) {
@@ -5767,30 +5937,34 @@ function tlBuildImgCard(tl, img, size) {
     label.className = 'tl-img-label';
     label.style.width = size + 'px';
     label.textContent = img.name;
-    label.title = 'Clic gauche : renommer (double-clic : tout sélectionner) · Clic droit : options';
-    let _imgRenameClickTimer = null;
-    label.addEventListener('click', e => {
-      e.stopPropagation();
-      if (_imgRenameClickTimer) { clearTimeout(_imgRenameClickTimer); _imgRenameClickTimer = null; return; }
-      const caretOffset = _tlCaretOffsetFromClick(label, e.clientX, e.clientY);
-      _imgRenameClickTimer = setTimeout(() => {
-        _imgRenameClickTimer = null;
-        _tlInlineRenameImg(label, tl, img, size, caretOffset);
-      }, 220);
-    });
-    label.addEventListener('dblclick', e => {
-      e.stopPropagation();
-      if (_imgRenameClickTimer) { clearTimeout(_imgRenameClickTimer); _imgRenameClickTimer = null; }
-      _tlInlineRenameImg(label, tl, img, size, null);
-    });
+    if (!readOnly) {
+      label.title = 'Clic gauche : renommer (double-clic : tout sélectionner) · Clic droit : options';
+      let _imgRenameClickTimer = null;
+      label.addEventListener('click', e => {
+        e.stopPropagation();
+        if (_imgRenameClickTimer) { clearTimeout(_imgRenameClickTimer); _imgRenameClickTimer = null; return; }
+        const caretOffset = _tlCaretOffsetFromClick(label, e.clientX, e.clientY);
+        _imgRenameClickTimer = setTimeout(() => {
+          _imgRenameClickTimer = null;
+          _tlInlineRenameImg(label, tl, img, size, caretOffset);
+        }, 220);
+      });
+      label.addEventListener('dblclick', e => {
+        e.stopPropagation();
+        if (_imgRenameClickTimer) { clearTimeout(_imgRenameClickTimer); _imgRenameClickTimer = null; }
+        _tlInlineRenameImg(label, tl, img, size, null);
+      });
+    }
     card.appendChild(label);
   }
 
-  card.addEventListener('contextmenu', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    _tlShowImgCtxMenu(e, tl, img);
-  });
+  if (!readOnly) {
+    card.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      _tlShowImgCtxMenu(e, tl, img);
+    });
+  }
 
   return card;
 }
@@ -5836,19 +6010,25 @@ function tlFindImage(tl, imgId) {
 }
 
 // ── Actions sur les tierlists ─────────────────────────────────────────────────
-function tlCreate(name, folderId, isTemplate = false) {
+function tlCreate(name, folderId, isTemplate = false, presetId = null) {
   const tl = tlDefaultTierlist(name, isTemplate);
   if (folderId) tl.folderId = folderId;
+  if (presetId) {
+    const preset = tlGetAllPresets().find(p => p.id === presetId);
+    if (preset) tl.tiers = preset.tiers.map(t => ({ id: uid(), label: t.label, color: t.color, items: [] }));
+  }
   tlState.tierlists.push(tl);
   _tlLocalActiveTierlistId = tl.id;
   _tlLocalNoSelection = false;
   saveUserPrefs({ tlActiveTierlistId: tl.id, tlNoSelection: false });
   tlSave();
   tlRender();
+  return tl;
 }
 
-function tlSwitch(id) {
+function tlSwitch(id, allowDeselect = true) {
   if (_tlLocalActiveTierlistId === id) {
+    if (!allowDeselect) return; // groupe : une bulle reste toujours sélectionnée
     _tlLocalActiveTierlistId = null;
     _tlLocalNoSelection = true;
     saveUserPrefs({ tlActiveTierlistId: null, tlNoSelection: true });
@@ -6006,6 +6186,60 @@ function tlEditTier(tl, tier) {
   tlOpenTierModal({ mode: 'edit', tl, tier });
 }
 
+// Remplace entièrement les tiers d'une tierlist/template par une nouvelle liste (label+couleur).
+// Les images déjà placées dans les tiers actuels sont renvoyées en zone "non placées" avant remplacement.
+function _tlReplaceTiers(tl, newTiersSpec, confirmMessage) {
+  const placedCount = tl.tiers.reduce((n, t) => n + t.items.length, 0);
+  if (placedCount > 0) {
+    const ok = confirm(confirmMessage || `Remplacer les tiers va renvoyer ${placedCount} image(s) classée(s) en zone non placée. Continuer ?`);
+    if (!ok) return false;
+  }
+  _tlPushUndoOp({
+    tierlistId: tl.id,
+    type: 'replaceTiers',
+    oldTiers: JSON.parse(JSON.stringify(tl.tiers)),
+    oldUnplaced: [...tl.unplaced],
+  });
+  tl.tiers.forEach(t => t.items.forEach(imgId => {
+    if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId);
+  }));
+  tl.tiers = newTiersSpec.map(t => ({ id: uid(), label: t.label, color: t.color, items: [] }));
+  tlSave();
+  tlRender();
+  return true;
+}
+
+function tlApplyPreset(tl, presetId) {
+  const preset = tlGetAllPresets().find(p => p.id === presetId);
+  if (!preset) return;
+  _tlReplaceTiers(tl, preset.tiers);
+}
+
+function tlSaveCurrentAsPreset(tl, name) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return;
+  const preset = {
+    id: uid(),
+    name: trimmed,
+    tiers: tl.tiers.map(t => ({ label: t.label, color: t.color })),
+  };
+  if (!Array.isArray(tlState.tierPresets)) tlState.tierPresets = [];
+  tlState.tierPresets.push(preset);
+  tlSave();
+}
+
+function tlDeletePreset(id) {
+  if (String(id).startsWith('__builtin_')) return;
+  tlState.tierPresets = (tlState.tierPresets || []).filter(p => p.id !== id);
+  tlSave();
+}
+
+function tlImportTiersFrom(tl, sourceTlId) {
+  const source = tlState.tierlists.find(t => t.id === sourceTlId);
+  if (!source) return false;
+  return _tlReplaceTiers(tl, source.tiers.map(t => ({ label: t.label, color: t.color })));
+}
+
 // ── Images ────────────────────────────────────────────────────────────────────
 // tl.images = [{id, src, name}] — source de vérité pour les images
 // tl.unplaced = [id, id, ...] — ids des images non placées dans un tier
@@ -6108,48 +6342,130 @@ function tlDeleteImage(tl, imgId) {
 }
 
 // ── Drag & drop ───────────────────────────────────────────────────────────────
+// Aperçu "temps réel" du dépôt : un vrai élément placeholder (taille de la carte glissée) est
+// inséré dans le flux flex de la zone survolée, à la position exacte où l'image atterrirait —
+// ça pousse physiquement les cartes voisines, donnant le rendu final avant même de relâcher.
+//
+// Bug historique (l'image atterrit parfois "un cran à côté" de ce que montrait l'aperçu) : la
+// carte source est masquée (.drag-source-hidden) pendant tout le drag pour que le placeholder la
+// remplace visuellement. Si cette classe était retirée à CHAQUE dragleave (y compris un simple
+// survol transitoire d'une bordure entre deux zones, ou d'un élément adjacent comme le libellé du
+// tier), la carte source réapparaissait brièvement dans le DOM juste avant que tlDrop() calcule
+// son index final — décalant le résultat d'un cran par rapport à l'aperçu montré l'instant d'avant.
+// Le placeholder (juste un indicateur visuel) peut disparaître à chaque dragleave sans risque, mais
+// .drag-source-hidden doit rester posé tant que le drag global est actif : il n'est retiré qu'à la
+// fin réelle du geste (dragend sur la carte, cf. plus bas), jamais à un dragleave de zone.
 function tlClearDropBefore() {
-  document.querySelectorAll('.tl-img-card.drop-before').forEach(c => c.classList.remove('drop-before'));
+  document.querySelectorAll('.tl-drop-placeholder').forEach(p => p.remove());
+}
+function _tlClearDragSourceHidden() {
+  document.querySelectorAll('.tl-img-card.drag-source-hidden').forEach(c => c.classList.remove('drag-source-hidden'));
+}
+
+// Point de calcul UNIQUE de la position de dépose, partagé par l'aperçu (tlDragOver) et le dépôt
+// réel (tlDrop) : les deux doivent impérativement voir exactement la même géométrie (mêmes cartes
+// exclues, même liste) pour que le résultat final corresponde toujours à ce que l'aperçu montrait.
+// Exclut systématiquement le placeholder ET la carte source (identifiée par imgId) — jamais la
+// géométrie post-insertion du placeholder, qui serait perturbée par notre propre insertion précédente.
+function _tlComputeDropIndex(zone, imgId, clientX, clientY) {
+  // Le placeholder, une fois inséré dans le DOM par un dragover précédent, pousse physiquement les
+  // cartes qui le suivent dans le flux flex-wrap — même en l'excluant de la liste `cards`, leurs
+  // getBoundingClientRect() restent décalés par sa présence. Pour mesurer la géométrie EXACTEMENT
+  // comme si de rien n'était placé, on le retire du DOM le temps de la mesure, puis on le remet.
+  // C'est ce décalage qui causait l'aperçu et le résultat final à diverger malgré des coordonnées
+  // souris identiques (confirmé par un test réel : x/y strictement égaux, index différent).
+  const placeholder = zone.querySelector('.tl-drop-placeholder');
+  const placeholderNext = placeholder ? placeholder.nextSibling : null;
+  if (placeholder) placeholder.remove();
+
+  const cards = Array.from(zone.querySelectorAll('.tl-img-card'))
+    .filter(c => c.dataset.imgId !== imgId);
+  const idx = tlDropInsertIndex(zone, clientX, clientY, cards);
+
+  if (placeholder) zone.insertBefore(placeholder, placeholderNext);
+
+  return { idx, cards };
 }
 
 function tlDragOver(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
   e.currentTarget.classList.add('drag-over');
-  // Indicateur de position
-  tlClearDropBefore();
   const zone = e.currentTarget;
-  const cards = Array.from(zone.querySelectorAll('.tl-img-card'));
-  const idx = tlDropInsertIndex(zone, e.clientX, e.clientY);
-  if (idx < cards.length) cards[idx].classList.add('drop-before');
+
+  // Masquer la carte source pendant le survol (elle "quitte" sa position d'origine visuellement)
+  if (tlDragImgId) {
+    const sourceCard = document.querySelector(`.tl-img-card[data-img-id="${tlDragImgId}"]`);
+    if (sourceCard) sourceCard.classList.add('drag-source-hidden');
+  }
+
+  const { idx, cards } = _tlComputeDropIndex(zone, tlDragImgId, e.clientX, e.clientY);
+  // Ne rien logger ici (un dragover se déclenche des dizaines de fois par seconde) — on mémorise
+  // juste le dernier index vu, comparé au moment du drop (seul point où on log, 1 seule ligne).
+  window.__TL_DND_LAST_PREVIEW = { idx, cardsCount: cards.length, x: Math.round(e.clientX), y: Math.round(e.clientY) };
+
+  let placeholder = zone.querySelector('.tl-drop-placeholder');
+  if (!placeholder) {
+    placeholder = document.createElement('div');
+    placeholder.className = 'tl-drop-placeholder';
+  } else if (placeholder.parentElement !== zone) {
+    placeholder.remove();
+  }
+  const refCard = cards[0] || zone.querySelector('.tl-img-card');
+  if (refCard) {
+    const size = refCard.getBoundingClientRect();
+    placeholder.style.width = size.width + 'px';
+    placeholder.style.height = size.height + 'px';
+  }
+  const refNode = cards[idx] || null;
+  // Ne toucher au DOM que si la position cible a réellement changé — réinsérer à la même place à
+  // chaque frame de dragover perturbe inutilement le flux flex-wrap et alimente l'oscillation.
+  if (placeholder.nextSibling !== refNode || placeholder.parentElement !== zone) {
+    zone.insertBefore(placeholder, refNode);
+  }
 }
 
 function tlDragLeave(e) {
   e.currentTarget.classList.remove('drag-over');
-  tlClearDropBefore();
+  // Ne retirer le placeholder que si on quitte vraiment la zone (pas un survol d'enfant)
+  if (!e.currentTarget.contains(e.relatedTarget)) tlClearDropBefore();
 }
 
-// Calcule l'index d'insertion dans une zone flex-wrap à partir de la position du curseur
-function tlDropInsertIndex(zone, clientX, clientY) {
-  const cards = Array.from(zone.querySelectorAll('.tl-img-card'));
+// Calcule l'index d'insertion dans une zone flex-wrap à partir de la position du curseur.
+// `cardsOverride` permet de fournir une liste de cartes déjà filtrée (ex: sans le placeholder
+// d'aperçu ni la carte source en cours de drag) pour ne pas fausser le calcul de position.
+function tlDropInsertIndex(zone, clientX, clientY, cardsOverride) {
+  const cards = cardsOverride || Array.from(zone.querySelectorAll('.tl-img-card'));
   if (cards.length === 0) return 0;
-  for (let i = 0; i < cards.length; i++) {
-    const rect = cards[i].getBoundingClientRect();
-    const midX = rect.left + rect.width / 2;
-    const midY = rect.top + rect.height / 2;
-    // Si le curseur est au-dessus du milieu vertical de la carte, ou sur la même ligne à gauche
-    if (clientY < midY - rect.height * 0.1) return i;
-    if (Math.abs(clientY - midY) <= rect.height * 0.6 && clientX < midX) return i;
+  // Grouper les cartes par ligne (zone en flex-wrap = plusieurs lignes) avant de comparer en X,
+  // sinon un dépôt à droite de la dernière carte d'une ligne peut être mal interprété comme
+  // "avant la première carte de la ligne suivante" (bug historique).
+  const rows = [];
+  cards.forEach((card, i) => {
+    const rect = card.getBoundingClientRect();
+    let row = rows.find(r => Math.abs(r.top - rect.top) < rect.height * 0.5);
+    if (!row) { row = { top: rect.top, bottom: rect.bottom, cards: [] }; rows.push(row); }
+    row.cards.push({ i, rect });
+    row.bottom = Math.max(row.bottom, rect.bottom);
+  });
+  let targetRow = rows[0];
+  let bestDist = Infinity;
+  rows.forEach(r => {
+    const dist = Math.abs(clientY - (r.top + r.bottom) / 2);
+    if (dist < bestDist) { bestDist = dist; targetRow = r; }
+  });
+  for (const { i, rect } of targetRow.cards) {
+    if (clientX < rect.left + rect.width / 2) return i;
   }
-  return cards.length;
+  return targetRow.cards[targetRow.cards.length - 1].i + 1;
 }
 
 // Comme tlDropInsertIndex, mais retourne l'id de l'image affichée juste après le point de dépôt
 // (ou null si en fin de liste) plutôt qu'un index brut — nécessaire pour la zone non placée quand
 // l'ordre affiché (alpha/date) diffère de l'ordre réel de tl.unplaced (cf. tlDrop).
-function tlDropInsertBeforeId(zone, clientX, clientY) {
-  const cards = Array.from(zone.querySelectorAll('.tl-img-card'));
-  const idx = tlDropInsertIndex(zone, clientX, clientY);
+// `excludeImgId` exclut la carte de l'image en cours de déplacement (cohérence avec l'aperçu de tlDragOver).
+function tlDropInsertBeforeId(zone, clientX, clientY, excludeImgId) {
+  const { idx, cards } = _tlComputeDropIndex(zone, excludeImgId, clientX, clientY);
   return idx < cards.length ? cards[idx].dataset.imgId : null;
 }
 
@@ -6174,7 +6490,7 @@ function tlDrop(e, targetZoneId) {
   if (targetZoneId === '__unplaced__') {
     // "Tri" est une action ponctuelle qui fige déjà l'ordre manuel (cf. tlUnplacedSortBtn) : la zone
     // affichée reflète donc toujours tl.unplaced, sauf appel externe laissant unplacedSort non-manuel.
-    const beforeId = tlDropInsertBeforeId(tlUnplacedZone, e.clientX, e.clientY);
+    const beforeId = tlDropInsertBeforeId(tlUnplacedZone, e.clientX, e.clientY, imgId);
     if ((tl.unplacedSort || 'manual') !== 'manual') {
       tl.unplaced = _tlGetSortedUnplaced(tl);
       tl.unplacedSort = 'manual';
@@ -6185,9 +6501,18 @@ function tlDrop(e, targetZoneId) {
   } else {
     const tier = tl.tiers.find(t => t.id === targetZoneId);
     if (tier) {
-      // Insertion à la position du curseur dans la zone du tier
+      // Même fonction de calcul que l'aperçu (tlDragOver) — garantit que le résultat final
+      // corresponde toujours exactement à la position montrée par le placeholder.
       const imgsDiv = e.currentTarget;
-      const insertIdx = tlDropInsertIndex(imgsDiv, e.clientX, e.clientY);
+      const { idx: insertIdx } = _tlComputeDropIndex(imgsDiv, imgId, e.clientX, e.clientY);
+      if (window.__TL_DND_DEBUG) {
+        const preview = window.__TL_DND_LAST_PREVIEW || {};
+        const match = preview.idx === insertIdx;
+        console.log(
+          `[DND] ${match ? 'OK — pareil' : '⚠️ DIFFÉRENT'} — aperçu annonçait la position ${preview.idx}, drop réel a mis à la position ${insertIdx}` +
+          ` (dernier survol à x=${preview.x},y=${preview.y} / drop à x=${Math.round(e.clientX)},y=${Math.round(e.clientY)})`
+        );
+      }
       tier.items.splice(insertIdx, 0, imgId);
     }
   }
@@ -6621,9 +6946,448 @@ function tlPopulateFolderSelect(selectEl, selectedId, excludeId) {
   addOptions(null, 0);
 }
 
+// ── Modal "Gérer les tiers" (presets + import + sauvegarde) ─────────────────
+let _tlTiersSourceTargetId = null;
+
+function tlOpenTiersSourceModal(id) {
+  const tl = tlState.tierlists.find(t => t.id === id);
+  if (!tl) return;
+  _tlTiersSourceTargetId = id;
+
+  const presetList = document.getElementById('tl-tiers-source-preset-list');
+  const saveInput = document.getElementById('tl-tiers-source-save-input');
+
+  presetList.innerHTML = '';
+  const presets = tlState.tierPresets || [];
+  if (presets.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'font-size:0.8rem;color:var(--text-muted);';
+    empty.textContent = 'Aucun preset.';
+    presetList.appendChild(empty);
+  } else {
+    presets.forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'modal-item-row';
+
+      const btn = document.createElement('button');
+      btn.className = 'btn-action btn-secondary tl-preset-row-btn';
+      btn.style.flex = '1';
+      btn.title = p.name + ' : ' + p.tiers.map(t => t.label).join(', ');
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'tl-preset-row-name';
+      nameSpan.textContent = p.name;
+      btn.appendChild(nameSpan);
+      const dotsWrap = document.createElement('span');
+      dotsWrap.className = 'tl-preset-row-dots';
+      p.tiers.forEach(t => {
+        const dot = document.createElement('span');
+        dot.className = 'tl-preset-dot';
+        dot.style.background = t.color;
+        dotsWrap.appendChild(dot);
+      });
+      btn.appendChild(dotsWrap);
+      btn.addEventListener('click', () => {
+        if (tlApplyPreset(tl, p.id) !== false) tlModalTiersSource.classList.add('hidden');
+      });
+      row.appendChild(btn);
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn-action btn-secondary';
+      editBtn.title = 'Modifier ce preset';
+      editBtn.innerHTML = '<i data-lucide="pencil"></i>';
+      editBtn.addEventListener('click', () => tlOpenPresetEditModal(p.id, id));
+      row.appendChild(editBtn);
+
+      const del = document.createElement('button');
+      del.className = 'btn-action btn-secondary';
+      del.title = 'Supprimer ce preset';
+      del.innerHTML = '<i data-lucide="trash-2"></i>';
+      del.addEventListener('click', () => {
+        if (confirm(`Supprimer le preset "${p.name}" ?`)) { tlDeletePreset(p.id); tlOpenTiersSourceModal(id); }
+      });
+      row.appendChild(del);
+
+      presetList.appendChild(row);
+    });
+  }
+
+  saveInput.value = '';
+  document.getElementById('tl-tiers-source-save-btn').onclick = () => {
+    if (!saveInput.value.trim()) return;
+    tlSaveCurrentAsPreset(tl, saveInput.value);
+    tlOpenTiersSourceModal(id);
+  };
+
+  document.getElementById('tl-tiers-source-new-preset-btn').onclick = () => tlOpenPresetEditModal(null, id);
+  document.getElementById('tl-tiers-source-import-btn').onclick = () => tlOpenImportTiersModal(id);
+
+  if (window.lucide) lucide.createIcons();
+  tlModalTiersSource.classList.remove('hidden');
+}
+
+// ── Modal "Importer tiers" — choix de la tier list source via un simple <select> ─────────────
+// Même pattern que le select de dossier parent (tlPopulateFolderSelect) : une liste plate
+// indentée par profondeur de dossier, pas une arborescence interactive.
+function _tlPopulateImportTiersSelect(selectEl, excludeId) {
+  selectEl.innerHTML = '<option value="">— Choisir —</option>';
+  const byFolder = (parentId, depth) => {
+    (tlState.folders || []).filter(f => !f.archived && (f.parentId || null) === (parentId || null)).forEach(f => {
+      const folderTierlists = tlState.tierlists.filter(t => !t.archived && t.folderId === f.id && !_tlHasLiveTemplate(t) && t.id !== excludeId);
+      if (folderTierlists.length > 0) {
+        const group = document.createElement('optgroup');
+        group.label = ' '.repeat(depth * 3) + '📁 ' + f.name;
+        folderTierlists.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t.id;
+          opt.textContent = (t.isTemplate ? '📋 ' : '') + t.name;
+          group.appendChild(opt);
+        });
+        selectEl.appendChild(group);
+      }
+      byFolder(f.id, depth + 1);
+    });
+  };
+  byFolder(null, 0);
+  const toplevel = tlState.tierlists.filter(t => !t.archived && !t.folderId && !_tlHasLiveTemplate(t) && t.id !== excludeId);
+  toplevel.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = (t.isTemplate ? '📋 ' : '') + t.name;
+    selectEl.appendChild(opt);
+  });
+}
+
+let _tlImportTiersTargetId = null; // id d'une tierlist existante (mode "Gérer les tiers")
+let _tlImportTiersOnPick = null;   // callback(sourceId) — mode "création" (pas de tierlist encore créée)
+
+// `targetId` : id d'une tierlist déjà créée dont on remplace directement les tiers (comportement
+// existant, appelé depuis le hub "Gérer les tiers"). `onPick` : callback alternatif utilisé quand
+// aucune tierlist n'existe encore (ex: modal de création d'un nouveau template) — reçoit l'id de
+// la tierlist source choisie, à appliquer soi-même après création.
+function tlOpenImportTiersModal(targetId, onPick) {
+  _tlImportTiersTargetId = targetId || null;
+  _tlImportTiersOnPick = onPick || null;
+  _tlPopulateImportTiersSelect(document.getElementById('tl-modal-import-tiers-select'), targetId || null);
+  tlModalTiersSource.classList.add('hidden');
+  document.getElementById('tl-modal-import-tiers').classList.remove('hidden');
+}
+
+document.getElementById('tl-modal-import-tiers-confirm').addEventListener('click', () => {
+  const sourceId = document.getElementById('tl-modal-import-tiers-select').value;
+  if (!sourceId) return;
+  if (_tlImportTiersOnPick) {
+    _tlImportTiersOnPick(sourceId);
+    document.getElementById('tl-modal-import-tiers').classList.add('hidden');
+    return;
+  }
+  if (!_tlImportTiersTargetId) return;
+  const tl = tlState.tierlists.find(t => t.id === _tlImportTiersTargetId);
+  if (!tl) return;
+  if (tlImportTiersFrom(tl, sourceId) !== false) {
+    document.getElementById('tl-modal-import-tiers').classList.add('hidden');
+  }
+});
+const _tlCloseImportTiersModal = () => {
+  document.getElementById('tl-modal-import-tiers').classList.add('hidden');
+  if (_tlImportTiersOnPick) {
+    _tlImportTiersOnPick = null;
+    tlModalNew.classList.remove('hidden');
+  } else if (_tlImportTiersTargetId) {
+    tlOpenTiersSourceModal(_tlImportTiersTargetId);
+  }
+};
+document.getElementById('tl-modal-import-tiers-cancel').addEventListener('click', _tlCloseImportTiersModal);
+document.getElementById('tl-modal-import-tiers-close').addEventListener('click', _tlCloseImportTiersModal);
+
+// ── Modal édition d'un preset (nom + tiers) ──────────────────────────────────
+let _tlPresetEditId = null; // null = nouveau preset
+let _tlPresetEditTiers = []; // [{label, color}] — copie de travail
+let _tlPresetEditReturnToId = null; // id de la tierlist qui a ouvert le hub, pour y revenir
+
+function tlOpenPresetEditModal(presetId, returnToId) {
+  _tlPresetEditId = presetId;
+  _tlPresetEditReturnToId = returnToId;
+  const preset = presetId ? (tlState.tierPresets || []).find(p => p.id === presetId) : null;
+  document.getElementById('tl-modal-preset-edit-name').value = preset ? preset.name : '';
+  _tlPresetEditTiers = preset ? preset.tiers.map(t => ({ ...t })) : [];
+  _tlRenderPresetEditTiers();
+  tlModalTiersSource.classList.add('hidden');
+  document.getElementById('tl-modal-preset-edit').classList.remove('hidden');
+}
+
+// Ferme tout popover de couleur ouvert (appelé avant d'en ouvrir un autre, ou au clic ailleurs)
+function _tlClosePresetColorPopover() {
+  const existing = document.querySelector('.tl-preset-color-popover');
+  if (existing) existing.remove();
+}
+
+function _tlOpenPresetColorPopover(dotEl, tier) {
+  _tlClosePresetColorPopover();
+  const popover = document.createElement('div');
+  popover.className = 'tl-preset-color-popover';
+  popover.addEventListener('click', e => e.stopPropagation());
+
+  const swatchesRow = document.createElement('div');
+  swatchesRow.className = 'tl-preset-color-popover-swatches';
+  TL_PRESET_COLORS.forEach(color => {
+    const sw = document.createElement('button');
+    sw.type = 'button';
+    sw.className = 'tl-swatch';
+    sw.style.background = color;
+    if (color === tier.color) sw.classList.add('selected');
+    sw.addEventListener('click', () => {
+      tier.color = color;
+      _tlClosePresetColorPopover();
+      _tlRenderPresetEditTiers();
+    });
+    swatchesRow.appendChild(sw);
+  });
+  popover.appendChild(swatchesRow);
+
+  const customLabel = document.createElement('label');
+  customLabel.className = 'tl-color-custom-label';
+  customLabel.title = 'Couleur personnalisée';
+  const customText = document.createElement('span');
+  customText.textContent = 'Autre';
+  const customInput = document.createElement('input');
+  customInput.type = 'color';
+  customInput.className = 'tl-color-input-sm';
+  customInput.value = tier.color;
+  customInput.addEventListener('input', () => {
+    tier.color = customInput.value;
+    dotEl.style.background = customInput.value;
+  });
+  customInput.addEventListener('change', () => {
+    _tlClosePresetColorPopover();
+    _tlRenderPresetEditTiers();
+  });
+  customLabel.appendChild(customText);
+  customLabel.appendChild(customInput);
+  popover.appendChild(customLabel);
+
+  // position:fixed calculé en JS plutôt que absolute : la liste de tiers a overflow-y:auto et
+  // couperait visuellement tout popover positionné relativement à elle.
+  document.body.appendChild(popover);
+  const dotRect = dotEl.getBoundingClientRect();
+  popover.style.position = 'fixed';
+  popover.style.top = (dotRect.bottom + 6) + 'px';
+  popover.style.left = dotRect.left + 'px';
+
+  setTimeout(() => document.addEventListener('click', _tlClosePresetColorPopover, { once: true }), 0);
+}
+
+function _tlRenderPresetEditTiers() {
+  const wrap = document.getElementById('tl-modal-preset-edit-tiers');
+  wrap.innerHTML = '';
+  _tlPresetEditTiers.forEach((tier, idx) => {
+    const row = document.createElement('div');
+    row.className = 'modal-item-row tl-preset-edit-row';
+    row.draggable = true;
+    row.dataset.idx = idx;
+
+    const dragHandle = document.createElement('span');
+    dragHandle.className = 'tl-folder-drag-handle';
+    dragHandle.innerHTML = '<i data-lucide="grip"></i>';
+    row.appendChild(dragHandle);
+
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'tl-preset-dot tl-preset-dot-btn';
+    dot.style.background = tier.color;
+    dot.style.position = 'relative';
+    dot.title = 'Changer la couleur';
+    dot.addEventListener('click', e => {
+      e.stopPropagation();
+      _tlOpenPresetColorPopover(dot, tier);
+    });
+    row.appendChild(dot);
+
+    const label = document.createElement('span');
+    label.className = 'tl-preset-row-name';
+    label.style.flex = '1';
+    label.style.cursor = 'text';
+    label.textContent = tier.label;
+    label.title = 'Cliquer pour renommer';
+    label.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'modal-text-input';
+      input.value = tier.label;
+      input.style.flex = '1';
+      label.replaceWith(input);
+      input.focus();
+      input.select();
+      const commit = () => {
+        const val = input.value.trim();
+        if (val) tier.label = val;
+        _tlRenderPresetEditTiers();
+      };
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.removeEventListener('blur', commit); _tlRenderPresetEditTiers(); }
+      });
+    });
+    row.appendChild(label);
+
+    const del = document.createElement('button');
+    del.className = 'btn-action btn-secondary';
+    del.title = 'Supprimer ce tier';
+    del.innerHTML = '<i data-lucide="x"></i>';
+    del.addEventListener('click', () => {
+      _tlPresetEditTiers.splice(idx, 1);
+      _tlRenderPresetEditTiers();
+    });
+    row.appendChild(del);
+
+    // Réordonnement par drag & drop, directement dans la copie de travail _tlPresetEditTiers
+    row.addEventListener('dragstart', e => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(idx));
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+      const toIdx = idx;
+      if (fromIdx === toIdx || isNaN(fromIdx)) return;
+      const [moved] = _tlPresetEditTiers.splice(fromIdx, 1);
+      _tlPresetEditTiers.splice(toIdx, 0, moved);
+      _tlRenderPresetEditTiers();
+    });
+
+    wrap.appendChild(row);
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
+document.getElementById('tl-modal-preset-edit-add-tier').addEventListener('click', () => {
+  _tlPresetEditTiers.push({ label: '?', color: TL_PRESET_COLORS[0] });
+  _tlRenderPresetEditTiers();
+});
+
+document.getElementById('tl-modal-preset-edit-confirm').addEventListener('click', () => {
+  const name = document.getElementById('tl-modal-preset-edit-name').value.trim();
+  if (!name || _tlPresetEditTiers.length === 0) return;
+  if (!Array.isArray(tlState.tierPresets)) tlState.tierPresets = [];
+  if (_tlPresetEditId) {
+    const preset = tlState.tierPresets.find(p => p.id === _tlPresetEditId);
+    if (preset) { preset.name = name; preset.tiers = _tlPresetEditTiers.map(t => ({ ...t })); }
+  } else {
+    tlState.tierPresets.push({ id: uid(), name, tiers: _tlPresetEditTiers.map(t => ({ ...t })) });
+  }
+  tlSave();
+  document.getElementById('tl-modal-preset-edit').classList.add('hidden');
+  if (_tlPresetEditReturnToId) tlOpenTiersSourceModal(_tlPresetEditReturnToId);
+});
+
+const _tlClosePresetEditModal = () => {
+  document.getElementById('tl-modal-preset-edit').classList.add('hidden');
+  if (_tlPresetEditReturnToId) tlOpenTiersSourceModal(_tlPresetEditReturnToId);
+};
+document.getElementById('tl-modal-preset-edit-cancel').addEventListener('click', _tlClosePresetEditModal);
+document.getElementById('tl-modal-preset-edit-close').addEventListener('click', _tlClosePresetEditModal);
+
+function tlPopulatePresetSelect(selectEl) {
+  selectEl.innerHTML = '';
+  tlGetAllPresets().forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    selectEl.appendChild(opt);
+  });
+  // Le <select> natif reste cette source de vérité (lu via .value ailleurs), mais un dropdown
+  // custom par-dessus affiche le nom + les pastilles de couleur du preset — impossible avec un
+  // <select> natif seul.
+  _tlSyncPresetDropdown(selectEl);
+}
+
+function _tlBuildPresetDotsRow(preset) {
+  const row = document.createElement('span');
+  row.className = 'tl-preset-row-dots';
+  preset.tiers.forEach(t => {
+    const dot = document.createElement('span');
+    dot.className = 'tl-preset-dot';
+    dot.style.background = t.color;
+    row.appendChild(dot);
+  });
+  return row;
+}
+
+function _tlSyncPresetDropdown(selectEl) {
+  const wrap = selectEl.parentElement.querySelector('.tl-preset-dropdown');
+  if (!wrap) return;
+  const btn = wrap.querySelector('.tl-preset-dropdown-btn');
+  const list = wrap.querySelector('.tl-preset-dropdown-list');
+  const presets = tlGetAllPresets();
+
+  const renderBtn = () => {
+    btn.innerHTML = '';
+    const preset = presets.find(p => p.id === selectEl.value) || presets[0];
+    if (!preset) { btn.textContent = '— Aucun preset —'; return; }
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tl-preset-row-name';
+    nameSpan.textContent = preset.name;
+    btn.appendChild(nameSpan);
+    btn.appendChild(_tlBuildPresetDotsRow(preset));
+  };
+
+  list.innerHTML = '';
+  presets.forEach(p => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'tl-preset-dropdown-item';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tl-preset-row-name';
+    nameSpan.textContent = p.name;
+    item.appendChild(nameSpan);
+    item.appendChild(_tlBuildPresetDotsRow(p));
+    item.addEventListener('click', () => {
+      selectEl.value = p.id;
+      renderBtn();
+      list.classList.add('hidden');
+    });
+    list.appendChild(item);
+  });
+
+  if (presets.length > 0 && !presets.some(p => p.id === selectEl.value)) selectEl.value = presets[0].id;
+  renderBtn();
+
+  btn.onclick = () => list.classList.toggle('hidden');
+}
+document.addEventListener('click', e => {
+  document.querySelectorAll('.tl-preset-dropdown-list:not(.hidden)').forEach(list => {
+    if (!list.parentElement.contains(e.target)) list.classList.add('hidden');
+  });
+});
+
+// Preset/import choisis dans le modal de création — id d'un preset OU id d'une tierlist source à
+// importer (mutuellement exclusifs : importer écrase le choix de preset et inversement).
+let _tlNewModalImportSourceId = null;
+
+function _tlSetupNewModalImportBtn() {
+  const btn = document.getElementById('tl-modal-new-import-tiers-btn');
+  if (!btn) return;
+  btn.textContent = _tlNewModalImportSourceId
+    ? 'Importer tiers : ' + (tlState.tierlists.find(t => t.id === _tlNewModalImportSourceId)?.name || '?')
+    : 'Importer tiers';
+  btn.onclick = () => {
+    tlOpenImportTiersModal(null, sourceId => {
+      _tlNewModalImportSourceId = sourceId;
+      _tlSetupNewModalImportBtn();
+    });
+  };
+}
+
 function tlOpenNewModal(presetFolderId) {
   tlModalNewMode = 'create';
   tlModalNewTargetId = null;
+  _tlNewModalImportSourceId = null;
   tlModalNewTitle.textContent = 'Nouvelle tier list';
   tlModalNewInput.value = '';
   tlModalNewInput.placeholder = 'Nom de la tier list...';
@@ -6633,6 +7397,12 @@ function tlOpenNewModal(presetFolderId) {
     wrap.style.display = '';
     tlPopulateFolderSelect(tlModalNewFolderSelect, presetFolderId || '');
   }
+  const presetWrap = document.getElementById('tl-modal-new-preset-wrap');
+  if (presetWrap) {
+    presetWrap.style.display = '';
+    tlPopulatePresetSelect(document.getElementById('tl-modal-new-preset-select'));
+    _tlSetupNewModalImportBtn();
+  }
   tlModalNew.classList.remove('hidden');
   setTimeout(() => { tlModalNewInput.focus(); }, 50);
 }
@@ -6640,6 +7410,7 @@ function tlOpenNewModal(presetFolderId) {
 function tlOpenNewTemplateModal(presetFolderId) {
   tlModalNewMode = 'create-template';
   tlModalNewTargetId = null;
+  _tlNewModalImportSourceId = null;
   tlModalNewTitle.textContent = 'Nouveau template';
   tlModalNewInput.value = '';
   tlModalNewInput.placeholder = 'Nom du template...';
@@ -6647,6 +7418,12 @@ function tlOpenNewTemplateModal(presetFolderId) {
   if (wrap) {
     wrap.style.display = '';
     tlPopulateFolderSelect(tlModalNewFolderSelect, presetFolderId || '');
+  }
+  const presetWrap = document.getElementById('tl-modal-new-preset-wrap');
+  if (presetWrap) {
+    presetWrap.style.display = '';
+    tlPopulatePresetSelect(document.getElementById('tl-modal-new-preset-select'));
+    _tlSetupNewModalImportBtn();
   }
   tlModalNew.classList.remove('hidden');
   setTimeout(() => { tlModalNewInput.focus(); }, 50);
@@ -6660,9 +7437,11 @@ function tlOpenRenameModal(id) {
   tlModalNewTitle.textContent = 'Renommer la tier list';
   tlModalNewInput.value = tl.name;
   tlModalNewInput.placeholder = 'Nom de la tier list...';
-  // Cacher le select dossier en mode rename
+  // Cacher le select dossier et le select preset en mode rename
   const wrap = document.getElementById('tl-modal-new-folder-wrap');
   if (wrap) wrap.style.display = 'none';
+  const presetWrap = document.getElementById('tl-modal-new-preset-wrap');
+  if (presetWrap) presetWrap.style.display = 'none';
   tlModalNew.classList.remove('hidden');
   setTimeout(() => { tlModalNewInput.focus(); tlModalNewInput.select(); }, 50);
 }
@@ -6671,12 +7450,24 @@ function tlConfirmNewModal() {
   const val = tlModalNewInput.value.trim();
   if (!val) return;
   tlModalNew.classList.add('hidden');
-  if (tlModalNewMode === 'create') {
+  if (tlModalNewMode === 'create' || tlModalNewMode === 'create-template') {
     const folderId = tlModalNewFolderSelect ? tlModalNewFolderSelect.value || null : null;
-    tlCreate(val, folderId, false);
-  } else if (tlModalNewMode === 'create-template') {
-    const folderId = tlModalNewFolderSelect ? tlModalNewFolderSelect.value || null : null;
-    tlCreate(val, folderId, true);
+    const isTemplate = tlModalNewMode === 'create-template';
+    let created;
+    if (_tlNewModalImportSourceId) {
+      // "Importer tiers" prime sur le choix de preset : créer sans preset, puis remplacer les
+      // tiers par ceux de la tierlist source choisie (même comportement que dans le hub
+      // "Gérer les tiers" — tlImportTiersFrom / _tlReplaceTiers).
+      created = tlCreate(val, folderId, isTemplate, null);
+      // Re-résoudre depuis tlState : tlSave() dans tlCreate() peut avoir déclenché une
+      // resynchronisation qui remplace les objets tierlists par de nouvelles instances.
+      const createdFresh = tlState.tierlists.find(t => t.id === created.id) || created;
+      tlImportTiersFrom(createdFresh, _tlNewModalImportSourceId);
+    } else {
+      const presetSelect = document.getElementById('tl-modal-new-preset-select');
+      tlCreate(val, folderId, isTemplate, presetSelect ? presetSelect.value || null : null);
+    }
+    _tlNewModalImportSourceId = null;
   } else if (tlModalNewMode === 'rename') {
     tlRename(tlModalNewTargetId, val);
   }
@@ -6795,7 +7586,7 @@ const tlModalFolderClose   = document.getElementById('tl-modal-folder-close');
 const tlModalFolderParentSelect = document.getElementById('tl-modal-folder-parent-select');
 const tlModalFolderParentWrap   = document.getElementById('tl-modal-folder-parent-wrap');
 
-function tlOpenFolderModal(mode = 'create', id = null, currentName = '') {
+function tlOpenFolderModal(mode = 'create', id = null, currentName = '', presetParentId = null) {
   _tlFolderModalMode = mode;
   _tlFolderModalTargetId = id;
   if (mode === 'rename') {
@@ -6809,7 +7600,7 @@ function tlOpenFolderModal(mode = 'create', id = null, currentName = '') {
     tlModalFolderInput.value = '';
     if (tlModalFolderParentWrap) {
       tlModalFolderParentWrap.style.display = '';
-      tlPopulateFolderSelect(tlModalFolderParentSelect, '');
+      tlPopulateFolderSelect(tlModalFolderParentSelect, presetParentId || '');
       tlModalFolderParentSelect.options[0].textContent = '— Aucun (racine) —';
     }
   }
@@ -6838,9 +7629,52 @@ tlModalFolderInput.addEventListener('keydown', e => {
 });
 
 // Bouton + Dossier
-document.getElementById('tl-btn-new-folder').addEventListener('click', () => tlOpenFolderModal('create'));
+document.getElementById('tl-btn-new-folder').addEventListener('click', () => tlOpenFolderModal('create', null, '', _tlCurrentSelectedFolderId()));
 
 // (tl-ctx-overlay supprimé — remplacé par menus contextuels dynamiques)
+
+// ── Modal "Gérer les tiers" — listeners de fermeture ─────────────────────────
+const tlModalTiersSource = document.getElementById('tl-modal-tiers-source');
+document.getElementById('tl-modal-tiers-source-close').addEventListener('click', () => tlModalTiersSource.classList.add('hidden'));
+document.getElementById('tl-modal-tiers-source-cancel').addEventListener('click', () => tlModalTiersSource.classList.add('hidden'));
+
+// ── Modal "Comparer" ──────────────────────────────────────────────────────────
+const tlModalCompare = document.getElementById('tl-modal-compare');
+
+function tlOpenCompareModal() {
+  const tl = tlActiveTierlist();
+  if (!tl) return;
+  const members = _tlGetGroupMembers(tl).filter(m => !m.isTemplate);
+  if (members.length < 2) return;
+  const checklist = document.getElementById('tl-compare-checklist');
+  checklist.innerHTML = '';
+  members.forEach(m => {
+    const row = document.createElement('label');
+    row.className = 'modal-item-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = m.id;
+    cb.checked = true;
+    row.appendChild(cb);
+    const span = document.createElement('span');
+    span.textContent = m.name;
+    row.appendChild(span);
+    checklist.appendChild(row);
+  });
+  tlModalCompare.classList.remove('hidden');
+}
+
+function tlConfirmCompareModal() {
+  const checked = [...document.querySelectorAll('#tl-compare-checklist input:checked')].map(cb => cb.value);
+  if (checked.length < 2) { alert('Sélectionne au moins 2 tier lists.'); return; }
+  tlModalCompare.classList.add('hidden');
+  window.open(`index.html?compareTierlists=${encodeURIComponent(checked.join(','))}`, '_blank', 'width=1400,height=800');
+}
+
+document.getElementById('tl-btn-compare').addEventListener('click', tlOpenCompareModal);
+document.getElementById('tl-modal-compare-confirm').addEventListener('click', tlConfirmCompareModal);
+document.getElementById('tl-modal-compare-cancel').addEventListener('click', () => tlModalCompare.classList.add('hidden'));
+document.getElementById('tl-modal-compare-close').addEventListener('click', () => tlModalCompare.classList.add('hidden'));
 
 // ── Menu contextuel tierlist (clic droit sur onglet) ─────────────────────────
 function tlOpenManageModal(id, anchorEl) {
@@ -6858,6 +7692,7 @@ function tlOpenManageModal(id, anchorEl) {
   } else {
     addItem('scroll-text', 'Générer depuis ce template', false, () => tlOpenGenerateFromTemplateModal(id));
   }
+  addItem('list-tree', 'Gérer les tiers…', false, () => tlOpenTiersSourceModal(id));
   addSep();
   addItem('package', 'Archiver', true, () => tlArchive(id));
   addItem('trash-2', 'Supprimer', true, () => tlDelete(id));
@@ -6970,9 +7805,9 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
-tlBtnNewTemplate.addEventListener('click', () => tlOpenNewTemplateModal());
-document.getElementById('tl-empty-btn-new').addEventListener('click', () => tlOpenNewTemplateModal());
-document.getElementById('tl-empty-btn-folder').addEventListener('click', () => tlOpenFolderModal('create'));
+tlBtnNewTemplate.addEventListener('click', () => tlOpenNewTemplateModal(_tlCurrentSelectedFolderId()));
+document.getElementById('tl-empty-btn-new').addEventListener('click', () => tlOpenNewTemplateModal(_tlCurrentSelectedFolderId()));
+document.getElementById('tl-empty-btn-folder').addEventListener('click', () => tlOpenFolderModal('create', null, '', _tlCurrentSelectedFolderId()));
 
 tlModalNewConfirm.addEventListener('click', tlConfirmNewModal);
 tlModalNewCancel.addEventListener('click', () => tlModalNew.classList.add('hidden'));
@@ -7042,7 +7877,10 @@ tlModalMoveConfirm.addEventListener('click', () => {
 tlModalMoveCancel.addEventListener('click', () => { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; });
 tlModalMoveClose.addEventListener('click', () => { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; });
 
-tlBtnAddTier.addEventListener('click', () => tlOpenTierModal({ mode: 'create' }));
+tlBtnAddTier.addEventListener('click', () => {
+  const tl = tlActiveTierlist();
+  if (tl) tlOpenTiersSourceModal(tl.id);
+});
 tlModalTierConfirm.addEventListener('click', tlConfirmTierModal);
 tlModalTierCancel.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
 tlModalTierClose.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
@@ -7221,8 +8059,11 @@ function tlRenderTrashList() {
 tlBtnExport.addEventListener('click', tlExport);
 tlBtnCapture.addEventListener('click', tlCapture);
 
-tlShowLabelsToggle.addEventListener('change', () => {
-  _tlLocalShowLabels = tlShowLabelsToggle.checked;
+tlShowLabelsToggle.addEventListener('click', () => {
+  const tl = tlActiveTierlist();
+  const currentlyShown = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!(tl && tl.showLabels);
+  _tlLocalShowLabels = !currentlyShown;
+  _tlUpdateShowLabelsBtn(_tlLocalShowLabels);
   saveUserPrefs({ tlShowLabels: _tlLocalShowLabels });
   tlRender();
 });
@@ -7232,6 +8073,14 @@ tlImgSizeSlider.addEventListener('input', () => {
   saveUserPrefs({ tlImgSize: _tlLocalImgSize });
   tlRender();
 });
+
+const tlCompareImgSizeSlider = document.getElementById('tl-compare-img-size-slider');
+if (tlCompareImgSizeSlider) {
+  tlCompareImgSizeSlider.addEventListener('input', () => {
+    _tlCompareImgSize = parseInt(tlCompareImgSizeSlider.value);
+    _tlRenderCompareView(null);
+  });
+}
 
 function tlOpenArchivesUnified() {
   tlRenderArchivedModal();
@@ -7483,6 +8332,7 @@ _dbTierlist.on('value', snapshot => {
     }
   }
   _applySoloTierlistModeIfNeeded();
+  _applyCompareTierlistModeIfNeeded();
   tlRender();
   _tlRemoteUpdate = false;
   if (_needsMigrationSave) tlSave();
