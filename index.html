@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=146" />
+  <link rel="stylesheet" href="style.css?v=149" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -60,6 +60,14 @@
             <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
             <button id="tl-btn-new-template" class="tl-btn-new" title="Créer un nouveau template">+ Template</button>
             <button class="modal-close tl-sidebar-close" id="tl-sidebar-close"><i data-lucide="x"></i></button>
+          </div>
+          <div class="folders-panel-sort">
+            <label for="tl-folders-sort-select">Trier par</label>
+            <select id="tl-folders-sort-select" class="folders-sort-select">
+              <option value="alpha">Ordre alphabétique</option>
+              <option value="createdAt">Date d'ajout</option>
+              <option value="updatedAt">Dernière modification</option>
+            </select>
           </div>
           <div id="tl-list" class="tl-list folders-panel-tree"></div>
           <div class="folders-panel-footer">
@@ -191,6 +199,7 @@
             <div id="grids-list" class="grids-list"></div>
             <button class="btn-new-grid-inline" id="btn-new-grid-inline" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
             <button class="btn-ce-set" id="btn-ce-set" title="Définir le dossier actif comme soirée en cours"><i data-lucide="party-popper"></i> Définir comme soirée en cours</button>
+            <button class="btn-action btn-brown" id="btn-duplicate-active-folder" title="Dupliquer le dossier actif"><i data-lucide="copy-plus"></i> Dupliquer</button>
           </div>
 
           <!-- Ligne 3 : Toolbar -->
@@ -237,6 +246,14 @@
             <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
             <button class="btn-new-grid hidden" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
             <button class="modal-close folders-panel-close" id="folders-panel-close"><i data-lucide="x"></i></button>
+          </div>
+          <div class="folders-panel-sort">
+            <label for="folders-sort-select">Trier par</label>
+            <select id="folders-sort-select" class="folders-sort-select">
+              <option value="alpha">Ordre alphabétique</option>
+              <option value="createdAt">Date d'ajout</option>
+              <option value="updatedAt">Dernière modification</option>
+            </select>
           </div>
           <div id="folders-panel-tree" class="folders-panel-tree"></div>
           <div class="folders-panel-footer">
@@ -404,7 +421,23 @@
         <button class="modal-close" id="tl-modal-folder-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
-        <input type="text" id="tl-modal-folder-input" class="modal-text-input" placeholder="Nom du dossier..." maxlength="60" />
+        <div id="tl-modal-folder-numbering-check-wrap" class="modal-numbering-checks">
+          <label class="modal-numbering-check">
+            <input type="checkbox" id="tl-modal-folder-numbering-season" />
+            Saison
+          </label>
+          <label class="modal-numbering-check">
+            <input type="checkbox" id="tl-modal-folder-numbering-episode" />
+            Épisode
+          </label>
+        </div>
+        <div id="tl-modal-folder-numbering-wrap" class="modal-numbering-wrap hidden">
+          <input type="number" id="tl-modal-folder-numbering-number" class="modal-text-input modal-numbering-number" placeholder="N°" min="1" />
+        </div>
+        <div class="modal-name-with-prefix">
+          <span id="tl-modal-folder-name-prefix" class="modal-name-prefix"></span>
+          <input type="text" id="tl-modal-folder-input" class="modal-text-input" placeholder="Nom..." maxlength="60" />
+        </div>
         <div id="tl-modal-folder-parent-wrap" style="margin-top:8px;">
           <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Dossier parent</label>
           <select id="tl-modal-folder-parent-select" class="modal-folder-select"></select>
@@ -600,11 +633,27 @@
   <div id="modal-new-folder" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
-        <h3>Nouveau dossier</h3>
+        <h3 id="new-folder-modal-title">Nouveau dossier</h3>
         <button class="modal-close" id="btn-close-new-folder-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
-        <input type="text" id="new-folder-name-input" class="modal-text-input" placeholder="Nom du dossier..." maxlength="40" />
+        <div class="modal-numbering-checks">
+          <label class="modal-numbering-check">
+            <input type="checkbox" id="new-folder-numbering-season" />
+            Saison
+          </label>
+          <label class="modal-numbering-check">
+            <input type="checkbox" id="new-folder-numbering-episode" />
+            Épisode
+          </label>
+        </div>
+        <div id="new-folder-numbering-wrap" class="modal-numbering-wrap hidden">
+          <input type="number" id="new-folder-numbering-number" class="modal-text-input modal-numbering-number" placeholder="N°" min="1" />
+        </div>
+        <div class="modal-name-with-prefix">
+          <span id="new-folder-name-prefix" class="modal-name-prefix"></span>
+          <input type="text" id="new-folder-name-input" class="modal-text-input" placeholder="Nom..." maxlength="40" />
+        </div>
         <div id="new-folder-parent-wrap" style="margin-top:12px">
           <span class="modal-folder-select-label">Emplacement</span>
           <select id="new-folder-parent-select" class="modal-folder-select"></select>
@@ -944,6 +993,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=232"></script>
+  <script src="app.js?v=239"></script>
 </body>
 </html>

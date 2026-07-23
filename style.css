@@ -397,6 +397,32 @@ body {
 .folders-panel-close {
   flex-shrink: 0;
 }
+.folders-panel-sort {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+.folders-panel-sort label {
+  white-space: nowrap;
+}
+.folders-sort-select {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.78rem;
+  padding: 4px 6px;
+  outline: none;
+  cursor: pointer;
+}
+
 .folders-panel-tree {
   flex: 1;
   overflow-y: auto;
@@ -1241,6 +1267,12 @@ textarea.element-edit-input {
   border: 1px solid #a82015;
 }
 .btn-action.btn-reset:hover { background: #a82015; color: #fff; border-color: #c42a1a; }
+.btn-action.btn-brown {
+  background: #6b4226;
+  color: #f0d9c4;
+  border: 1px solid #8a5a35;
+}
+.btn-action.btn-brown:hover { background: #8a5a35; color: #fff; border-color: #a56d40; }
 .btn-action.btn-disabled,
 .btn-action:disabled {
   opacity: 0.4;
@@ -3163,6 +3195,54 @@ textarea.element-edit-input {
   color: var(--text-muted);
   font-weight: 700;
   margin-bottom: -8px;
+}
+
+.modal-numbering-checks {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+.modal-numbering-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+}
+.modal-numbering-check input {
+  cursor: pointer;
+}
+.modal-numbering-wrap {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.modal-numbering-wrap.hidden {
+  display: none;
+}
+.modal-numbering-number {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Champ nom du dossier avec préfixe de numérotation (S01/Ep01) affiché en grisé,
+   superposé au placeholder pour prévisualiser le rendu final du nom composé. */
+.modal-name-with-prefix {
+  position: relative;
+}
+.modal-name-prefix {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  font-size: 0.9rem;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.modal-name-with-prefix input.modal-text-input {
+  width: 100%;
 }
 
 /* ── Dropdown custom pour choisir un preset (nom + pastilles, impossible avec un <select> natif) ── */

@@ -464,7 +464,18 @@ function loadLocalSelectedGridsForFolder(folderId) {
   return saved.slice();
 }
 
-function defaultFolder(name, withGrid = false) {
+// Compose le nom affiché d'un dossier numéroté (saison/épisode) : "S01" ou "S01 La Guerre des Chefs"
+// (numéro toujours affiché sur 2 chiffres minimum : 01, 02, ... 10, 11...).
+// numbering.subtitle est conservé (à part de folder.name) pour pouvoir reformater le nom lors d'une
+// duplication (auto-incrément du numéro en gardant le même sous-titre si aucun nouveau n'est fourni).
+function formatNumberedFolderName(numbering) {
+  const prefix = numbering.type === 'episode' ? 'Ep' : 'S';
+  const base = prefix + String(numbering.number).padStart(2, '0');
+  return numbering.subtitle ? `${base} ${numbering.subtitle}` : base;
+}
+
+function defaultFolder(name, withGrid = false, numbering = null) {
+  const now = Date.now();
   const folder = {
     id: uid(),
     name,
@@ -475,7 +486,10 @@ function defaultFolder(name, withGrid = false) {
     persistentCheckedIds: [],
     folders: [],      // sous-dossiers
     grids: [],        // grilles directes
-    children: []      // références ordonnées
+    children: [],     // références ordonnées
+    createdAt: now,
+    updatedAt: now,
+    numbering: numbering || null   // { type: 'season'|'episode', number: N } ou null
   };
   if (withGrid) {
     const g = defaultGrid('Grille');
@@ -841,6 +855,21 @@ function setCurrentEventTierlist(id) {
   if (typeof renderFoldersPanelTree === 'function') renderFoldersPanelTree();
 }
 
+let _pendingCurrentEventTierlistId = null;
+
+function confirmSetCurrentEventTierlist(id) {
+  // Retirer la soirée en cours ne nécessite pas de confirmation, seulement la définir
+  if (state.currentEventTierlistId === id) {
+    setCurrentEventTierlist(id);
+    return;
+  }
+  _pendingCurrentEventTierlistId = id;
+  const tl = (tlState.tierlists || []).find(t => t.id === id);
+  const msg = document.getElementById('modal-current-event-msg');
+  if (msg) msg.textContent = tl ? `Définir "${tl.name}" comme soirée en cours ?` : 'Définir cette tier list comme soirée en cours ?';
+  document.getElementById('modal-confirm-current-event').classList.remove('hidden');
+}
+
 function defaultSubtheme(name, withGrid = false) {
   const sub = {
     id: uid(),
@@ -865,8 +894,8 @@ function defaultSubtheme(name, withGrid = false) {
 // CRUD Dossiers
 // ──────────────────────────────────────────────
 
-function createFolder(name, parentId = null) {
-  const folder = defaultFolder(name, false);
+function createFolder(name, parentId = null, numbering = null) {
+  const folder = defaultFolder(name, false, numbering);
   if (!parentId) {
     // Dossier racine
     if (!state.folders) state.folders = [];
@@ -972,18 +1001,29 @@ function archiveFolder(id) {
 
 function renameFolder(id, newName) {
   const folder = findFolderById(state.folders, id);
-  if (folder && newName.trim()) folder.name = newName.trim();
+  if (folder && newName.trim()) { folder.name = newName.trim(); folder.updatedAt = Date.now(); }
   saveState();
   renderAllFolders();
 }
 
-function duplicateFolder(id, name) {
+// Numéro suivant pour un dossier numéroté du même type (saison/épisode) parmi ses frères (même parent)
+function _nextFolderNumber(siblings, type) {
+  const nums = siblings.filter(f => f.numbering && f.numbering.type === type).map(f => f.numbering.number);
+  return nums.length ? Math.max(...nums) + 1 : 1;
+}
+
+// explicitNumbering : objet {type, number, subtitle} déjà choisi par l'utilisateur dans la modal
+// (prioritaire) — si absent, on retombe sur l'auto-incrément à partir de la numérotation source.
+function duplicateFolder(id, name, explicitNumbering) {
   const src = findFolderById(state.folders, id);
   if (!src) return;
   const copy = JSON.parse(JSON.stringify(src));
   function remapIds(f) {
     f.id = uid();
     f.archived = false;
+    const now = Date.now();
+    f.createdAt = now;
+    f.updatedAt = now;
     (f.grids || []).forEach(g => {
       g.id = uid();
       g.grid = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false, color: null }));
@@ -994,7 +1034,19 @@ function duplicateFolder(id, name) {
     f.children = [...(f.grids || []).map(g => ({ type: 'grid', id: g.id })), ...(f.folders || []).map(sf => ({ type: 'folder', id: sf.id }))];
   }
   remapIds(copy);
-  copy.name = name || src.name + ' (copie)';
+  if (explicitNumbering) {
+    copy.numbering = explicitNumbering;
+    copy.name = formatNumberedFolderName(copy.numbering);
+  } else if (src.numbering) {
+    const parentForNumbering = findParentFolder(state.folders, id);
+    const siblingsForNumbering = parentForNumbering ? (parentForNumbering.folders || []) : (state.folders || []);
+    const subtitle = name || src.numbering.subtitle || '';
+    copy.numbering = { type: src.numbering.type, number: _nextFolderNumber(siblingsForNumbering, src.numbering.type), subtitle };
+    copy.name = formatNumberedFolderName(copy.numbering);
+  } else {
+    copy.numbering = null;
+    copy.name = name || src.name + ' (copie)';
+  }
   const parent = findParentFolder(state.folders, id);
   if (parent) {
     parent.folders.push(copy);
@@ -1526,12 +1578,31 @@ function toggleGridSelection(gridId) {
   renderFoldersPanelTree();
 }
 
+// Tri des dossiers dans les drawers Dossiers (bingo + tierlist) : toujours trié, pas de mode manuel
+// (pas de drag&drop de réordonnancement — "Déplacer" dans le menu contextuel reste le seul moyen de
+// changer un dossier de parent).
+function _folderSortMode(key) {
+  const mode = localStorage.getItem(key);
+  return (mode && mode !== 'manual') ? mode : 'alpha';
+}
+function _sortFoldersList(list, mode) {
+  const sorted = list.slice();
+  if (mode === 'createdAt') sorted.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  else if (mode === 'updatedAt') sorted.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  else sorted.sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
+  return sorted;
+}
+
 function renderFoldersPanelTree() {
   const container = document.getElementById('folders-panel-tree');
   if (!container) return;
   container.innerHTML = '';
 
-  const roots = (state.folders || []).filter(f => !f.archived);
+  const sortMode = _folderSortMode('bingoFoldersSortMode');
+  const sortSelect = document.getElementById('folders-sort-select');
+  if (sortSelect) sortSelect.value = sortMode;
+
+  const roots = _sortFoldersList((state.folders || []).filter(f => !f.archived), sortMode);
   if (roots.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'fp-empty';
@@ -1548,7 +1619,7 @@ function renderFoldersPanelTree() {
 
     const isActive = f.id === _localActiveFolderId;
     const isAncestor = ancestorIds.has(f.id);
-    const children = (f.folders || []).filter(sf => !sf.archived);
+    const children = _sortFoldersList((f.folders || []).filter(sf => !sf.archived), sortMode);
     const grids = (f.grids || []).filter(g => !g.archived);
     const hasChildren = children.length > 0 || grids.length > 0;
 
@@ -1572,75 +1643,17 @@ function renderFoldersPanelTree() {
     name.className = 'fp-folder-name';
     name.textContent = f.name;
 
-    const dragHandle = document.createElement('span');
-    dragHandle.className = 'fp-folder-drag-handle';
-    dragHandle.innerHTML = '<i data-lucide="grip"></i>';
-    dragHandle.title = 'Glisser pour déplacer';
-
     const ctxBtn = document.createElement('button');
     ctxBtn.className = 'fp-folder-ctx-btn';
     ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
     ctxBtn.title = 'Options';
 
-    row.appendChild(dragHandle);
     row.appendChild(arrow);
     row.appendChild(icon);
     row.appendChild(name);
     row.appendChild(ctxBtn);
 
-    // Drag & drop pour réordonner / déplacer
-    row.draggable = false;
     row.dataset.folderId = f.id;
-    dragHandle.addEventListener('mousedown', () => { row.draggable = true; });
-    dragHandle.addEventListener('mouseleave', () => { if (!row.classList.contains('fp-folder-dragging')) row.draggable = false; });
-    row.addEventListener('dragstart', e => {
-      e.dataTransfer.setData('text/plain', f.id);
-      e.dataTransfer.effectAllowed = 'move';
-      row.classList.add('fp-folder-dragging');
-      setTimeout(() => row.classList.add('fp-folder-dragging'), 0);
-    });
-    row.addEventListener('dragend', () => {
-      row.draggable = false;
-      row.classList.remove('fp-folder-dragging');
-      document.querySelectorAll('.fp-folder-drag-over, .fp-folder-drop-before, .fp-folder-drop-after, .fp-folder-drop-inside').forEach(el => {
-        el.classList.remove('fp-folder-drag-over', 'fp-folder-drop-before', 'fp-folder-drop-after', 'fp-folder-drop-inside');
-      });
-    });
-    row.addEventListener('dragover', e => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      document.querySelectorAll('.fp-folder-drop-before, .fp-folder-drop-after, .fp-folder-drop-inside').forEach(el => {
-        el.classList.remove('fp-folder-drop-before', 'fp-folder-drop-after', 'fp-folder-drop-inside');
-      });
-      const rect = row.getBoundingClientRect();
-      const ratio = (e.clientY - rect.top) / rect.height;
-      if (ratio < 0.25) {
-        row.classList.add('fp-folder-drop-before');
-      } else if (ratio > 0.75) {
-        row.classList.add('fp-folder-drop-after');
-      } else {
-        row.classList.add('fp-folder-drop-inside');
-      }
-    });
-    row.addEventListener('dragleave', e => {
-      if (!row.contains(e.relatedTarget)) {
-        row.classList.remove('fp-folder-drop-before', 'fp-folder-drop-after', 'fp-folder-drop-inside');
-      }
-    });
-    row.addEventListener('drop', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      const isBefore = row.classList.contains('fp-folder-drop-before');
-      const isAfter  = row.classList.contains('fp-folder-drop-after');
-      row.classList.remove('fp-folder-drop-before', 'fp-folder-drop-after', 'fp-folder-drop-inside');
-      const srcId = e.dataTransfer.getData('text/plain');
-      if (!srcId || srcId === f.id) return;
-      if (isBefore || isAfter) {
-        reorderFolder(srcId, f.id, isBefore ? 'before' : 'after');
-      } else {
-        moveFolder(srcId, f.id);
-      }
-    });
 
     const childrenEl = document.createElement('div');
     childrenEl.className = 'fp-children' + (collapsed ? ' collapsed' : '');
@@ -3041,8 +3054,63 @@ const btnConfirmNewTheme   = document.getElementById('btn-confirm-new-folder');
 const btnCancelNewTheme    = document.getElementById('btn-cancel-new-folder');
 const btnCloseNewThemeModal = document.getElementById('btn-close-new-folder-modal');
 
+let _editFolderId = null; // null = mode création, sinon id du dossier en cours d'édition ou de duplication
+let _folderModalMode = 'create'; // 'create' | 'edit' | 'duplicate'
+
+// Lit l'état des 2 checkboxes exclusives Saison/Épisode : retourne 'season' | 'episode' | null
+function _readNumberingType(seasonCb, episodeCb) {
+  if (seasonCb && seasonCb.checked) return 'season';
+  if (episodeCb && episodeCb.checked) return 'episode';
+  return null;
+}
+
+// Rend les 2 checkboxes mutuellement exclusives (cocher l'une décoche l'autre) et met à jour
+// l'affichage du champ numéro + la prévisualisation du préfixe (S01/Ep01) sur le champ nom.
+function _wireNumberingChecks(seasonCb, episodeCb, wrap, numberInput, nameInput, prefixEl) {
+  const update = () => {
+    const type = _readNumberingType(seasonCb, episodeCb);
+    if (wrap) wrap.classList.toggle('hidden', !type);
+    if (type && numberInput) numberInput.focus();
+    _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, prefixEl);
+  };
+  if (seasonCb) seasonCb.addEventListener('change', () => { if (seasonCb.checked && episodeCb) episodeCb.checked = false; update(); });
+  if (episodeCb) episodeCb.addEventListener('change', () => { if (episodeCb.checked && seasonCb) seasonCb.checked = false; update(); });
+  if (numberInput) numberInput.addEventListener('input', () => _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, prefixEl));
+}
+
+// Affiche en grisé, superposé au champ nom, le préfixe S01/Ep01 qui sera ajouté au nom final —
+// et décale le padding du texte tapé pour qu'il ne chevauche pas le préfixe affiché. Le placeholder
+// n'annonce "(optionnel)" que quand une numérotation est cochée (le nom devient alors un sous-titre
+// facultatif) ; sans numérotation, le nom reste obligatoire et le placeholder ne doit pas le suggérer.
+function _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, prefixEl) {
+  if (!nameInput) return;
+  const type = _readNumberingType(seasonCb, episodeCb);
+  nameInput.placeholder = type ? 'Nom (optionnel)...' : 'Nom...';
+  if (!prefixEl) return;
+  const num = numberInput ? parseInt(numberInput.value, 10) : NaN;
+  if (!type || !num || num < 1) {
+    prefixEl.textContent = '';
+    nameInput.style.paddingLeft = '';
+    return;
+  }
+  const prefix = (type === 'episode' ? 'Ep' : 'S') + String(num).padStart(2, '0') + ' ';
+  prefixEl.textContent = prefix;
+  requestAnimationFrame(() => {
+    const w = prefixEl.getBoundingClientRect().width;
+    nameInput.style.paddingLeft = (13 + w) + 'px';
+  });
+}
+
 function openNewThemeModal(parentId = null) {
   if (!modalNewTheme) return;
+  _editFolderId = null;
+  _folderModalMode = 'create';
+
+  const parentWrap = document.getElementById('new-folder-parent-wrap');
+  if (parentWrap) parentWrap.style.display = '';
+  const modalTitle = document.getElementById('new-folder-modal-title');
+  if (modalTitle) modalTitle.textContent = 'Nouveau dossier';
+  if (btnConfirmNewTheme) btnConfirmNewTheme.textContent = 'Créer';
 
   // Peupler le select parent
   const sel = document.getElementById('new-folder-parent-select');
@@ -3065,27 +3133,143 @@ function openNewThemeModal(parentId = null) {
     sel.value = parentId || '';
   }
 
-  const parent = parentId ? findFolderById(state.folders, parentId) : null;
-  const siblings = parent ? (parent.folders || []) : (state.folders || []);
-  const n = siblings.length + 1;
   newThemeNameInput.value = '';
+  const seasonCb = document.getElementById('new-folder-numbering-season');
+  const episodeCb = document.getElementById('new-folder-numbering-episode');
+  const numberingWrap = document.getElementById('new-folder-numbering-wrap');
+  const numberingNumber = document.getElementById('new-folder-numbering-number');
+  if (seasonCb) seasonCb.checked = false;
+  if (episodeCb) episodeCb.checked = false;
+  if (numberingWrap) numberingWrap.classList.add('hidden');
+  if (numberingNumber) numberingNumber.value = '';
+  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'));
   modalNewTheme.classList.remove('hidden');
   setTimeout(() => { newThemeNameInput.focus(); newThemeNameInput.select(); }, 50);
 }
 
 function openNewFolderModal(parentId = null) { openNewThemeModal(parentId); }
 
+// "Renommer" un dossier existant : réutilise la modal de création, pré-remplie (nom + numérotation),
+// sans changer de parent. Le champ nom ne contient jamais le préfixe S01/Ep01 — seulement le sous-titre
+// saisi par l'utilisateur (vide si le dossier numéroté n'en a pas).
+function openEditFolderModal(id) {
+  const folder = findFolderById(state.folders, id);
+  if (!folder || !modalNewTheme) return;
+  _editFolderId = id;
+  _folderModalMode = 'edit';
+
+  const parentWrap = document.getElementById('new-folder-parent-wrap');
+  if (parentWrap) parentWrap.style.display = 'none';
+  const modalTitle = document.getElementById('new-folder-modal-title');
+  if (modalTitle) modalTitle.textContent = 'Renommer le dossier';
+  if (btnConfirmNewTheme) btnConfirmNewTheme.textContent = 'Renommer';
+
+  const seasonCb = document.getElementById('new-folder-numbering-season');
+  const episodeCb = document.getElementById('new-folder-numbering-episode');
+  const numberingWrap = document.getElementById('new-folder-numbering-wrap');
+  const numberingNumber = document.getElementById('new-folder-numbering-number');
+  if (folder.numbering) {
+    if (seasonCb) seasonCb.checked = folder.numbering.type === 'season';
+    if (episodeCb) episodeCb.checked = folder.numbering.type === 'episode';
+    if (numberingWrap) numberingWrap.classList.remove('hidden');
+    if (numberingNumber) numberingNumber.value = folder.numbering.number;
+    newThemeNameInput.value = folder.numbering.subtitle || '';
+  } else {
+    if (seasonCb) seasonCb.checked = false;
+    if (episodeCb) episodeCb.checked = false;
+    if (numberingWrap) numberingWrap.classList.add('hidden');
+    if (numberingNumber) numberingNumber.value = '';
+    newThemeNameInput.value = folder.name;
+  }
+  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'));
+  modalNewTheme.classList.remove('hidden');
+  setTimeout(() => { newThemeNameInput.focus(); newThemeNameInput.select(); }, 50);
+}
+
+// "Dupliquer" un dossier : même modal complète, préremplie avec la numérotation du dossier source et
+// le numéro déjà auto-incrémenté (modifiable avant validation) — le préfixe S01/Ep01 s'affiche en
+// grisé dans le champ nom comme pour créer/renommer.
+function openDuplicateFolderModalFull(id) {
+  const folder = findFolderById(state.folders, id);
+  if (!folder || !modalNewTheme) return;
+  _editFolderId = id;
+  _folderModalMode = 'duplicate';
+
+  const parentWrap = document.getElementById('new-folder-parent-wrap');
+  if (parentWrap) parentWrap.style.display = 'none';
+  const modalTitle = document.getElementById('new-folder-modal-title');
+  if (modalTitle) modalTitle.textContent = 'Dupliquer le dossier';
+  if (btnConfirmNewTheme) btnConfirmNewTheme.textContent = 'Dupliquer';
+
+  const seasonCb = document.getElementById('new-folder-numbering-season');
+  const episodeCb = document.getElementById('new-folder-numbering-episode');
+  const numberingWrap = document.getElementById('new-folder-numbering-wrap');
+  const numberingNumber = document.getElementById('new-folder-numbering-number');
+  if (folder.numbering) {
+    const parent = findParentFolder(state.folders, id);
+    const siblings = parent ? (parent.folders || []) : (state.folders || []);
+    if (seasonCb) seasonCb.checked = folder.numbering.type === 'season';
+    if (episodeCb) episodeCb.checked = folder.numbering.type === 'episode';
+    if (numberingWrap) numberingWrap.classList.remove('hidden');
+    if (numberingNumber) numberingNumber.value = _nextFolderNumber(siblings, folder.numbering.type);
+    newThemeNameInput.value = folder.numbering.subtitle || '';
+  } else {
+    if (seasonCb) seasonCb.checked = false;
+    if (episodeCb) episodeCb.checked = false;
+    if (numberingWrap) numberingWrap.classList.add('hidden');
+    if (numberingNumber) numberingNumber.value = '';
+    newThemeNameInput.value = '';
+  }
+  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'));
+  modalNewTheme.classList.remove('hidden');
+  setTimeout(() => { newThemeNameInput.focus(); newThemeNameInput.select(); }, 50);
+}
+
 function closeNewThemeModal() {
   if (modalNewTheme) modalNewTheme.classList.add('hidden');
+  _editFolderId = null;
+  _folderModalMode = 'create';
 }
 
 function confirmNewTheme() {
-  const name = newThemeNameInput.value.trim();
-  if (!name) return;
+  const seasonCb = document.getElementById('new-folder-numbering-season');
+  const episodeCb = document.getElementById('new-folder-numbering-episode');
+  const numberingNumber = document.getElementById('new-folder-numbering-number');
+  const type = _readNumberingType(seasonCb, episodeCb);
+  const subtitle = newThemeNameInput.value.trim();
+  let numbering = null;
+  let name;
+  if (type) {
+    const num = parseInt(numberingNumber.value, 10);
+    if (!num || num < 1) { numberingNumber.focus(); return; }
+    numbering = { type, number: num, subtitle };
+    name = formatNumberedFolderName(numbering);
+  } else {
+    if (_folderModalMode !== 'duplicate' && !subtitle) { newThemeNameInput.focus(); return; }
+    name = subtitle;
+  }
+  if (_folderModalMode === 'edit' && _editFolderId) {
+    const folder = findFolderById(state.folders, _editFolderId);
+    closeNewThemeModal();
+    if (folder) {
+      folder.name = name;
+      folder.numbering = numbering;
+      folder.updatedAt = Date.now();
+      saveState();
+      renderAllFolders();
+    }
+    return;
+  }
+  if (_folderModalMode === 'duplicate' && _editFolderId) {
+    const srcId = _editFolderId;
+    closeNewThemeModal();
+    duplicateFolder(srcId, name, numbering);
+    return;
+  }
   const sel = document.getElementById('new-folder-parent-select');
   const parentId = (sel && sel.value) ? sel.value : null;
   closeNewThemeModal();
-  createFolder(name, parentId);
+  createFolder(name, parentId, numbering);
 }
 
 function createTheme(name) { createFolder(name, null); }
@@ -3098,48 +3282,19 @@ if (newThemeNameInput) newThemeNameInput.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeNewThemeModal();
 });
 
-// Modale renommer / dupliquer dossier
-let _renameFolderId = null;
-let _renameFolderMode = 'rename'; // 'rename' | 'duplicate'
-function openRenameFolderModal(id) {
-  const folder = findFolderById(state.folders, id);
-  if (!folder) return;
-  _renameFolderId = id;
-  _renameFolderMode = 'rename';
-  const title = document.getElementById('rename-folder-modal-title');
-  if (title) title.textContent = 'Renommer le dossier';
-  if (renameThemeInput) renameThemeInput.value = folder.name;
-  if (modalRenameTheme) modalRenameTheme.classList.remove('hidden');
-  setTimeout(() => { if (renameThemeInput) { renameThemeInput.focus(); renameThemeInput.select(); } }, 50);
-}
-function openDuplicateFolderModal(id) {
-  const folder = findFolderById(state.folders, id);
-  if (!folder) return;
-  _renameFolderId = id;
-  _renameFolderMode = 'duplicate';
-  const title = document.getElementById('rename-folder-modal-title');
-  if (title) title.textContent = 'Dupliquer le dossier';
-  if (renameThemeInput) renameThemeInput.value = '';
-  if (renameThemeInput) renameThemeInput.placeholder = 'Nom du nouveau dossier...';
-  if (modalRenameTheme) modalRenameTheme.classList.remove('hidden');
-  setTimeout(() => { if (renameThemeInput) renameThemeInput.focus(); }, 50);
-}
-function closeRenameThemeModal() {
-  if (modalRenameTheme) modalRenameTheme.classList.add('hidden');
-  _renameFolderId = null;
-  _renameFolderMode = 'rename';
-}
-function confirmRenameTheme() {
-  if (!_renameFolderId) return;
-  const name = renameThemeInput?.value.trim() || '';
-  if (!name) return;
-  if (_renameFolderMode === 'duplicate') {
-    duplicateFolder(_renameFolderId, name);
-  } else {
-    renameFolder(_renameFolderId, name);
-  }
-  closeRenameThemeModal();
-}
+_wireNumberingChecks(
+  document.getElementById('new-folder-numbering-season'),
+  document.getElementById('new-folder-numbering-episode'),
+  document.getElementById('new-folder-numbering-wrap'),
+  document.getElementById('new-folder-numbering-number'),
+  newThemeNameInput,
+  document.getElementById('new-folder-name-prefix')
+);
+
+// "Renommer" et "Dupliquer" utilisent tous deux désormais la modal complète (numérotation + nom),
+// voir openEditFolderModal / openDuplicateFolderModalFull.
+function openRenameFolderModal(id) { openEditFolderModal(id); }
+function openDuplicateFolderModal(id) { openDuplicateFolderModalFull(id); }
 function renameTheme(id, newName) { renameFolder(id, newName); }
 function duplicateTheme(id) { openDuplicateFolderModal(id); }
 function deleteTheme(id) { deleteFolder(id); }
@@ -3756,11 +3911,14 @@ document.getElementById('btn-close-confirm-clear').addEventListener('click', () 
 function closeConfirmCurrentEventModal() {
   document.getElementById('modal-confirm-current-event').classList.add('hidden');
   _pendingCurrentEventFolderId = null;
+  _pendingCurrentEventTierlistId = null;
 }
 document.getElementById('btn-confirm-current-event').addEventListener('click', () => {
-  const id = _pendingCurrentEventFolderId;
+  const folderId = _pendingCurrentEventFolderId;
+  const tierlistId = _pendingCurrentEventTierlistId;
   closeConfirmCurrentEventModal();
-  if (id) setCurrentEventFolder(id);
+  if (folderId) setCurrentEventFolder(folderId);
+  else if (tierlistId) setCurrentEventTierlist(tierlistId);
 });
 document.getElementById('btn-cancel-current-event').addEventListener('click', closeConfirmCurrentEventModal);
 document.getElementById('btn-close-confirm-current-event').addEventListener('click', closeConfirmCurrentEventModal);
@@ -3851,6 +4009,13 @@ const _btnCeSet = document.getElementById('btn-ce-set');
 if (_btnCeSet) {
   _btnCeSet.addEventListener('click', () => {
     if (_localActiveFolderId) confirmSetCurrentEventFolder(_localActiveFolderId);
+  });
+}
+
+const _btnDuplicateActiveFolder = document.getElementById('btn-duplicate-active-folder');
+if (_btnDuplicateActiveFolder) {
+  _btnDuplicateActiveFolder.addEventListener('click', () => {
+    if (_localActiveFolderId) openDuplicateFolderModal(_localActiveFolderId);
   });
 }
 
@@ -4002,6 +4167,14 @@ document.getElementById('btn-folders-panel').addEventListener('click', () => {
 });
 document.getElementById('folders-panel-close').addEventListener('click', closeFoldersPanel);
 
+const _foldersSortSelect = document.getElementById('folders-sort-select');
+if (_foldersSortSelect) {
+  _foldersSortSelect.addEventListener('change', () => {
+    localStorage.setItem('bingoFoldersSortMode', _foldersSortSelect.value);
+    renderFoldersPanelTree();
+  });
+}
+
 // ── Corbeille unifiée ──────────────────────────────────────────────────────────
 const modalTrashUnified = document.getElementById('modal-trash-unified');
 const modalConfirmTrashEmpty = document.getElementById('modal-confirm-trash-empty');
@@ -4149,15 +4322,6 @@ document.getElementById('btn-confirm-trash-empty').addEventListener('click', () 
   trashEmpty();
   modalConfirmTrashEmpty.classList.add('hidden');
   renderTrashList();
-});
-
-// Modales renommage dossier
-if (btnConfirmRenameTheme) btnConfirmRenameTheme.addEventListener('click', confirmRenameTheme);
-if (btnCancelRenameTheme) btnCancelRenameTheme.addEventListener('click', closeRenameThemeModal);
-if (btnCloseRenameThemeModal) btnCloseRenameThemeModal.addEventListener('click', closeRenameThemeModal);
-if (renameThemeInput) renameThemeInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') confirmRenameTheme();
-  if (e.key === 'Escape') closeRenameThemeModal();
 });
 
 // Modales renommage grille
@@ -4520,8 +4684,9 @@ function _tlGetSortedUnplaced(tl) {
 // tierlists[].folderId = id du dossier parent (ou null)
 // folders[].parentId   = id du dossier parent (ou null = racine)
 
-function tlDefaultFolder(name, parentId) {
-  return { id: uid(), name, archived: false, open: true, parentId: parentId || null };
+function tlDefaultFolder(name, parentId, numbering = null) {
+  const now = Date.now();
+  return { id: uid(), name, archived: false, open: true, parentId: parentId || null, createdAt: now, updatedAt: now, numbering: numbering || null };
 }
 
 // Retourne le chemin complet d'un dossier ("Racine › Enfant › Petit-enfant")
@@ -4566,9 +4731,9 @@ function _tlGetDescendantIds(id) {
   return ids;
 }
 
-function tlCreateFolder(name, parentId) {
+function tlCreateFolder(name, parentId, numbering = null) {
   if (!tlState.folders) tlState.folders = [];
-  const folder = tlDefaultFolder(name, parentId || null);
+  const folder = tlDefaultFolder(name, parentId || null, numbering);
   tlState.folders.push(folder);
   tlSave();
   tlRender();
@@ -4576,7 +4741,7 @@ function tlCreateFolder(name, parentId) {
 
 function tlRenameFolder(id, newName) {
   const folder = (tlState.folders || []).find(f => f.id === id);
-  if (folder && newName.trim()) folder.name = newName.trim();
+  if (folder && newName.trim()) { folder.name = newName.trim(); folder.updatedAt = Date.now(); }
   tlSave();
   tlRender();
 }
@@ -4618,13 +4783,26 @@ function _tlDuplicateTierlistDeep(src, folderId, templateIdOverride) {
   return copy;
 }
 
-function tlDuplicateFolder(id, newParentId) {
+// explicitNumbering : numérotation déjà choisie par l'utilisateur pour le dossier racine dupliqué
+// (prioritaire sur l'auto-incrément) — ne s'applique qu'au dossier racine, pas aux sous-dossiers
+// récursifs qui gardent leur propre auto-incrément.
+function tlDuplicateFolder(id, newParentId, explicitNumbering) {
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
   if (!tlState.folders) tlState.folders = [];
 
-  const cloneRecursive = (srcFolder, targetParentId) => {
-    const newFolder = tlDefaultFolder(srcFolder.name, targetParentId);
+  const cloneRecursive = (srcFolder, targetParentId, forcedNumbering) => {
+    let newName = srcFolder.name;
+    let newNumbering = null;
+    if (forcedNumbering !== undefined) {
+      newNumbering = forcedNumbering;
+      newName = newNumbering ? formatNumberedFolderName(newNumbering) : srcFolder.name;
+    } else if (srcFolder.numbering) {
+      const siblings = (tlState.folders || []).filter(f => !f.archived && (f.parentId || null) === (targetParentId || null));
+      newNumbering = { ...srcFolder.numbering, number: _nextFolderNumber(siblings, srcFolder.numbering.type) };
+      newName = formatNumberedFolderName(newNumbering);
+    }
+    const newFolder = tlDefaultFolder(newName, targetParentId, newNumbering);
     tlState.folders.push(newFolder);
 
     // Templates + leurs tierlists générées (repointées vers la copie du template)
@@ -4646,7 +4824,7 @@ function tlDuplicateFolder(id, newParentId) {
     return newFolder;
   };
 
-  const result = cloneRecursive(folder, newParentId !== undefined ? newParentId : (folder.parentId || null));
+  const result = cloneRecursive(folder, newParentId !== undefined ? newParentId : (folder.parentId || null), explicitNumbering);
   tlSave();
   tlRender();
   return result;
@@ -5324,7 +5502,7 @@ function _tlBuildFolderEl(folder, depth) {
   const name = document.createElement('span');
   name.className = 'tl-folder-name';
   name.textContent = folder.name;
-  name.title = folder.name + '\nClic droit : renommer, déplacer, archiver\nGlisser : réordonner';
+  name.title = folder.name + '\nClic droit : renommer, déplacer, archiver';
 
   const ctxBtn = document.createElement('button');
   ctxBtn.className = 'tl-folder-ctx-btn';
@@ -5335,12 +5513,6 @@ function _tlBuildFolderEl(folder, depth) {
     tlOpenFolderManageModal(folder.id, header);
   });
 
-  const dragHandle = document.createElement('span');
-  dragHandle.className = 'tl-folder-drag-handle';
-  dragHandle.innerHTML = '<i data-lucide="grip"></i>';
-  dragHandle.title = 'Glisser pour déplacer';
-
-  header.appendChild(dragHandle);
   header.appendChild(arrow);
   header.appendChild(icon);
   header.appendChild(name);
@@ -5353,7 +5525,7 @@ function _tlBuildFolderEl(folder, depth) {
   });
 
   header.addEventListener('click', e => {
-    if (e.target.closest('.tl-folder-arrow, .tl-folder-ctx-btn, .tl-folder-drag-handle')) return;
+    if (e.target.closest('.tl-folder-arrow, .tl-folder-ctx-btn')) return;
     _tlLocalActiveFolderId = folder.id;
     _tlLocalActiveTierlistId = null;
     _tlLocalNoSelection = true;
@@ -5361,50 +5533,21 @@ function _tlBuildFolderEl(folder, depth) {
     tlRender();
   });
 
-  // Drag & drop — activé seulement via la poignée grip
-  folderEl.draggable = false;
-  dragHandle.addEventListener('mousedown', () => { folderEl.draggable = true; });
-  dragHandle.addEventListener('mouseleave', () => { if (!folderEl.classList.contains('tl-dragging')) folderEl.draggable = false; });
-  folderEl.addEventListener('dragstart', e => {
-    if (e.target !== folderEl && e.target.closest('.tl-folder-children')) return;
-    _tlSidebarDragStart(e, folder.id, 'folder');
-  });
-  folderEl.addEventListener('dragend', _tlSidebarDragEnd);
+  // Une tierlist peut toujours être glissée dans ce dossier (fonctionnalité distincte du
+  // réordonnancement des dossiers, qui a été retiré) — le dossier lui-même n'est plus draggable.
   folderEl.addEventListener('dragover', e => {
     if (_tlSidebarDragType === 'tierlist') {
       _tlSidebarDragOverItem(e, header, folder.id, 'folder-header');
-    } else if (_tlSidebarDragType === 'folder' && _tlSidebarDragId !== folder.id) {
-      // Moitié haute/basse = réordonner, zone centrale = mettre dedans
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      document.querySelectorAll('.tl-drag-over-top,.tl-drag-over-bottom,.tl-drag-over-folder')
-        .forEach(x => x.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder'));
-      const rect = folderEl.getBoundingClientRect();
-      const y = e.clientY - rect.top;
-      if (y < rect.height * 0.25) folderEl.classList.add('tl-drag-over-top');
-      else if (y > rect.height * 0.75) folderEl.classList.add('tl-drag-over-bottom');
-      else header.classList.add('tl-drag-over-folder');
     }
   });
   folderEl.addEventListener('dragleave', e => {
     if (!folderEl.contains(e.relatedTarget)) {
       _tlSidebarDragLeaveItem(e, header);
-      _tlSidebarDragLeaveItem(e, folderEl);
     }
   });
   folderEl.addEventListener('drop', e => {
     if (_tlSidebarDragType === 'tierlist') {
       _tlSidebarDropOnItem(e, folder.id, 'folder-header', header);
-    } else if (_tlSidebarDragType === 'folder') {
-      if (header.classList.contains('tl-drag-over-folder')) {
-        // Déposer dans le dossier
-        e.preventDefault();
-        document.querySelectorAll('.tl-drag-over-top,.tl-drag-over-bottom,.tl-drag-over-folder')
-          .forEach(x => x.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder'));
-        tlMoveFolderToParent(_tlSidebarDragId, folder.id);
-      } else {
-        _tlSidebarDropOnItem(e, folder.id, 'folder', folderEl);
-      }
     }
   });
 
@@ -5414,7 +5557,7 @@ function _tlBuildFolderEl(folder, depth) {
   children.className = 'tl-folder-children';
 
   // Sous-dossiers
-  const subFolders = (tlState.folders || []).filter(f => !f.archived && f.parentId === folder.id);
+  const subFolders = _sortFoldersList((tlState.folders || []).filter(f => !f.archived && f.parentId === folder.id), _folderSortMode('tlFoldersSortMode'));
   subFolders.forEach(sf => children.appendChild(_tlBuildFolderEl(sf, depth + 1)));
 
   // Tierlists/templates du dossier — les tierlists rattachées à un template vivant
@@ -5438,7 +5581,10 @@ function _tlBuildFolderEl(folder, depth) {
 function tlRenderList() {
   tlList.innerHTML = '';
   if (!tlState.folders) tlState.folders = [];
-  const rootFolders = tlState.folders.filter(f => !f.archived && !f.parentId);
+  const tlSortMode = _folderSortMode('tlFoldersSortMode');
+  const tlSortSelect = document.getElementById('tl-folders-sort-select');
+  if (tlSortSelect) tlSortSelect.value = tlSortMode;
+  const rootFolders = _sortFoldersList(tlState.folders.filter(f => !f.archived && !f.parentId), tlSortMode);
   // Tierlists/templates sans dossier — les tierlists rattachées à un template vivant
   // n'apparaissent jamais à plat, seulement sous leur groupe de template
   const activeToplevel = tlState.tierlists.filter(tl => !tl.archived && !tl.folderId && !_tlHasLiveTemplate(tl));
@@ -7564,8 +7710,8 @@ function tlOpenFolderManageModal(id, anchorEl) {
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
   const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null);
-  addItem('pencil', 'Renommer', false, () => tlOpenFolderModal('rename', id, folder.name));
-  addItem('copy-plus', 'Dupliquer', false, () => tlDuplicateFolder(id));
+  addItem('pencil', 'Renommer', false, () => tlOpenFolderModal('edit', id));
+  addItem('copy-plus', 'Dupliquer', false, () => tlOpenFolderModal('duplicate', id));
   addItem('move', 'Déplacer dans un dossier', false, () => tlOpenMoveFolderModal(id));
   addItem('scroll', 'Ajouter un template', false, () => tlOpenNewTemplateModal(id));
   addSep();
@@ -7589,36 +7735,136 @@ const tlModalFolderParentWrap   = document.getElementById('tl-modal-folder-paren
 function tlOpenFolderModal(mode = 'create', id = null, currentName = '', presetParentId = null) {
   _tlFolderModalMode = mode;
   _tlFolderModalTargetId = id;
+  const numberingCheckWrap = document.getElementById('tl-modal-folder-numbering-check-wrap');
+  const numberingWrap = document.getElementById('tl-modal-folder-numbering-wrap');
+  const seasonCb = document.getElementById('tl-modal-folder-numbering-season');
+  const episodeCb = document.getElementById('tl-modal-folder-numbering-episode');
+  const numberingNumber = document.getElementById('tl-modal-folder-numbering-number');
+  const prefixEl = document.getElementById('tl-modal-folder-name-prefix');
   if (mode === 'rename') {
     tlModalFolderTitle.textContent = 'Renommer le dossier';
     tlModalFolderConfirm.textContent = 'Renommer';
     tlModalFolderInput.value = currentName;
+    tlModalFolderInput.placeholder = 'Nom...';
     if (tlModalFolderParentWrap) tlModalFolderParentWrap.style.display = 'none';
+    if (numberingCheckWrap) numberingCheckWrap.style.display = 'none';
+    if (numberingWrap) numberingWrap.classList.add('hidden');
+  } else if (mode === 'edit') {
+    const folder = (tlState.folders || []).find(f => f.id === id);
+    if (!folder) return;
+    tlModalFolderTitle.textContent = 'Renommer le dossier';
+    tlModalFolderConfirm.textContent = 'Renommer';
+    tlModalFolderInput.placeholder = 'Nom (optionnel)...';
+    if (tlModalFolderParentWrap) tlModalFolderParentWrap.style.display = 'none';
+    if (numberingCheckWrap) numberingCheckWrap.style.display = '';
+    if (folder.numbering) {
+      if (seasonCb) seasonCb.checked = folder.numbering.type === 'season';
+      if (episodeCb) episodeCb.checked = folder.numbering.type === 'episode';
+      if (numberingWrap) numberingWrap.classList.remove('hidden');
+      if (numberingNumber) numberingNumber.value = folder.numbering.number;
+      tlModalFolderInput.value = folder.numbering.subtitle || '';
+    } else {
+      if (seasonCb) seasonCb.checked = false;
+      if (episodeCb) episodeCb.checked = false;
+      if (numberingWrap) numberingWrap.classList.add('hidden');
+      if (numberingNumber) numberingNumber.value = '';
+      tlModalFolderInput.value = folder.name;
+    }
+  } else if (mode === 'duplicate') {
+    const folder = (tlState.folders || []).find(f => f.id === id);
+    if (!folder) return;
+    tlModalFolderTitle.textContent = 'Dupliquer le dossier';
+    tlModalFolderConfirm.textContent = 'Dupliquer';
+    tlModalFolderInput.placeholder = 'Nom (optionnel)...';
+    if (tlModalFolderParentWrap) tlModalFolderParentWrap.style.display = 'none';
+    if (numberingCheckWrap) numberingCheckWrap.style.display = '';
+    if (folder.numbering) {
+      const siblings = (tlState.folders || []).filter(f => !f.archived && (f.parentId || null) === (folder.parentId || null));
+      if (seasonCb) seasonCb.checked = folder.numbering.type === 'season';
+      if (episodeCb) episodeCb.checked = folder.numbering.type === 'episode';
+      if (numberingWrap) numberingWrap.classList.remove('hidden');
+      if (numberingNumber) numberingNumber.value = _nextFolderNumber(siblings, folder.numbering.type);
+      tlModalFolderInput.value = folder.numbering.subtitle || '';
+    } else {
+      if (seasonCb) seasonCb.checked = false;
+      if (episodeCb) episodeCb.checked = false;
+      if (numberingWrap) numberingWrap.classList.add('hidden');
+      if (numberingNumber) numberingNumber.value = '';
+      tlModalFolderInput.value = '';
+    }
   } else {
     tlModalFolderTitle.textContent = 'Nouveau dossier';
     tlModalFolderConfirm.textContent = 'Créer';
     tlModalFolderInput.value = '';
+    tlModalFolderInput.placeholder = 'Nom (optionnel)...';
     if (tlModalFolderParentWrap) {
       tlModalFolderParentWrap.style.display = '';
       tlPopulateFolderSelect(tlModalFolderParentSelect, presetParentId || '');
       tlModalFolderParentSelect.options[0].textContent = '— Aucun (racine) —';
     }
+    if (numberingCheckWrap) numberingCheckWrap.style.display = '';
+    if (seasonCb) seasonCb.checked = false;
+    if (episodeCb) episodeCb.checked = false;
+    if (numberingWrap) numberingWrap.classList.add('hidden');
+    if (numberingNumber) numberingNumber.value = '';
   }
+  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, tlModalFolderInput, prefixEl);
   tlModalFolder.classList.remove('hidden');
-  setTimeout(() => { tlModalFolderInput.focus(); if (mode === 'rename') tlModalFolderInput.select(); }, 50);
+  setTimeout(() => { tlModalFolderInput.focus(); if (mode !== 'create') tlModalFolderInput.select(); }, 50);
 }
 
 function tlConfirmFolderModal() {
-  const val = tlModalFolderInput.value.trim();
-  if (!val) return;
-  tlModalFolder.classList.add('hidden');
-  if (_tlFolderModalMode === 'create') {
+  if (_tlFolderModalMode === 'create' || _tlFolderModalMode === 'edit' || _tlFolderModalMode === 'duplicate') {
+    const seasonCb = document.getElementById('tl-modal-folder-numbering-season');
+    const episodeCb = document.getElementById('tl-modal-folder-numbering-episode');
+    const numberingNumber = document.getElementById('tl-modal-folder-numbering-number');
+    const type = _readNumberingType(seasonCb, episodeCb);
+    const subtitle = tlModalFolderInput.value.trim();
+    let numbering = null;
+    let name;
+    if (type) {
+      const num = parseInt(numberingNumber.value, 10);
+      if (!num || num < 1) { numberingNumber.focus(); return; }
+      numbering = { type, number: num, subtitle };
+      name = formatNumberedFolderName(numbering);
+    } else {
+      if (_tlFolderModalMode !== 'duplicate' && !subtitle) { tlModalFolderInput.focus(); return; }
+      name = subtitle;
+    }
+    tlModalFolder.classList.add('hidden');
+    if (_tlFolderModalMode === 'edit') {
+      const folder = (tlState.folders || []).find(f => f.id === _tlFolderModalTargetId);
+      if (folder) {
+        folder.name = name;
+        folder.numbering = numbering;
+        folder.updatedAt = Date.now();
+        tlSave();
+        tlRender();
+      }
+      return;
+    }
+    if (_tlFolderModalMode === 'duplicate') {
+      tlDuplicateFolder(_tlFolderModalTargetId, undefined, numbering);
+      return;
+    }
     const parentId = tlModalFolderParentSelect ? tlModalFolderParentSelect.value || null : null;
-    tlCreateFolder(val, parentId);
+    tlCreateFolder(name, parentId, numbering);
   } else if (_tlFolderModalMode === 'rename' && _tlFolderModalTargetId) {
+    const val = tlModalFolderInput.value.trim();
+    if (!val) return;
+    tlModalFolder.classList.add('hidden');
     tlRenameFolder(_tlFolderModalTargetId, val);
   }
 }
+
+_wireNumberingChecks(
+  document.getElementById('tl-modal-folder-numbering-season'),
+  document.getElementById('tl-modal-folder-numbering-episode'),
+  document.getElementById('tl-modal-folder-numbering-wrap'),
+  document.getElementById('tl-modal-folder-numbering-number'),
+  tlModalFolderInput,
+  document.getElementById('tl-modal-folder-name-prefix')
+);
 
 tlModalFolderConfirm.addEventListener('click', tlConfirmFolderModal);
 tlModalFolderCancel.addEventListener('click', () => tlModalFolder.classList.add('hidden'));
@@ -7686,7 +7932,7 @@ function tlOpenManageModal(id, anchorEl) {
   addItem('shelving-unit', 'Ranger dans un dossier', false, () => tlOpenMoveModal(id));
   const ceIsActive = state.currentEventTierlistId === id;
   const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
-  addItem('party-popper', ceLabel, false, () => setCurrentEventTierlist(id));
+  addItem('party-popper', ceLabel, false, () => confirmSetCurrentEventTierlist(id));
   if (!tl.isTemplate) {
     if (!tl.templateId) addItem('scroll', 'Convertir en template', false, () => tlConvertToTemplate(id));
   } else {
@@ -7754,6 +8000,14 @@ document.getElementById('tl-btn-folders').addEventListener('click', () => {
 document.getElementById('tl-empty-btn-folders').addEventListener('click', openTlSidebar);
 document.getElementById('tl-sidebar-close').addEventListener('click', closeTlSidebar);
 
+const _tlFoldersSortSelect = document.getElementById('tl-folders-sort-select');
+if (_tlFoldersSortSelect) {
+  _tlFoldersSortSelect.addEventListener('change', () => {
+    localStorage.setItem('tlFoldersSortMode', _tlFoldersSortSelect.value);
+    tlRenderList();
+  });
+}
+
 document.getElementById('tl-btn-open-window').addEventListener('click', () => {
   const tl = tlActiveTierlist();
   if (!tl) return;
@@ -7764,7 +8018,7 @@ const _tlBtnCeSet = document.getElementById('tl-btn-ce-set');
 if (_tlBtnCeSet) {
   _tlBtnCeSet.addEventListener('click', () => {
     const tl = tlActiveTierlist();
-    if (tl) setCurrentEventTierlist(tl.id);
+    if (tl) confirmSetCurrentEventTierlist(tl.id);
   });
 }
 
