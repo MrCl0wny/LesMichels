@@ -86,7 +86,7 @@ LesMichels/
 ├── firebase.json       → Configuration Firebase Hosting + Functions + cache HTTP
 ├── database.rules.json → Règles d'accès Firebase (authentifiés uniquement)
 ├── manifest.json        → Manifest PWA (icône + nom pour installation "app de bureau")
-├── icon.svg / icon-192.png / icon-512.png → Icône de l'app (PWA)
+├── icons/               → icon.svg / icon-192.png / icon-512.png (icône de l'app, PWA)
 └── README.md           → Ce fichier
 ```
 
