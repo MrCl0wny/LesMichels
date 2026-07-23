@@ -3199,6 +3199,7 @@ textarea.element-edit-input {
 
 .modal-numbering-checks {
   display: flex;
+  align-items: center;
   gap: 18px;
   margin-bottom: 12px;
 }
@@ -3214,17 +3215,26 @@ textarea.element-edit-input {
   cursor: pointer;
 }
 .modal-numbering-wrap {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  margin-left: auto;
 }
 .modal-numbering-wrap.hidden {
   display: none;
 }
 .modal-numbering-number {
-  flex: 1;
+  width: 52px;
   min-width: 0;
+  text-align: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 5px 4px;
+  outline: none;
+  transition: var(--transition);
 }
+.modal-numbering-number:focus { border-color: var(--accent); }
 
 /* Champ nom du dossier avec préfixe de numérotation (S01/Ep01) affiché en grisé,
    superposé au placeholder pour prévisualiser le rendu final du nom composé. */
