@@ -85,6 +85,8 @@ LesMichels/
 ├── 404.html            → Page d'erreur Firebase Hosting
 ├── firebase.json       → Configuration Firebase Hosting + Functions + cache HTTP
 ├── database.rules.json → Règles d'accès Firebase (authentifiés uniquement)
+├── manifest.json        → Manifest PWA (icône + nom pour installation "app de bureau")
+├── icon.svg / icon-192.png / icon-512.png → Icône de l'app (PWA)
 └── README.md           → Ce fichier
 ```
 
@@ -104,6 +106,16 @@ Le CDN Lucide est chargé dans `index.html` (`<script src="https://unpkg.com/luc
 **Choisir une icône** : aller sur [lucide.dev/icons](https://lucide.dev/icons), chercher un mot-clé (ex. "trash", "folder", "dice"), cliquer sur l'icône qui plaît pour récupérer son nom exact (ex. `trash-2`, `folder`, `dices`).
 
 **Utilisation** : remplacer l'emoji par `<i data-lucide="nom-de-l-icone"></i>`, puis appeler `lucide.createIcons()` pour que Lucide transforme les balises en SVG (à refaire après tout ajout dynamique de boutons, ex. menus contextuels).
+
+## 🖥️ Installer comme application (icône bureau)
+
+L'app est installable comme PWA (Progressive Web App) grâce à `manifest.json` + `icon-192.png`/`icon-512.png`.
+
+1. Ouvrir le site en ligne (`https://lesmichels-bf146.web.app`) dans Chrome ou Edge
+2. Cliquer sur l'icône d'installation ⊕ dans la barre d'adresse (ou menu ⋮ → "Installer LesMichels...")
+3. L'app s'installe : icône sur le Bureau/menu Démarrer, s'ouvre dans sa propre fenêtre (sans barre d'adresse), comme une vraie application
+
+Nécessite toujours une connexion internet (pas de mode hors-ligne — pas de service worker).
 
 ## 🗓️ Idées & todo
 
