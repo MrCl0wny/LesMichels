@@ -6995,7 +6995,9 @@ async function _tlBuildCanvas(tl) {
   // .tl-tier-label-cell a une taille fixe (1.1rem = 17.6px), indépendante de la taille des images
   // (contrairement à ce que labelFontSize proportionnel à imgSize laissait croire à l'écran).
   const labelFontSize = 17.6;
-  const totalWidth = 860;
+  // Largeur réelle affichée à l'écran (fluide, dépend de la fenêtre) plutôt qu'une valeur fixe,
+  // sinon la capture/export ne correspond plus à ce que l'utilisateur voit sur un écran large.
+  const totalWidth = Math.round(tlTiersZone?.getBoundingClientRect().width) || 860;
 
   const tierHeights = tl.tiers.map(tier => {
     if (tier.items.length === 0) return imgSize + padding * 2;
