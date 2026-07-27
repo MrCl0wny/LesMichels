@@ -359,21 +359,26 @@ function _applySoloTierlistModeIfNeeded() {
   _tlLocalActiveTierlistId = tl.id;
   _tlLocalNoSelection = false;
   if (window._switchPage) window._switchPage('tierlist');
-  document.title = (tl.name || 'Tier list') + ' — LesMichels';
+  document.title = (_tlFullTitlePath(tl) || tl.name || 'Tier list') + ' — LesMichels';
   document.body.classList.add('solo-tierlist-mode');
 }
 
 function _applyCompareTierlistModeIfNeeded() {
-  if (_compareTierlistIds.length < 2 || _compareModeApplied) return;
+  if (_compareTierlistIds.length < 2) return;
   const tls = _compareTierlistIds
     .map(id => tlState.tierlists.find(t => t.id === id && !t.archived))
     .filter(Boolean);
-  if (tls.length < 2) return;
-  _compareModeApplied = true;
-  _tlLocalActiveTierlistId = null;
-  if (window._switchPage) window._switchPage('tierlist');
-  document.title = 'Comparaison — LesMichels';
-  document.body.classList.add('compare-tierlist-mode');
+  if (tls.length < 2) {
+    // Une tierlist comparée a été supprimée/archivée entre-temps : on garde le dernier rendu affiché.
+    return;
+  }
+  if (!_compareModeApplied) {
+    _compareModeApplied = true;
+    _tlLocalActiveTierlistId = null;
+    if (window._switchPage) window._switchPage('tierlist');
+    document.body.classList.add('compare-tierlist-mode');
+  }
+  document.title = 'Comparaison : ' + _tlCommonTitlePath(tls) + ' — LesMichels';
   _tlRenderCompareView(tls);
 }
 
@@ -4723,6 +4728,19 @@ function _tlFullTitlePath(tl) {
   return prefix ? prefix + ' › ' + tl.name : tl.name;
 }
 
+// Segment de chemin (dossiers › template › ...) partagé par toutes les tierlists comparées —
+// ex. "Miss Univers › 2026 › Brésil (template) › Jérôme" vs "... › Adrien" → "Miss Univers › 2026".
+function _tlCommonTitlePath(tls) {
+  const paths = tls.map(tl => _tlFullTitlePath(tl).split(' › '));
+  const common = [];
+  for (let i = 0; i < paths[0].length; i++) {
+    const segment = paths[0][i];
+    if (paths.every(p => p[i] === segment)) common.push(segment);
+    else break;
+  }
+  return common.length ? common.join(' › ') : tls.map(_tlFullTitlePath).join(' vs ');
+}
+
 // Retourne tous les ids descendants d'un dossier (récursif)
 function _tlGetDescendantIds(id) {
   const children = (tlState.folders || []).filter(f => f.parentId === id);
@@ -4947,6 +4965,11 @@ const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
 function _tlUpdateShowLabelsBtn(showLabels) {
   tlShowLabelsToggle.textContent = showLabels ? 'Masquer noms' : 'Afficher noms';
   tlShowLabelsToggle.classList.toggle('active', !!showLabels);
+  const compareToggle = document.getElementById('tl-compare-show-labels-toggle');
+  if (compareToggle) {
+    compareToggle.textContent = showLabels ? 'Masquer noms' : 'Afficher noms';
+    compareToggle.classList.toggle('active', !!showLabels);
+  }
 }
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
 const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
@@ -4966,6 +4989,60 @@ const tlControlPanel      = document.getElementById('tl-control-panel');
 const tlCtrlRowGroup      = document.getElementById('tl-ctrl-row-group');
 const tlGroupBreadcrumb   = document.getElementById('tl-group-breadcrumb');
 const tlGroupList         = document.getElementById('tl-group-list');
+
+// Fallback dragover sur le conteneur de tiers lui-même : ses zones de padding/marges entre tiers
+// ne sont couvertes par aucun listener dragover enfant (.tl-tier-wrap / .tl-tier-images), donc le
+// navigateur y affiche son icône "interdit" faute de preventDefault() — d'où l'impression que le
+// curseur "change" dès qu'on quitte un tier pendant un drag.
+tlTiersZone.addEventListener('dragover', e => { if (_tlTierDragId || tlDragImgId) e.preventDefault(); });
+
+// Auto-scroll pendant un drag&drop : le navigateur ne scrolle jamais automatiquement une zone
+// en overflow pendant un dragover natif — sans ça, impossible de déposer une image hors de la
+// portion actuellement visible de .tl-tiers-zone (scroll interne) ou de la page (scroll de fenêtre).
+// Boucle rAF à vitesse progressive (douce près du seuil, jusqu'à TL_AUTOSCROLL_MAX_SPEED collé au
+// bord) plutôt qu'un saut fixe par événement dragover (qui arrive en rafale et donnait un scroll saccadé).
+const TL_AUTOSCROLL_EDGE = 70;
+const TL_AUTOSCROLL_MAX_SPEED = 6;
+let _tlAutoScrollDir = 0; // -1 haut, 0 aucun, 1 bas
+let _tlAutoScrollTarget = null;
+let _tlAutoScrollStrength = 0;
+let _tlAutoScrollRafId = null;
+
+function _tlAutoScrollStep() {
+  if (_tlAutoScrollDir !== 0 && _tlAutoScrollTarget) {
+    const amount = _tlAutoScrollDir * TL_AUTOSCROLL_MAX_SPEED * _tlAutoScrollStrength;
+    if (_tlAutoScrollTarget === window) window.scrollBy(0, amount);
+    else _tlAutoScrollTarget.scrollTop += amount;
+    _tlAutoScrollRafId = requestAnimationFrame(_tlAutoScrollStep);
+  } else {
+    _tlAutoScrollRafId = null;
+  }
+}
+
+function _tlSetAutoScroll(target, dir, strength) {
+  _tlAutoScrollTarget = target;
+  _tlAutoScrollDir = dir;
+  _tlAutoScrollStrength = strength;
+  if (dir !== 0 && _tlAutoScrollRafId === null) _tlAutoScrollRafId = requestAnimationFrame(_tlAutoScrollStep);
+}
+
+document.addEventListener('dragover', e => {
+  if (tlTiersZone && tlTiersZone.contains(e.target)) {
+    const rect = tlTiersZone.getBoundingClientRect();
+    const distTop = e.clientY - rect.top;
+    const distBottom = rect.bottom - e.clientY;
+    if (distTop < TL_AUTOSCROLL_EDGE) { _tlSetAutoScroll(tlTiersZone, -1, 1 - Math.max(distTop, 0) / TL_AUTOSCROLL_EDGE); return; }
+    if (distBottom < TL_AUTOSCROLL_EDGE) { _tlSetAutoScroll(tlTiersZone, 1, 1 - Math.max(distBottom, 0) / TL_AUTOSCROLL_EDGE); return; }
+  }
+  const distTop = e.clientY;
+  const distBottom = window.innerHeight - e.clientY;
+  if (distTop < TL_AUTOSCROLL_EDGE) { _tlSetAutoScroll(window, -1, 1 - Math.max(distTop, 0) / TL_AUTOSCROLL_EDGE); return; }
+  if (distBottom < TL_AUTOSCROLL_EDGE) { _tlSetAutoScroll(window, 1, 1 - Math.max(distBottom, 0) / TL_AUTOSCROLL_EDGE); return; }
+  _tlSetAutoScroll(null, 0, 0);
+}, true);
+document.addEventListener('dragend', () => _tlSetAutoScroll(null, 0, 0));
+document.addEventListener('drop', () => _tlSetAutoScroll(null, 0, 0));
+
 
 // Modals
 const tlModalNew          = document.getElementById('tl-modal-new');
@@ -5612,6 +5689,27 @@ function tlRenderList() {
 // ── Drag & drop réordonnement des tiers ───────────────────────────────────────
 let _tlTierDragId = null;
 
+// Aperçu du réordonnement de tier, même principe que le placeholder d'image (tl-drop-placeholder) :
+// un bloc pousse visuellement les tiers voisins à la place où le tier atterrira, plutôt qu'une
+// simple bordure indicative — cohérent avec l'aperçu déjà en place pour le drag d'image.
+function _tlShowTierDropPlaceholder(wrap, before) {
+  let placeholder = tlTiersZone.querySelector('.tl-tier-drop-placeholder');
+  if (!placeholder) {
+    placeholder = document.createElement('div');
+    placeholder.className = 'tl-tier-drop-placeholder tl-drop-placeholder';
+  }
+  const rect = wrap.getBoundingClientRect();
+  placeholder.style.height = rect.height + 'px';
+  const refNode = before ? wrap : wrap.nextSibling;
+  if (placeholder.nextSibling !== refNode || placeholder.parentElement !== tlTiersZone) {
+    tlTiersZone.insertBefore(placeholder, refNode);
+  }
+}
+function _tlClearTierDropPlaceholder() {
+  const placeholder = tlTiersZone.querySelector('.tl-tier-drop-placeholder');
+  if (placeholder) placeholder.remove();
+}
+
 function tlRenderTiers(tl) {
   tlTiersZone.innerHTML = '';
   const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
@@ -5691,15 +5789,18 @@ function tlRenderTiers(tl) {
       _tlTierDragId = null;
       wrap.draggable = false;
       wrap.classList.remove('tl-tier-label-dragging');
-      document.querySelectorAll('.tl-tier-wrap').forEach(r => r.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below'));
+      _tlClearTierDropPlaceholder();
     });
     wrap.addEventListener('dragover', e => {
-      if (!_tlTierDragId || _tlTierDragId === tier.id) return;
+      if (!_tlTierDragId) return;
+      // preventDefault() dans tous les cas (même en survolant le tier qu'on drag lui-même) pour que
+      // le curseur natif du navigateur reste en mode "autorisé" partout dans la zone valide — sans
+      // ça, il passe en icône "interdit" dès qu'on repasse sur la position d'origine du drag.
       e.preventDefault();
+      if (_tlTierDragId === tier.id) return;
       const rect = wrap.getBoundingClientRect();
-      const mid = rect.top + rect.height / 2;
-      wrap.classList.toggle('tl-tier-drop-above', e.clientY < mid);
-      wrap.classList.toggle('tl-tier-drop-below', e.clientY >= mid);
+      const before = e.clientY < rect.top + rect.height / 2;
+      _tlShowTierDropPlaceholder(wrap, before);
     });
     wrap.addEventListener('dragleave', e => {
       if (!wrap.contains(e.relatedTarget)) {
@@ -5709,7 +5810,7 @@ function tlRenderTiers(tl) {
     wrap.addEventListener('drop', e => {
       if (!_tlTierDragId || _tlTierDragId === tier.id) return;
       e.preventDefault();
-      wrap.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below');
+      _tlClearTierDropPlaceholder();
       const rect = wrap.getBoundingClientRect();
       const before = e.clientY < rect.top + rect.height / 2;
       const fromIdx = tl.tiers.findIndex(t => t.id === _tlTierDragId);
@@ -5910,6 +6011,53 @@ function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
   addItem('x', 'Supprimer ce tier', true, () => tlDeleteTier(tl, tier.id));
 }
 
+// ── Zoom image (overlay plein écran, lecture seule) ──────────────────────────
+// Boîte à taille fixe (largeur = hauteur en vw/vh) impossible à faire suivre le ratio réel de
+// l'image via CSS seul puisqu'on utilise background-image (pas <img>, pour échapper au scan
+// d'extensions type Fatkun) — donc on mesure l'image en mémoire (jamais insérée dans le DOM) et on
+// dimensionne le conteneur nous-mêmes, plafonné à 90vh de haut et 90vw de large.
+function _tlOpenImgZoom(img, tl) {
+  const modal = document.getElementById('tl-modal-img-zoom');
+  const pic = document.getElementById('tl-img-zoom-picture');
+  const label = document.getElementById('tl-img-zoom-label');
+  if (!modal || !pic) return;
+  pic.style.backgroundImage = `url("${img.src}")`;
+  modal.classList.remove('hidden');
+  const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!(tl && tl.showLabels);
+  if (label) {
+    label.classList.toggle('hidden', !showLabels);
+    label.textContent = img.name || '';
+  }
+  const probe = new Image();
+  probe.onload = () => {
+    const maxW = window.innerWidth * 0.9;
+    const maxH = window.innerHeight * 0.9;
+    // Toutes les images sont compressées à l'import (~400px de long côté, cf. _tlCompressToBase64),
+    // donc leur taille native est toujours petite face à 90vw/90vh — sans cette normalisation le
+    // zoom paraît minuscule et incohérent d'une image à l'autre selon leur ratio d'origine. On
+    // remonte donc systématiquement à ~70% de l'espace disponible (quitte à légèrement flouter),
+    // sauf si l'image est déjà plus grande que ça nativement.
+    const targetW = maxW * 0.7;
+    const targetH = maxH * 0.7;
+    const upscaleRatio = Math.min(targetW / probe.naturalWidth, targetH / probe.naturalHeight);
+    const ratio = Math.min(Math.max(upscaleRatio, 1), maxW / probe.naturalWidth, maxH / probe.naturalHeight);
+    pic.style.width = Math.round(probe.naturalWidth * ratio) + 'px';
+    pic.style.height = Math.round(probe.naturalHeight * ratio) + 'px';
+  };
+  probe.src = img.src;
+}
+function _tlCloseImgZoom() {
+  const modal = document.getElementById('tl-modal-img-zoom');
+  if (modal) modal.classList.add('hidden');
+}
+document.getElementById('tl-img-zoom-close')?.addEventListener('click', _tlCloseImgZoom);
+document.getElementById('tl-modal-img-zoom')?.addEventListener('click', e => {
+  if (e.target.id === 'tl-modal-img-zoom') _tlCloseImgZoom();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') _tlCloseImgZoom();
+});
+
 // ── Mode comparaison (fenêtre séparée, lecture seule) ────────────────────────
 let _tlCompareTierlists = null; // dernière liste rendue, pour re-render au changement de taille
 let _tlCompareImgSize = 80;
@@ -5935,7 +6083,6 @@ function _tlRenderCompareView(tls) {
     title.textContent = tl.name;
     col.appendChild(title);
 
-    const showLabels = !!tl.showLabels;
     const imgSize = _tlCompareImgSize;
 
     tl.tiers.forEach(tier => {
@@ -5966,6 +6113,67 @@ function _tlRenderCompareView(tls) {
   });
   if (window.lucide) lucide.createIcons();
 }
+
+const tlCompareShowLabelsToggle = document.getElementById('tl-compare-show-labels-toggle');
+if (tlCompareShowLabelsToggle) {
+  tlCompareShowLabelsToggle.addEventListener('click', () => {
+    const currentlyShown = _tlLocalShowLabels !== null ? _tlLocalShowLabels : true;
+    _tlLocalShowLabels = !currentlyShown;
+    _tlUpdateShowLabelsBtn(_tlLocalShowLabels);
+    saveUserPrefs({ tlShowLabels: _tlLocalShowLabels });
+    _tlRenderCompareView(null);
+  });
+}
+
+// Assemble les canvas de chaque tierlist comparée côte à côte (même rendu que _tlBuildCanvas,
+// donc respecte déjà la préférence _tlLocalShowLabels et la taille locale).
+async function _tlBuildCompareCanvas() {
+  const tls = _tlCompareTierlists;
+  if (!tls || tls.length === 0) return null;
+  const canvases = await Promise.all(tls.map(tl => _tlBuildCanvas(tl)));
+  const gap = 16;
+  const totalWidth = canvases.reduce((sum, c) => sum + c.width, 0) + gap * (canvases.length - 1);
+  const totalHeight = Math.max(...canvases.map(c => c.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = totalWidth;
+  canvas.height = totalHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#18181c';
+  ctx.fillRect(0, 0, totalWidth, totalHeight);
+  let x = 0;
+  for (const c of canvases) {
+    ctx.drawImage(c, x, 0);
+    x += c.width + gap;
+  }
+  return canvas;
+}
+
+function tlCompareExport() {
+  _tlBuildCompareCanvas().then(canvas => {
+    if (!canvas) return;
+    const link = document.createElement('a');
+    link.download = 'comparaison_tierlists.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+}
+
+function tlCompareCapture() {
+  _tlBuildCompareCanvas().then(canvas => {
+    if (!canvas) return;
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
+        playCaptureSound();
+      }).catch(err => {
+        console.warn('TL Compare capture clipboard error:', err);
+      });
+    }, 'image/png');
+  });
+}
+
+document.getElementById('tl-compare-btn-export')?.addEventListener('click', tlCompareExport);
+document.getElementById('tl-compare-btn-capture')?.addEventListener('click', tlCompareCapture);
 
 function tlRenderUnplaced(tl) {
   tlUnplacedZone.innerHTML = '';
@@ -6075,6 +6283,20 @@ function tlBuildImgCard(tl, img, size, readOnly = false) {
     imgEl.style.height = size + 'px';
     imgEl.draggable = false;
     card.appendChild(imgEl);
+
+    const zoomBtn = document.createElement('button');
+    zoomBtn.type = 'button';
+    zoomBtn.className = 'tl-img-zoom-btn';
+    zoomBtn.draggable = false;
+    zoomBtn.title = 'Agrandir l\'image';
+    zoomBtn.innerHTML = '<i data-lucide="zoom-in"></i>';
+    zoomBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      _tlOpenImgZoom(img, tl);
+    });
+    zoomBtn.addEventListener('mousedown', e => e.stopPropagation());
+    zoomBtn.addEventListener('dragstart', e => { e.preventDefault(); e.stopPropagation(); });
+    card.appendChild(zoomBtn);
   }
 
   const _showLbls = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
@@ -6391,7 +6613,7 @@ function tlImportTiersFrom(tl, sourceTlId) {
 // tl.unplaced = [id, id, ...] — ids des images non placées dans un tier
 // tier.items  = [id, id, ...] — ids des images dans ce tier
 
-function _tlCompressToBase64(file, maxPx = 400, quality = 0.82) {
+function _tlCompressToBase64(file, maxPx = 600, quality = 0.82) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const image = new Image();

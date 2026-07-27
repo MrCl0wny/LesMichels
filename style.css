@@ -263,6 +263,11 @@ body {
 .ctrl-row-grids         { border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .ctrl-row-toolbar       { padding-bottom: 4px; }
 
+/* Ligne 1 tier list : Dossiers (toujours visible) + groupe masquable hors template, imbriqué
+   sans sa propre bordure (celle de .ctrl-row-line1 fait déjà office de séparateur). */
+.ctrl-row-line1 { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.ctrl-row-line1 .ctrl-row-grids { border-bottom: none; padding-bottom: 0; flex: 1; min-width: 0; }
+
 /* Groupe central (réglages taille → Capture) centré entre Dossiers et Cases */
 .ctrl-row-toolbar-center {
   display: flex;
@@ -743,14 +748,21 @@ body.solo-grid-mode .ctrl-row-toolbar {
   justify-content: center;
 }
 
-/* ── Mode "fenêtre tier list solo" (popup ouverte via square-arrow-out-up-right) ── */
+/* ── Mode "fenêtre tier list solo" (popup ouverte via fullscreen) ── */
 body.solo-tierlist-mode .header,
-body.solo-tierlist-mode .tl-btn-folders,
-body.solo-tierlist-mode .tl-btn-open-window {
+body.solo-tierlist-mode .ctrl-row-line1,
+body.solo-tierlist-mode .tl-editor-header {
   display: none;
 }
 body.solo-tierlist-mode .main {
   padding: 8px;
+}
+body.solo-tierlist-mode .ctrl-row-toolbar {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+body.solo-tierlist-mode .ctrl-row-toolbar-center {
+  flex-wrap: nowrap;
 }
 
 /* ── Mode "comparaison" (popup ouverte via le bouton Comparer, lecture seule) ── */
@@ -766,8 +778,17 @@ body.compare-tierlist-mode .main {
 }
 .tl-compare-toolbar {
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 10px 12px 0;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px 16px 6px;
+  margin-bottom: 14px;
+  position: relative;
 }
 .tl-compare-view {
   display: flex;
@@ -776,7 +797,8 @@ body.compare-tierlist-mode .main {
   padding: 12px;
 }
 .tl-compare-column {
-  flex: 0 0 420px;
+  flex: 1 1 0;
+  min-width: 320px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2207,12 +2229,11 @@ textarea.element-edit-input {
   cursor: pointer;
   font-size: 0.84rem;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text);
   transition: var(--transition);
   user-select: none;
 }
 .tl-list-item:hover { border-color: var(--accent-dim); color: var(--text); background: var(--surface-3); }
-.tl-list-item:hover .tl-folder-drag-handle { opacity: 1; color: var(--text); }
 .tl-list-item.active {
   background: var(--accent-glow);
   border-color: var(--accent-dim);
@@ -2231,17 +2252,15 @@ textarea.element-edit-input {
 .tl-list-item-btn {
   background: none;
   border: none;
-  color: var(--text-faint);
+  color: var(--text);
   cursor: pointer;
   font-size: 0.7rem;
   padding: 2px 4px;
   border-radius: 3px;
   transition: var(--transition);
-  opacity: 0;
+  opacity: 1;
   flex-shrink: 0;
 }
-.tl-list-item:hover .tl-list-item-btn,
-.tl-list-item.active .tl-list-item-btn { opacity: 1; }
 .tl-list-item-btn:hover { color: var(--text); background: var(--surface-3); }
 .tl-list-item-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
 .tl-list-item-btn.del:hover { color: var(--danger); background: rgba(232,91,71,0.12); }
@@ -2407,10 +2426,10 @@ textarea.element-edit-input {
 }
 
 .tl-toolbar-btn {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: #4b5563;
+  border: 1px solid #4b5563;
   border-radius: var(--radius);
-  color: var(--text-muted);
+  color: #e5e7eb;
   font-family: Arial, sans-serif;
   font-size: 0.8rem;
   font-weight: 600;
@@ -2423,9 +2442,20 @@ textarea.element-edit-input {
   display: inline-flex;
   align-items: center;
 }
-.tl-toolbar-btn:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
-.tl-btn-export { color: var(--text-muted); }
-.tl-btn-export:hover { border-color: var(--success); color: var(--success); background: rgba(71,200,135,0.1); }
+.tl-toolbar-btn:hover { background: #6b7280; border-color: #6b7280; color: #fff; }
+.tl-toolbar-btn.active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+.tl-btn-export {
+  background: rgba(71,200,135,0.15);
+  color: var(--success);
+  border-color: var(--success);
+}
+.tl-btn-export:hover { background: rgba(71,200,135,0.28); border-color: var(--success); color: var(--success); }
+.tl-btn-capture {
+  background: rgba(129,140,248,0.15);
+  color: #818cf8;
+  border-color: #818cf8;
+}
+.tl-btn-capture:hover { background: rgba(129,140,248,0.28); border-color: #818cf8; color: #818cf8; }
 .tl-btn-add-tier { color: var(--accent) !important; border-color: var(--accent) !important; background: var(--accent-glow) !important; font-weight: 700; }
 .tl-btn-add-tier:hover { filter: brightness(1.1); }
 .tl-btn-open-window {
@@ -2591,8 +2621,10 @@ textarea.element-edit-input {
 }
 
 .tl-tier-wrap.tl-tier-label-dragging { opacity: 0.4; }
-.tl-tier-wrap.tl-tier-drop-above .tl-tier-row { border-top: 2px solid var(--accent); }
-.tl-tier-wrap.tl-tier-drop-below .tl-tier-row { border-bottom: 2px solid var(--accent); }
+.tl-tier-drop-placeholder {
+  width: 100%;
+  min-height: 40px;
+}
 
 .tl-tier-images {
   flex: 1;
@@ -2643,6 +2675,90 @@ textarea.element-edit-input {
   object-fit: contain;
   background: var(--surface);
   pointer-events: none;
+}
+
+.tl-img-zoom-btn {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  cursor: pointer;
+  z-index: 2;
+  transition: background 0.15s;
+}
+.tl-img-zoom-btn [data-lucide] {
+  width: 14px;
+  height: 14px;
+  margin-right: 0;
+}
+.tl-img-zoom-btn:hover {
+  background: var(--accent);
+  color: #111;
+}
+
+#tl-modal-img-zoom {
+  align-items: center;
+  justify-content: center;
+}
+#tl-img-zoom-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+#tl-img-zoom-picture {
+  width: 90vw;
+  height: 90vh;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  border-radius: var(--radius);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  background-color: var(--surface);
+}
+.tl-img-zoom-close {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  cursor: pointer;
+  z-index: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transition: var(--transition);
+}
+.tl-img-zoom-close:hover { background: #ff6050; }
+.tl-img-zoom-close [data-lucide] { width: 18px; height: 18px; margin-right: 0; }
+#tl-img-zoom-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.72);
+  color: #e8e8f0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 8px 12px;
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
 }
 
 .tl-text-card-content {
@@ -2980,7 +3096,7 @@ textarea.element-edit-input {
   user-select: none;
   font-size: 0.8rem;
   font-weight: 700;
-  color: var(--text-muted);
+  color: var(--text);
   background: var(--surface-2);
   border: 1px solid var(--border);
   transition: var(--transition);
@@ -2996,7 +3112,7 @@ textarea.element-edit-input {
 
 .tl-folder-arrow {
   font-size: 0.6rem;
-  color: var(--text-faint);
+  color: var(--text-dim);
   transition: transform 0.15s;
   flex-shrink: 0;
 }
@@ -3007,15 +3123,14 @@ textarea.element-edit-input {
 /* Poignée drag dossier/template */
 .tl-folder-drag-handle {
   font-size: 1rem;
-  color: var(--text-dim, var(--text-faint));
+  color: var(--text);
   cursor: grab;
-  opacity: 0.6;
+  opacity: 1;
   transition: opacity var(--transition), color var(--transition);
   flex-shrink: 0;
   padding: 0 4px;
   user-select: none;
 }
-.tl-folder-header:hover .tl-folder-drag-handle { opacity: 1; color: var(--text); }
 .tl-folder-drag-handle:hover { opacity: 1 !important; color: var(--accent); }
 .tl-folder-drag-handle:active { cursor: grabbing; }
 .tl-folder-drag-handle [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
@@ -3025,15 +3140,14 @@ textarea.element-edit-input {
   flex-shrink: 0;
   background: none;
   border: none;
-  color: var(--text-faint);
+  color: var(--text);
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 3px;
-  opacity: 0;
+  opacity: 1;
   transition: var(--transition);
 }
-.tl-folder-header:hover .tl-folder-ctx-btn { opacity: 1; }
-.tl-folder-ctx-btn:hover { color: var(--text); background: var(--surface-3); }
+.tl-folder-ctx-btn:hover { color: var(--text); background: var(--surface-3); opacity: 1; }
 .tl-folder-ctx-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
 
 .tl-folder-name {
