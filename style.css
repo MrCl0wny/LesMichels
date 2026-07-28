@@ -111,7 +111,10 @@ body {
   font-family: Arial, sans-serif;
   font-size: 0.85rem;
   font-weight: 600;
-  padding: 6px 14px;
+  height: 32px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
   border-radius: var(--radius);
   cursor: pointer;
   letter-spacing: 0.03em;
@@ -211,7 +214,10 @@ body {
   color: #818cf8;
   font-size: 0.82rem;
   font-weight: 600;
-  padding: 5px 12px;
+  height: 32px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
   transition: var(--transition);
   white-space: nowrap;
@@ -278,10 +284,11 @@ body {
   justify-content: center;
 }
 
-/* Cases tout à droite de la toolbar */
-.ctrl-row-toolbar .btn-cases-panel { flex-shrink: 0; }
+/* Dossiers tout à gauche, Cases tout à droite de la ligne 1 */
+.ctrl-row-grids .btn-folders-panel { flex-shrink: 0; order: -1; }
+.ctrl-row-grids .btn-cases-panel { flex-shrink: 0; margin-left: auto; }
 
-/* ── Boutons Dossiers / Cases toolbar — même style que Archives/Corbeille ── */
+/* ── Boutons Dossiers / Cases — même style que Archives/Corbeille ── */
 .btn-folders-panel,
 .btn-cases-panel {
   font-size: 0.82rem;
@@ -312,16 +319,16 @@ body {
 }
 .grids-breadcrumb:empty { display: none; }
 .grids-breadcrumb-item {
-  color: var(--text-muted);
+  color: #ffffff;
   font-weight: 500;
   white-space: nowrap;
 }
 .grids-breadcrumb-item.last {
-  color: var(--text);
+  color: #ffffff;
   font-weight: 700;
 }
 .grids-breadcrumb-sep {
-  color: var(--text-faint);
+  color: #ffffff;
   flex-shrink: 0;
   padding: 0 3px;
 }
@@ -382,7 +389,8 @@ body {
 .folders-panel-new-root {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  height: 32px;
+  padding: 0 10px;
   border-radius: var(--radius);
   border: 1px dashed var(--border);
   background: none;
@@ -395,20 +403,28 @@ body {
 .folders-panel-header .btn-new-folder-in-grids,
 .folders-panel-header .btn-new-grid {
   font-size: 0.8rem;
-  padding: 4px 10px;
-  height: auto;
+  height: 32px;
+  padding: 0 10px;
   background: none;
 }
 .folders-panel-close {
   flex-shrink: 0;
 }
+.folders-panel-scroll {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  min-height: 0;
+}
+
 .folders-panel-sort {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
   font-size: 0.78rem;
   color: var(--text-faint);
 }
@@ -428,10 +444,32 @@ body {
   cursor: pointer;
 }
 
+/* Cadre englobant l'arbre de dossiers, avec titre — lui seul scrolle en interne, pour que Récents
+   et le tri restent toujours visibles en haut du panneau même avec beaucoup de dossiers. */
+.fp-tree-frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.fp-tree-frame-title {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7dd3fc;
+  padding: 8px 10px 6px;
+}
 .folders-panel-tree {
   flex: 1;
   overflow-y: auto;
-  padding: 10px 10px;
+  min-height: 0;
+  padding: 0 8px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -454,12 +492,13 @@ body {
    ils poussent le contenu au lieu de flotter par-dessus, et se rétractent en largeur 0. */
 .folders-sidebar,
 .cases-sidebar {
-  position: relative;
+  position: sticky;
+  top: 70px;
   inset: auto;
   z-index: auto;
   width: 0;
   max-width: none;
-  max-height: none;
+  max-height: calc(100vh - 82px);
   border-width: 0;
   margin: 0;
   overflow: hidden;
@@ -467,7 +506,7 @@ body {
   opacity: 1;
   pointer-events: auto;
   transition: width 0.22s ease, border-width 0.22s ease;
-  align-self: stretch;
+  align-self: flex-start;
 }
 .folders-sidebar.open,
 .cases-sidebar.open {
@@ -652,12 +691,56 @@ body {
   font-style: italic;
 }
 
+/* ── Chemins récents (haut du drawer dossiers, bingo + tierlist) — mis en évidence dans un cadre ── */
+.fp-recent:empty { display: none; }
+.fp-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--accent-dim);
+  background: var(--accent-glow);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+}
+.fp-recent-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  padding: 0 2px;
+}
+.fp-recent-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+  user-select: none;
+  transition: var(--transition);
+}
+.fp-recent-row:hover { border-color: #60a5fa; background: var(--surface-3); }
+.fp-recent-row .fp-recent-icon { font-size: 0.8rem; flex-shrink: 0; color: var(--text-dim); }
+.fp-recent-row .fp-recent-icon [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
+.fp-recent-path {
+  flex: 1;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Bouton "+ Dossier" / "+ Sous-dossier" dans ctrl-row */
 .btn-new-folder-in-grids,
 .btn-new-folder-bingo {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  height: 32px;
+  padding: 0 10px;
   border-radius: var(--radius);
   border: 1px dashed var(--border);
   background: none;
@@ -672,7 +755,7 @@ body {
 .btn-new-folder-bingo:hover { border-color: var(--accent); color: var(--accent); }
 .btn-new-root-folder {
   font-size: 0.85rem;
-  padding: 5px 12px;
+  padding: 0 12px;
 }
 .btn-new-root-folder:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -725,10 +808,12 @@ body {
 .bingo-layout > .folders-sidebar.open { margin-right: 12px; }
 .bingo-layout > .cases-sidebar.open { margin-left: 12px; }
 
-/* ── Mode "fenêtre grille(s) solo" (popup ouverte via square-arrow-out-up-right) ── */
-/* On garde uniquement la toolbar globale utile (verrou + générer/vider/reset + capture) */
+/* ── Mode "plein écran grille(s)" (overlay interne, plus de popup) ── */
+/* On garde uniquement Grille / Texte / Capture / Quitter */
+.btn-exit-solo-mode { display: none !important; }
 body.solo-grid-mode .header,
-body.solo-grid-mode .ctrl-row-grids {
+body.solo-grid-mode .ctrl-row-grids,
+body.solo-grid-mode .btn-hide-solo-mode {
   display: none;
 }
 body.solo-grid-mode .main {
@@ -737,18 +822,17 @@ body.solo-grid-mode .main {
 body.solo-grid-mode .grid-view-theme-subtheme-row {
   display: none;
 }
-body.solo-grid-mode .btn-open-grids-window {
-  display: none;
-}
-body.solo-grid-mode .ctrl-row-toolbar .btn-folders-panel,
-body.solo-grid-mode .ctrl-row-toolbar .btn-cases-panel {
-  display: none;
-}
 body.solo-grid-mode .ctrl-row-toolbar {
   justify-content: center;
 }
+body.solo-grid-mode .btn-exit-solo-mode {
+  display: inline-flex !important;
+}
 
-/* ── Mode "fenêtre tier list solo" (popup ouverte via fullscreen) ── */
+/* ── Mode "tier list plein écran" (overlay interne, plus de popup) ── */
+/* !important nécessaire : .tl-toolbar-btn (définie plus bas dans ce fichier) impose display:inline-flex
+   avec la même spécificité — sans ça, la cascade la fait gagner et le bouton reste visible hors overlay. */
+.tl-btn-exit-mode { display: none !important; }
 body.solo-tierlist-mode .header,
 body.solo-tierlist-mode .ctrl-row-line1,
 body.solo-tierlist-mode .tl-editor-header {
@@ -764,14 +848,20 @@ body.solo-tierlist-mode .ctrl-row-toolbar {
 body.solo-tierlist-mode .ctrl-row-toolbar-center {
   flex-wrap: nowrap;
 }
+body.solo-tierlist-mode #tl-btn-exit-solo {
+  display: inline-flex !important;
+}
 
-/* ── Mode "comparaison" (popup ouverte via le bouton Comparer, lecture seule) ── */
+/* ── Mode "comparaison" (overlay interne, lecture seule) ── */
 body.compare-tierlist-mode .header,
 body.compare-tierlist-mode .tl-sidebar,
 body.compare-tierlist-mode .tl-control-panel,
 body.compare-tierlist-mode #tl-empty-state,
 body.compare-tierlist-mode #tl-editor {
   display: none !important;
+}
+body.compare-tierlist-mode #tl-compare-btn-exit {
+  display: inline-flex !important;
 }
 body.compare-tierlist-mode .main {
   padding: 8px;
@@ -1146,7 +1236,8 @@ textarea.element-edit-input {
   font-family: Arial, sans-serif;
   font-size: 0.82rem;
   font-weight: 700;
-  padding: 4px 10px;
+  height: 32px;
+  padding: 0 10px;
   cursor: pointer;
   transition: var(--transition);
   display: flex;
@@ -1166,7 +1257,8 @@ textarea.element-edit-input {
   font-family: Arial, sans-serif;
   font-size: 0.82rem;
   font-weight: 700;
-  padding: 4px 10px;
+  height: 32px;
+  padding: 0 10px;
   cursor: pointer;
   transition: var(--transition);
   display: flex;
@@ -1276,7 +1368,10 @@ textarea.element-edit-input {
   font-family: Arial, sans-serif;
   font-size: 0.82rem;
   font-weight: 700;
-  padding: 7px 16px;
+  height: 32px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
   border-radius: var(--radius);
   cursor: pointer;
   letter-spacing: 0.02em;
@@ -1387,10 +1482,12 @@ textarea.element-edit-input {
   display: flex;
   align-items: center;
   gap: 6px;
+  height: 32px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 4px 10px 4px 8px;
+  padding: 0 10px 0 8px;
   background: rgba(255,255,255,0.025);
+  box-sizing: border-box;
 }
 
 /* ── Bouton bloquer génération (icône verrou cliquable) ── */
@@ -2163,6 +2260,12 @@ textarea.element-edit-input {
 ══════════════════════════════════════════════════ */
 
 /* ── Layout principal tierlist ── */
+/* Hauteur bornée (un vrai plafond, pas min-height) à l'espace visible : sans ça .tl-main ne peut
+   jamais savoir quelle hauteur remplir, et flex:1 sur .tl-tiers-zone n'a aucun effet — d'où le "vh"
+   fixe qui laissait un vide grandissant avec la hauteur d'écran. Avec seulement min-height, le
+   contenu (cartes placées dans les tiers) pouvait aussi faire grandir tout le layout au-delà du
+   viewport et repousser "Éléments non placés" hors champ — height fixe + overflow:hidden empêchent
+   ça, le débordement de contenu doit scroller dans .tl-tiers-zone, jamais grandir le layout. */
 .tl-layout {
   display: flex;
   align-items: stretch;
@@ -2170,8 +2273,17 @@ textarea.element-edit-input {
   position: relative;
   width: 100%;
   min-width: 0;
+  height: calc(100vh - 200px);
+  overflow: hidden;
 }
 .tl-layout > .folders-sidebar.open { margin-right: 12px; }
+
+/* Mode plein écran : le header et la ligne 1 du panneau de contrôle sont masqués, libérant de
+   l'espace — sans réajuster ici, .tl-layout gardait la même hauteur fixe et laissait un vide en
+   bas au lieu de faire descendre "Éléments non placés" jusqu'au bord réel de l'écran. */
+body.solo-tierlist-mode .tl-layout {
+  height: calc(100vh - 76px);
+}
 
 /* ── Sidebar tierlist (sidebar fixe qui pousse le contenu, comme le Bingo) ── */
 .tl-sidebar {
@@ -2187,7 +2299,7 @@ textarea.element-edit-input {
 }
 
 .tl-btn-new {
-  height: 28px;
+  height: 32px;
   padding: 0 10px;
   background: var(--success);
   border: none;
@@ -2283,6 +2395,8 @@ textarea.element-edit-input {
 
 /* ── Zone principale éditeur ── */
 .tl-main {
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -2322,7 +2436,7 @@ textarea.element-edit-input {
 .tl-empty-btn--folder  { background: #2563eb; }
 .tl-empty-btn--tierlist { background: #16a34a; }
 
-.tl-editor { display: flex; flex-direction: column; gap: 14px; }
+.tl-editor { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
 .tl-editor.hidden { display: none; }
 
 /* ── Header éditeur ── */
@@ -2434,8 +2548,8 @@ textarea.element-edit-input {
   font-size: 0.8rem;
   font-weight: 600;
   padding: 0 12px;
-  height: 30px;
-  line-height: 30px;
+  height: 32px;
+  line-height: 32px;
   cursor: pointer;
   transition: var(--transition);
   white-space: nowrap;
@@ -2479,6 +2593,21 @@ textarea.element-edit-input {
 .tl-editor-body {
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+/* Empilé (tierlist normale, pas template) : la zone des tiers remplit tout l'espace vertical
+   restant (flex:1, jusqu'au bas réel de la page — plus de vide selon la hauteur d'écran),
+   "Éléments non placés" reste un bandeau compact de hauteur fixe tout en bas. */
+.tl-editor-body:not(.tl-editor-body--template) .tl-tiers-zone {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+.tl-editor-body:not(.tl-editor-body--template) .tl-unplaced-section {
+  height: 260px;
+  flex-shrink: 0;
 }
 
 /* Template : ni image ni placement possible dans les tiers — panneau Tiers (labels seuls,
@@ -2498,21 +2627,20 @@ textarea.element-edit-input {
 .tl-editor-body--template .tl-unplaced-section {
   flex: 1;
   min-width: 0;
-  height: 60vh;
-}
-.tl-editor-body--template .tl-unplaced-zone {
-  flex: 1;
-  overflow-y: auto;
 }
 
-/* ── Zone des tiers ── */
+/* ── Zone des tiers — cadre distinct, scroll interne indépendant de la zone non placée ── */
 .tl-tiers-zone {
   display: flex;
   flex-direction: column;
   gap: 4px;
   height: 60vh;
   overflow-y: auto;
-  padding-right: 4px;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
 }
 .tl-tiers-zone::-webkit-scrollbar { width: 4px; }
 .tl-tiers-zone::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -2824,11 +2952,17 @@ textarea.element-edit-input {
 .tl-img-ctx-item-danger { color: var(--danger); }
 .tl-img-ctx-item-danger:hover { background: rgba(232,91,71,0.12); }
 
-/* ── Zone images non placées ── */
+/* ── Zone images non placées — cadre distinct de la zone des tiers, scroll interne indépendant ── */
 .tl-unplaced-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  height: 60vh;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  padding: 10px;
 }
 
 .tl-unplaced-header {
@@ -2958,8 +3092,11 @@ textarea.element-edit-input {
 .tl-add-text-input:focus { outline: none; }
 
 .tl-unplaced-zone {
+  flex: 1;
   min-height: 80px;
-  background: var(--surface-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   display: flex;
@@ -3065,7 +3202,7 @@ textarea.element-edit-input {
   color: #c5dbff;
   font-size: 0.78rem;
   font-weight: 700;
-  height: 28px;
+  height: 32px;
   padding: 0 10px;
   cursor: pointer;
   white-space: nowrap;

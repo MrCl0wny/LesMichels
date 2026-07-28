@@ -3,7 +3,7 @@
 ═══════════════════════════════════════════════ */
 
 // ──────────────────────────────────────────────
-// Mode "fenêtre grille(s) solo" (ouvert via un bouton "nouvelle fenêtre")
+// Mode "grille(s) plein écran" (overlay interne, activable aussi via ?openGrids= pour compat)
 // ──────────────────────────────────────────────
 const _soloGridParams = new URLSearchParams(window.location.search);
 const _soloGridIds = (_soloGridParams.get('openGrids') || _soloGridParams.get('openGrid') || '')
@@ -12,10 +12,10 @@ const _soloGridIds = (_soloGridParams.get('openGrids') || _soloGridParams.get('o
   .filter(Boolean);
 let _soloGridApplied = false;
 
-const _soloTierlistId = _soloGridParams.get('openTierlist') || null;
+let _soloTierlistId = _soloGridParams.get('openTierlist') || null;
 let _soloTierlistApplied = false;
 
-const _compareTierlistIds = (_soloGridParams.get('compareTierlists') || '')
+let _compareTierlistIds = (_soloGridParams.get('compareTierlists') || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
@@ -380,6 +380,27 @@ function _applyCompareTierlistModeIfNeeded() {
   }
   document.title = 'Comparaison : ' + _tlCommonTitlePath(tls) + ' — LesMichels';
   _tlRenderCompareView(tls);
+}
+
+function _exitSoloTierlistMode() {
+  document.body.classList.remove('solo-tierlist-mode');
+  document.title = 'LesMichels';
+  // Empêche le listener Firebase (_dbTierlist.on('value')) de rouvrir le mode au prochain snapshot
+  _soloTierlistId = null;
+  _soloTierlistApplied = false;
+}
+
+function _exitCompareTierlistMode() {
+  document.body.classList.remove('compare-tierlist-mode');
+  document.title = 'LesMichels';
+  // Empêche le listener Firebase (_dbTierlist.on('value')) de rouvrir le mode au prochain snapshot
+  _compareTierlistIds = [];
+  _compareModeApplied = false;
+  // _tlRenderCompareView() démasque ces deux éléments indépendamment de la classe du body — sans ça
+  // ils restent visibles même après la sortie du mode.
+  document.getElementById('tl-compare-toolbar')?.classList.add('hidden');
+  document.getElementById('tl-compare-view')?.classList.add('hidden');
+  tlRender();
 }
 
 function _applyPrefsAndRender() {
@@ -918,6 +939,7 @@ function createFolder(name, parentId = null, numbering = null) {
     // Rester sur le parent pour voir le nouveau dossier apparaître dans la liste
     _localActiveFolderId = parentId;
     _saveLocalActiveFolderId(parentId);
+    touchFolderChain(parentId);
   }
   const newActive = activeFolder();
   _selectedGridIds = newActive?.grids?.[0] ? [newActive.grids[0].id] : [];
@@ -963,6 +985,7 @@ function deleteFolder(id) {
   if (parent) {
     parent.folders = (parent.folders || []).filter(f => f.id !== id);
     parent.children = (parent.children || []).filter(c => c.id !== id);
+    touchFolderChain(parent.id);
   } else {
     state.folders = (state.folders || []).filter(f => f.id !== id);
   }
@@ -1006,7 +1029,7 @@ function archiveFolder(id) {
 
 function renameFolder(id, newName) {
   const folder = findFolderById(state.folders, id);
-  if (folder && newName.trim()) { folder.name = newName.trim(); folder.updatedAt = Date.now(); }
+  if (folder && newName.trim()) { folder.name = newName.trim(); touchFolderChain(id); }
   saveState();
   renderAllFolders();
 }
@@ -1588,20 +1611,97 @@ function toggleGridSelection(gridId) {
 // changer un dossier de parent).
 function _folderSortMode(key) {
   const mode = localStorage.getItem(key);
-  return (mode && mode !== 'manual') ? mode : 'alpha';
+  return (mode === 'updatedAt') ? mode : 'alpha';
 }
 function _sortFoldersList(list, mode) {
   const sorted = list.slice();
-  if (mode === 'createdAt') sorted.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  else if (mode === 'updatedAt') sorted.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (mode === 'updatedAt') sorted.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   else sorted.sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
   return sorted;
+}
+
+// Remonte updatedAt = Date.now() sur folderId et tous ses ancêtres (pour le tri "Dernière modification").
+function touchFolderChain(folderId) {
+  if (!folderId) return;
+  const now = Date.now();
+  getFolderPath(state.folders, folderId).forEach(f => { f.updatedAt = now; });
+}
+
+// Aplatit récursivement l'arbre de dossiers (non archivés) pour trouver les plus récemment modifiés.
+function _flattenFoldersForRecent(folders) {
+  const out = [];
+  (folders || []).forEach(f => {
+    if (f.archived) return;
+    out.push(f);
+    out.push(..._flattenFoldersForRecent(f.folders));
+  });
+  return out;
+}
+
+// Ouvre (déplie) tous les ancêtres d'un dossier dans le drawer (mécanisme sessionStorage fp_collapsed_<id>).
+function _expandFolderAncestors(folderId) {
+  getFolderPath(state.folders, folderId).slice(0, -1).forEach(f => {
+    sessionStorage.setItem('fp_collapsed_' + f.id, '0');
+  });
+}
+
+// Parmi une liste de dossiers déjà triés par updatedAt décroissant, retire tout dossier qui est
+// ancêtre d'un dossier déjà retenu — touchFolderChain() propage le même timestamp à toute la
+// chaîne, donc sans ça un même événement de modification ferait apparaître plusieurs fois le même
+// chemin (dossier, parent, grand-parent...) au lieu du seul dossier le plus profond concerné.
+function _dedupeAncestorFolders(sorted, getAncestorIds) {
+  const kept = [];
+  const keptAncestorIds = new Set();
+  for (const f of sorted) {
+    if (keptAncestorIds.has(f.id)) continue; // f est déjà l'ancêtre d'un dossier plus profond retenu
+    kept.push(f);
+    getAncestorIds(f.id).forEach(id => keptAncestorIds.add(id));
+  }
+  return kept;
+}
+
+function _renderRecentFolderPaths() {
+  const container = document.getElementById('folders-panel-recent');
+  if (!container) return;
+  container.innerHTML = '';
+  const ancestorIdsOf = id => getFolderPath(state.folders, id).slice(0, -1).map(f => f.id);
+  const sorted = _flattenFoldersForRecent(state.folders)
+    .filter(f => f.updatedAt)
+    // À updatedAt égal (même événement, propagé par touchFolderChain à toute la chaîne), le dossier
+    // le plus profond doit être considéré en premier pour que la déduplication le retienne, lui.
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || ancestorIdsOf(b.id).length - ancestorIdsOf(a.id).length);
+  const recent = _dedupeAncestorFolders(sorted, ancestorIdsOf).slice(0, 5);
+  if (recent.length === 0) return;
+
+  const title = document.createElement('div');
+  title.className = 'fp-recent-title';
+  title.textContent = 'Récents';
+  container.appendChild(title);
+
+  recent.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'fp-recent-row';
+    const icon = document.createElement('span');
+    icon.className = 'fp-recent-icon';
+    icon.innerHTML = '<i data-lucide="folder-closed"></i>';
+    const path = document.createElement('span');
+    path.className = 'fp-recent-path';
+    path.textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' › ');
+    row.appendChild(icon);
+    row.appendChild(path);
+    row.addEventListener('click', () => {
+      _expandFolderAncestors(f.id);
+      if (_localActiveFolderId !== f.id) switchFolder(f.id);
+    });
+    container.appendChild(row);
+  });
 }
 
 function renderFoldersPanelTree() {
   const container = document.getElementById('folders-panel-tree');
   if (!container) return;
   container.innerHTML = '';
+  _renderRecentFolderPaths();
 
   const sortMode = _folderSortMode('bingoFoldersSortMode');
   const sortSelect = document.getElementById('folders-sort-select');
@@ -2109,6 +2209,7 @@ function createGrid(name) {
     _selectedGridIds.unshift(g.id);
     saveLocalSelectedGrids(_selectedGridIds);
   }
+  touchFolderChain(s.id);
   saveState();
   renderGridsList();
   renderGrid();
@@ -2145,6 +2246,7 @@ function deleteGrid(id) {
     const remaining = s.grids.filter(g => !g.archived);
     s.activeGridId = remaining.length > 0 ? remaining[0].id : null;
   }
+  touchFolderChain(s.id);
   saveState();
   renderGridsList();
   renderGrid();
@@ -2153,7 +2255,7 @@ function deleteGrid(id) {
 function renameGrid(id, newName) {
   const s = activeSubtheme();
   const g = s?.grids.find(g => g.id === id);
-  if (g && newName.trim()) { g.name = newName.trim(); g.title = newName.trim(); }
+  if (g && newName.trim()) { g.name = newName.trim(); g.title = newName.trim(); if (s) touchFolderChain(s.id); }
   saveState();
   renderGridsList();
   renderGrid();
@@ -2171,6 +2273,7 @@ function duplicateGrid(id) {
   copy.hidden = false;
   s.grids.push(copy);
   s.activeGridId = copy.id;
+  touchFolderChain(s.id);
   saveState();
   renderGridsList();
   renderGrid();
@@ -2784,6 +2887,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
           } else {
             sNow.persistentCheckedIds = sNow.persistentCheckedIds.filter(id => id !== cell.elementId);
           }
+          touchFolderChain(sNow.id);
         }
         saveState();
         renderGrid();
@@ -3259,7 +3363,7 @@ function confirmNewTheme() {
     if (folder) {
       folder.name = name;
       folder.numbering = numbering;
-      folder.updatedAt = Date.now();
+      touchFolderChain(folder.id);
       saveState();
       renderAllFolders();
     }
@@ -3705,8 +3809,14 @@ window.addEventListener('scroll', () => {
 document.getElementById('btn-open-grids-window').addEventListener('click', () => {
   const grids = getVisibleGrids();
   if (grids.length === 0) return;
-  const ids = grids.map(g => g.id).join(',');
-  window.open(`index.html?openGrids=${encodeURIComponent(ids)}`, '_blank', 'width=1100,height=700');
+  document.title = (grids.length === 1
+    ? (grids[0].title || grids[0].name || 'Grille')
+    : `${grids.length} grilles`) + ' — LesMichels';
+  document.body.classList.add('solo-grid-mode');
+});
+document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
+  document.body.classList.remove('solo-grid-mode');
+  document.title = 'LesMichels';
 });
 
 btnGenerate.addEventListener('click', () => {
@@ -4651,7 +4761,7 @@ function tlActiveTierlist() {
 function _tlCurrentSelectedFolderId() {
   if (_tlLocalActiveFolderId) return _tlLocalActiveFolderId;
   const tl = tlActiveTierlist();
-  return tl ? (tl.folderId || null) : null;
+  return tl ? _tlEffectiveFolderId(tl) : null;
 }
 
 function tlDefaultTierlist(name, isTemplate = false) {
@@ -4694,6 +4804,29 @@ function tlDefaultFolder(name, parentId, numbering = null) {
   return { id: uid(), name, archived: false, open: true, parentId: parentId || null, createdAt: now, updatedAt: now, numbering: numbering || null };
 }
 
+// Remonte updatedAt = Date.now() sur folderId et tous ses ancêtres (pour le tri "Dernière modification").
+function tlTouchFolderChain(folderId) {
+  if (!folderId) return;
+  const now = Date.now();
+  let current = (tlState.folders || []).find(f => f.id === folderId);
+  while (current) {
+    current.updatedAt = now;
+    current = current.parentId ? (tlState.folders || []).find(f => f.id === current.parentId) : null;
+  }
+}
+
+// Dossier réel d'une tierlist : celui du template si elle en suit un vivant (les tierlists générées
+// n'ont plus de folderId propre fiable, elles héritent toujours du dossier de leur template), sinon
+// son propre folderId. Source unique à utiliser partout au lieu de lire tl.folderId directement.
+function _tlEffectiveFolderId(tl) {
+  if (!tl) return null;
+  if (tl.templateId) {
+    const template = tlState.tierlists.find(t => t.id === tl.templateId && t.isTemplate);
+    if (template) return template.folderId || null;
+  }
+  return tl.folderId || null;
+}
+
 // Retourne le chemin complet d'un dossier ("Racine › Enfant › Petit-enfant")
 function _tlFolderPath(folderId) {
   const chain = [];
@@ -4710,14 +4843,11 @@ function _tlFolderPath(folderId) {
 // Retourne '' si la tierlist est à la racine (pas de dossier, pas de template).
 function _tlTitlePathPrefix(tl) {
   const parts = [];
+  const folderPath = _tlFolderPath(_tlEffectiveFolderId(tl));
+  if (folderPath) parts.push(folderPath);
   if (tl.templateId) {
     const template = tlState.tierlists.find(t => t.id === tl.templateId && t.isTemplate);
-    const templateFolderPath = template ? _tlFolderPath(template.folderId) : '';
-    if (templateFolderPath) parts.push(templateFolderPath);
     if (template) parts.push(template.name);
-  } else {
-    const folderPath = _tlFolderPath(tl.folderId);
-    if (folderPath) parts.push(folderPath);
   }
   return parts.join(' › ');
 }
@@ -4753,13 +4883,14 @@ function tlCreateFolder(name, parentId, numbering = null) {
   if (!tlState.folders) tlState.folders = [];
   const folder = tlDefaultFolder(name, parentId || null, numbering);
   tlState.folders.push(folder);
+  if (parentId) tlTouchFolderChain(parentId);
   tlSave();
   tlRender();
 }
 
 function tlRenameFolder(id, newName) {
   const folder = (tlState.folders || []).find(f => f.id === id);
-  if (folder && newName.trim()) { folder.name = newName.trim(); folder.updatedAt = Date.now(); }
+  if (folder && newName.trim()) { folder.name = newName.trim(); tlTouchFolderChain(id); }
   tlSave();
   tlRender();
 }
@@ -4783,8 +4914,9 @@ function _tlDuplicateTierlistDeep(src, folderId, templateIdOverride) {
   copy.id = uid();
   copy.name = src.name + ' (copie)';
   copy.archived = false;
-  copy.folderId = folderId;
-  if (templateIdOverride !== undefined) copy.templateId = templateIdOverride;
+  // Une tierlist générée (templateIdOverride défini) n'a pas de folderId propre : elle suit son template copié.
+  if (templateIdOverride !== undefined) { copy.templateId = templateIdOverride; delete copy.folderId; }
+  else copy.folderId = folderId;
   const idMap = {};
   copy.images = (copy.images || []).map(img => {
     const newId = uid();
@@ -4907,6 +5039,7 @@ function tlTrashEmpty() {
 function tlDeleteFolder(id) {
   const allIds = [id, ..._tlGetDescendantIds(id)];
   const folder = (tlState.folders || []).find(f => f.id === id);
+  if (folder && folder.parentId) tlTouchFolderChain(folder.parentId);
   if (folder) {
     // Le dossier emporte avec lui les tierlists/templates directement rangés dedans (avec leurs tierlists
     // générées en cascade si c'est un template), pour permettre une restauration cohérente depuis la corbeille.
@@ -4942,7 +5075,15 @@ function tlDeleteFolder(id) {
 function tlMoveTierlistToFolder(tlId, folderId) {
   const tl = tlState.tierlists.find(t => t.id === tlId);
   if (!tl) return;
+  // Une tierlist rattachée à un template vivant suit toujours son dossier — on déplace le template à sa place.
+  if (_tlHasLiveTemplate(tl)) {
+    tlMoveTierlistToFolder(tl.templateId, folderId);
+    return;
+  }
+  const oldFolderId = tl.folderId;
   tl.folderId = folderId || null;
+  tlTouchFolderChain(oldFolderId);
+  tlTouchFolderChain(folderId);
   // Force l'ouverture du dossier cible pour que l'élément déplacé (notamment un groupe template) reste visible
   if (folderId) sessionStorage.setItem('tl_folder_open_' + folderId, '1');
   if (tl.isTemplate) sessionStorage.setItem('tl_tplgroup_open_' + tl.id, '1');
@@ -5155,12 +5296,15 @@ function _tlSidebarDropOnItem(e, targetId, targetType, targetEl) {
     // Réordonner les tierlists dans leur contexte (même dossier)
     const dragTl = tlState.tierlists.find(t => t.id === _tlSidebarDragId);
     if (!dragTl) return;
+    // Une tierlist rattachée à un template vivant ne change jamais de dossier indépendamment de lui —
+    // seul son ordre interne au groupe (non géré ici) peut varier, on ignore le drop inter-contexte.
+    if (_tlHasLiveTemplate(dragTl)) return;
 
     if (targetType === 'tierlist') {
       const targetTl = tlState.tierlists.find(t => t.id === targetId);
       if (!targetTl) return;
       // Même contexte ?
-      if (dragTl.folderId === targetTl.folderId) {
+      if (_tlEffectiveFolderId(dragTl) === _tlEffectiveFolderId(targetTl)) {
         const arr = tlState.tierlists;
         const fromIdx = arr.findIndex(t => t.id === _tlSidebarDragId);
         const toIdx   = arr.findIndex(t => t.id === targetId);
@@ -5170,7 +5314,7 @@ function _tlSidebarDropOnItem(e, targetId, targetType, targetEl) {
         arr.splice(isTop ? newIdx : newIdx + 1, 0, moved);
       } else {
         // Déplacer vers le contexte de la cible
-        dragTl.folderId = targetTl.folderId;
+        dragTl.folderId = _tlEffectiveFolderId(targetTl);
         const arr = tlState.tierlists;
         const fromIdx = arr.findIndex(t => t.id === _tlSidebarDragId);
         const [moved] = arr.splice(fromIdx, 1);
@@ -5421,8 +5565,8 @@ function _tlContextLabel(tl, includeFolder = true) {
     const template = tlState.tierlists.find(t => t.id === tl.templateId && t.isTemplate);
     parts.push(template ? template.name : '(template supprimé)');
   }
-  if (includeFolder && tl.folderId) {
-    const folder = (tlState.folders || []).find(f => f.id === tl.folderId);
+  if (includeFolder && _tlEffectiveFolderId(tl)) {
+    const folder = (tlState.folders || []).find(f => f.id === _tlEffectiveFolderId(tl));
     parts.push(folder ? folder.name : '(dossier supprimé)');
   }
   return parts.length > 0 ? ' (' + parts.join(' › ') + ')' : '';
@@ -5547,7 +5691,7 @@ function _tlBuildFolderEl(folder, depth) {
   // Actif si la TL active est dans ce dossier ou dans un descendant, ou si ce dossier (vide)
   // a été explicitement sélectionné sans tierlist active
   const allDescIds = [folder.id, ..._tlGetDescendantIds(folder.id)];
-  const folderIsActive = (activeTl && allDescIds.includes(activeTl.folderId))
+  const folderIsActive = (activeTl && allDescIds.includes(_tlEffectiveFolderId(activeTl)))
     || (!activeTl && _tlLocalActiveFolderId === folder.id);
   const tlCollapseKey = 'tl_folder_open_' + folder.id;
   const folderOpen = sessionStorage.getItem(tlCollapseKey) === '1';
@@ -5655,9 +5799,85 @@ function _tlBuildFolderEl(folder, depth) {
   return folderEl;
 }
 
+// Ouvre (déplie) tous les ancêtres d'un dossier dans le drawer tierlist (sessionStorage tl_folder_open_<id>).
+function _tlExpandFolderAncestors(folderId) {
+  let current = (tlState.folders || []).find(f => f.id === folderId);
+  current = current && current.parentId ? (tlState.folders || []).find(f => f.id === current.parentId) : null;
+  while (current) {
+    sessionStorage.setItem('tl_folder_open_' + current.id, '1');
+    current = current.parentId ? (tlState.folders || []).find(f => f.id === current.parentId) : null;
+  }
+}
+
+function _tlAncestorIdsOf(folderId) {
+  const ids = [];
+  let current = (tlState.folders || []).find(f => f.id === folderId);
+  current = current && current.parentId ? (tlState.folders || []).find(f => f.id === current.parentId) : null;
+  while (current) {
+    ids.push(current.id);
+    current = current.parentId ? (tlState.folders || []).find(f => f.id === current.parentId) : null;
+  }
+  return ids;
+}
+
+function _tlDepthOf(folderId) {
+  return _tlAncestorIdsOf(folderId).length;
+}
+
+function _tlRenderRecentFolderPaths() {
+  const container = document.getElementById('tl-folders-panel-recent');
+  if (!container) return;
+  container.innerHTML = '';
+  const sorted = (tlState.folders || [])
+    .filter(f => !f.archived && f.updatedAt)
+    // À updatedAt égal (même événement, propagé par tlTouchFolderChain à toute la chaîne), le dossier
+    // le plus profond doit être considéré en premier pour que la déduplication le retienne, lui.
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || _tlDepthOf(b.id) - _tlDepthOf(a.id));
+  const recent = _dedupeAncestorFolders(sorted, _tlAncestorIdsOf).slice(0, 5);
+  if (recent.length === 0) return;
+
+  const title = document.createElement('div');
+  title.className = 'fp-recent-title';
+  title.textContent = 'Récents';
+  container.appendChild(title);
+
+  recent.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'fp-recent-row';
+    const icon = document.createElement('span');
+    icon.className = 'fp-recent-icon';
+    icon.innerHTML = '<i data-lucide="folder-closed"></i>';
+    const path = document.createElement('span');
+    path.className = 'fp-recent-path';
+    let pathText = _tlFolderPath(f.id);
+    const templatesHere = tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === f.id);
+    if (templatesHere.length === 1) pathText += ' › ' + templatesHere[0].name;
+    path.textContent = pathText;
+    row.appendChild(icon);
+    row.appendChild(path);
+    row.addEventListener('click', () => {
+      _tlExpandFolderAncestors(f.id);
+      _tlLocalActiveFolderId = f.id;
+      if (templatesHere.length === 1) {
+        _tlLocalActiveTierlistId = templatesHere[0].id;
+        _tlLocalNoSelection = false;
+        saveUserPrefs({ tlActiveFolderId: f.id, tlActiveTierlistId: templatesHere[0].id, tlNoSelection: false });
+      } else {
+        _tlLocalActiveTierlistId = null;
+        _tlLocalNoSelection = true;
+        saveUserPrefs({ tlActiveFolderId: f.id, tlActiveTierlistId: null, tlNoSelection: true });
+      }
+      tlRender();
+    });
+    container.appendChild(row);
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
 function tlRenderList() {
   tlList.innerHTML = '';
   if (!tlState.folders) tlState.folders = [];
+  _tlRenderRecentFolderPaths();
   const tlSortMode = _folderSortMode('tlFoldersSortMode');
   const tlSortSelect = document.getElementById('tl-folders-sort-select');
   if (tlSortSelect) tlSortSelect.value = tlSortMode;
@@ -6174,6 +6394,7 @@ function tlCompareCapture() {
 
 document.getElementById('tl-compare-btn-export')?.addEventListener('click', tlCompareExport);
 document.getElementById('tl-compare-btn-capture')?.addEventListener('click', tlCompareCapture);
+document.getElementById('tl-compare-btn-exit')?.addEventListener('click', _exitCompareTierlistMode);
 
 function tlRenderUnplaced(tl) {
   tlUnplacedZone.innerHTML = '';
@@ -6389,6 +6610,7 @@ function tlCreate(name, folderId, isTemplate = false, presetId = null) {
   _tlLocalActiveTierlistId = tl.id;
   _tlLocalNoSelection = false;
   saveUserPrefs({ tlActiveTierlistId: tl.id, tlNoSelection: false });
+  tlTouchFolderChain(tl.folderId);
   tlSave();
   tlRender();
   return tl;
@@ -6412,17 +6634,24 @@ function tlSwitch(id, allowDeselect = true) {
 function tlDelete(id) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
+  const effectiveFolderId = _tlEffectiveFolderId(tl);
+  tlTouchFolderChain(effectiveFolderId);
   // Suppression d'un template : cascade sur toutes ses tierlists générées, chacune sa propre entrée de corbeille
   const cascaded = tl.isTemplate ? tlState.tierlists.filter(t => t.templateId === id) : [];
-  tlTrashPush({ type: 'tierlist', data: tl, folderId: tl.folderId || null });
-  cascaded.forEach(t => tlTrashPush({ type: 'tierlist', data: t, folderId: t.folderId || null }));
+  tlTrashPush({ type: 'tierlist', data: tl, folderId: effectiveFolderId });
+  cascaded.forEach(t => tlTrashPush({ type: 'tierlist', data: t, folderId: _tlEffectiveFolderId(t) }));
   const removedIds = new Set([id, ...cascaded.map(t => t.id)]);
   tlState.tierlists = tlState.tierlists.filter(t => !removedIds.has(t.id));
   if (removedIds.has(_tlLocalActiveTierlistId)) {
-    const remaining = tlState.tierlists.filter(t => !t.archived);
-    _tlLocalActiveTierlistId = remaining.length > 0 ? remaining[0].id : null;
-    _tlLocalNoSelection = false;
-    saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: false });
+    // Priorité au template d'origine (s'il existe encore et n'a pas été supprimé lui-même) plutôt
+    // qu'à une tierlist arbitraire — l'utilisateur reste dans le contexte qu'il consultait. S'il n'y
+    // a plus de template, on désélectionne et on reste sur ce dossier plutôt que de sauter vers une
+    // tierlist sans rapport ailleurs — tlRender() affiche alors l'écran "gros boutons" du dossier actif.
+    const template = tl.templateId ? tlState.tierlists.find(t => t.id === tl.templateId && !removedIds.has(t.id)) : null;
+    _tlLocalActiveTierlistId = template ? template.id : null;
+    _tlLocalNoSelection = !template;
+    if (!template) _tlLocalActiveFolderId = effectiveFolderId;
+    saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: _tlLocalNoSelection, tlActiveFolderId: _tlLocalActiveFolderId });
   }
   if (removedIds.has(state.currentEventTierlistId)) {
     state.currentEventTierlistId = null;
@@ -6510,13 +6739,14 @@ function tlCopy(id) {
   _tlLocalActiveTierlistId = copy.id;
   _tlLocalNoSelection = false;
   saveUserPrefs({ tlActiveTierlistId: copy.id, tlNoSelection: false });
+  tlTouchFolderChain(_tlEffectiveFolderId(copy));
   tlSave();
   tlRender();
 }
 
 function tlRename(id, newName) {
   const tl = tlState.tierlists.find(t => t.id === id);
-  if (tl && newName.trim()) tl.name = newName.trim();
+  if (tl && newName.trim()) { tl.name = newName.trim(); tlTouchFolderChain(_tlEffectiveFolderId(tl)); }
   tlSave();
   tlRender();
 }
@@ -6684,6 +6914,7 @@ function tlImportImages(files) {
   };
 
   Promise.all(fileArray.map(processFile)).then(() => {
+    tlTouchFolderChain(_tlEffectiveFolderId(tl));
     tlSave();
     tlRender();
     const msgs = [];
@@ -6885,6 +7116,7 @@ function tlDrop(e, targetZoneId) {
     }
   }
 
+  tlTouchFolderChain(_tlEffectiveFolderId(tl));
   tlSave();
   tlRender();
 }
@@ -7141,7 +7373,7 @@ function tlRenderArchivedModal() {
 
     // Rendre récursivement les dossiers archivés (racine en premier)
     function _renderArchivedFolder(folder, depth) {
-      const tlsInFolder = tlState.tierlists.filter(t => t.folderId === folder.id);
+      const tlsInFolder = tlState.tierlists.filter(t => _tlEffectiveFolderId(t) === folder.id);
       const subFolders = archivedFolders.filter(f => f.parentId === folder.id);
       const hasChildren = tlsInFolder.length > 0 || subFolders.length > 0;
 
@@ -7237,7 +7469,7 @@ function tlRenderArchivedModal() {
   }
 
   // Tierlists archivées sans dossier (ou dont le dossier n'est pas archivé)
-  const orphanArchivedTL = archivedTL.filter(t => !t.folderId || !(tlState.folders || []).find(f => f.id === t.folderId && f.archived));
+  const orphanArchivedTL = archivedTL.filter(t => !_tlEffectiveFolderId(t) || !(tlState.folders || []).find(f => f.id === _tlEffectiveFolderId(t) && f.archived));
   if (orphanArchivedTL.length > 0) {
     const sep = document.createElement('p');
     sep.style.cssText = 'font-size:0.72rem;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;margin:' + (archivedFolders.length > 0 ? '10px 0 6px' : '0 0 6px') + ';';
@@ -7247,7 +7479,7 @@ function tlRenderArchivedModal() {
     // Grouper par dossier actif
     const byFolder = {};
     orphanArchivedTL.forEach(tl => {
-      const key = tl.folderId || '__root__';
+      const key = _tlEffectiveFolderId(tl) || '__root__';
       if (!byFolder[key]) byFolder[key] = [];
       byFolder[key].push(tl);
     });
@@ -8061,7 +8293,7 @@ function tlConfirmFolderModal() {
       if (folder) {
         folder.name = name;
         folder.numbering = numbering;
-        folder.updatedAt = Date.now();
+        tlTouchFolderChain(folder.id);
         tlSave();
         tlRender();
       }
@@ -8138,7 +8370,11 @@ function tlConfirmCompareModal() {
   const checked = [...document.querySelectorAll('#tl-compare-checklist input:checked')].map(cb => cb.value);
   if (checked.length < 2) { alert('Sélectionne au moins 2 tier lists.'); return; }
   tlModalCompare.classList.add('hidden');
-  window.open(`index.html?compareTierlists=${encodeURIComponent(checked.join(','))}`, '_blank', 'width=1400,height=800');
+  const tls = checked.map(id => tlState.tierlists.find(t => t.id === id)).filter(Boolean);
+  if (tls.length < 2) return;
+  document.title = 'Comparaison : ' + _tlCommonTitlePath(tls) + ' — LesMichels';
+  document.body.classList.add('compare-tierlist-mode');
+  _tlRenderCompareView(tls);
 }
 
 document.getElementById('tl-btn-compare').addEventListener('click', tlOpenCompareModal);
@@ -8153,7 +8389,8 @@ function tlOpenManageModal(id, anchorEl) {
   const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null);
   addItem('pencil', 'Renommer', false, () => tlOpenRenameModal(id));
   addItem('copy-plus', 'Dupliquer', false, () => tlCopy(id));
-  addItem('shelving-unit', 'Ranger dans un dossier', false, () => tlOpenMoveModal(id));
+  // Une tierlist rattachée à un template vivant suit toujours le dossier du template — se déplace via lui.
+  if (!_tlHasLiveTemplate(tl)) addItem('shelving-unit', 'Ranger dans un dossier', false, () => tlOpenMoveModal(id));
   const ceIsActive = state.currentEventTierlistId === id;
   const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
   addItem('party-popper', ceLabel, false, () => confirmSetCurrentEventTierlist(id));
@@ -8235,8 +8472,10 @@ if (_tlFoldersSortSelect) {
 document.getElementById('tl-btn-open-window').addEventListener('click', () => {
   const tl = tlActiveTierlist();
   if (!tl) return;
-  window.open(`index.html?openTierlist=${encodeURIComponent(tl.id)}`, '_blank', 'width=1100,height=700');
+  document.title = (_tlFullTitlePath(tl) || tl.name || 'Tier list') + ' — LesMichels';
+  document.body.classList.add('solo-tierlist-mode');
 });
+document.getElementById('tl-btn-exit-solo')?.addEventListener('click', _exitSoloTierlistMode);
 
 const _tlBtnCeSet = document.getElementById('tl-btn-ce-set');
 if (_tlBtnCeSet) {
@@ -8322,6 +8561,8 @@ const tlModalMoveClose   = document.getElementById('tl-modal-move-close');
 function tlOpenMoveModal(id) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
+  // Une tierlist rattachée à un template vivant se déplace uniquement via son template.
+  if (_tlHasLiveTemplate(tl)) { tlOpenMoveModal(tl.templateId); return; }
   _tlMoveTargetId = id;
   _tlMoveTargetType = 'tierlist';
   document.getElementById('tl-modal-move-title').textContent = 'Ranger "' + tl.name + '"';
@@ -8391,6 +8632,7 @@ function _tlAddTextCard(tl, text) {
   _tlGetGroupMembers(tl).forEach(member => {
     if (!member.unplaced.includes(img.id)) member.unplaced.push(img.id);
   });
+  tlTouchFolderChain(_tlEffectiveFolderId(tl));
   tlSave();
   tlRender();
   tlAddTextInput.value = '';
@@ -8420,11 +8662,12 @@ function _tlCreateFromTemplate(templateId, name) {
   // Pas de copie des images : la tierlist générée lit les éléments du template en continu (_tlGetGroupImages)
   const copy = tlDefaultTierlist(name, false);
   copy.templateId = templateId;
-  copy.folderId = template.folderId || null;
+  // Pas de folderId propre : elle suit toujours dynamiquement celui du template (_tlEffectiveFolderId)
   copy.unplaced = (template.unplaced || []).slice();
   // Conserve les tiers (labels/couleurs) définis sur le template, plutôt que les tiers par défaut
   copy.tiers = (template.tiers || []).map(t => ({ id: uid(), label: t.label, color: t.color, items: [] }));
   tlState.tierlists.push(copy);
+  tlTouchFolderChain(template.folderId);
   return copy;
 }
 
@@ -8707,7 +8950,7 @@ document.addEventListener('paste', e => {
     });
   });
 
-  Promise.all(promises).then(() => { tlSave(); tlRender(); tlUpdateUndoBtn(); }).catch(e => console.warn('TL paste error:', e));
+  Promise.all(promises).then(() => { tlTouchFolderChain(_tlEffectiveFolderId(tl)); tlSave(); tlRender(); tlUpdateUndoBtn(); }).catch(e => console.warn('TL paste error:', e));
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
