@@ -255,7 +255,6 @@ function setupAuth() {
       _selectedGridsByFolder = {};
       _selectedGridIds = [];
       _localFontScale  = 1;
-      _localGridHeight = 80;
       _tlLocalShowLabels       = null;
       _tlLocalImgSize          = null;
       _tlLocalActiveTierlistId = null;
@@ -295,7 +294,6 @@ function loadUserPrefs() {
   ref.once('value').then(snap => {
     const prefs = snap.val() || {};
     if (prefs.fontScale        != null) _localFontScale        = prefs.fontScale;
-    if (prefs.gridHeight       != null) _localGridHeight       = prefs.gridHeight;
     // Prefs dossiers (nouvelle structure)
     if (prefs.activeFolderId   != null) _localActiveFolderId   = prefs.activeFolderId;
     if (prefs.selectedGrids    != null) {
@@ -318,9 +316,6 @@ function loadUserPrefs() {
     if (prefs.activePage   != null && window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId) _switchPage(prefs.activePage);
     _prefsReady = true;
     // Appliquer les prefs visuelles
-    gridHeightInput.value = _localGridHeight;
-    const ghDisp = document.getElementById('grid-height-display');
-    if (ghDisp) ghDisp.textContent = _localGridHeight + '%';
     fontScaleInput.value = Math.round(_localFontScale * 100);
     const fsDisp = document.getElementById('font-scale-display');
     if (fsDisp) fsDisp.textContent = Math.round(_localFontScale * 100) + '%';
@@ -450,18 +445,12 @@ function _applyPrefsAndRender() {
 
 // Préférences visuelles — stockées dans Firebase /users/{uid}/prefs
 let _localFontScale  = 1;
-let _localGridHeight = 80;
 
 function _saveLocalActiveFolderId(id) { saveUserPrefs({ activeFolderId: id || null }); }
 
 function saveLocalFontScale(scale) {
   _localFontScale = Math.max(0.5, Math.min(3, scale));
   saveUserPrefs({ fontScale: _localFontScale });
-}
-
-function saveLocalGridHeight(pct) {
-  _localGridHeight = Math.max(20, Math.min(80, pct));
-  saveUserPrefs({ gridHeight: _localGridHeight });
 }
 
 // IDs des grilles sélectionnées (affichées simultanément, max 3)
@@ -1291,7 +1280,6 @@ const btnScreenshot    = document.getElementById('btn-screenshot-bingo');
 const gridError        = document.getElementById('grid-error');
 const gridsList        = document.getElementById('grids-list');
 const btnNewGrid       = document.getElementById('btn-new-grid');
-const gridHeightInput    = document.getElementById('grid-height-input');
 const fontScaleInput     = document.getElementById('font-scale-input');
 const gridWrapper        = document.getElementById('grid-wrapper');
 const chkLockGenerate          = document.getElementById('chk-lock-generate');
@@ -2795,9 +2783,6 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   gridEl.className = 'bingo-grid';
   gridEl.title = '';
   gridEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
-  // Réduire proportionnellement pour les multi-grilles (même ratio que le CSS de base 80→68→56)
-  const heightFactor = totalGrids === 3 ? 0.70 : totalGrids === 2 ? 0.85 : 1;
-  gridEl.style.maxWidth = `min(${Math.round(_localGridHeight * heightFactor)}vh, 100%)`;
 
   // On n'itère que sur les n×n premières cases (le tableau peut être plus grand
   // pour préserver les cases cachées lors d'une réduction temporaire de taille)
@@ -3106,6 +3091,7 @@ function renderGrid() {
 
   applyFontScale();
   if (window.lucide) lucide.createIcons();
+  _adjustBingoGridSizes();
 
   // Déclencher après que les wrappers sont dans le DOM et que le layout est calculé
   setTimeout(() => {
@@ -3114,6 +3100,51 @@ function renderGrid() {
     });
   }, 0);
 }
+
+// Dimensionne chaque .bingo-grid pour occuper au maximum l'espace disponible
+// (largeur ET hauteur) sans jamais déborder — mesuré dynamiquement plutôt que
+// deviné en vh, car la hauteur du header au-dessus varie (titre, boutons wrap).
+// La grille est carrée (aspect-ratio:1/1) ET chaque cellule l'est aussi (.bingo-cell
+// aspect-ratio:1) : contraindre uniquement max-height ne suffit pas, car les cellules
+// restent dimensionnées par la LARGEUR des colonnes (1fr) — si celle-ci reste grande
+// pendant que la hauteur est bridée, les cellules deviennent plus hautes que l'espace
+// alloué et se chevauchent. Il faut donc calculer le côté du carré (min de la largeur
+// et de la hauteur réellement disponibles) et fixer explicitement width ET height.
+function _adjustBingoGridSizes() {
+  const wrappers = gridWrapper.querySelectorAll('.grid-view-wrapper');
+  if (!wrappers.length) return;
+  // Réinitialiser AVANT de mesurer : .grid-view-wrapper est en flex:1 1 0 (min-width:0), donc
+  // sans ça un width fixé par l'appel précédent influence la largeur mesurée du wrapper au tour
+  // suivant (le wrapper se contracte au contenu) — spirale de rétrécissement à chaque nouveau
+  // render/resize. On mesure toujours la largeur "naturelle" que le flex donnerait sans contrainte.
+  wrappers.forEach(wrapper => {
+    const gridEl = wrapper.querySelector('.bingo-grid');
+    if (gridEl) { gridEl.style.width = ''; gridEl.style.maxHeight = ''; }
+  });
+
+  // Basé sur le viewport (pas le parent, qui s'étire librement avec son contenu)
+  // pour garantir qu'il ne faut jamais scroller pour voir le bas de la grille.
+  const availableHeight = window.innerHeight - gridWrapper.getBoundingClientRect().top - 12;
+  wrappers.forEach(wrapper => {
+    const gridEl = wrapper.querySelector('.bingo-grid');
+    if (!gridEl) return;
+    const headerHeight = Array.from(wrapper.children).reduce((sum, child) => {
+      return child === gridEl ? sum : sum + child.getBoundingClientRect().height;
+    }, 0);
+    const wrapperStyle = getComputedStyle(wrapper);
+    const wrapperPaddingV = parseFloat(wrapperStyle.paddingTop) + parseFloat(wrapperStyle.paddingBottom);
+    const wrapperPaddingH = parseFloat(wrapperStyle.paddingLeft) + parseFloat(wrapperStyle.paddingRight);
+    const wrapperGap = parseFloat(wrapperStyle.rowGap || wrapperStyle.gap) || 0;
+    const gapCount = wrapper.children.length - 1;
+    const maxH = Math.max(80, availableHeight - headerHeight - wrapperPaddingV - wrapperGap * gapCount - 4);
+    const maxW = Math.max(80, wrapper.getBoundingClientRect().width - wrapperPaddingH);
+    const side = Math.min(maxH, maxW);
+    gridEl.style.maxHeight = side + 'px';
+    gridEl.style.width = side + 'px';
+  });
+}
+
+window.addEventListener('resize', () => { if (document.getElementById('page-bingo').classList.contains('active')) _adjustBingoGridSizes(); });
 
 // ──────────────────────────────────────────────
 // Détection des bingos
@@ -3567,17 +3598,6 @@ document.getElementById('btn-import-elements-panel').addEventListener('click', (
 
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
 btnSizePlus.addEventListener('click',  () => changeSize(+1));
-
-gridHeightInput.addEventListener('input', () => {
-  const v = Math.max(20, Math.min(80, parseInt(gridHeightInput.value) || 80));
-  _localGridHeight = v;
-  document.getElementById('grid-height-display').textContent = v + '%';
-  renderGrid();
-});
-gridHeightInput.addEventListener('change', () => {
-  const v = Math.max(20, Math.min(80, parseInt(gridHeightInput.value) || 80));
-  saveLocalGridHeight(v);
-});
 
 fontScaleInput.addEventListener('input', () => {
   const pct = Math.max(50, Math.min(200, parseInt(fontScaleInput.value) || 100));
@@ -4629,6 +4649,19 @@ function _tlNormalizeState(parsed) {
     });
     _tlMigrated = true;
   });
+  // Nettoyage défensif : un toPlaceImgId dont tous les participants existants ont déjà résolu
+  // (typiquement des données antérieures à l'ajout de _tlClearToPlaceIfAllResolved, ou un état
+  // Firebase resté figé) doit être effacé au chargement — sinon une tierlist créée ensuite hérite
+  // à tort d'un "élément en attente" alors que le groupe a déjà terminé.
+  parsed.tierlists.forEach(template => {
+    if (!template.isTemplate || !template.toPlaceImgId) return;
+    const participants = parsed.tierlists.filter(t => t.templateId === template.id && !t.isTemplate);
+    const imgId = template.toPlaceImgId;
+    const isResolved = m => (m.resolvedToPlaceIds || []).includes(imgId) || (m.tiers || []).some(t => t.items.includes(imgId));
+    if (participants.length > 0 && participants.every(isResolved)) {
+      template.toPlaceImgId = null;
+    }
+  });
   parsed._tlMigrated = _tlMigrated;
   return parsed;
 }
@@ -5386,6 +5419,8 @@ function tlRender() {
   const prefixPath = _tlTitlePathPrefix(tl);
   tlTitlePrefix.textContent = prefixPath ? prefixPath + ' › ' : '';
   tlTitlePrefix.classList.toggle('hidden', !prefixPath);
+  const fullscreenBreadcrumb = document.getElementById('tl-fullscreen-breadcrumb');
+  if (fullscreenBreadcrumb) fullscreenBreadcrumb.textContent = _tlFullTitlePath(tl);
   const tlBtnNewFromTemplate = document.getElementById('tl-btn-new-from-template');
   if (tlBtnNewFromTemplate) tlBtnNewFromTemplate.classList.toggle('hidden', !_tlGroupRoot(tl).isTemplate);
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
@@ -5396,6 +5431,8 @@ function tlRender() {
 
   tlRenderTiers(tl);
   tlRenderUnplaced(tl);
+  _tlRenderToPlaceZone(tl);
+  _tlApplyUnplacedExpanded();
   if (window.lucide) lucide.createIcons();
 }
 
@@ -5553,6 +5590,162 @@ function _tlGetGroupMaxImages(tl) {
 function _tlGetGroupMembers(tl) {
   const root = _tlGroupRoot(tl);
   return tlState.tierlists.filter(t => t.id === root.id || t.templateId === root.id);
+}
+
+// ── Zone "À placer" — un seul élément désigné, partagé par tout le groupe/template ──
+// Stocké sur le root (root.toPlaceImgId), pas par tierlist : chaque membre déduit dynamiquement
+// si SA zone est vide (l'élément est déjà dans un de ses tiers) ou si elle doit encore l'afficher.
+// Le template lui-même n'est jamais un "participant" : il ne place jamais d'éléments dans ses
+// tiers (labels seuls), donc il faut l'exclure du calcul "tout le monde a placé".
+function _tlGetGroupParticipants(tl) {
+  return _tlGetGroupMembers(tl).filter(m => !m.isTemplate);
+}
+
+function _tlIsPlacedInTiers(member, imgId) {
+  return member.tiers.some(t => t.items.includes(imgId));
+}
+
+// Marque, pour CE membre précis, que l'élément désigné a été résolu (placé au moins une fois
+// dans un de ses tiers) — une fois résolu, sa zone "à placer" reste vide DÉFINITIVEMENT pour ce
+// membre, même s'il redéplace ensuite l'élément ailleurs (non-placés ou un autre tier). Sans ce
+// marqueur persistant, un aller-retour tier→non-placés faisait réapparaître la carte à tort,
+// puisque _tlIsPlacedInTiers ne regarde que l'emplacement ACTUEL de l'élément.
+function _tlMarkToPlaceResolved(member, imgId) {
+  if (!member.resolvedToPlaceIds) member.resolvedToPlaceIds = [];
+  if (!member.resolvedToPlaceIds.includes(imgId)) member.resolvedToPlaceIds.push(imgId);
+}
+
+// true si CE membre précis a déjà "réglé son cas" pour cet élément désigné : soit il l'a placé
+// dans un de ses tiers actuellement, soit il l'a résolu par le passé (resolvedToPlaceIds) — donc
+// sa zone à placer doit rester vide et il ne doit plus compter comme "en attente" dans la couleur
+// partagée, même s'il redéplace ensuite l'élément ailleurs (ex. retour vers ses non-placés).
+function _tlMemberResolvedFor(member, imgId) {
+  if ((member.resolvedToPlaceIds || []).includes(imgId)) return true;
+  return _tlIsPlacedInTiers(member, imgId);
+}
+
+// Une fois que TOUS les participants actuels du groupe ont résolu l'élément désigné (zone
+// jaune/vide partout), le sujet est clos : root.toPlaceImgId est remis à null. Sans ce nettoyage,
+// il restait actif indéfiniment — une tierlist créée APRÈS coup (jamais résolue, puisqu'elle vient
+// de naître sans aucun tier rempli) affichait alors à tort l'élément comme "encore en attente"
+// dans sa propre zone, alors que le groupe entier avait déjà terminé.
+function _tlClearToPlaceIfAllResolved(tl) {
+  const root = _tlGroupRoot(tl);
+  if (!root.toPlaceImgId) return;
+  const members = _tlGetGroupParticipants(tl);
+  if (members.length > 0 && members.every(m => _tlMemberResolvedFor(m, root.toPlaceImgId))) {
+    root.toPlaceImgId = null;
+  }
+}
+
+// true si l'élément désigné est déjà résolu chez CE membre précis → sa zone est vide.
+function _tlToPlaceIsEmptyFor(tl) {
+  const root = _tlGroupRoot(tl);
+  if (!root.toPlaceImgId) return true;
+  return _tlMemberResolvedFor(tl, root.toPlaceImgId);
+}
+
+// Désigne un nouvel élément "à placer" pour tout le groupe. Si un élément occupait déjà la zone
+// quelque part (pas encore placé par tout le monde), demande confirmation avant de le remplacer.
+// Le template lui-même n'a pas de zone "à placer" (pas de vrais tiers remplis, labels seuls) —
+// la désignation n'a pas de sens depuis lui, on l'ignore silencieusement.
+function _tlSetImageToPlace(tl, imgId) {
+  if (tl.isTemplate) return;
+  const root = _tlGroupRoot(tl);
+  const members = _tlGetGroupParticipants(tl);
+  const previousId = root.toPlaceImgId;
+
+  const applyChange = () => {
+    // Nouvelle désignation de cet élément : purger l'ancien marqueur "résolu" de TOUS les
+    // membres pour cet imgId précis — sinon un membre ayant déjà résolu cet élément lors d'une
+    // désignation antérieure ne le reverrait plus jamais dans sa zone "à placer", même après
+    // qu'on le redésigne explicitement. La résolution ne doit tenir que jusqu'à la prochaine
+    // fois où cet élément redevient "l'élément à placer" — _tlMemberResolvedFor recalcule
+    // ensuite dynamiquement l'état réel (placé actuellement dans un tier ou non) pour chacun.
+    members.forEach(member => {
+      if (member.resolvedToPlaceIds) {
+        member.resolvedToPlaceIds = member.resolvedToPlaceIds.filter(id => id !== imgId);
+      }
+    });
+    // L'élément désigné sort des non-placés de TOUS les membres du groupe (pas seulement celui
+    // qui vient de désigner) : un élément ne doit JAMAIS être visible à la fois dans les
+    // non-placés et dans la zone "à placer" d'un même membre. Chez les membres qui n'ont pas
+    // encore résolu, il n'apparaît donc plus que dans la zone à placer (jusqu'à ce qu'ils le
+    // placent dans un tier) — le compteur non-placés/total compense ce retrait pour ne pas
+    // baisser à tort (voir tlRenderUnplaced, qui recompte l'élément désigné non résolu).
+    members.forEach(member => {
+      const idx = member.unplaced.indexOf(imgId);
+      if (idx !== -1) member.unplaced.splice(idx, 1);
+    });
+    // L'ancien élément désigné retourne dans les non-placés de chaque membre où il n'est
+    // pas déjà placé dans un tier (sinon il reste où il est, comme demandé).
+    if (previousId && previousId !== imgId) {
+      members.forEach(member => {
+        if (!_tlMemberResolvedFor(member, previousId) && !member.unplaced.includes(previousId)) {
+          member.unplaced.push(previousId);
+        }
+      });
+    }
+    root.toPlaceImgId = imgId;
+    tlTouchFolderChain(_tlEffectiveFolderId(tl));
+    tlSave();
+    tlRender();
+  };
+
+  const previousStillPending = previousId && previousId !== imgId && members.some(m => !_tlMemberResolvedFor(m, previousId));
+  if (previousStillPending) {
+    _tlOpenConfirmToPlaceModal(applyChange);
+  } else {
+    applyChange();
+  }
+}
+
+let _tlPendingToPlaceConfirm = null;
+function _tlOpenConfirmToPlaceModal(onConfirm) {
+  _tlPendingToPlaceConfirm = onConfirm;
+  document.getElementById('modal-confirm-toplace').classList.remove('hidden');
+}
+function _tlCloseConfirmToPlaceModal() {
+  _tlPendingToPlaceConfirm = null;
+  document.getElementById('modal-confirm-toplace').classList.add('hidden');
+}
+document.getElementById('btn-confirm-toplace').addEventListener('click', () => {
+  const fn = _tlPendingToPlaceConfirm;
+  _tlCloseConfirmToPlaceModal();
+  if (fn) fn();
+});
+document.getElementById('btn-cancel-toplace').addEventListener('click', _tlCloseConfirmToPlaceModal);
+document.getElementById('btn-close-confirm-toplace').addEventListener('click', _tlCloseConfirmToPlaceModal);
+
+function _tlRenderToPlaceZone(tl) {
+  // Le template n'a pas de zone "à placer" (masquée en CSS, .tl-editor-body--template
+  // .tl-toplace-zone{display:none}) — pas la peine de calculer/peupler son contenu.
+  if (tl.isTemplate) return;
+  const zone = document.getElementById('tl-toplace-zone');
+  const content = zone.querySelector('.tl-toplace-content');
+  content.innerHTML = '';
+  const root = _tlGroupRoot(tl);
+  const members = _tlGetGroupParticipants(tl);
+  const imgId = root.toPlaceImgId;
+  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
+
+  const allPlaced = !imgId || members.every(m => _tlMemberResolvedFor(m, imgId));
+  zone.classList.toggle('tl-toplace-empty', allPlaced);
+  zone.classList.toggle('tl-toplace-pending', !allPlaced);
+
+  const showCard = imgId && !_tlToPlaceIsEmptyFor(tl) && tlFindImage(tl, imgId);
+  if (showCard) {
+    // Carte affichée : la zone s'adapte à sa taille réelle (image + nom si affiché).
+    content.style.width = '';
+    content.style.height = '';
+    content.appendChild(tlBuildImgCard(tl, showCard, imgSize));
+  } else {
+    // Vide : taille fixe d'une image seule (imgSize), jamais plus petite — sinon la zone
+    // rétrécirait à vide au lieu de garder sa place réservée.
+    content.style.width = imgSize + 'px';
+    content.style.height = imgSize + 'px';
+  }
+  if (window.lucide) lucide.createIcons();
 }
 
 // Texte "(Template › Dossier)" à afficher à côté d'une tierlist archivée/supprimée, pour donner
@@ -6291,6 +6484,8 @@ function _tlRenderCompareView(tls) {
 
   const toolbar = document.getElementById('tl-compare-toolbar');
   if (toolbar) toolbar.classList.remove('hidden');
+  const compareBreadcrumb = document.getElementById('tl-compare-breadcrumb');
+  if (compareBreadcrumb) compareBreadcrumb.textContent = _tlCommonTitlePath(tls);
 
   container.classList.remove('hidden');
   container.innerHTML = '';
@@ -6408,11 +6603,18 @@ function tlRenderUnplaced(tl) {
   } else {
     _tlGetSortedUnplaced(tl).forEach(imgId => {
       const img = tlFindImage(tl, imgId);
-      if (img) tlUnplacedZone.appendChild(tlBuildImgCard(tl, img, imgSize));
+      if (img) tlUnplacedZone.appendChild(tlBuildImgCard(tl, img, imgSize, false, true));
     });
   }
-  const tlOwnTotal = tl.unplaced.length + tl.tiers.reduce((sum, t) => sum + t.items.length, 0);
-  tlUnplacedCount.textContent = tl.unplaced.length + ' / ' + tlOwnTotal;
+  // L'élément désigné "à placer" non encore résolu pour CE membre a été retiré de tl.unplaced
+  // (il est affiché à part, dans la zone à placer) mais doit continuer à compter comme un
+  // élément "non placé" dans l'affichage — sinon le compteur baisse à tort (ex. 30/31 → 29/30)
+  // dès qu'un élément est désigné, alors qu'aucun élément n'a réellement quitté la tierlist.
+  const toPlaceImgId = _tlGroupRoot(tl).toPlaceImgId;
+  const toPlaceCountsAsUnplaced = toPlaceImgId && !_tlMemberResolvedFor(tl, toPlaceImgId) ? 1 : 0;
+  const tlOwnUnplacedCount = tl.unplaced.length + toPlaceCountsAsUnplaced;
+  const tlOwnTotal = tlOwnUnplacedCount + tl.tiers.reduce((sum, t) => sum + t.items.length, 0);
+  tlUnplacedCount.textContent = tlOwnUnplacedCount + ' / ' + tlOwnTotal;
   if (window.lucide) lucide.createIcons();
   tlMaxImagesInput.textContent = _tlGetGroupMaxImages(tl);
 }
@@ -6459,7 +6661,7 @@ function _tlPasteFromClipboard(tl) {
   }).catch(() => alert('Impossible de lire le presse-papier. Essaie Ctrl+V à la place.'));
 }
 
-function tlBuildImgCard(tl, img, size, readOnly = false) {
+function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false) {
   const card = document.createElement('div');
   card.className = 'tl-img-card';
   if (!readOnly && img.id === _tlSelectedImgId) card.classList.add('selected');
@@ -6485,6 +6687,13 @@ function tlBuildImgCard(tl, img, size, readOnly = false) {
       tlClearDropBefore();
       _tlClearDragSourceHidden();
     });
+
+    if (isUnplacedZone) {
+      card.addEventListener('dblclick', e => {
+        e.stopPropagation();
+        _tlSetImageToPlace(tl, img.id);
+      });
+    }
   }
 
   const isText = (img.type || 'image') === 'text';
@@ -6589,6 +6798,9 @@ function _tlInlineRenameImg(labelEl, tl, img, size, caretOffset) {
 // ── Menu contextuel image ─────────────────────────────────────────────────────
 function _tlShowImgCtxMenu(e, tl, img) {
   const { addItem } = _tlMakeCtxMenu(null, e);
+  const isText = (img.type || 'image') === 'text';
+  if (!isText) addItem('zoom-in', 'Zoomer', false, () => _tlOpenImgZoom(img, tl));
+  if (!tl.isTemplate) addItem('pin', 'À placer', false, () => _tlSetImageToPlace(tl, img.id));
   addItem('pencil', 'Renommer', false, () => tlOpenRenameImg(tl, img));
   addItem('x', 'Supprimer', true, () => tlDeleteImage(tl, img.id));
 }
@@ -7076,6 +7288,22 @@ function tlDrop(e, targetZoneId) {
   if (!imgId) return;
   const tl = tlActiveTierlist();
   if (!tl) return;
+
+  if (targetZoneId === '__toplace__') {
+    _tlSetImageToPlace(tl, imgId);
+    return;
+  }
+  // La carte affichée dans la zone "à placer" (elle n'est ni dans unplaced ni dans un tier
+  // local — c'est la carte virtuelle affichée par _tlRenderToPlaceZone) ne peut être déposée
+  // que dans un TIER : c'est la seule action qui "résout" la zone pour ce membre précis. La
+  // désignation partagée (root.toPlaceImgId) n'est JAMAIS effacée ici — elle reste active pour
+  // les autres membres du groupe tant qu'ils n'ont pas eux-mêmes placé l'élément dans un tier ;
+  // _tlToPlaceIsEmptyFor recalcule dynamiquement, à chaque rendu, si leur zone doit encore l'afficher.
+  const _rootForDrop = _tlGroupRoot(tl);
+  const isFromToPlaceZone = _rootForDrop.toPlaceImgId === imgId && !_tlLocateImage(tl, imgId);
+  if (isFromToPlaceZone && targetZoneId === '__unplaced__') return;
+  if (isFromToPlaceZone) tl.unplaced.push(imgId); // entrée temporaire, retirée juste après par le flux normal
+
   if (tl.isTemplate && targetZoneId !== '__unplaced__') return;
   const from = _tlLocateImage(tl, imgId);
   if (from) {
@@ -7113,6 +7341,10 @@ function tlDrop(e, targetZoneId) {
         );
       }
       tier.items.splice(insertIdx, 0, imgId);
+      if (_rootForDrop.toPlaceImgId === imgId) {
+        _tlMarkToPlaceResolved(tl, imgId);
+        _tlClearToPlaceIfAllResolved(tl);
+      }
     }
   }
 
@@ -7121,10 +7353,23 @@ function tlDrop(e, targetZoneId) {
   tlRender();
 }
 
+// Survol/sortie de la zone "à placer" : pas de placeholder réordonnable (un seul élément
+// possible), juste un simple retour visuel drag-over comme les tiers/non-placés.
+function tlToPlaceDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+function tlToPlaceDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
 // Exposer les fonctions de drag globalement (utilisées dans le HTML via attributs)
 window.tlDragOver  = tlDragOver;
 window.tlDragLeave = tlDragLeave;
 window.tlDrop      = tlDrop;
+window.tlToPlaceDragOver  = tlToPlaceDragOver;
+window.tlToPlaceDragLeave = tlToPlaceDragLeave;
 
 // ── Renommer image ────────────────────────────────────────────────────────────
 let tlRenameImgContext = null;
@@ -8663,7 +8908,11 @@ function _tlCreateFromTemplate(templateId, name) {
   const copy = tlDefaultTierlist(name, false);
   copy.templateId = templateId;
   // Pas de folderId propre : elle suit toujours dynamiquement celui du template (_tlEffectiveFolderId)
-  copy.unplaced = (template.unplaced || []).slice();
+  // L'élément désigné "à placer" (s'il y en a un, encore non résolu par cette toute nouvelle
+  // tierlist puisqu'elle n'a aucun tier rempli) ne doit pas être copié dans ses non-placés — il
+  // doit apparaître uniquement dans sa zone "à placer", jamais aux deux endroits à la fois.
+  const toPlaceImgId = template.toPlaceImgId;
+  copy.unplaced = (template.unplaced || []).filter(id => id !== toPlaceImgId);
   // Conserve les tiers (labels/couleurs) définis sur le template, plutôt que les tiers par défaut
   copy.tiers = (template.tiers || []).map(t => ({ id: uid(), label: t.label, color: t.color, items: [] }));
   tlState.tierlists.push(copy);
@@ -8899,6 +9148,22 @@ tlUnplacedSortBtn.addEventListener('click', () => {
   const { addItem } = _tlMakeCtxMenu(tlUnplacedSortBtn, null);
   addItem('arrow-down-a-z', 'Alphabétique', false, () => applySort('alpha'));
   addItem('arrow-down-0-1', 'Date d\'ajout', false, () => applySort('date'));
+});
+
+// ── Déplier/replier la zone Éléments non placés (préférence d'affichage locale) ──
+const tlUnplacedExpandBtn = document.getElementById('tl-unplaced-expand-btn');
+let _tlUnplacedExpanded = false;
+function _tlApplyUnplacedExpanded() {
+  const section = document.querySelector('.tl-unplaced-section');
+  if (section) section.classList.toggle('tl-unplaced-expanded', _tlUnplacedExpanded);
+  tlUnplacedExpandBtn.classList.toggle('tl-unplaced-expand-btn--active', _tlUnplacedExpanded);
+  tlUnplacedExpandBtn.title = _tlUnplacedExpanded ? 'Replier la zone Éléments non placés' : 'Déplier la zone Éléments non placés';
+  const label = document.getElementById('tl-unplaced-expand-label');
+  if (label) label.textContent = _tlUnplacedExpanded ? 'Replier' : 'Déplier';
+}
+tlUnplacedExpandBtn.addEventListener('click', () => {
+  _tlUnplacedExpanded = !_tlUnplacedExpanded;
+  _tlApplyUnplacedExpanded();
 });
 
 // ── Ajout d'images / texte (barre du header non placés) ───────────────────────

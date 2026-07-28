@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=167" />
+  <link rel="stylesheet" href="style.css?v=168" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -53,6 +53,7 @@
 
       <!-- ── Vue comparaison (fenêtre séparée, lecture seule) ── -->
       <div id="tl-compare-toolbar" class="tl-compare-toolbar hidden">
+        <div id="tl-compare-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
         <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image">Afficher noms</button>
         <label class="tl-toggle-label" title="Régler la taille des images (48–180 px)">
           <span>Taille</span>
@@ -83,6 +84,7 @@
 
           <!-- Ligne 2 : réglages centrés -->
           <div class="ctrl-row ctrl-row-toolbar">
+            <div id="tl-fullscreen-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
             <div class="ctrl-row-toolbar-center">
               <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image">Afficher noms</button>
               <label class="tl-toggle-label" title="Régler la taille des images (48–180 px)">
@@ -179,14 +181,24 @@
                     <i data-lucide="a-large-small"></i>
                     <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Ajouter un texte..." title="Taper un texte puis Entrée pour ajouter une carte" />
                   </span>
+                  <button type="button" id="tl-unplaced-expand-btn" class="tl-unplaced-expand-btn" title="Déplier la zone Éléments non placés"><i data-lucide="chevrons-up-down"></i> <span id="tl-unplaced-expand-label">Déplier</span></button>
                   <span class="tl-max-images-label">Capacité max :</span>
                   <button type="button" id="tl-max-images-input" class="tl-max-images-input" title="Choisir la capacité maximale du groupe">50</button>
                 </div>
-                <div id="tl-unplaced-zone" class="tl-unplaced-zone"
-                     data-dropzone="unplaced"
-                     ondragover="tlDragOver(event)" ondrop="tlDrop(event, '__unplaced__')"
-                     ondragleave="tlDragLeave(event)">
-                  <div class="tl-unplaced-hint">Dépose des images ici ou importe-en</div>
+                <div class="tl-unplaced-body">
+                  <div id="tl-toplace-zone" class="tl-toplace-zone"
+                       data-dropzone="toplace"
+                       ondragover="tlToPlaceDragOver(event)" ondrop="tlDrop(event, '__toplace__')"
+                       ondragleave="tlToPlaceDragLeave(event)"
+                       title="Élément à placer — partagé avec tout le monde">
+                    <div class="tl-toplace-content"></div>
+                  </div>
+                  <div id="tl-unplaced-zone" class="tl-unplaced-zone"
+                       data-dropzone="unplaced"
+                       ondragover="tlDragOver(event)" ondrop="tlDrop(event, '__unplaced__')"
+                       ondragleave="tlDragLeave(event)">
+                    <div class="tl-unplaced-hint">Dépose des images ici ou importe-en</div>
+                  </div>
                 </div>
               </div>
 
@@ -220,11 +232,6 @@
           <!-- Ligne 3 : Toolbar -->
           <div class="ctrl-row ctrl-row-toolbar">
             <div class="ctrl-row-toolbar-center">
-              <div class="grid-size-control grid-size-control-slider">
-                <label class="slider-label">Grille</label>
-                <input type="range" id="grid-height-input" class="toolbar-slider" min="20" max="80" step="5" value="80" title="Taille des grilles" />
-                <span class="slider-value-display" id="grid-height-display">80%</span>
-              </div>
               <div class="grid-size-control grid-size-control-slider">
                 <label class="slider-label">Texte</label>
                 <input type="range" id="font-scale-input" class="toolbar-slider" min="50" max="200" step="10" value="100" title="Taille du texte" />
@@ -948,6 +955,23 @@
     </div>
   </div>
 
+  <!-- Modal confirmation remplacement élément "à placer" -->
+  <div id="modal-confirm-toplace" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Remplacer l'élément à placer</h3>
+        <button class="modal-close" id="btn-close-confirm-toplace"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Tout le monde n'a pas encore placé l'élément actuel. Le remplacer et le remettre dans les éléments non placés ?</p>
+        <div class="modal-actions">
+          <button class="btn-action" id="btn-confirm-toplace">Remplacer</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-toplace">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal confirmation Définir comme soirée en cours -->
   <div id="modal-confirm-current-event" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -1021,6 +1045,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=253"></script>
+  <script src="app.js?v=254"></script>
 </body>
 </html>
