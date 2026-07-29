@@ -257,6 +257,9 @@ function setupAuth() {
       _localFontScale  = 1;
       _tlLocalShowLabels       = null;
       _tlLocalImgSize          = null;
+      _tlLocalUnplacedImgSize  = null;
+      _tlLocalUnplacedShowLabels = null;
+      _tlLocalUnplacedHidden   = false;
       _tlLocalActiveTierlistId = null;
       _tlLocalActiveFolderId   = null;
       _tlLocalNoSelection      = false;
@@ -309,6 +312,9 @@ function loadUserPrefs() {
     // Prefs tierlist
     if (prefs.tlShowLabels        != null) _tlLocalShowLabels       = !!prefs.tlShowLabels;
     if (prefs.tlImgSize           != null) _tlLocalImgSize          = prefs.tlImgSize;
+    if (prefs.tlUnplacedImgSize   != null) _tlLocalUnplacedImgSize  = prefs.tlUnplacedImgSize;
+    if (prefs.tlUnplacedShowLabels != null) _tlLocalUnplacedShowLabels = !!prefs.tlUnplacedShowLabels;
+    if (prefs.tlUnplacedHidden    != null) _tlLocalUnplacedHidden   = !!prefs.tlUnplacedHidden;
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
     if (prefs.tlActiveFolderId    != null) _tlLocalActiveFolderId   = prefs.tlActiveFolderId;
     if (prefs.tlNoSelection       != null) _tlLocalNoSelection      = !!prefs.tlNoSelection;
@@ -434,7 +440,9 @@ function _applyPrefsAndRender() {
   renderCurrentEventButton();
   // Appliquer les prefs tierlist aux controls UI
   if (_tlLocalShowLabels !== null) _tlUpdateShowLabelsBtn(_tlLocalShowLabels);
+  if (_tlLocalUnplacedShowLabels !== null) _tlUpdateUnplacedShowLabelsBtn(_tlLocalUnplacedShowLabels);
   if (_tlLocalImgSize    !== null) tlImgSizeSlider.value       = _tlLocalImgSize;
+  if (_tlLocalUnplacedImgSize !== null && tlUnplacedImgSizeSlider) tlUnplacedImgSizeSlider.value = _tlLocalUnplacedImgSize;
   // Re-render la Tier List avec la bonne tierlist active
   if (typeof tlRender === 'function') tlRender();
 }
@@ -4547,6 +4555,9 @@ const _dbTierlist = firebase.database().ref('tierlist');
 // Prefs tierlist — personnelles par utilisateur (non partagées)
 let _tlLocalShowLabels      = null; // null = pas encore chargé
 let _tlLocalImgSize         = null;
+let _tlLocalUnplacedImgSize = null; // taille des images du cadre "Éléments non placés" (indépendante de la tierlist)
+let _tlLocalUnplacedShowLabels = null; // afficher/masquer noms du cadre "Éléments non placés" (indépendant de la tierlist)
+let _tlLocalUnplacedHidden  = false; // true = cadre "Éléments non placés" masqué (préférence locale)
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
 let _tlLocalActiveFolderId  = null; // dossier sélectionné (vide) sans tierlist active
 let _tlLocalNoSelection     = false; // true = l'utilisateur a délibérément désélectionné
@@ -5135,6 +5146,7 @@ const tlTitlePrefix       = document.getElementById('tl-title-prefix');
 const tlTitleDisplay      = document.getElementById('tl-title-display');
 const tlTitleInput        = document.getElementById('tl-title-input');
 const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
+const tlUnplacedShowLabelsToggle = document.getElementById('tl-unplaced-show-labels-toggle');
 
 function _tlUpdateShowLabelsBtn(showLabels) {
   tlShowLabelsToggle.textContent = showLabels ? 'Masquer noms' : 'Afficher noms';
@@ -5145,7 +5157,13 @@ function _tlUpdateShowLabelsBtn(showLabels) {
     compareToggle.classList.toggle('active', !!showLabels);
   }
 }
+function _tlUpdateUnplacedShowLabelsBtn(showLabels) {
+  if (!tlUnplacedShowLabelsToggle) return;
+  tlUnplacedShowLabelsToggle.textContent = showLabels ? 'Masquer noms' : 'Afficher noms';
+  tlUnplacedShowLabelsToggle.classList.toggle('active', !!showLabels);
+}
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
+const tlUnplacedImgSizeSlider = document.getElementById('tl-unplaced-img-size-slider');
 const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
 const tlBtnUndo           = document.getElementById('tl-btn-undo');
 const tlBtnReset          = document.getElementById('tl-btn-reset');
@@ -5412,6 +5430,13 @@ function tlRender() {
   tlEditor.classList.remove('hidden');
   tlControlPanel.classList.remove('hidden');
   tlEditorBody.classList.toggle('tl-editor-body--template', !!tl.isTemplate);
+  const tlBtnExportImages = document.getElementById('tl-btn-export-images');
+  if (tlBtnExportImages) tlBtnExportImages.classList.toggle('hidden', !tl.isTemplate);
+  if (tlBtnToggleUnplaced) {
+    tlBtnToggleUnplaced.classList.toggle('hidden', !!tl.isTemplate);
+    tlEditorBody.classList.toggle('tl-unplaced-hidden', !tl.isTemplate && _tlLocalUnplacedHidden);
+    _tlUpdateToggleUnplacedBtn();
+  }
   tlRenderGroupPanel(tl);
 
   tlTitleDisplay.textContent = tl.name;
@@ -5425,14 +5450,17 @@ function tlRender() {
   if (tlBtnNewFromTemplate) tlBtnNewFromTemplate.classList.toggle('hidden', !_tlGroupRoot(tl).isTemplate);
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
   const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
+  const unplacedShowLabels = _tlLocalUnplacedShowLabels !== null ? _tlLocalUnplacedShowLabels : !!tl.showLabels;
   const imgSize    = _tlLocalImgSize    !== null ? _tlLocalImgSize    : (tl.imgSize || 80);
+  const unplacedImgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : (tl.imgSize || 80);
   _tlUpdateShowLabelsBtn(showLabels);
+  _tlUpdateUnplacedShowLabelsBtn(unplacedShowLabels);
   tlImgSizeSlider.value      = imgSize;
+  if (tlUnplacedImgSizeSlider) tlUnplacedImgSizeSlider.value = unplacedImgSize;
 
   tlRenderTiers(tl);
   tlRenderUnplaced(tl);
   _tlRenderToPlaceZone(tl);
-  _tlApplyUnplacedExpanded();
   if (window.lucide) lucide.createIcons();
 }
 
@@ -5727,7 +5755,7 @@ function _tlRenderToPlaceZone(tl) {
   const root = _tlGroupRoot(tl);
   const members = _tlGetGroupParticipants(tl);
   const imgId = root.toPlaceImgId;
-  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
+  const imgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : (tl.imgSize || 80);
 
   const allPlaced = !imgId || members.every(m => _tlMemberResolvedFor(m, imgId));
   zone.classList.toggle('tl-toplace-empty', allPlaced);
@@ -5738,7 +5766,7 @@ function _tlRenderToPlaceZone(tl) {
     // Carte affichée : la zone s'adapte à sa taille réelle (image + nom si affiché).
     content.style.width = '';
     content.style.height = '';
-    content.appendChild(tlBuildImgCard(tl, showCard, imgSize));
+    content.appendChild(tlBuildImgCard(tl, showCard, imgSize, false, true));
   } else {
     // Vide : taille fixe d'une image seule (imgSize), jamais plus petite — sinon la zone
     // rétrécirait à vide au lieu de garder sa place réservée.
@@ -6593,7 +6621,7 @@ document.getElementById('tl-compare-btn-exit')?.addEventListener('click', _exitC
 
 function tlRenderUnplaced(tl) {
   tlUnplacedZone.innerHTML = '';
-  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
+  const imgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : (tl.imgSize || 80);
 
   if (tl.unplaced.length === 0) {
     const hint = document.createElement('div');
@@ -6729,7 +6757,9 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
     card.appendChild(zoomBtn);
   }
 
-  const _showLbls = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
+  const _showLbls = isUnplacedZone
+    ? (_tlLocalUnplacedShowLabels !== null ? _tlLocalUnplacedShowLabels : !!tl.showLabels)
+    : (_tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels);
   if (_showLbls && !isText) {
     const label = document.createElement('div');
     label.className = 'tl-img-label';
@@ -7557,6 +7587,32 @@ function tlExport() {
     link.download = (tl.name || 'tierlist').replace(/[^a-z0-9]/gi, '_') + '.png';
     link.href = canvas.toDataURL('image/png');
     link.click();
+  });
+}
+
+// ── Export des images d'un template (téléchargement individuel de chaque image) ──
+function tlExportImages() {
+  const tl = tlActiveTierlist();
+  if (!tl || !tl.isTemplate) return;
+  const images = (tl.images || []).filter(img => (img.type || 'image') !== 'text' && img.src);
+  if (images.length === 0) { alert('Aucune image à exporter.'); return; }
+  const zip = new JSZip();
+  const usedNames = new Set();
+  images.forEach((img, i) => {
+    let base = (img.name || `image_${i + 1}`).replace(/[^a-z0-9_-]/gi, '_') || `image_${i + 1}`;
+    let name = base;
+    let n = 2;
+    while (usedNames.has(name)) { name = `${base}_${n++}`; }
+    usedNames.add(name);
+    const base64 = img.src.split(',')[1] || '';
+    zip.file(name + '.jpg', base64, { base64: true });
+  });
+  zip.generateAsync({ type: 'blob' }).then(blob => {
+    const link = document.createElement('a');
+    link.download = (tl.name || 'images').replace(/[^a-z0-9]/gi, '_') + '.zip';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   });
 }
 
@@ -9028,6 +9084,7 @@ function tlRenderTrashList() {
 
 tlBtnExport.addEventListener('click', tlExport);
 tlBtnCapture.addEventListener('click', tlCapture);
+document.getElementById('tl-btn-export-images')?.addEventListener('click', tlExportImages);
 
 tlShowLabelsToggle.addEventListener('click', () => {
   const tl = tlActiveTierlist();
@@ -9038,11 +9095,30 @@ tlShowLabelsToggle.addEventListener('click', () => {
   tlRender();
 });
 
+if (tlUnplacedShowLabelsToggle) {
+  tlUnplacedShowLabelsToggle.addEventListener('click', () => {
+    const tl = tlActiveTierlist();
+    const currentlyShown = _tlLocalUnplacedShowLabels !== null ? _tlLocalUnplacedShowLabels : !!(tl && tl.showLabels);
+    _tlLocalUnplacedShowLabels = !currentlyShown;
+    _tlUpdateUnplacedShowLabelsBtn(_tlLocalUnplacedShowLabels);
+    saveUserPrefs({ tlUnplacedShowLabels: _tlLocalUnplacedShowLabels });
+    tlRender();
+  });
+}
+
 tlImgSizeSlider.addEventListener('input', () => {
   _tlLocalImgSize = parseInt(tlImgSizeSlider.value);
   saveUserPrefs({ tlImgSize: _tlLocalImgSize });
   tlRender();
 });
+
+if (tlUnplacedImgSizeSlider) {
+  tlUnplacedImgSizeSlider.addEventListener('input', () => {
+    _tlLocalUnplacedImgSize = parseInt(tlUnplacedImgSizeSlider.value);
+    saveUserPrefs({ tlUnplacedImgSize: _tlLocalUnplacedImgSize });
+    tlRender();
+  });
+}
 
 const tlCompareImgSizeSlider = document.getElementById('tl-compare-img-size-slider');
 if (tlCompareImgSizeSlider) {
@@ -9150,21 +9226,24 @@ tlUnplacedSortBtn.addEventListener('click', () => {
   addItem('arrow-down-0-1', 'Date d\'ajout', false, () => applySort('date'));
 });
 
-// ── Déplier/replier la zone Éléments non placés (préférence d'affichage locale) ──
-const tlUnplacedExpandBtn = document.getElementById('tl-unplaced-expand-btn');
-let _tlUnplacedExpanded = false;
-function _tlApplyUnplacedExpanded() {
-  const section = document.querySelector('.tl-unplaced-section');
-  if (section) section.classList.toggle('tl-unplaced-expanded', _tlUnplacedExpanded);
-  tlUnplacedExpandBtn.classList.toggle('tl-unplaced-expand-btn--active', _tlUnplacedExpanded);
-  tlUnplacedExpandBtn.title = _tlUnplacedExpanded ? 'Replier la zone Éléments non placés' : 'Déplier la zone Éléments non placés';
-  const label = document.getElementById('tl-unplaced-expand-label');
-  if (label) label.textContent = _tlUnplacedExpanded ? 'Replier' : 'Déplier';
+// ── Afficher/masquer le cadre "Éléments non placés" (tierlist normale uniquement) ──
+const tlBtnToggleUnplaced = document.getElementById('tl-btn-toggle-unplaced');
+function _tlUpdateToggleUnplacedBtn() {
+  if (!tlBtnToggleUnplaced) return;
+  tlBtnToggleUnplaced.innerHTML = _tlLocalUnplacedHidden
+    ? '<i data-lucide="panel-right-open"></i> Afficher éléments non placés'
+    : '<i data-lucide="panel-right-close"></i> Masquer éléments non placés';
+  tlBtnToggleUnplaced.title = _tlLocalUnplacedHidden ? 'Afficher le cadre Éléments non placés' : 'Masquer le cadre Éléments non placés';
+  if (window.lucide) lucide.createIcons();
 }
-tlUnplacedExpandBtn.addEventListener('click', () => {
-  _tlUnplacedExpanded = !_tlUnplacedExpanded;
-  _tlApplyUnplacedExpanded();
-});
+if (tlBtnToggleUnplaced) {
+  tlBtnToggleUnplaced.addEventListener('click', () => {
+    _tlLocalUnplacedHidden = !_tlLocalUnplacedHidden;
+    saveUserPrefs({ tlUnplacedHidden: _tlLocalUnplacedHidden });
+    tlEditorBody.classList.toggle('tl-unplaced-hidden', _tlLocalUnplacedHidden);
+    _tlUpdateToggleUnplacedBtn();
+  });
+}
 
 // ── Ajout d'images / texte (barre du header non placés) ───────────────────────
 tlBtnAddImage.addEventListener('click', () => _tlShowImportMenu(tlBtnAddImage));

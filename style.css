@@ -273,6 +273,21 @@ body {
    sans sa propre bordure (celle de .ctrl-row-line1 fait déjà office de séparateur). */
 .ctrl-row-line1 { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
 .ctrl-row-line1 .ctrl-row-grids { border-bottom: none; padding-bottom: 0; flex: 1; min-width: 0; }
+.ctrl-row-line1 .tl-btn-toggle-unplaced { flex-shrink: 0; margin-left: auto; }
+
+.tl-btn-toggle-unplaced {
+  font-size: 0.82rem;
+  padding: 5px 12px;
+  background: var(--surface-2) !important;
+  color: var(--text-muted) !important;
+  border: 1px solid var(--border) !important;
+}
+.tl-btn-toggle-unplaced:hover {
+  border-color: var(--accent-dim) !important;
+  color: var(--accent) !important;
+  background: var(--accent-glow) !important;
+  opacity: 1;
+}
 
 /* Groupe central (réglages taille → Capture) centré entre Dossiers et Cases */
 .ctrl-row-toolbar-center {
@@ -2624,21 +2639,27 @@ body.solo-tierlist-mode .tl-layout {
   flex: 1;
   min-height: 0;
 }
-/* Empilé (tierlist normale, pas template) : la zone des tiers remplit tout l'espace vertical
-   restant (flex:1, jusqu'au bas réel de la page — plus de vide selon la hauteur d'écran),
-   "Éléments non placés" reste un bandeau compact de hauteur fixe tout en bas. */
+/* Tierlist normale (pas template) : côte à côte en permanence, tiers 60% / non placés 40%. */
+.tl-editor-body:not(.tl-editor-body--template) {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 16px;
+}
 .tl-editor-body:not(.tl-editor-body--template) .tl-tiers-zone {
-  flex: 1;
+  flex: 6;
   height: auto;
-  min-height: 0;
+  min-width: 0;
 }
 .tl-editor-body:not(.tl-editor-body--template) .tl-unplaced-section {
-  height: 285px;
-  flex-shrink: 0;
+  flex: 4;
+  min-width: 0;
+  height: auto;
 }
-.tl-editor-body:not(.tl-editor-body--template) .tl-unplaced-section.tl-unplaced-expanded {
-  height: 445px;
-}
+
+/* Bouton "Masquer/Afficher éléments non placés" (tierlist normale uniquement) : le cadre tiers
+   reprend toute la largeur quand le cadre non placés est masqué. */
+.tl-editor-body.tl-unplaced-hidden .tl-unplaced-section { display: none; }
+.tl-editor-body.tl-unplaced-hidden .tl-tiers-zone { flex: 1; }
 
 /* Template : ni image ni placement possible dans les tiers — panneau Tiers (labels seuls,
    largeur réduite) et panneau Éléments non placés affichés côte à côte plutôt qu'empilés. */
@@ -3002,6 +3023,7 @@ body.solo-tierlist-mode .tl-layout {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* ── Corps de la zone non placée : "À placer" fixe à gauche + liste scrollable à droite ── */

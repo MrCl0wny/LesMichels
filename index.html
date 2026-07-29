@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=168" />
+  <link rel="stylesheet" href="style.css?v=171" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -18,6 +18,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <!-- Lucide (icônes) -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- JSZip (export "Exporter images" en .zip) -->
+  <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 <body>
 
@@ -80,6 +82,7 @@
               <button class="tl-toolbar-btn tl-btn-open-window" id="tl-btn-open-window" title="Ouvrir cette tier list en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
               <button class="btn-ce-set" id="tl-btn-ce-set" title="Définir cette tier list comme soirée en cours"><i data-lucide="party-popper"></i> Définir comme soirée en cours</button>
             </div>
+            <button class="tl-toolbar-btn tl-btn-toggle-unplaced" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="panel-right-close"></i> Masquer éléments non placés</button>
           </div>
 
           <!-- Ligne 2 : réglages centrés -->
@@ -181,7 +184,12 @@
                     <i data-lucide="a-large-small"></i>
                     <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Ajouter un texte..." title="Taper un texte puis Entrée pour ajouter une carte" />
                   </span>
-                  <button type="button" id="tl-unplaced-expand-btn" class="tl-unplaced-expand-btn" title="Déplier la zone Éléments non placés"><i data-lucide="chevrons-up-down"></i> <span id="tl-unplaced-expand-label">Déplier</span></button>
+                  <button type="button" id="tl-unplaced-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image du cadre Éléments non placés">Afficher noms</button>
+                  <label class="tl-toggle-label" title="Régler la taille des images du cadre Éléments non placés (48–180 px)">
+                    <span>Taille</span>
+                    <input type="range" id="tl-unplaced-img-size-slider" min="48" max="180" value="80" class="tl-slider" />
+                  </label>
+                  <button type="button" id="tl-btn-export-images" class="tl-toolbar-btn tl-btn-export hidden" title="Exporter toutes les images du template (fichier .zip)"><i data-lucide="images"></i> Exporter images</button>
                   <span class="tl-max-images-label">Capacité max :</span>
                   <button type="button" id="tl-max-images-input" class="tl-max-images-input" title="Choisir la capacité maximale du groupe">50</button>
                 </div>
@@ -1045,6 +1053,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=254"></script>
+  <script src="app.js?v=258"></script>
 </body>
 </html>
