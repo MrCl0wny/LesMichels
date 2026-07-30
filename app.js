@@ -818,7 +818,7 @@ function renderCurrentEventButton() {
       const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
       const alreadyHere = onTlPage && _tlLocalActiveTierlistId === ceTl;
       btn.classList.toggle('ce-nav-disabled', alreadyHere);
-      _updateTlCeSetBtn();
+      _updateCeSetHeaderBtn();
       return;
     }
     // TL introuvable ou archivée — nettoyer
@@ -827,9 +827,9 @@ function renderCurrentEventButton() {
   }
 
   const cef = state.currentEventFolderId;
-  if (!cef) { btn.style.display = 'none'; _updateBingoCeSetBtn(); return; }
+  if (!cef) { btn.style.display = 'none'; _updateCeSetHeaderBtn(); return; }
   const folder = findFolderById(state.folders, cef);
-  if (!folder || folder.archived) { btn.style.display = 'none'; _updateBingoCeSetBtn(); return; }
+  if (!folder || folder.archived) { btn.style.display = 'none'; _updateCeSetHeaderBtn(); return; }
   btn.style.display = 'flex';
   if (lbl) {
     const path = getFolderPath(state.folders, cef);
@@ -840,21 +840,24 @@ function renderCurrentEventButton() {
   const onBingoPage = document.getElementById('page-bingo')?.classList.contains('active');
   const alreadyHereBingo = onBingoPage && _localActiveFolderId === cef;
   btn.classList.toggle('ce-nav-disabled', alreadyHereBingo);
-  _updateBingoCeSetBtn();
+  _updateCeSetHeaderBtn();
 }
 
-function _updateBingoCeSetBtn() {
-  const ceSet = document.getElementById('btn-ce-set');
+// Un seul bouton "Définir soirée en cours" dans le header, dont l'état (grisé si la page
+// active est déjà la soirée en cours) dépend de la page affichée — appelé à chaque
+// renderCurrentEventButton(), indépendamment de la branche bingo/tierlist qui a matché.
+function _updateCeSetHeaderBtn() {
+  const ceSet = document.getElementById('btn-ce-set-header');
   if (!ceSet) return;
-  const isCurrentEvent = _localActiveFolderId && state.currentEventFolderId === _localActiveFolderId;
-  ceSet.classList.toggle('ce-set-disabled', !!isCurrentEvent);
-}
-
-function _updateTlCeSetBtn() {
-  const ceSet = document.getElementById('tl-btn-ce-set');
-  if (!ceSet) return;
-  const tl = (typeof tlActiveTierlist === 'function') ? tlActiveTierlist() : null;
-  const isCurrentEvent = tl && state.currentEventTierlistId === tl.id;
+  const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
+  let isCurrentEvent;
+  if (onTlPage) {
+    const tl = (typeof tlActiveTierlist === 'function') ? tlActiveTierlist() : null;
+    const root = tl && typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
+    isCurrentEvent = root && state.currentEventTierlistId === root.id;
+  } else {
+    isCurrentEvent = _localActiveFolderId && state.currentEventFolderId === _localActiveFolderId;
+  }
   ceSet.classList.toggle('ce-set-disabled', !!isCurrentEvent);
 }
 
@@ -900,15 +903,20 @@ function setCurrentEventTierlist(id) {
 let _pendingCurrentEventTierlistId = null;
 
 function confirmSetCurrentEventTierlist(id) {
+  // Une tierlist membre d'un groupe (générée depuis un template) doit toujours définir
+  // le template racine comme soirée en cours, jamais une tierlist individuelle du groupe.
+  const tlRaw = (tlState.tierlists || []).find(t => t.id === id);
+  const root = tlRaw && typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tlRaw) : tlRaw;
+  const targetId = root ? root.id : id;
+
   // Retirer la soirée en cours ne nécessite pas de confirmation, seulement la définir
-  if (state.currentEventTierlistId === id) {
-    setCurrentEventTierlist(id);
+  if (state.currentEventTierlistId === targetId) {
+    setCurrentEventTierlist(targetId);
     return;
   }
-  _pendingCurrentEventTierlistId = id;
-  const tl = (tlState.tierlists || []).find(t => t.id === id);
+  _pendingCurrentEventTierlistId = targetId;
   const msg = document.getElementById('modal-current-event-msg');
-  if (msg) msg.textContent = tl ? `Définir "${tl.name}" comme soirée en cours ?` : 'Définir cette tier list comme soirée en cours ?';
+  if (msg) msg.textContent = root ? `Définir "${root.name}" comme soirée en cours ?` : 'Définir cette tier list comme soirée en cours ?';
   document.getElementById('modal-confirm-current-event').classList.remove('hidden');
 }
 
@@ -1366,7 +1374,6 @@ const btnSizeMinus     = document.getElementById('btn-size-minus');
 const btnSizePlus      = document.getElementById('btn-size-plus');
 const btnGenerate      = document.getElementById('btn-generate');
 const btnReset         = document.getElementById('btn-reset');
-const btnScreenshot    = document.getElementById('btn-screenshot-bingo');
 const gridError        = document.getElementById('grid-error');
 const gridsList        = document.getElementById('grids-list');
 const btnNewGrid       = document.getElementById('btn-new-grid');
@@ -1673,12 +1680,33 @@ function renderAllFolders() {
 // ──────────────────────────────────────────────
 // Rendu : breadcrumb chemin complet dans ctrl-row-grids
 // ──────────────────────────────────────────────
+// Réduit la taille de police d'un élément par pas de 0.05rem tant que son contenu déborde
+// de sa largeur disponible, au lieu de tronquer avec une ellipsis.
+function _shrinkToFit(el, baseFontRem, minFontRem = 0.35) {
+  if (!el) return;
+  let size = baseFontRem;
+  el.style.fontSize = size + 'rem';
+  while (el.scrollWidth > el.clientWidth + 1 && size > minFontRem) {
+    size -= 0.05;
+    el.style.fontSize = size + 'rem';
+  }
+}
+
+const GRIDS_BREADCRUMB_BASE_REM = 0.82;
+const BINGO_FULLSCREEN_BREADCRUMB_BASE_REM = 1.64;
+
 function renderGridsBreadcrumb() {
   const container = document.getElementById('grids-breadcrumb');
-  if (!container) return;
-  container.innerHTML = '';
+  const fsContainer = document.getElementById('bingo-fullscreen-breadcrumb');
+  if (container) { container.innerHTML = ''; container.style.fontSize = ''; }
+  if (fsContainer) { fsContainer.textContent = ''; fsContainer.style.fontSize = ''; }
   if (!_localActiveFolderId) return;
   const path = getFolderPath(state.folders, _localActiveFolderId);
+  if (fsContainer) {
+    fsContainer.textContent = path.map(f => f.name).join(' › ');
+    _shrinkToFit(fsContainer, BINGO_FULLSCREEN_BREADCRUMB_BASE_REM);
+  }
+  if (!container) return;
   path.forEach((f, i) => {
     if (i > 0) {
       const sep = document.createElement('span');
@@ -1691,6 +1719,7 @@ function renderGridsBreadcrumb() {
     span.textContent = f.name;
     container.appendChild(span);
   });
+  _shrinkToFit(container, GRIDS_BREADCRUMB_BASE_REM);
 }
 
 function toggleGridSelection(gridId) {
@@ -2389,7 +2418,7 @@ function duplicateGrid(id) {
 
 function renderGridsList() {
   renderGridsBreadcrumb();
-  _updateBingoCeSetBtn();
+  _updateCeSetHeaderBtn();
   gridsList.innerHTML = '';
   const s = activeSubtheme();
   if (!s) return;
@@ -2580,16 +2609,21 @@ function generateOneGrid(t, g, fillOnlyEmpty = false) {
 }
 
 function changeSize(delta) {
-  const g = activeGrid();
-  if (!g) return;
-  const newSize = g.gridSize + delta;
+  const t = activeTheme();
+  if (!t || t.locked) return;
+  const grids = getVisibleGrids();
+  if (grids.length === 0) return;
+  // Redimensionner toutes les grilles affichées ensemble, à partir de la taille de la première
+  const newSize = grids[0].gridSize + delta;
   if (newSize < MIN_SIZE || newSize > MAX_SIZE) return;
 
-  g.gridSize = newSize;
-  // S'assurer que le tableau est toujours de taille MAX_SIZE² — on ne tronque jamais
-  while (g.grid.length < MAX_SIZE * MAX_SIZE) {
-    g.grid.push({ elementId: null, checked: false, color: null });
-  }
+  grids.forEach(g => {
+    g.gridSize = newSize;
+    // S'assurer que le tableau est toujours de taille MAX_SIZE² — on ne tronque jamais
+    while (g.grid.length < MAX_SIZE * MAX_SIZE) {
+      g.grid.push({ elementId: null, checked: false, color: null });
+    }
+  });
 
   saveState();
   renderGrid();
@@ -2630,6 +2664,11 @@ function getCellFontSize(text, scale) {
   return (base * scale).toFixed(2) + 'rem';
 }
 
+// Le nom de grille est toujours affiché à l'échelle 200%, indépendamment du curseur "Taille"
+function getGridTitleFontSize() {
+  return (0.78 * 2).toFixed(2) + 'rem';
+}
+
 // Mode placement manuel supprimé
 const manualMode = false;
 
@@ -2651,13 +2690,6 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   wrapper.className = 'grid-view-wrapper';
   wrapper.dataset.gridId = g.id;
 
-  // Afficher le chemin du dossier actif
-  const _activeFolderPath = getFolderPath(state.folders, _localActiveFolderId);
-  const themeSubthemeRow = document.createElement('div');
-  themeSubthemeRow.className = 'grid-view-theme-subtheme-row';
-  themeSubthemeRow.textContent = _activeFolderPath.map(f => f.name).join(' › ') || t.name;
-  wrapper.appendChild(themeSubthemeRow);
-
   // Titre de grille éditable (synchronisé avec le nom de l'onglet)
   const titleRow = document.createElement('div');
   titleRow.className = 'grid-view-title-row';
@@ -2668,7 +2700,13 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   titleInput.value = g.title || g.name;
   titleInput.maxLength = 60;
   titleInput.title = 'Renommer la grille';
+  titleInput.style.fontSize = getGridTitleFontSize();
+  const _syncTitleInputSize = () => {
+    titleInput.size = Math.max(1, (titleInput.value || titleInput.placeholder || '').length);
+  };
+  _syncTitleInputSize();
   titleInput.addEventListener('input', () => {
+    _syncTitleInputSize();
     const sNow = activeSubtheme();
     if (!sNow) return;
     const gNow = sNow.grids.find(x => x.id === g.id);
@@ -2691,55 +2729,10 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     renderGridsList();
   });
   titleRow.appendChild(titleInput);
-  wrapper.appendChild(titleRow);
 
-  // Contrôles par grille (ordre : Taille | Bloquer | Générer | Capture)
-  const subCtrl = document.createElement('div');
-  subCtrl.className = 'subgrid-controls';
-  subCtrl.title = '';
-
-  // Contrôle de taille propre à cette grille
-  const sizeCtrl = document.createElement('div');
-  sizeCtrl.className = 'subgrid-size-control';
-  const btnSzMinus = document.createElement('button');
-  btnSzMinus.className = 'size-btn size-btn-sm';
-  btnSzMinus.textContent = '−';
-  btnSzMinus.title = 'Réduire la grille';
-  const szDisplay = document.createElement('span');
-  szDisplay.className = 'subgrid-size-display';
-  szDisplay.textContent = `${g.gridSize}×${g.gridSize}`;
-  szDisplay.title = '';
-  const btnSzPlus = document.createElement('button');
-  btnSzPlus.className = 'size-btn size-btn-sm';
-  btnSzPlus.textContent = '+';
-  btnSzPlus.title = 'Agrandir la grille';
-
-  const doResize = (delta) => {
-    const tNow = activeTheme();
-    const sNow = activeSubtheme();
-    if (!tNow || !sNow) return;
-    const gNow = sNow.grids.find(x => x.id === g.id);
-    if (!gNow) return;
-    const newSize = gNow.gridSize + delta;
-    if (newSize < MIN_SIZE || newSize > MAX_SIZE) return;
-    gNow.gridSize = newSize;
-    const maxCells = MAX_SIZE * MAX_SIZE;
-    // On s'assure que le tableau a toujours MAX_SIZE² cases pour pouvoir restaurer
-    // les cases lors d'un ré-agrandissement — on ne tronque jamais
-    while (gNow.grid.length < maxCells) gNow.grid.push({ elementId: null, checked: false });
-    saveState();
-    renderGrid();
-  };
-
+  // Contrôles par grille (ordre : Bloquer | Générer | Vider | Capture), à côté du nom
   const globalLocked = !!t.locked;
   const gridLocked = g.locked || globalLocked;
-
-  btnSzMinus.addEventListener('click', () => doResize(-1));
-  btnSzPlus.addEventListener('click', () => doResize(+1));
-  sizeCtrl.appendChild(btnSzMinus);
-  sizeCtrl.appendChild(szDisplay);
-  sizeCtrl.appendChild(btnSzPlus);
-  subCtrl.appendChild(sizeCtrl);
 
   const lblLock = document.createElement('button');
   lblLock.type = 'button';
@@ -2764,42 +2757,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const activeElemCount = (sActive && sActive.elements ? sActive.elements : []).filter(e => !sArchivedIds.includes(e.id)).length;
   const cellCount = g.gridSize * g.gridSize;
   const enoughForThis = activeElemCount >= cellCount;
-  const genDisabled = gridLocked || !enoughForThis;
 
-  const btnSubGen = document.createElement('button');
-  btnSubGen.className = 'btn-action btn-subgrid btn-subgrid-gen' + (genDisabled ? ' btn-disabled' : '');
-  btnSubGen.disabled = genDisabled;
-  btnSubGen.innerHTML = '<i data-lucide="dices"></i>';
-  btnSubGen.title = genDisabled && !gridLocked
-    ? `Pas assez d'éléments (${activeElemCount}/${cellCount})`
-    : 'Générer aléatoirement la grille (ou remplir les cases vides si cochée l\'option)';
-  btnSubGen.addEventListener('click', () => {
-    const tNow = activeTheme();
-    const sNow = activeSubtheme();
-    if (!tNow || tNow.locked || !sNow) return;
-    const gNow = sNow.grids.find(x => x.id === g.id);
-    if (!gNow || gNow.locked) return;
-    const ok = generateOneGrid(tNow, gNow, false);
-    if (!ok) {
-      const n = gNow.gridSize;
-      const cellCount = n * n;
-      gridError.innerHTML = `<i data-lucide="triangle-alert"></i> Pas assez d'éléments actifs pour générer une grille ${n}×${n}.`;
-      if (window.lucide) lucide.createIcons();
-      gridError.classList.remove('hidden');
-      return;
-    }
-    gridError.classList.add('hidden');
-    saveState();
-    renderGrid();
-  });
-
-  // Bouton "Générer cases vides" par grille
-  const btnSubFillEmpty = document.createElement('button');
-  btnSubFillEmpty.className = 'btn-action btn-subgrid btn-subgrid-fill-empty';
-  btnSubFillEmpty.innerHTML = '<i data-lucide="dice-1"></i>';
-  btnSubFillEmpty.title = 'Générer aléatoirement seulement les cases vides';
-
-  // Vérifier si on peut remplir les cases vides
   const canFillEmpty = (() => {
     const usedIds = new Set();
     for (let i = 0; i < cellCount; i++) {
@@ -2813,49 +2771,16 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     return !gridLocked && emptyCount > 0 && availableCount >= emptyCount;
   })();
 
-  btnSubFillEmpty.disabled = !canFillEmpty;
-  if (!canFillEmpty) btnSubFillEmpty.classList.add('btn-disabled');
+  const genDisabled = gridLocked || (!enoughForThis && !canFillEmpty);
 
-  btnSubFillEmpty.addEventListener('click', () => {
-    const tNow = activeTheme();
-    const sNow = activeSubtheme();
-    if (!tNow || tNow.locked || !sNow) return;
-    const gNow = sNow.grids.find(x => x.id === g.id);
-    if (!gNow || gNow.locked) return;
-    const ok = generateOneGrid(tNow, gNow, true);
-    if (!ok) {
-      const n = gNow.gridSize;
-      const cellCount = n * n;
-      const usedIds = new Set();
-      const deletedIds = new Set();
-
-      for (let i = 0; i < cellCount; i++) {
-        if (gNow.grid[i] && gNow.grid[i].elementId) {
-          const elemExists = (sNow.elements || []).some(el => el.id === gNow.grid[i].elementId);
-          if (elemExists) {
-            usedIds.add(gNow.grid[i].elementId);
-          } else {
-            deletedIds.add(gNow.grid[i].elementId);
-          }
-        }
-      }
-      const emptyCount = gNow.grid.slice(0, cellCount).filter(c => !c || !c.elementId).length;
-      const sNowArchivedIds = (sNow && sNow.archivedElementIds) ? sNow.archivedElementIds : [];
-      const activeElemCount = (sNow.elements || []).filter(e => !sNowArchivedIds.includes(e.id)).length;
-      const availableCount = activeElemCount - usedIds.size;
-      let msg = `<i data-lucide="triangle-alert"></i> Impossible de remplir. Cases vides : ${emptyCount}, éléments disponibles : ${availableCount}.`;
-      if (deletedIds.size > 0) {
-        msg += ` (${deletedIds.size} éléments sur la grille ont été supprimés)`;
-      }
-      gridError.innerHTML = msg;
-      if (window.lucide) lucide.createIcons();
-      gridError.classList.remove('hidden');
-      return;
-    }
-    gridError.classList.add('hidden');
-    saveState();
-    renderGrid();
-  });
+  const btnSubGen = document.createElement('button');
+  btnSubGen.className = 'btn-action btn-subgrid btn-subgrid-gen' + (genDisabled ? ' btn-disabled' : '');
+  btnSubGen.disabled = genDisabled;
+  btnSubGen.innerHTML = '<i data-lucide="dices"></i>';
+  btnSubGen.title = genDisabled && !gridLocked
+    ? `Pas assez d'éléments (${activeElemCount}/${cellCount})`
+    : 'Générer aléatoirement cette grille';
+  btnSubGen.addEventListener('click', () => openGenerateChoiceModal(g.id));
 
   const btnSubClear = document.createElement('button');
   btnSubClear.className = 'btn-action btn-subgrid btn-subgrid-clear' + (gridLocked ? ' btn-disabled' : '');
@@ -2881,24 +2806,22 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     renderElements();
   });
 
-  // Cadre discret autour de Bloquer + Générer
+  // Cadre discret autour de Bloquer + Générer + Vider
   const lockGenGroup = document.createElement('div');
   lockGenGroup.className = 'subgrid-lock-gen-group';
   lockGenGroup.appendChild(lblLock);
   lockGenGroup.appendChild(btnSubGen);
-  lockGenGroup.appendChild(btnSubFillEmpty);
   lockGenGroup.appendChild(btnSubClear);
-  subCtrl.appendChild(lockGenGroup);
-
+  titleRow.appendChild(lockGenGroup);
 
   const btnSubCapture = document.createElement('button');
-  btnSubCapture.className = 'btn-action btn-screenshot-bingo btn-subgrid';
+  btnSubCapture.className = 'btn-action btn-screenshot-bingo btn-subgrid grid-view-title-capture';
   btnSubCapture.innerHTML = '<i data-lucide="camera"></i>';
   btnSubCapture.title = 'Copier la grille dans le presse-papier';
   btnSubCapture.addEventListener('click', () => bingoScreenshotOne(g.id));
-  subCtrl.appendChild(btnSubCapture);
+  titleRow.appendChild(btnSubCapture);
 
-  wrapper.appendChild(subCtrl);
+  wrapper.appendChild(titleRow);
 
   const gridEl = document.createElement('div');
   gridEl.className = 'bingo-grid';
@@ -3067,7 +2990,6 @@ function renderGrid() {
   const g = activeGrid();
 
   updateClearGridsButton();
-  updateFillEmptyButtonState();
   updateOpenGridsWindowButton();
   updateResetButton();
   gridWrapper.innerHTML = '';
@@ -3087,6 +3009,8 @@ function renderGrid() {
     btn.addEventListener('click', () => openNewFolderModal(null));
     gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
+    btnSizeMinus.disabled = true;
+    btnSizePlus.disabled = true;
     bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
@@ -3105,6 +3029,8 @@ function renderGrid() {
     btn.addEventListener('click', () => openNewFolderModal(_localActiveFolderId || null));
     gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
+    btnSizeMinus.disabled = true;
+    btnSizePlus.disabled = true;
     bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
@@ -3129,6 +3055,8 @@ function renderGrid() {
     gridWrapper.appendChild(btnFolder);
     gridWrapper.appendChild(btn);
     sizeDisplay.textContent = '—';
+    btnSizeMinus.disabled = true;
+    btnSizePlus.disabled = true;
     bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
@@ -3141,6 +3069,8 @@ function renderGrid() {
   // Synchroniser l'icône verrou avec l'état du thème
   const locked = !!t.locked;
   _setLockGenerateChecked(locked);
+  btnSizeMinus.disabled = locked || n <= MIN_SIZE;
+  btnSizePlus.disabled = locked || n >= MAX_SIZE;
 
   const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
   const activeCount = (s.elements || []).filter(e => !sArchivedIds.includes(e.id)).length;
@@ -3158,8 +3088,9 @@ function renderGrid() {
     return;
   }
 
-  btnGenerate.disabled = !enoughElements || locked;
-  btnGenerate.classList.toggle('btn-disabled', !enoughElements || locked);
+  const canGenerate = !locked && (enoughElements || canFillEmptyCellsVisibleGrids());
+  btnGenerate.disabled = !canGenerate;
+  btnGenerate.classList.toggle('btn-disabled', !canGenerate);
 
   gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}`;
 
@@ -3272,7 +3203,13 @@ function _adjustBingoGridSizes() {
   });
 }
 
-window.addEventListener('resize', () => { if (document.getElementById('page-bingo').classList.contains('active')) _adjustBingoGridSizes(); });
+window.addEventListener('resize', () => {
+  if (document.getElementById('page-bingo').classList.contains('active')) _adjustBingoGridSizes();
+  if (document.body.classList.contains('solo-grid-mode')) {
+    const fsContainer = document.getElementById('bingo-fullscreen-breadcrumb');
+    if (fsContainer) _shrinkToFit(fsContainer, BINGO_FULLSCREEN_BREADCRUMB_BASE_REM);
+  }
+});
 
 // ──────────────────────────────────────────────
 // Détection des bingos
@@ -4174,14 +4111,50 @@ document.getElementById('btn-open-grids-window').addEventListener('click', () =>
   // recalculer une fois que le nouveau layout est peint, sinon les grilles gardent
   // la taille calculée pour l'affichage normal jusqu'à la prochaine interaction.
   requestAnimationFrame(_adjustBingoGridSizes);
+  // Le breadcrumb plein écran était display:none (clientWidth=0) au dernier rendu —
+  // recalculer sa taille de police une fois qu'il est réellement visible et mesurable.
+  requestAnimationFrame(() => {
+    const fsContainer = document.getElementById('bingo-fullscreen-breadcrumb');
+    if (fsContainer) _shrinkToFit(fsContainer, BINGO_FULLSCREEN_BREADCRUMB_BASE_REM);
+  });
 });
 document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
   document.body.classList.remove('solo-grid-mode');
   document.title = 'LesMichels';
   requestAnimationFrame(_adjustBingoGridSizes);
 });
+// Modale de choix "Capture" (plein écran) : toutes les grilles affichées ou une grille précise
+const modalCaptureChoice = document.getElementById('modal-capture-choice');
+const captureChoiceActions = document.getElementById('capture-choice-actions');
+function openCaptureChoiceModal() {
+  const grids = getVisibleGrids();
+  captureChoiceActions.querySelectorAll('.btn-capture-choice-grid').forEach(btn => btn.remove());
+  const btnCancel = document.getElementById('btn-cancel-capture-choice');
+  grids.forEach(g => {
+    const btn = document.createElement('button');
+    btn.className = 'btn-action btn-secondary btn-capture-choice-grid';
+    btn.innerHTML = `<i data-lucide="camera"></i> ${g.title || g.name}`;
+    btn.addEventListener('click', () => {
+      closeCaptureChoiceModal();
+      bingoScreenshotOne(g.id);
+    });
+    captureChoiceActions.insertBefore(btn, btnCancel);
+  });
+  if (window.lucide) lucide.createIcons();
+  modalCaptureChoice.classList.remove('hidden');
+}
+function closeCaptureChoiceModal() {
+  modalCaptureChoice.classList.add('hidden');
+}
+document.getElementById('btn-screenshot-bingo-global')?.addEventListener('click', openCaptureChoiceModal);
+document.getElementById('btn-capture-choice-all').addEventListener('click', () => {
+  closeCaptureChoiceModal();
+  bingoScreenshot();
+});
+document.getElementById('btn-cancel-capture-choice').addEventListener('click', closeCaptureChoiceModal);
+document.getElementById('btn-close-capture-choice').addEventListener('click', closeCaptureChoiceModal);
 
-btnGenerate.addEventListener('click', () => {
+function generateAllVisibleGrids() {
   if (manualMode) return;
   const t = activeTheme();
   const s = activeSubtheme();
@@ -4203,11 +4176,9 @@ btnGenerate.addEventListener('click', () => {
   grids.forEach(gx => generateOneGrid(t, gx, false));
   saveState();
   renderGrid();
-});
+}
 
-// Bouton "Générer cases vides"
-const btnGenerateFillEmpty = document.getElementById('btn-generate-fill-empty');
-btnGenerateFillEmpty.addEventListener('click', () => {
+function generateEmptyCellsVisibleGrids() {
   if (manualMode) return;
   const t = activeTheme();
   const s = activeSubtheme();
@@ -4219,31 +4190,84 @@ btnGenerateFillEmpty.addEventListener('click', () => {
   grids.forEach(gx => generateOneGrid(t, gx, true));
   saveState();
   renderGrid();
-});
+}
 
-// Fonction pour mettre à jour l'état du bouton "Générer cases vides"
-function updateFillEmptyButtonState() {
+function generateSingleGrid(gridId, emptyOnly) {
+  if (manualMode) return;
+  const tNow = activeTheme();
+  const sNow = activeSubtheme();
+  if (!tNow || tNow.locked || !sNow) return;
+  const gNow = sNow.grids.find(x => x.id === gridId);
+  if (!gNow || gNow.locked) return;
+  const ok = generateOneGrid(tNow, gNow, emptyOnly);
+  if (!ok) {
+    const n = gNow.gridSize;
+    const cellCount = n * n;
+    const usedIds = new Set();
+    const deletedIds = new Set();
+    for (let i = 0; i < cellCount; i++) {
+      if (gNow.grid[i] && gNow.grid[i].elementId) {
+        const elemExists = (sNow.elements || []).some(el => el.id === gNow.grid[i].elementId);
+        if (elemExists) usedIds.add(gNow.grid[i].elementId);
+        else deletedIds.add(gNow.grid[i].elementId);
+      }
+    }
+    const sArchivedIds = (sNow && sNow.archivedElementIds) ? sNow.archivedElementIds : [];
+    const activeElemCount = (sNow.elements || []).filter(e => !sArchivedIds.includes(e.id)).length;
+    let msg;
+    if (emptyOnly) {
+      const emptyCount = gNow.grid.slice(0, cellCount).filter(c => !c || !c.elementId).length;
+      const availableCount = activeElemCount - usedIds.size;
+      msg = `<i data-lucide="triangle-alert"></i> Impossible de remplir. Cases vides : ${emptyCount}, éléments disponibles : ${availableCount}.`;
+      if (deletedIds.size > 0) msg += ` (${deletedIds.size} éléments sur la grille ont été supprimés)`;
+    } else {
+      msg = `<i data-lucide="triangle-alert"></i> Pas assez d'éléments actifs pour générer une grille ${n}×${n}.`;
+    }
+    gridError.innerHTML = msg;
+    if (window.lucide) lucide.createIcons();
+    gridError.classList.remove('hidden');
+    return;
+  }
+  gridError.classList.add('hidden');
+  saveState();
+  renderGrid();
+}
+
+// Modale de choix "Générer" (globale ou par grille) : toutes les cases ou seulement les vides
+const modalGenerateChoice = document.getElementById('modal-generate-choice');
+let _generateChoiceTargetGridId = null; // null = grilles affichées (global), sinon id d'une grille précise
+function openGenerateChoiceModal(gridId) {
+  _generateChoiceTargetGridId = gridId || null;
+  modalGenerateChoice.classList.remove('hidden');
+}
+function closeGenerateChoiceModal() {
+  modalGenerateChoice.classList.add('hidden');
+}
+btnGenerate.addEventListener('click', () => openGenerateChoiceModal(null));
+document.getElementById('btn-generate-choice-all').addEventListener('click', () => {
+  const targetGridId = _generateChoiceTargetGridId;
+  closeGenerateChoiceModal();
+  if (targetGridId) generateSingleGrid(targetGridId, false);
+  else generateAllVisibleGrids();
+});
+document.getElementById('btn-generate-choice-empty').addEventListener('click', () => {
+  const targetGridId = _generateChoiceTargetGridId;
+  closeGenerateChoiceModal();
+  if (targetGridId) generateSingleGrid(targetGridId, true);
+  else generateEmptyCellsVisibleGrids();
+});
+document.getElementById('btn-cancel-generate-choice').addEventListener('click', closeGenerateChoiceModal);
+document.getElementById('btn-close-generate-choice').addEventListener('click', closeGenerateChoiceModal);
+
+// Indique si au moins une grille affichée peut être remplie via "cases vides"
+function canFillEmptyCellsVisibleGrids() {
   const t = activeTheme();
   const s = activeSubtheme();
-  const btn = document.getElementById('btn-generate-fill-empty');
-  if (!btn) return;
-
-  if (!t || t.locked || !s) {
-    btn.disabled = true;
-    btn.classList.add('btn-disabled');
-    return;
-  }
+  if (!t || t.locked || !s) return false;
 
   const grids = getVisibleGrids();
-  if (grids.length === 0) {
-    btn.disabled = true;
-    btn.classList.add('btn-disabled');
-    return;
-  }
+  if (grids.length === 0) return false;
 
-  let canFillEmpty = false;
-
-  // Vérifier si on peut remplir au moins une grille avec la méthode "cases vides"
   const sArchivedIds = (s && s.archivedElementIds) ? s.archivedElementIds : [];
   const activeElem = (s.elements || []).filter(e => !sArchivedIds.includes(e.id));
   for (const g of grids) {
@@ -4262,14 +4286,9 @@ function updateFillEmptyButtonState() {
     }
 
     const availableCount = activeElem.length - usedIds.size;
-    if (availableCount >= emptyCount) {
-      canFillEmpty = true;
-      break;
-    }
+    if (availableCount >= emptyCount) return true;
   }
-
-  btn.disabled = !canFillEmpty;
-  btn.classList.toggle('btn-disabled', !canFillEmpty);
+  return false;
 }
 
 
@@ -4416,8 +4435,6 @@ document.getElementById('btn-confirm-current-event').addEventListener('click', (
 document.getElementById('btn-cancel-current-event').addEventListener('click', closeConfirmCurrentEventModal);
 document.getElementById('btn-close-confirm-current-event').addEventListener('click', closeConfirmCurrentEventModal);
 
-btnScreenshot.addEventListener('click', bingoScreenshot);
-
 // Modal nouvelle grille
 const modalNewGrid       = document.getElementById('modal-new-grid');
 const newGridNameInput   = document.getElementById('new-grid-name-input');
@@ -4498,17 +4515,24 @@ if (_btnCeNavigate) {
     }
   });
 }
-const _btnCeSet = document.getElementById('btn-ce-set');
-if (_btnCeSet) {
-  _btnCeSet.addEventListener('click', () => {
-    if (_localActiveFolderId) confirmSetCurrentEventFolder(_localActiveFolderId);
+const _btnCeSetHeader = document.getElementById('btn-ce-set-header');
+if (_btnCeSetHeader) {
+  _btnCeSetHeader.addEventListener('click', () => {
+    const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
+    if (onTlPage) {
+      const tl = typeof tlActiveTierlist === 'function' ? tlActiveTierlist() : null;
+      if (tl) confirmSetCurrentEventTierlist(tl.id);
+    } else if (_localActiveFolderId) {
+      confirmSetCurrentEventFolder(_localActiveFolderId);
+    }
   });
 }
 
-const _btnDuplicateActiveFolder = document.getElementById('btn-duplicate-active-folder');
-if (_btnDuplicateActiveFolder) {
-  _btnDuplicateActiveFolder.addEventListener('click', () => {
-    if (_localActiveFolderId) openDuplicateFolderModal(_localActiveFolderId);
+const _btnFolderOptions = document.getElementById('btn-folder-options');
+if (_btnFolderOptions) {
+  _btnFolderOptions.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (_localActiveFolderId) openCtxMenuFolder(_localActiveFolderId, null, _btnFolderOptions);
   });
 }
 
@@ -5767,7 +5791,7 @@ function tlRender() {
   tlUpdateUndoBtn();
   tlRenderList();
   renderCurrentEventButton();
-  _updateTlCeSetBtn();
+  _updateCeSetHeaderBtn();
   const tl = tlActiveTierlist();
   if (!tl || tl.archived) {
     tlEditor.classList.add('hidden');
@@ -9054,7 +9078,8 @@ function tlOpenManageModal(id, anchorEl) {
   addItem('copy-plus', 'Dupliquer', false, () => tlCopy(id));
   // Une tierlist rattachée à un template vivant suit toujours le dossier du template — se déplace via lui.
   if (!_tlHasLiveTemplate(tl)) addItem('shelving-unit', 'Ranger dans un dossier', false, () => tlOpenMoveModal(id));
-  const ceIsActive = state.currentEventTierlistId === id;
+  const ceRoot = typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
+  const ceIsActive = state.currentEventTierlistId === (ceRoot ? ceRoot.id : id);
   const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
   addItem('party-popper', ceLabel, false, () => confirmSetCurrentEventTierlist(id));
   if (!tl.isTemplate) {
@@ -9139,14 +9164,6 @@ document.getElementById('tl-btn-open-window').addEventListener('click', () => {
   document.body.classList.add('solo-tierlist-mode');
 });
 document.getElementById('tl-btn-exit-solo')?.addEventListener('click', _exitSoloTierlistMode);
-
-const _tlBtnCeSet = document.getElementById('tl-btn-ce-set');
-if (_tlBtnCeSet) {
-  _tlBtnCeSet.addEventListener('click', () => {
-    const tl = tlActiveTierlist();
-    if (tl) confirmSetCurrentEventTierlist(tl.id);
-  });
-}
 
 document.getElementById('tl-btn-new-from-template').addEventListener('click', () => {
   const tl = tlActiveTierlist();

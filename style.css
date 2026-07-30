@@ -267,6 +267,22 @@ body {
 .ctrl-row-root-folders  { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
 .ctrl-row-folders       { border-bottom: 1px solid var(--border); padding-bottom: 8px; padding-left: 12px; }
 .ctrl-row-grids         { border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+/* 3 zones de largeur égale pour que "Plein écran" soit vraiment centré, quelle que
+   soit la largeur du chemin d'accès ou des boutons de chaque côté. */
+.ctrl-row-grids-left,
+.ctrl-row-grids-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.ctrl-row-grids-center {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.ctrl-row-grids-right { justify-content: flex-end; }
 .ctrl-row-toolbar       { padding-bottom: 4px; }
 
 /* Ligne 1 tier list : Dossiers (toujours visible) + groupe masquable hors template, imbriqué
@@ -299,10 +315,6 @@ body {
   justify-content: center;
 }
 
-/* Dossiers tout à gauche, Cases tout à droite de la ligne 1 */
-.ctrl-row-grids .btn-folders-panel { flex-shrink: 0; order: -1; }
-.ctrl-row-grids .btn-cases-panel { flex-shrink: 0; margin-left: auto; }
-
 /* ── Boutons Dossiers / Cases — même style que Archives/Corbeille ── */
 .btn-folders-panel,
 .btn-cases-panel {
@@ -326,24 +338,26 @@ body {
   align-items: center;
   flex-wrap: nowrap;
   gap: 0;
-  font-size: 0.75rem;
-  flex-shrink: 0;
+  font-size: 0.82rem;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
   border-right: 1px solid var(--border);
   padding-right: 10px;
   margin-right: 4px;
 }
 .grids-breadcrumb:empty { display: none; }
 .grids-breadcrumb-item {
-  color: #ffffff;
+  color: var(--accent);
   font-weight: 500;
   white-space: nowrap;
 }
 .grids-breadcrumb-item.last {
-  color: #ffffff;
+  color: var(--accent);
   font-weight: 700;
 }
 .grids-breadcrumb-sep {
-  color: #ffffff;
+  color: var(--accent);
   flex-shrink: 0;
   padding: 0 3px;
 }
@@ -825,7 +839,8 @@ body {
 
 /* ── Mode "plein écran grille(s)" (overlay interne, plus de popup) ── */
 /* On garde uniquement Grille / Texte / Capture / Quitter */
-.btn-exit-solo-mode { display: none !important; }
+.btn-exit-solo-mode,
+.btn-fullscreen-only { display: none !important; }
 body.solo-grid-mode .header,
 body.solo-grid-mode .ctrl-row-grids,
 body.solo-grid-mode .btn-hide-solo-mode {
@@ -834,14 +849,40 @@ body.solo-grid-mode .btn-hide-solo-mode {
 body.solo-grid-mode .main {
   padding: 8px;
 }
-body.solo-grid-mode .grid-view-theme-subtheme-row {
+/* Plein écran : Taille + Capture à gauche, chemin centré, Quitter à droite — 3 zones
+   flex:1 de largeur égale pour que le chemin central soit vraiment centré et ne
+   chevauche jamais le contenu latéral, quelle que soit sa largeur. */
+body.solo-grid-mode .ctrl-row-toolbar-left {
   display: none;
 }
-body.solo-grid-mode .ctrl-row-toolbar {
-  justify-content: center;
+body.solo-grid-mode .ctrl-row-toolbar-center {
+  flex: 1;
+  justify-content: flex-start;
 }
-body.solo-grid-mode .btn-exit-solo-mode {
+body.solo-grid-mode .bingo-fullscreen-breadcrumb {
+  flex: 1;
+  justify-content: center;
+  text-align: center;
+}
+body.solo-grid-mode .ctrl-row-toolbar-right {
+  flex: 1;
+  justify-content: flex-end;
+}
+body.solo-grid-mode .btn-exit-solo-mode,
+body.solo-grid-mode .btn-fullscreen-only {
   display: inline-flex !important;
+}
+.bingo-fullscreen-breadcrumb {
+  display: none;
+}
+body.solo-grid-mode .bingo-fullscreen-breadcrumb {
+  display: block;
+  min-width: 0;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 1.64rem;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 /* ── Mode "tier list plein écran" (overlay interne, plus de popup) ── */
@@ -1324,11 +1365,24 @@ textarea.element-edit-input {
 
 
 /* ── Toolbar ── */
+/* 3 zones de largeur égale (flex:1 gauche/droite) pour que le centre soit vraiment
+   centré par rapport à l'écran, quelle que soit la largeur du contenu de chaque côté. */
 .ctrl-row-toolbar {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 10px;
+}
+.ctrl-row-toolbar-left,
+.ctrl-row-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.ctrl-row-toolbar-right {
+  justify-content: flex-end;
 }
 
 .size-btn {
@@ -1346,11 +1400,13 @@ textarea.element-edit-input {
   transition: var(--transition);
 }
 .size-btn:hover { background: var(--surface-3); border-color: var(--accent-dim); color: var(--accent); }
+.size-btn:disabled { cursor: not-allowed; opacity: 0.4; }
+.size-btn:disabled:hover { background: var(--surface-2); border-color: var(--border); color: var(--text); }
 #grid-size-display {
   font-family: 'Space Mono', monospace;
-  font-size: 0.88rem;
+  font-size: 0.75rem;
   color: var(--text);
-  min-width: 44px;
+  min-width: 28px;
   text-align: center;
 }
 
@@ -1420,19 +1476,6 @@ textarea.element-edit-input {
 }
 .btn-action.btn-subgrid-gen:hover:not(:disabled) { background: #7c3aed; color: #fff; border-color: #8b5cf6; }
 
-/* Bouton Générer cases vides sous-grille (📝) */
-.btn-action.btn-subgrid-fill-empty {
-  background: #8b5cf6;
-  color: #ede9fe;
-  border: 1px solid #a78bfa;
-}
-.btn-action.btn-subgrid-fill-empty:hover:not(:disabled) { background: #a78bfa; color: #fff; border-color: #c4b5fd; }
-.btn-action.btn-subgrid-fill-empty:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
 /* Bouton Vider global */
 .btn-action.btn-clear-grids {
   background: #7a3e00;
@@ -1460,16 +1503,6 @@ textarea.element-edit-input {
   border: 1px solid var(--border);
 }
 .btn-action.btn-screenshot-bingo:hover { border-color: var(--success); color: var(--success); background: rgba(71,200,135,0.1); }
-
-/* ── Bouton "Ouvrir dans une nouvelle fenêtre" (global) — même gris que "Importer cases" ── */
-.btn-action.btn-open-grids-window {
-  background: #4b5563;
-  color: #e5e7eb;
-  border: 1px solid #4b5563;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.btn-action.btn-open-grids-window:hover { background: #6b7280; border-color: #6b7280; }
 
 /* ── Groupe Bloquer / Générer / Reset ── */
 .lock-group {
@@ -1581,52 +1614,48 @@ textarea.element-edit-input {
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
-.grid-view-theme-subtheme-row {
-  width: 100%;
-  text-align: center;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--accent);
-  margin-bottom: 4px;
-  word-break: break-word;
-}
-
 .grid-view-title-row {
   width: 100%;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+  padding: 0 110px;
+  box-sizing: border-box;
+}
+
+.grid-view-title-capture {
+  display: none;
+  padding: 4px 8px !important;
+  font-size: 0.75rem !important;
+  min-width: 0;
+  flex-shrink: 0;
 }
 
 .grid-view-title-input {
   background: transparent;
   border: none;
-  border-bottom: 1px dashed var(--border);
+  border-bottom: 1px dashed transparent;
   color: var(--accent);
   font-family: Arial, sans-serif;
-  font-size: 0.9rem;
   font-weight: 700;
   text-align: center;
-  width: 100%;
+  width: auto;
   max-width: 400px;
   outline: none;
   padding: 3px 8px;
   transition: var(--transition);
   letter-spacing: 0.03em;
+  cursor: default;
 }
 .grid-view-title-input::placeholder { color: var(--text-faint); font-weight: 400; font-style: italic; }
-.grid-view-title-input:focus { border-bottom-color: var(--accent-dim); background: var(--accent-glow); border-radius: var(--radius) var(--radius) 0 0; }
+.grid-view-title-input:hover { border-bottom-color: var(--border); cursor: text; }
+.grid-view-title-input:focus { border-bottom-color: var(--accent-dim); background: var(--accent-glow); border-radius: var(--radius) var(--radius) 0 0; cursor: text; }
 
 /* ── Contrôles par sous-grille ── */
-.subgrid-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-bottom: 4px;
-}
-
 .btn-subgrid {
   padding: 4px 8px !important;
   font-size: 0.75rem !important;
@@ -1652,8 +1681,12 @@ textarea.element-edit-input {
 .subgrid-lock-label:disabled { cursor: not-allowed; opacity: 0.6; }
 .subgrid-lock-label [data-lucide] { margin-right: 0; }
 
-/* Cadre discret autour de Bloquer + Générer (par grille) */
+/* Cadre discret autour de Bloquer + Générer (par grille) — à gauche du nom, pas centré avec lui */
 .subgrid-lock-gen-group {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1661,6 +1694,9 @@ textarea.element-edit-input {
   border-radius: var(--radius);
   padding: 3px 6px;
   background: rgba(255,255,255,0.02);
+}
+body.solo-grid-mode .subgrid-lock-gen-group {
+  display: none;
 }
 
 /* Contrôle taille par grille */
@@ -2142,6 +2178,19 @@ textarea.element-edit-input {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+/* Variante pour listes de boutons de longueur variable (ex: un bouton par grille) :
+   autorise le retour à la ligne et laisse chaque bouton grandir en hauteur si son
+   texte wrap, au lieu de déborder d'une hauteur fixe de 32px. */
+.modal-actions-wrap {
+  flex-wrap: wrap;
+}
+.modal-actions-wrap .btn-action {
+  height: auto;
+  min-height: 32px;
+  padding: 6px 16px;
+  text-align: center;
 }
 
 .btn-secondary {
