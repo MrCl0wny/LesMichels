@@ -260,6 +260,7 @@ function setupAuth() {
       _tlLocalUnplacedImgSize  = null;
       _tlLocalUnplacedShowLabels = null;
       _tlLocalUnplacedHidden   = false;
+      _tlLocalSplit            = null;
       _tlLocalActiveTierlistId = null;
       _tlLocalActiveFolderId   = null;
       _tlLocalNoSelection      = false;
@@ -315,6 +316,7 @@ function loadUserPrefs() {
     if (prefs.tlUnplacedImgSize   != null) _tlLocalUnplacedImgSize  = prefs.tlUnplacedImgSize;
     if (prefs.tlUnplacedShowLabels != null) _tlLocalUnplacedShowLabels = !!prefs.tlUnplacedShowLabels;
     if (prefs.tlUnplacedHidden    != null) _tlLocalUnplacedHidden   = !!prefs.tlUnplacedHidden;
+    if (prefs.tlSplit             != null) _tlLocalSplit            = prefs.tlSplit;
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
     if (prefs.tlActiveFolderId    != null) _tlLocalActiveFolderId   = prefs.tlActiveFolderId;
     if (prefs.tlNoSelection       != null) _tlLocalNoSelection      = !!prefs.tlNoSelection;
@@ -323,8 +325,8 @@ function loadUserPrefs() {
     _prefsReady = true;
     // Appliquer les prefs visuelles
     fontScaleInput.value = Math.round(_localFontScale * 100);
-    const fsDisp = document.getElementById('font-scale-display');
-    if (fsDisp) fsDisp.textContent = Math.round(_localFontScale * 100) + '%';
+    const fsValueInput = document.getElementById('font-scale-value-input');
+    if (fsValueInput) fsValueInput.value = Math.round(_localFontScale * 100);
     // Re-render seulement si les données Bingo sont déjà chargées
     if (_firebaseReady) {
       _applyPrefsAndRender();
@@ -441,8 +443,22 @@ function _applyPrefsAndRender() {
   // Appliquer les prefs tierlist aux controls UI
   if (_tlLocalShowLabels !== null) _tlUpdateShowLabelsBtn(_tlLocalShowLabels);
   if (_tlLocalUnplacedShowLabels !== null) _tlUpdateUnplacedShowLabelsBtn(_tlLocalUnplacedShowLabels);
-  if (_tlLocalImgSize    !== null) tlImgSizeSlider.value       = _tlLocalImgSize;
-  if (_tlLocalUnplacedImgSize !== null && tlUnplacedImgSizeSlider) tlUnplacedImgSizeSlider.value = _tlLocalUnplacedImgSize;
+  if (_tlLocalImgSize    !== null) {
+    tlImgSizeSlider.value = _tlLocalImgSize;
+    const tlImgSizeValueInputEl = document.getElementById('tl-img-size-value-input');
+    if (tlImgSizeValueInputEl) tlImgSizeValueInputEl.value = _tlLocalImgSize;
+  }
+  if (_tlLocalUnplacedImgSize !== null && tlUnplacedImgSizeSlider) {
+    tlUnplacedImgSizeSlider.value = _tlLocalUnplacedImgSize;
+    const tlUnplacedImgSizeValueInputEl = document.getElementById('tl-unplaced-img-size-value-input');
+    if (tlUnplacedImgSizeValueInputEl) tlUnplacedImgSizeValueInputEl.value = _tlLocalUnplacedImgSize;
+  }
+  if (_tlLocalSplit !== null) {
+    if (tlSplitSlider) tlSplitSlider.value = _tlLocalSplit;
+    if (tlSplitValueInput) tlSplitValueInput.value = _tlLocalSplit;
+    if (tlSplitValueInputRight) tlSplitValueInputRight.value = 100 - _tlLocalSplit;
+    document.documentElement.style.setProperty('--tl-split', _tlLocalSplit);
+  }
   // Re-render la Tier List avec la bonne tierlist active
   if (typeof tlRender === 'function') tlRender();
 }
@@ -2488,8 +2504,8 @@ function applyFontScale() {
   const scale = _localFontScale;
   const pct = Math.round(scale * 100);
   fontScaleInput.value = pct;
-  const dispEl = document.getElementById('font-scale-display');
-  if (dispEl) dispEl.textContent = pct + '%';
+  const fsValueInput = document.getElementById('font-scale-value-input');
+  if (fsValueInput) fsValueInput.value = pct;
 
   const t = activeTheme();
   const s = activeSubtheme();
@@ -3100,6 +3116,13 @@ function renderGrid() {
   applyFontScale();
   if (window.lucide) lucide.createIcons();
   _adjustBingoGridSizes();
+  // Re-mesurer après le premier paint réel : au chargement initial (ou juste après le
+  // changement de page), le navigateur peut ne pas avoir fini la mise en page au moment de
+  // l'appel synchrone ci-dessus (polices pas encore chargées, extensions qui retardent le
+  // rendu...) — la mesure donne alors une grille minuscule tant qu'aucune interaction ne
+  // redéclenche renderGrid(). requestAnimationFrame garantit un recalcul après paint.
+  requestAnimationFrame(_adjustBingoGridSizes);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(_adjustBingoGridSizes);
 
   // Déclencher après que les wrappers sont dans le DOM et que le layout est calculé
   setTimeout(() => {
@@ -3610,13 +3633,21 @@ btnSizePlus.addEventListener('click',  () => changeSize(+1));
 fontScaleInput.addEventListener('input', () => {
   const pct = Math.max(50, Math.min(200, parseInt(fontScaleInput.value) || 100));
   _localFontScale = pct / 100;
-  document.getElementById('font-scale-display').textContent = pct + '%';
   applyFontScale();
 });
 fontScaleInput.addEventListener('change', () => {
   const pct = Math.max(50, Math.min(200, parseInt(fontScaleInput.value) || 100));
   saveLocalFontScale(pct / 100);
 });
+const fontScaleValueInput = document.getElementById('font-scale-value-input');
+if (fontScaleValueInput) {
+  fontScaleValueInput.addEventListener('change', () => {
+    const pct = Math.max(50, Math.min(200, parseInt(fontScaleValueInput.value) || 100));
+    _localFontScale = pct / 100;
+    applyFontScale();
+    saveLocalFontScale(pct / 100);
+  });
+}
 
 chkLockGenerate.addEventListener('click', () => {
   const t = activeTheme();
@@ -3841,10 +3872,15 @@ document.getElementById('btn-open-grids-window').addEventListener('click', () =>
     ? (grids[0].title || grids[0].name || 'Grille')
     : `${grids.length} grilles`) + ' — LesMichels';
   document.body.classList.add('solo-grid-mode');
+  // Le layout plein écran change la taille disponible sans déclencher de 'resize' :
+  // recalculer une fois que le nouveau layout est peint, sinon les grilles gardent
+  // la taille calculée pour l'affichage normal jusqu'à la prochaine interaction.
+  requestAnimationFrame(_adjustBingoGridSizes);
 });
 document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
   document.body.classList.remove('solo-grid-mode');
   document.title = 'LesMichels';
+  requestAnimationFrame(_adjustBingoGridSizes);
 });
 
 btnGenerate.addEventListener('click', () => {
@@ -4490,6 +4526,13 @@ renameGridInput.addEventListener('keydown', e => {
     navBtns.forEach(b => b.classList.toggle('active', b.dataset.page === target));
     pages.forEach(p => p.classList.toggle('active', p.id === `page-${target}`));
     if (typeof renderCurrentEventButton === 'function') renderCurrentEventButton();
+    // La page Bingo peut avoir été rendue pendant qu'elle était masquée (display:none sur
+    // un ancêtre) — les mesures de _adjustBingoGridSizes() étaient alors nulles/fausses et
+    // rien ne les recalculait tant qu'aucune case n'était cliquée. Recalculer après paint
+    // dès que Bingo redevient visible.
+    if (target === 'bingo' && typeof _adjustBingoGridSizes === 'function') {
+      requestAnimationFrame(_adjustBingoGridSizes);
+    }
   };
 
   navBtns.forEach(btn => {
@@ -4558,6 +4601,7 @@ let _tlLocalImgSize         = null;
 let _tlLocalUnplacedImgSize = null; // taille des images du cadre "Éléments non placés" (indépendante de la tierlist)
 let _tlLocalUnplacedShowLabels = null; // afficher/masquer noms du cadre "Éléments non placés" (indépendant de la tierlist)
 let _tlLocalUnplacedHidden  = false; // true = cadre "Éléments non placés" masqué (préférence locale)
+let _tlLocalSplit           = null; // % de largeur allouée aux tiers (le reste va aux éléments non placés), null = pas encore chargé
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
 let _tlLocalActiveFolderId  = null; // dossier sélectionné (vide) sans tierlist active
 let _tlLocalNoSelection     = false; // true = l'utilisateur a délibérément désélectionné
@@ -5164,6 +5208,9 @@ function _tlUpdateUnplacedShowLabelsBtn(showLabels) {
 }
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
 const tlUnplacedImgSizeSlider = document.getElementById('tl-unplaced-img-size-slider');
+const tlSplitSlider       = document.getElementById('tl-split-slider');
+const tlSplitValueInput   = document.getElementById('tl-split-value-input');
+const tlSplitValueInputRight = document.getElementById('tl-split-value-input-right');
 const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
 const tlBtnUndo           = document.getElementById('tl-btn-undo');
 const tlBtnReset          = document.getElementById('tl-btn-reset');
@@ -5437,6 +5484,7 @@ function tlRender() {
     tlEditorBody.classList.toggle('tl-unplaced-hidden', !tl.isTemplate && _tlLocalUnplacedHidden);
     _tlUpdateToggleUnplacedBtn();
   }
+  _tlUpdateSplitSliderVisibility(tl);
   tlRenderGroupPanel(tl);
 
   tlTitleDisplay.textContent = tl.name;
@@ -9106,24 +9154,70 @@ if (tlUnplacedShowLabelsToggle) {
   });
 }
 
-tlImgSizeSlider.addEventListener('input', () => {
-  _tlLocalImgSize = parseInt(tlImgSizeSlider.value);
+// Synchronise un curseur de taille d'images avec son input number associé (deux sens).
+function _tlWireImgSizeControls(slider, valueInput, onChange) {
+  const clamp = v => Math.max(50, Math.min(200, v));
+  slider.addEventListener('input', () => {
+    const v = clamp(parseInt(slider.value));
+    if (valueInput) valueInput.value = v;
+    onChange(v);
+  });
+  if (valueInput) {
+    valueInput.addEventListener('change', () => {
+      const n = parseInt(valueInput.value);
+      const v = clamp(isNaN(n) ? parseInt(slider.value) : n);
+      slider.value = v;
+      valueInput.value = v;
+      onChange(v);
+    });
+  }
+}
+
+const tlImgSizeValueInput = document.getElementById('tl-img-size-value-input');
+_tlWireImgSizeControls(tlImgSizeSlider, tlImgSizeValueInput, v => {
+  _tlLocalImgSize = v;
   saveUserPrefs({ tlImgSize: _tlLocalImgSize });
   tlRender();
 });
 
 if (tlUnplacedImgSizeSlider) {
-  tlUnplacedImgSizeSlider.addEventListener('input', () => {
-    _tlLocalUnplacedImgSize = parseInt(tlUnplacedImgSizeSlider.value);
+  const tlUnplacedImgSizeValueInput = document.getElementById('tl-unplaced-img-size-value-input');
+  _tlWireImgSizeControls(tlUnplacedImgSizeSlider, tlUnplacedImgSizeValueInput, v => {
+    _tlLocalUnplacedImgSize = v;
     saveUserPrefs({ tlUnplacedImgSize: _tlLocalUnplacedImgSize });
     tlRender();
   });
 }
 
+function _tlApplySplit(value) {
+  _tlLocalSplit = Math.max(20, Math.min(80, value));
+  if (tlSplitSlider) tlSplitSlider.value = _tlLocalSplit;
+  if (tlSplitValueInput) tlSplitValueInput.value = _tlLocalSplit;
+  if (tlSplitValueInputRight) tlSplitValueInputRight.value = 100 - _tlLocalSplit;
+  document.documentElement.style.setProperty('--tl-split', _tlLocalSplit);
+  saveUserPrefs({ tlSplit: _tlLocalSplit });
+}
+if (tlSplitSlider) {
+  tlSplitSlider.addEventListener('input', () => _tlApplySplit(parseInt(tlSplitSlider.value)));
+}
+if (tlSplitValueInput) {
+  tlSplitValueInput.addEventListener('change', () => {
+    const n = parseInt(tlSplitValueInput.value);
+    _tlApplySplit(isNaN(n) ? _tlLocalSplit || 60 : n);
+  });
+}
+if (tlSplitValueInputRight) {
+  tlSplitValueInputRight.addEventListener('change', () => {
+    const n = parseInt(tlSplitValueInputRight.value);
+    _tlApplySplit(isNaN(n) ? _tlLocalSplit || 60 : 100 - n);
+  });
+}
+
 const tlCompareImgSizeSlider = document.getElementById('tl-compare-img-size-slider');
 if (tlCompareImgSizeSlider) {
-  tlCompareImgSizeSlider.addEventListener('input', () => {
-    _tlCompareImgSize = parseInt(tlCompareImgSizeSlider.value);
+  const tlCompareImgSizeValueInput = document.getElementById('tl-compare-img-size-value-input');
+  _tlWireImgSizeControls(tlCompareImgSizeSlider, tlCompareImgSizeValueInput, v => {
+    _tlCompareImgSize = v;
     _tlRenderCompareView(null);
   });
 }
@@ -9236,12 +9330,17 @@ function _tlUpdateToggleUnplacedBtn() {
   tlBtnToggleUnplaced.title = _tlLocalUnplacedHidden ? 'Afficher le cadre Éléments non placés' : 'Masquer le cadre Éléments non placés';
   if (window.lucide) lucide.createIcons();
 }
+function _tlUpdateSplitSliderVisibility(tl) {
+  const tlSplitSliderLabel = document.getElementById('tl-split-slider-label');
+  if (tlSplitSliderLabel) tlSplitSliderLabel.classList.toggle('hidden', !tl || !!tl.isTemplate || _tlLocalUnplacedHidden);
+}
 if (tlBtnToggleUnplaced) {
   tlBtnToggleUnplaced.addEventListener('click', () => {
     _tlLocalUnplacedHidden = !_tlLocalUnplacedHidden;
     saveUserPrefs({ tlUnplacedHidden: _tlLocalUnplacedHidden });
     tlEditorBody.classList.toggle('tl-unplaced-hidden', _tlLocalUnplacedHidden);
     _tlUpdateToggleUnplacedBtn();
+    _tlUpdateSplitSliderVisibility(tlActiveTierlist());
   });
 }
 

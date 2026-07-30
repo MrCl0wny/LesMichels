@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=171" />
+  <link rel="stylesheet" href="style.css?v=180" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -57,9 +57,11 @@
       <div id="tl-compare-toolbar" class="tl-compare-toolbar hidden">
         <div id="tl-compare-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
         <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image">Afficher noms</button>
-        <label class="tl-toggle-label" title="Régler la taille des images (48–180 px)">
-          <span>Taille</span>
-          <input type="range" id="tl-compare-img-size-slider" min="48" max="180" value="80" class="tl-slider" />
+        <label class="tl-toggle-label" title="Régler la taille des images (50–200 px)">
+          <span class="tl-toggle-label-head">Taille <input type="number" id="tl-compare-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
+          <div class="tl-toggle-label-slider-row">
+            <input type="range" id="tl-compare-img-size-slider" min="50" max="200" value="80" class="tl-slider" />
+          </div>
         </label>
         <button class="tl-toolbar-btn tl-btn-export" id="tl-compare-btn-export" title="Exporter la comparaison en PNG"><i data-lucide="download"></i> Export PNG</button>
         <button class="tl-toolbar-btn tl-btn-capture" id="tl-compare-btn-capture" title="Copier la comparaison dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
@@ -90,9 +92,19 @@
             <div id="tl-fullscreen-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
             <div class="ctrl-row-toolbar-center">
               <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image">Afficher noms</button>
-              <label class="tl-toggle-label" title="Régler la taille des images (48–180 px)">
-                <span>Taille</span>
-                <input type="range" id="tl-img-size-slider" min="48" max="180" value="80" class="tl-slider" />
+              <label class="tl-toggle-label" title="Régler la taille des images (50–200 px)">
+                <span class="tl-toggle-label-head">Taille <input type="number" id="tl-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
+                <div class="tl-toggle-label-slider-row">
+                  <input type="range" id="tl-img-size-slider" min="50" max="200" value="80" class="tl-slider" />
+                </div>
+              </label>
+              <label class="tl-toggle-label" id="tl-split-slider-label" title="Régler la répartition largeur entre les tiers et les éléments non placés">
+                <span>Répartition</span>
+                <div class="tl-toggle-label-row">
+                  <input type="number" id="tl-split-value-input" min="20" max="80" value="60" class="tl-split-value-input" />
+                  <input type="range" id="tl-split-slider" min="20" max="80" value="60" class="tl-slider" />
+                  <input type="number" id="tl-split-value-input-right" min="20" max="80" value="40" class="tl-split-value-input" />
+                </div>
               </label>
               <button class="tl-toolbar-btn tl-btn-add-tier" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="list-tree"></i> Gérer tiers</button>
               <button class="tl-toolbar-btn tl-btn-undo" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
@@ -185,9 +197,11 @@
                     <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Ajouter un texte..." title="Taper un texte puis Entrée pour ajouter une carte" />
                   </span>
                   <button type="button" id="tl-unplaced-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image du cadre Éléments non placés">Afficher noms</button>
-                  <label class="tl-toggle-label" title="Régler la taille des images du cadre Éléments non placés (48–180 px)">
-                    <span>Taille</span>
-                    <input type="range" id="tl-unplaced-img-size-slider" min="48" max="180" value="80" class="tl-slider" />
+                  <label class="tl-toggle-label" title="Régler la taille des images du cadre Éléments non placés (50–200 px)">
+                    <span class="tl-toggle-label-head">Taille <input type="number" id="tl-unplaced-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
+                    <div class="tl-toggle-label-slider-row">
+                      <input type="range" id="tl-unplaced-img-size-slider" min="50" max="200" value="80" class="tl-slider" />
+                    </div>
                   </label>
                   <button type="button" id="tl-btn-export-images" class="tl-toolbar-btn tl-btn-export hidden" title="Exporter toutes les images du template (fichier .zip)"><i data-lucide="images"></i> Exporter images</button>
                   <span class="tl-max-images-label">Capacité max :</span>
@@ -240,11 +254,12 @@
           <!-- Ligne 3 : Toolbar -->
           <div class="ctrl-row ctrl-row-toolbar">
             <div class="ctrl-row-toolbar-center">
-              <div class="grid-size-control grid-size-control-slider">
-                <label class="slider-label">Texte</label>
-                <input type="range" id="font-scale-input" class="toolbar-slider" min="50" max="200" step="10" value="100" title="Taille du texte" />
-                <span class="slider-value-display" id="font-scale-display">100%</span>
-              </div>
+              <label class="tl-toggle-label" title="Régler la taille du texte (50–200 %)">
+                <span class="tl-toggle-label-head">Texte <input type="number" id="font-scale-value-input" min="50" max="200" step="10" value="100" class="tl-split-value-input" /></span>
+                <div class="tl-toggle-label-slider-row">
+                  <input type="range" id="font-scale-input" class="tl-slider" min="50" max="200" step="10" value="100" title="Taille du texte" />
+                </div>
+              </label>
               <span id="grid-size-display" style="display:none">4×4</span>
               <button class="size-btn" id="btn-size-minus" style="display:none"><i data-lucide="minus"></i></button>
               <button class="size-btn" id="btn-size-plus" style="display:none"><i data-lucide="plus"></i></button>
@@ -1053,6 +1068,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=258"></script>
+  <script src="app.js?v=265"></script>
 </body>
 </html>

@@ -292,7 +292,7 @@ body {
 /* Groupe central (réglages taille → Capture) centré entre Dossiers et Cases */
 .ctrl-row-toolbar-center {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   flex-wrap: wrap;
   gap: 8px;
   flex: 1;
@@ -896,7 +896,7 @@ body.solo-tierlist-mode .ctrl-row-toolbar > .tl-fullscreen-breadcrumb {
 
 /* ── Mode "comparaison" (overlay interne, lecture seule) ── */
 body.compare-tierlist-mode .header,
-body.compare-tierlist-mode .tl-sidebar,
+body.compare-tierlist-mode .tl-layout,
 body.compare-tierlist-mode .tl-control-panel,
 body.compare-tierlist-mode #tl-empty-state,
 body.compare-tierlist-mode #tl-editor {
@@ -1323,63 +1323,6 @@ textarea.element-edit-input {
   gap: 10px;
 }
 
-.grid-size-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 4px 12px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-/* Variante slider pour Grille/Texte */
-.grid-size-control-slider {
-  gap: 6px;
-  padding: 4px 10px;
-}
-.slider-label {
-  white-space: nowrap;
-  min-width: 34px;
-}
-.toolbar-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 90px;
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  accent-color: var(--accent);
-}
-.toolbar-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  background: var(--accent);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.toolbar-slider::-webkit-slider-thumb:hover { background: #fff; }
-.toolbar-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: var(--accent);
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-}
-.slider-value-display {
-  display: none;
-}
 .size-btn {
   width: 28px;
   height: 28px;
@@ -2328,8 +2271,10 @@ body.solo-tierlist-mode .tl-layout {
 }
 
 /* ── Sidebar tierlist (sidebar fixe qui pousse le contenu, comme le Bingo) ── */
+/* Ne PAS remettre max-height:none ici : ça écrase le calc(100vh - 82px) de .folders-sidebar
+   et supprime la seule contrainte de hauteur qui permet à .folders-panel-tree de scroller
+   en interne (flex:1 + min-height:0 ne bornent rien sans hauteur max sur l'ancêtre). */
 .tl-sidebar {
-  max-height: none;
   gap: 10px;
 }
 .tl-sidebar .folders-panel-header {
@@ -2551,8 +2496,9 @@ body.solo-tierlist-mode .tl-layout {
 
 .tl-toggle-label {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-muted);
@@ -2560,6 +2506,30 @@ body.solo-tierlist-mode .tl-layout {
   user-select: none;
 }
 .tl-toggle-label input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+/* Hauteur fixe partagée par toute ligne de curseur (seul ou encadré d'inputs number) :
+   sans ça, la ligne "Taille" (curseur seul, ~4px) et la ligne "Répartition" (curseur +
+   inputs number, ~20px) n'ont pas la même hauteur de boîte, donc leurs thumbs ne sont
+   pas à la même hauteur visuelle malgré align-items:flex-end sur le conteneur parent
+   (flex-end aligne le BAS des labels, pas le curseur lui-même à l'intérieur). */
+.tl-toggle-label-row,
+.tl-toggle-label-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+}
+/* Hauteur fixe partagée par toute ligne "mot + éventuel input number" (tête du curseur) :
+   sans ça, "Taille"/"Texte" (span avec input, plus haut) et "Répartition" (span texte
+   seul, plus bas) n'ont pas le même bas de ligne, donc leur gap réel vers le curseur en
+   dessous diffère alors que le CSS gap est identique. */
+.tl-toggle-label > span:first-child,
+.tl-toggle-label-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: default;
+  height: 18px;
+}
 
 .tl-slider {
   -webkit-appearance: none;
@@ -2579,6 +2549,24 @@ body.solo-tierlist-mode .tl-layout {
   border-radius: 50%;
   background: var(--accent);
   cursor: pointer;
+}
+
+.tl-split-value-input {
+  width: 34px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 2px 0;
+  cursor: text;
+}
+.tl-split-value-input::-webkit-inner-spin-button,
+.tl-split-value-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .tl-toolbar-btn {
@@ -2639,19 +2627,21 @@ body.solo-tierlist-mode .tl-layout {
   flex: 1;
   min-height: 0;
 }
-/* Tierlist normale (pas template) : côte à côte en permanence, tiers 60% / non placés 40%. */
+/* Tierlist normale (pas template) : côte à côte en permanence, répartition réglable via
+   --tl-split (curseur "Répartition", pourcentage de largeur pour les tiers ; le reste va
+   aux éléments non placés). 60% par défaut. */
 .tl-editor-body:not(.tl-editor-body--template) {
   flex-direction: row;
   align-items: stretch;
   gap: 16px;
 }
 .tl-editor-body:not(.tl-editor-body--template) .tl-tiers-zone {
-  flex: 6;
+  flex: 0 0 calc(var(--tl-split, 60) * 1%);
   height: auto;
   min-width: 0;
 }
 .tl-editor-body:not(.tl-editor-body--template) .tl-unplaced-section {
-  flex: 4;
+  flex: 1;
   min-width: 0;
   height: auto;
 }
