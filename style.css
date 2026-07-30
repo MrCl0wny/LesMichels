@@ -1039,9 +1039,12 @@ body.compare-tierlist-mode .main {
   line-height: 1;
 }
 .btn-icon:hover { background: #2db85a; }
-#btn-import-elements-panel {
+#btn-import-elements-panel,
+#btn-presets-elements-panel,
+#btn-clear-elements-panel {
   width: auto;
   min-width: 0;
+  flex: 1;
   padding: 0 12px;
   gap: 6px;
   background: #4b5563;
@@ -1050,8 +1053,13 @@ body.compare-tierlist-mode .main {
   font-weight: 600;
   white-space: nowrap;
 }
-#btn-import-elements-panel:hover { background: #6b7280; }
-#btn-import-elements-panel [data-lucide] { width: 15px; height: 15px; margin-right: 0; }
+#btn-import-elements-panel:hover,
+#btn-presets-elements-panel:hover { background: #6b7280; }
+#btn-import-elements-panel [data-lucide],
+#btn-presets-elements-panel [data-lucide],
+#btn-clear-elements-panel [data-lucide] { width: 15px; height: 15px; margin-right: 0; }
+#btn-clear-elements-panel { background: #5c2b2b; color: #f3d4d4; }
+#btn-clear-elements-panel:hover { background: #7a3838; }
 
 /* ── Tabs ── */
 .elements-tabs {

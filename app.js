@@ -547,6 +547,7 @@ function migrateState(raw) {
 
   // Si on a déjà des dossiers, c'est du nouveau format
   if (raw.folders) {
+    if (!Array.isArray(raw.elementPresets)) raw.elementPresets = [];
     return raw;
   }
 
@@ -689,6 +690,8 @@ function migrateState(raw) {
     delete raw.themes;
   }
 
+  if (!Array.isArray(raw.elementPresets)) raw.elementPresets = [];
+
   return raw;
 }
 
@@ -700,7 +703,7 @@ let _prefsReady    = false;
 let _localActiveFolderId   = null;
 
 function initState() {
-  return { folders: [], trash: [], currentEventFolderId: null, currentEventTierlistId: null };
+  return { folders: [], trash: [], currentEventFolderId: null, currentEventTierlistId: null, elementPresets: [] };
 }
 
 // ──────────────────────────────────────────────
@@ -1192,12 +1195,19 @@ function reorderFolder(srcId, refId, position) {
   renderGrid();
 }
 
-function importElements(sourceId, targetId) {
+function importElements(sourceId, targetId, replace = false) {
   const src = findFolderById(state.folders, sourceId);
   const dst = findFolderById(state.folders, targetId);
   if (!src || !dst) return;
   const srcElements = src.elements || [];
   if (srcElements.length === 0) return;
+  if (replace) {
+    dst.elements = [];
+    dst.archivedElementIds = [];
+    (dst.grids || []).forEach(g => {
+      g.grid = g.grid.map(cell => ({ elementId: null, checked: false, color: null }));
+    });
+  }
   if (!dst.elements) dst.elements = [];
   // Ajouter uniquement les éléments non déjà présents (comparaison par texte)
   const existingTexts = new Set(dst.elements.map(e => e.text.trim().toLowerCase()));
@@ -1210,7 +1220,63 @@ function importElements(sourceId, targetId) {
   });
   saveState();
   renderElements();
+  renderGrid();
   return added;
+}
+
+// Importe une liste de textes (preset) dans un dossier, avec option de remplacement.
+function importElementTexts(texts, targetId, replace = false) {
+  const dst = findFolderById(state.folders, targetId);
+  if (!dst || !texts || texts.length === 0) return 0;
+  if (replace) {
+    dst.elements = [];
+    dst.archivedElementIds = [];
+    (dst.grids || []).forEach(g => {
+      g.grid = g.grid.map(cell => ({ elementId: null, checked: false, color: null }));
+    });
+  }
+  if (!dst.elements) dst.elements = [];
+  const existingTexts = new Set(dst.elements.map(e => e.text.trim().toLowerCase()));
+  let added = 0;
+  texts.forEach(text => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    if (!existingTexts.has(trimmed.toLowerCase())) {
+      dst.elements.push({ id: uid(), text: trimmed });
+      existingTexts.add(trimmed.toLowerCase());
+      added++;
+    }
+  });
+  saveState();
+  renderElements();
+  renderGrid();
+  return added;
+}
+
+// ──────────────────────────────────────────────
+// Presets de cases (globaux, réutilisables entre dossiers)
+// ──────────────────────────────────────────────
+function getElementPresets() {
+  if (!Array.isArray(state.elementPresets)) state.elementPresets = [];
+  return state.elementPresets;
+}
+
+function saveElementPreset(name, texts) {
+  getElementPresets().push({ id: uid(), name: name.trim(), elements: texts.map(t => t.trim()).filter(Boolean) });
+  saveState();
+}
+
+function updateElementPreset(id, name, texts) {
+  const preset = getElementPresets().find(p => p.id === id);
+  if (!preset) return;
+  preset.name = name.trim();
+  preset.elements = texts.map(t => t.trim()).filter(Boolean);
+  saveState();
+}
+
+function deleteElementPreset(id) {
+  state.elementPresets = getElementPresets().filter(p => p.id !== id);
+  saveState();
 }
 
 // ──────────────────────────────────────────────
@@ -1529,6 +1595,36 @@ function deleteElement(id) {
   (s.grids || []).forEach(g => {
     g.grid = g.grid.map(cell =>
       cell.elementId === id ? { elementId: null, checked: false, color: null } : cell
+    );
+  });
+  saveState();
+  renderElements();
+  renderGrid();
+}
+
+function clearAllElements() {
+  const s = activeSubtheme();
+  if (!s) return;
+  s.elements = [];
+  s.archivedElementIds = [];
+  (s.grids || []).forEach(g => {
+    g.grid = g.grid.map(cell => ({ elementId: null, checked: false, color: null }));
+  });
+  saveState();
+  renderElements();
+  renderGrid();
+}
+
+function clearArchivedElements() {
+  const s = activeSubtheme();
+  if (!s) return;
+  const archivedIds = s.archivedElementIds || [];
+  if (archivedIds.length === 0) return;
+  s.elements = (s.elements || []).filter(e => !archivedIds.includes(e.id));
+  s.archivedElementIds = [];
+  (s.grids || []).forEach(g => {
+    g.grid = g.grid.map(cell =>
+      archivedIds.includes(cell.elementId) ? { elementId: null, checked: false, color: null } : cell
     );
   });
   saveState();
@@ -2538,6 +2634,7 @@ function getCellFontSize(text, scale) {
 const manualMode = false;
 
 let _clearCellCallback = null;
+let _clearArchivedOnlyCallback = null; // callback du bouton "Archivées seulement" (modal-confirm-clear)
 function openClearCellConfirm(label, callback) {
   _clearCellCallback = callback;
   document.getElementById('modal-clear-msg').textContent = `Vider la case ${label} ?`;
@@ -3564,6 +3661,8 @@ function openImportElementsModal(targetId) {
     }
     _addSrc(state.folders, 0);
   }
+  const replaceCb = document.getElementById('import-elements-replace-checkbox');
+  if (replaceCb) replaceCb.checked = false;
   const modal = document.getElementById('modal-import-elements');
   if (modal) modal.classList.remove('hidden');
 }
@@ -3579,9 +3678,11 @@ function confirmImportElements() {
   const sel = document.getElementById('import-elements-source-select');
   const sourceRootId = sel ? sel.value : '';
   if (!sourceRootId) return;
-  const added = importElements(sourceRootId, _importElementsTargetId);
+  const replaceCb = document.getElementById('import-elements-replace-checkbox');
+  const replace = replaceCb ? replaceCb.checked : false;
+  const added = importElements(sourceRootId, _importElementsTargetId, replace);
   closeImportElementsModal();
-  if (added === 0) {
+  if (added === 0 && !replace) {
     alert('Toutes les cases existent déjà dans ce dossier.');
   }
 }
@@ -3595,6 +3696,171 @@ function confirmImportElements() {
   if (btnConfirm) btnConfirm.addEventListener('click', confirmImportElements);
   if (btnCancel) btnCancel.addEventListener('click', closeImportElementsModal);
 })();
+
+// ──────────────────────────────────────────────
+// Modale — gestion des presets de cases
+// ──────────────────────────────────────────────
+function renderElementPresetList() {
+  const list = document.getElementById('element-preset-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const presets = getElementPresets();
+  if (presets.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'font-size:0.8rem;color:var(--text-muted);';
+    empty.textContent = 'Aucun preset.';
+    list.appendChild(empty);
+    return;
+  }
+  presets.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'modal-item-row';
+
+    const btn = document.createElement('button');
+    btn.className = 'btn-action btn-secondary';
+    btn.style.flex = '1';
+    btn.style.textAlign = 'left';
+    btn.title = (p.elements || []).join(', ');
+    btn.textContent = `${p.name} (${(p.elements || []).length})`;
+    btn.addEventListener('click', () => openElementPresetEditModal(p.id));
+    row.appendChild(btn);
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn-action btn-secondary';
+    editBtn.title = 'Modifier ce preset';
+    editBtn.innerHTML = '<i data-lucide="pencil"></i>';
+    editBtn.addEventListener('click', () => openElementPresetEditModal(p.id));
+    row.appendChild(editBtn);
+
+    const del = document.createElement('button');
+    del.className = 'btn-action btn-secondary';
+    del.title = 'Supprimer ce preset';
+    del.innerHTML = '<i data-lucide="trash-2"></i>';
+    del.addEventListener('click', () => {
+      if (confirm(`Supprimer le preset "${p.name}" ?`)) { deleteElementPreset(p.id); renderElementPresetList(); }
+    });
+    row.appendChild(del);
+
+    list.appendChild(row);
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
+function openElementPresetsModal() {
+  renderElementPresetList();
+  const saveInput = document.getElementById('element-preset-save-input');
+  if (saveInput) saveInput.value = '';
+  document.getElementById('modal-element-presets').classList.remove('hidden');
+}
+
+function closeElementPresetsModal() {
+  document.getElementById('modal-element-presets').classList.add('hidden');
+}
+
+document.getElementById('btn-close-element-presets-modal').addEventListener('click', closeElementPresetsModal);
+document.getElementById('btn-close-element-presets').addEventListener('click', closeElementPresetsModal);
+document.getElementById('btn-new-element-preset').addEventListener('click', () => openElementPresetEditModal(null));
+document.getElementById('btn-save-current-as-element-preset').addEventListener('click', () => {
+  const input = document.getElementById('element-preset-save-input');
+  const name = input.value.trim();
+  if (!name) return;
+  const s = activeSubtheme();
+  const texts = s ? (s.elements || []).map(e => e.text) : [];
+  if (texts.length === 0) { alert('Ce dossier ne contient aucune case à sauvegarder.'); return; }
+  saveElementPreset(name, texts);
+  input.value = '';
+  renderElementPresetList();
+});
+
+// ──────────────────────────────────────────────
+// Modale — édition d'un preset de cases (nom + textarea)
+// ──────────────────────────────────────────────
+let _elementPresetEditId = null; // null = nouveau preset
+
+function openElementPresetEditModal(presetId) {
+  _elementPresetEditId = presetId;
+  const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
+  document.getElementById('element-preset-edit-title').textContent = preset ? 'Modifier le preset' : 'Nouveau preset';
+  document.getElementById('element-preset-edit-name').value = preset ? preset.name : '';
+  document.getElementById('element-preset-edit-textarea').value = preset ? (preset.elements || []).join('\n') : '';
+  document.getElementById('modal-element-presets').classList.add('hidden');
+  document.getElementById('modal-element-preset-edit').classList.remove('hidden');
+}
+
+function closeElementPresetEditModal() {
+  document.getElementById('modal-element-preset-edit').classList.add('hidden');
+  document.getElementById('modal-element-presets').classList.remove('hidden');
+  renderElementPresetList();
+}
+
+document.getElementById('btn-confirm-element-preset-edit').addEventListener('click', () => {
+  const name = document.getElementById('element-preset-edit-name').value.trim();
+  if (!name) return;
+  const texts = document.getElementById('element-preset-edit-textarea').value.split('\n').map(t => t.trim()).filter(Boolean);
+  if (_elementPresetEditId) {
+    updateElementPreset(_elementPresetEditId, name, texts);
+  } else {
+    saveElementPreset(name, texts);
+  }
+  closeElementPresetEditModal();
+});
+document.getElementById('btn-cancel-element-preset-edit').addEventListener('click', closeElementPresetEditModal);
+document.getElementById('btn-close-element-preset-edit-modal').addEventListener('click', closeElementPresetEditModal);
+
+// ──────────────────────────────────────────────
+// Modale — importer un preset de cases dans le dossier actif
+// ──────────────────────────────────────────────
+let _importPresetTargetId = null;
+
+function openImportPresetModal(targetId) {
+  _importPresetTargetId = targetId;
+  const sel = document.getElementById('import-preset-select');
+  sel.innerHTML = '';
+  const presets = getElementPresets();
+  if (presets.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '— Aucun preset —';
+    sel.appendChild(opt);
+  } else {
+    presets.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.name} (${(p.elements || []).length})`;
+      sel.appendChild(opt);
+    });
+  }
+  const replaceCb = document.getElementById('import-preset-replace-checkbox');
+  if (replaceCb) replaceCb.checked = false;
+  document.getElementById('modal-import-preset').classList.remove('hidden');
+}
+
+function closeImportPresetModal() {
+  document.getElementById('modal-import-preset').classList.add('hidden');
+  _importPresetTargetId = null;
+}
+
+document.getElementById('btn-close-import-preset-modal').addEventListener('click', closeImportPresetModal);
+document.getElementById('btn-cancel-import-preset').addEventListener('click', closeImportPresetModal);
+document.getElementById('btn-confirm-import-preset').addEventListener('click', () => {
+  if (!_importPresetTargetId) return;
+  const sel = document.getElementById('import-preset-select');
+  const presetId = sel ? sel.value : '';
+  if (!presetId) return;
+  const preset = getElementPresets().find(p => p.id === presetId);
+  if (!preset) return;
+  const replaceCb = document.getElementById('import-preset-replace-checkbox');
+  const replace = replaceCb ? replaceCb.checked : false;
+  const added = importElementTexts(preset.elements || [], _importPresetTargetId, replace);
+  closeImportPresetModal();
+  if (added === 0 && !replace) {
+    alert('Toutes les cases existent déjà dans ce dossier.');
+  }
+});
+document.getElementById('btn-manage-presets-from-import').addEventListener('click', () => {
+  closeImportPresetModal();
+  openElementPresetsModal();
+});
 
 // ──────────────────────────────────────────────
 // Onglets actifs / archivés
@@ -3625,6 +3891,38 @@ document.getElementById('btn-import-elements-panel').addEventListener('click', (
   const s = activeSubtheme();
   if (!s) return;
   openImportElementsModal(s.id);
+});
+
+document.getElementById('btn-presets-elements-panel').addEventListener('click', () => {
+  const s = activeSubtheme();
+  if (!s) return;
+  if (getElementPresets().length === 0) {
+    openElementPresetsModal();
+  } else {
+    openImportPresetModal(s.id);
+  }
+});
+
+document.getElementById('btn-clear-elements-panel').addEventListener('click', () => {
+  const s = activeSubtheme();
+  if (!s || !(s.elements || []).length) return;
+  _clearCellCallback = clearAllElements;
+  const archivedCount = (s.archivedElementIds || []).length;
+  const btnArchivedOnly = document.getElementById('btn-confirm-clear-archived-only');
+  if (archivedCount > 0) {
+    _clearArchivedOnlyCallback = clearArchivedElements;
+    btnArchivedOnly.textContent = '';
+    btnArchivedOnly.innerHTML = `<i data-lucide="package"></i> Archivées seulement (${archivedCount})`;
+    btnArchivedOnly.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+  } else {
+    _clearArchivedOnlyCallback = null;
+    btnArchivedOnly.classList.add('hidden');
+  }
+  document.getElementById('modal-clear-msg').textContent = archivedCount > 0
+    ? `Supprimer les ${s.elements.length} case(s) de ce dossier, ou seulement les ${archivedCount} archivée(s) ?`
+    : `Supprimer les ${s.elements.length} case(s) de ce dossier ?`;
+  document.getElementById('modal-confirm-clear').classList.remove('hidden');
 });
 
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
@@ -4050,8 +4348,20 @@ btnClearGrids.addEventListener('click', () => {
   document.getElementById('modal-confirm-clear').classList.remove('hidden');
 });
 
+document.getElementById('btn-confirm-clear-archived-only').addEventListener('click', () => {
+  document.getElementById('modal-confirm-clear').classList.add('hidden');
+  document.getElementById('btn-confirm-clear-archived-only').classList.add('hidden');
+  if (_clearArchivedOnlyCallback) {
+    _clearArchivedOnlyCallback();
+    _clearArchivedOnlyCallback = null;
+  }
+  _clearCellCallback = null;
+});
+
 document.getElementById('btn-confirm-clear').addEventListener('click', () => {
   document.getElementById('modal-confirm-clear').classList.add('hidden');
+  document.getElementById('btn-confirm-clear-archived-only').classList.add('hidden');
+  _clearArchivedOnlyCallback = null;
   if (_clearCellCallback) {
     _clearCellCallback();
     _clearCellCallback = null;
@@ -4080,11 +4390,15 @@ document.getElementById('btn-confirm-clear').addEventListener('click', () => {
 
 document.getElementById('btn-cancel-clear').addEventListener('click', () => {
   document.getElementById('modal-confirm-clear').classList.add('hidden');
+  document.getElementById('btn-confirm-clear-archived-only').classList.add('hidden');
   _clearCellCallback = null;
+  _clearArchivedOnlyCallback = null;
 });
 document.getElementById('btn-close-confirm-clear').addEventListener('click', () => {
   document.getElementById('modal-confirm-clear').classList.add('hidden');
+  document.getElementById('btn-confirm-clear-archived-only').classList.add('hidden');
   _clearCellCallback = null;
+  _clearArchivedOnlyCallback = null;
 });
 
 function closeConfirmCurrentEventModal() {
