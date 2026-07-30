@@ -526,6 +526,7 @@ body {
   inset: auto;
   z-index: auto;
   width: 0;
+  height: 0;
   max-width: none;
   max-height: calc(100vh - 82px);
   border-width: 0;
@@ -539,11 +540,15 @@ body {
 }
 .folders-sidebar.open,
 .cases-sidebar.open {
+  height: auto;
+}
+.folders-sidebar.open,
+.cases-sidebar.open {
   width: 400px;
   border-width: 1px;
 }
-.folders-sidebar > *,
-.cases-sidebar > * {
+.folders-sidebar.open > *,
+.cases-sidebar.open > * {
   width: 400px;
 }
 .folders-sidebar .folders-panel-header,
@@ -848,6 +853,35 @@ body.solo-grid-mode .btn-hide-solo-mode {
 }
 body.solo-grid-mode .main {
   padding: 8px;
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.solo-grid-mode .bingo-control-panel {
+  flex-shrink: 0;
+}
+body.solo-grid-mode .bingo-layout {
+  flex: 1;
+  min-height: 0;
+}
+body.solo-grid-mode .panel-grid {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+}
+body.solo-grid-mode .grid-wrapper {
+  flex: 1;
+  min-height: 0;
+}
+body.solo-grid-mode .grid-view-wrapper {
+  min-height: 0;
+}
+body.solo-grid-mode .bingo-grid {
+  max-height: 100%;
 }
 /* Plein écran : Taille + Capture à gauche, chemin centré, Quitter à droite — 3 zones
    flex:1 de largeur égale pour que le chemin central soit vraiment centré et ne
@@ -1623,7 +1657,7 @@ textarea.element-edit-input {
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 4px;
-  padding: 0 110px;
+  padding: 0 190px 0 110px;
   box-sizing: border-box;
 }
 
@@ -1644,12 +1678,15 @@ textarea.element-edit-input {
   font-weight: 700;
   text-align: center;
   width: auto;
-  max-width: 400px;
+  min-width: 0;
+  max-width: min(400px, 100%);
   outline: none;
   padding: 3px 8px;
   transition: var(--transition);
   letter-spacing: 0.03em;
   cursor: default;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .grid-view-title-input::placeholder { color: var(--text-faint); font-weight: 400; font-style: italic; }
 .grid-view-title-input:hover { border-bottom-color: var(--border); cursor: text; }
@@ -1885,10 +1922,22 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   to   { opacity: 1; transform: scale(1); }
 }
 
-/* ── Message bingo inline (par grille) ── */
+/* ── Message bingo inline (par grille), aligné à droite sur la rangée du titre ── */
 .bingo-message-inline {
-  margin-top: 10px;
-  font-size: 1.3rem;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: Arial, sans-serif;
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--bingo-green);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  animation: pop-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* ── Scrollbar globale ── */

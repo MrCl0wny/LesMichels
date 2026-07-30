@@ -2042,7 +2042,9 @@ function _makePanelDraggable(panel) {
 
 function openFoldersPanel() {
   renderFoldersPanelTree();
-  document.getElementById('folders-panel').classList.add('open');
+  const panel = document.getElementById('folders-panel');
+  panel.classList.add('open');
+  _adjustSidebarMaxHeight(panel);
 }
 
 function closeFoldersPanel() {
@@ -2730,6 +2732,17 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   });
   titleRow.appendChild(titleInput);
 
+  // Message bingo individuel, sur la même rangée que le titre, à droite
+  if (bingoLines.length > 0) {
+    const msg = document.createElement('div');
+    msg.className = 'bingo-message-inline';
+    const count = bingoLines.length;
+    msg.innerHTML = count === 1
+      ? `<i data-lucide="party-popper"></i> BINGO !`
+      : `<i data-lucide="party-popper"></i> BINGO x${count} !`;
+    titleRow.appendChild(msg);
+  }
+
   // Contrôles par grille (ordre : Bloquer | Générer | Vider | Capture), à côté du nom
   const globalLocked = !!t.locked;
   const gridLocked = g.locked || globalLocked;
@@ -2952,17 +2965,6 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
 
   wrapper.appendChild(gridEl);
 
-  // Message bingo individuel sous cette grille
-  if (bingoLines.length > 0) {
-    const msg = document.createElement('div');
-    msg.className = 'bingo-message bingo-message-inline';
-    const count = bingoLines.length;
-    msg.innerHTML = count === 1
-      ? `<i data-lucide="party-popper"></i> BINGO ! Tu as complété une ligne !`
-      : `<i data-lucide="party-popper"></i> BINGO x${count} ! Tu as complété ${count} lignes !`;
-    wrapper.appendChild(msg);
-  }
-
   return { wrapper, bingoLines };
 }
 
@@ -3170,6 +3172,7 @@ function renderGrid() {
 // alloué et se chevauchent. Il faut donc calculer le côté du carré (min de la largeur
 // et de la hauteur réellement disponibles) et fixer explicitement width ET height.
 function _adjustBingoGridSizes() {
+  document.querySelectorAll('.folders-sidebar.open, .cases-sidebar.open').forEach(_adjustSidebarMaxHeight);
   const wrappers = gridWrapper.querySelectorAll('.grid-view-wrapper');
   if (!wrappers.length) return;
   // Réinitialiser AVANT de mesurer : .grid-view-wrapper est en flex:1 1 0 (min-width:0), donc
@@ -3183,7 +3186,13 @@ function _adjustBingoGridSizes() {
 
   // Basé sur le viewport (pas le parent, qui s'étire librement avec son contenu)
   // pour garantir qu'il ne faut jamais scroller pour voir le bas de la grille.
-  const availableHeight = window.innerHeight - gridWrapper.getBoundingClientRect().top - 12;
+  // Il faut soustraire tout ce qui reste SOUS gridWrapper jusqu'au bas de page :
+  // le padding-bottom de .panel-grid (hérité de .panel) et celui de .main, sinon
+  // le total dépasse legèrement 100vh malgré ce calcul (débordement observé : ~19px).
+  const panelGridStyle = getComputedStyle(gridWrapper.closest('.panel-grid'));
+  const mainStyle = getComputedStyle(document.querySelector('.main'));
+  const bottomReserve = parseFloat(panelGridStyle.paddingBottom) + parseFloat(panelGridStyle.borderBottomWidth) + parseFloat(mainStyle.paddingBottom);
+  const availableHeight = window.innerHeight - gridWrapper.getBoundingClientRect().top - bottomReserve;
   wrappers.forEach(wrapper => {
     const gridEl = wrapper.querySelector('.bingo-grid');
     if (!gridEl) return;
@@ -3191,7 +3200,8 @@ function _adjustBingoGridSizes() {
       return child === gridEl ? sum : sum + child.getBoundingClientRect().height;
     }, 0);
     const wrapperStyle = getComputedStyle(wrapper);
-    const wrapperPaddingV = parseFloat(wrapperStyle.paddingTop) + parseFloat(wrapperStyle.paddingBottom);
+    const wrapperPaddingV = parseFloat(wrapperStyle.paddingTop) + parseFloat(wrapperStyle.paddingBottom)
+      + parseFloat(wrapperStyle.borderTopWidth) + parseFloat(wrapperStyle.borderBottomWidth);
     const wrapperPaddingH = parseFloat(wrapperStyle.paddingLeft) + parseFloat(wrapperStyle.paddingRight);
     const wrapperGap = parseFloat(wrapperStyle.rowGap || wrapperStyle.gap) || 0;
     const gapCount = wrapper.children.length - 1;
@@ -3895,8 +3905,25 @@ chkLockGenerate.addEventListener('click', () => {
 
 let _isDraggingElement = false;
 
+// Plafonne .folders-sidebar/.cases-sidebar à l'espace réellement visible sous leur
+// position actuelle (mesurée, pas un calc(100vh - Npx) déconnecté du control-panel
+// dont la hauteur varie avec le nombre de grilles affichées) — sinon le sidebar peut
+// dépasser le bas de l'écran quand son contenu (liste de cases) est plus haut que
+// l'espace dispo, et provoque un scroll de toute la page.
+function _adjustSidebarMaxHeight(sidebar) {
+  if (!sidebar) return;
+  const top = sidebar.getBoundingClientRect().top;
+  const maxH = Math.max(120, window.innerHeight - top - 12);
+  sidebar.style.maxHeight = maxH + 'px';
+}
+window.addEventListener('resize', () => {
+  document.querySelectorAll('.folders-sidebar.open, .cases-sidebar.open').forEach(_adjustSidebarMaxHeight);
+});
+
 function openCasesPanel() {
-  document.getElementById('cases-panel').classList.add('open');
+  const panel = document.getElementById('cases-panel');
+  panel.classList.add('open');
+  _adjustSidebarMaxHeight(panel);
 }
 function closeCasesPanel() {
   if (_isDraggingElement) return;
