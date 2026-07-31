@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=208" />
+  <link rel="stylesheet" href="style.css?v=217" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -59,9 +59,9 @@
         <div id="tl-compare-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
         <div class="tl-toolbar-side tl-toolbar-side-left">
           <label class="tl-toggle-label" title="Régler la taille des images (50–200 px)">
-            <span class="tl-toggle-label-head">Taille <input type="number" id="tl-compare-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
+            <span class="tl-toggle-label-head">Taille <input type="number" id="tl-compare-img-size-value-input" min="100" max="200" value="100" class="tl-split-value-input" /></span>
             <div class="tl-toggle-label-slider-row">
-              <input type="range" id="tl-compare-img-size-slider" min="50" max="200" value="80" class="tl-slider" />
+              <input type="range" id="tl-compare-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
             </div>
           </label>
           <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Afficher noms</button>
@@ -95,7 +95,7 @@
           <div class="ctrl-row ctrl-row-toolbar tl-ctrl-row-toolbar">
             <div class="ctrl-row-toolbar-left tl-group-row">
               <button class="tl-toolbar-btn tl-btn-neutral tl-group-elem hidden tl-shrink-0" id="tl-btn-template-dropdown" title="Choisir un template de ce dossier"><i data-lucide="chevron-down"></i> <span id="tl-template-dropdown-label"></span></button>
-              <button class="tl-toolbar-btn tl-btn-neutral tl-group-elem hidden tl-btn-hide-solo-mode tl-shrink-0" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une tier list"><i data-lucide="chevron-down"></i> <span id="tl-tierlist-dropdown-label"></span></button>
+              <button class="tl-toolbar-btn tl-btn-blue tl-group-elem hidden tl-btn-hide-solo-mode tl-shrink-0" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une tier list"><i data-lucide="chevron-down"></i> <span id="tl-tierlist-dropdown-label"></span></button>
               <div class="tl-toolbar-sep tl-group-elem tl-shrink-0"></div>
               <button class="tl-toolbar-btn tl-btn-neutral tl-shrink-0" id="tl-btn-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Tier list</button>
               <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
@@ -103,7 +103,7 @@
             <div class="ctrl-row-toolbar-center">
               <div class="tl-title-row">
                 <span id="tl-title-prefix" class="tl-title-prefix hidden"></span>
-                <span id="tl-title-display" class="tl-title-display tl-title-editable" title="Clic gauche : renommer la tier list"></span>
+                <span id="tl-title-display" class="tl-title-display"></span>
                 <input type="text" id="tl-title-input" class="tl-title-input hidden" maxlength="60" />
               </div>
             </div>
@@ -111,19 +111,26 @@
               <label class="tl-toggle-label tl-shrink-0" id="tl-split-slider-label" title="Régler la répartition largeur entre les tiers et les éléments non placés">
                 <span>Répartition</span>
                 <div class="tl-toggle-label-row">
-                  <input type="number" id="tl-split-value-input" min="20" max="80" value="60" class="tl-split-value-input" />
-                  <input type="range" id="tl-split-slider" min="20" max="80" value="60" class="tl-slider" />
-                  <input type="number" id="tl-split-value-input-right" min="20" max="80" value="40" class="tl-split-value-input" />
+                  <input type="number" id="tl-split-value-input" min="30" max="70" value="60" class="tl-split-value-input" />
+                  <input type="range" id="tl-split-slider" min="30" max="70" value="60" class="tl-slider" />
+                  <input type="number" id="tl-split-value-input-right" min="30" max="70" value="40" class="tl-split-value-input" />
                 </div>
               </label>
             </div>
           </div>
 
-          <!-- Barre plein écran : Options (menu) à gauche, chemin centré (taille adaptable), Quitter à droite -->
+          <!-- Barre plein écran : Options + Répartition à gauche, chemin centré (taille adaptable),
+               Masquer non placés + Quitter à droite. #tl-split-slider-label et #tl-btn-toggle-unplaced
+               sont les mêmes éléments physiques que le mode normal, déplacés ici en JS (jamais deux
+               jeux de contrôles désynchronisés) — voir _tlEnterSoloToolbarLayout/_tlExitSoloToolbarLayout. -->
           <div class="ctrl-row tl-solo-toolbar btn-fullscreen-only">
-            <button class="tl-toolbar-btn tl-btn-neutral" id="tl-btn-solo-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Tier list</button>
+            <div class="tl-solo-toolbar-left">
+              <button class="tl-toolbar-btn tl-btn-neutral" id="tl-btn-solo-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Tier list</button>
+            </div>
             <div id="tl-fullscreen-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
-            <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-btn-exit-solo" title="Quitter le mode plein écran"><i data-lucide="x"></i> Quitter plein écran</button>
+            <div class="tl-solo-toolbar-right">
+              <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-btn-exit-solo" title="Quitter le mode plein écran"><i data-lucide="x"></i> Quitter plein écran</button>
+            </div>
           </div>
 
         </div>
@@ -133,10 +140,10 @@
            Options Tiers/Annuler/Reset — un seul menu, ouvert par le bouton
            Options actif (normal ou plein écran). -->
       <div id="tl-options-menu" class="ctx-menu hidden">
-        <label class="tl-toggle-label tl-shrink-0" id="tl-img-size-label" title="Régler la taille des images (50–200 px)">
-          <span class="tl-toggle-label-head">Taille <input type="number" id="tl-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
+        <label class="tl-toggle-label tl-shrink-0" id="tl-img-size-label" title="Régler la taille des images (100–200 px)">
+          <span class="tl-toggle-label-head">Taille <input type="number" id="tl-img-size-value-input" min="100" max="200" value="100" class="tl-split-value-input" /></span>
           <div class="tl-toggle-label-slider-row">
-            <input type="range" id="tl-img-size-slider" min="50" max="200" value="80" class="tl-slider" />
+            <input type="range" id="tl-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
           </div>
         </label>
         <button class="tl-toolbar-btn tl-btn-capture tl-shrink-0" id="tl-btn-capture" title="Capturer la tier list"><i data-lucide="camera"></i> Capture</button>
@@ -205,26 +212,7 @@
 
               <!-- Zone images non placées -->
               <div class="tl-unplaced-section">
-                <div class="tl-unplaced-header">
-                  <span class="tl-unplaced-label">Éléments non placés</span>
-                  <span id="tl-unplaced-count" class="tl-unplaced-count">0</span>
-                  <button id="tl-unplaced-sort-btn" class="tl-unplaced-sort-btn" title="Trier les éléments non placés"><i data-lucide="arrow-down-a-z"></i> Tri</button>
-                  <button id="tl-btn-add-image" class="tl-btn-add-image" title="Ajouter des images&#10;Clic : importer des fichiers ou coller depuis le presse-papier">+ Image</button>
-                  <span id="tl-add-text-wrap" class="tl-add-text-wrap">
-                    <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Ajouter texte..." title="Taper un texte puis Entrée pour ajouter une carte" />
-                  </span>
-                  <button type="button" id="tl-unplaced-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image du cadre Éléments non placés"><i data-lucide="eye"></i> Afficher noms</button>
-                  <label class="tl-toggle-label" title="Régler la taille des images du cadre Éléments non placés (50–200 px)">
-                    <span class="tl-toggle-label-head">Taille <input type="number" id="tl-unplaced-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
-                    <div class="tl-toggle-label-slider-row">
-                      <input type="range" id="tl-unplaced-img-size-slider" min="50" max="200" value="80" class="tl-slider" />
-                    </div>
-                  </label>
-                  <button type="button" id="tl-btn-export-images" class="tl-toolbar-btn tl-btn-export hidden" title="Exporter toutes les images du template (fichier .zip)"><i data-lucide="images"></i> Exporter images</button>
-                  <span class="tl-max-images-label">Capacité max :</span>
-                  <button type="button" id="tl-max-images-input" class="tl-max-images-input" title="Choisir la capacité maximale du groupe">50</button>
-                </div>
-                <div class="tl-unplaced-body">
+                <div class="tl-unplaced-top">
                   <div id="tl-toplace-zone" class="tl-toplace-zone"
                        data-dropzone="toplace"
                        ondragover="tlToPlaceDragOver(event)" ondrop="tlDrop(event, '__toplace__')"
@@ -232,6 +220,40 @@
                        title="Élément à placer — partagé avec tout le monde">
                     <div class="tl-toplace-content"></div>
                   </div>
+                  <div class="tl-unplaced-header">
+                    <div class="tl-unplaced-header-row tl-unplaced-header-row--top">
+                      <span class="tl-unplaced-header-row--top-spacer"></span>
+                      <span class="tl-unplaced-header-row--top-center">
+                        <span class="tl-unplaced-label">Non placés</span>
+                        <span id="tl-unplaced-count" class="tl-unplaced-count">0</span>
+                      </span>
+                      <span class="tl-unplaced-header-row--top-right">
+                        <span class="tl-max-images-label">Max :</span>
+                        <button type="button" id="tl-max-images-input" class="tl-max-images-input" title="Choisir la capacité maximale du groupe">50</button>
+                      </span>
+                    </div>
+                    <div class="tl-unplaced-header-row">
+                      <button id="tl-btn-add-image" class="tl-btn-add-image" title="Ajouter des images&#10;Clic : importer des fichiers ou coller depuis le presse-papier">+ Image</button>
+                      <span id="tl-add-text-wrap" class="tl-add-text-wrap">
+                        <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Ajouter texte..." title="Taper un texte puis Entrée pour ajouter une carte" />
+                      </span>
+                      <button type="button" id="tl-btn-export-images" class="tl-toolbar-btn tl-btn-neutral hidden" title="Exporter toutes les images du template (fichier .zip)"><i data-lucide="images"></i> Exporter images</button>
+                    </div>
+                    <div class="tl-unplaced-header-row">
+                      <button id="tl-unplaced-sort-btn" class="tl-unplaced-sort-btn" title="Trier les éléments non placés"><i data-lucide="arrow-down-a-z"></i> Tri</button>
+                      <button type="button" id="tl-unplaced-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image du cadre Éléments non placés"><i data-lucide="eye"></i> Afficher noms</button>
+                    </div>
+                    <div class="tl-unplaced-header-row">
+                      <label class="tl-toggle-label" title="Régler la taille des images du cadre Éléments non placés (100–200 px)">
+                        <span class="tl-toggle-label-head">Taille <input type="number" id="tl-unplaced-img-size-value-input" min="100" max="200" value="100" class="tl-split-value-input" /></span>
+                        <div class="tl-toggle-label-slider-row">
+                          <input type="range" id="tl-unplaced-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div class="tl-unplaced-body">
                   <div id="tl-unplaced-zone" class="tl-unplaced-zone"
                        data-dropzone="unplaced"
                        ondragover="tlDragOver(event)" ondrop="tlDrop(event, '__unplaced__')"
@@ -629,6 +651,24 @@
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-compare-confirm">Comparer</button>
           <button class="btn-action btn-secondary" id="tl-modal-compare-cancel">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal choix Comparer (dans cette fenêtre ou nouvelle fenêtre) -->
+  <div id="modal-tl-compare-choice" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Comparer</h3>
+        <button class="modal-close" id="btn-close-tl-compare-choice"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Afficher la comparaison dans cette fenêtre ou dans une nouvelle fenêtre ?</p>
+        <div class="modal-actions modal-actions-wrap">
+          <button class="btn-action" id="btn-tl-compare-choice-here"><i data-lucide="columns-2"></i> Cette fenêtre</button>
+          <button class="btn-action" id="btn-tl-compare-choice-window"><i data-lucide="external-link"></i> Nouvelle fenêtre</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-tl-compare-choice">Annuler</button>
         </div>
       </div>
     </div>
@@ -1242,6 +1282,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=291"></script>
+  <script src="app.js?v=300"></script>
 </body>
 </html>

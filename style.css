@@ -968,6 +968,13 @@ body.solo-tierlist-mode .tl-btn-exit-mode {
 .tl-solo-toolbar #tl-btn-exit-solo {
   flex-shrink: 0;
 }
+.tl-solo-toolbar-left,
+.tl-solo-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
 /* Mode comparer : la barre reste centrée comme avant (justify-content:center sur
    .tl-compare-toolbar) — le chemin est donc positionné en absolu tout à gauche plutôt
    que de pousser les boutons via margin-right:auto, qui casserait leur centrage. */
@@ -1456,16 +1463,19 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
    les boutons voisins (32px) : sans contrainte, son apparition/disparition agrandit toute
    la ligne 2 et donc le panneau de contrôle. On le fait tenir sur la hauteur des boutons
    en resserrant son empilement vertical, seulement dans ce contexte. */
-.ctrl-row-toolbar-right .tl-toggle-label {
+.ctrl-row-toolbar-right .tl-toggle-label,
+.tl-solo-toolbar-left .tl-toggle-label {
   height: 32px;
   justify-content: center;
   gap: 1px;
 }
-.ctrl-row-toolbar-right .tl-toggle-label-head {
+.ctrl-row-toolbar-right .tl-toggle-label-head,
+.tl-solo-toolbar-left .tl-toggle-label-head {
   height: 14px;
   font-size: 0.72rem;
 }
-.ctrl-row-toolbar-right .tl-toggle-label-row {
+.ctrl-row-toolbar-right .tl-toggle-label-row,
+.tl-solo-toolbar-left .tl-toggle-label-row {
   height: 16px;
 }
 
@@ -2659,15 +2669,6 @@ body.solo-tierlist-mode .tl-layout {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tl-title-editable {
-  cursor: pointer;
-  border-bottom: 2px dashed transparent;
-  transition: border-color 0.15s, color 0.15s;
-  padding-bottom: 1px;
-}
-.tl-title-editable:hover {
-  border-bottom-color: var(--accent-dim);
-}
 .tl-title-input {
   font-size: clamp(0.9rem, 2vw, 1.5rem);
   font-weight: 400;
@@ -2792,18 +2793,19 @@ body.solo-tierlist-mode .tl-layout {
 }
 .tl-toolbar-btn:hover { background: #6b7280; border-color: #6b7280; color: #fff; }
 .tl-toolbar-btn.active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
-.tl-btn-export {
-  background: rgba(71,200,135,0.15);
-  color: var(--success);
-  border-color: var(--success);
-}
-.tl-btn-export:hover { background: rgba(71,200,135,0.28); border-color: var(--success); color: var(--success); }
 .tl-btn-capture {
   background: rgba(129,140,248,0.15);
   color: #818cf8;
   border-color: #818cf8;
 }
 .tl-btn-capture:hover { background: rgba(129,140,248,0.28); border-color: #818cf8; color: #818cf8; }
+/* Bouton bleu clair : menu déroulant "Tier lists" */
+.tl-btn-blue {
+  background: rgba(96,165,250,0.15);
+  color: #60a5fa;
+  border-color: #60a5fa;
+}
+.tl-btn-blue:hover { background: rgba(96,165,250,0.28); border-color: #60a5fa; color: #60a5fa; }
 /* Boutons incolores (neutres) : Dossiers, Options Dossier, Options Tiers */
 .tl-btn-neutral {
   background: var(--surface-2) !important;
@@ -2894,14 +2896,17 @@ body.solo-tierlist-mode .tl-layout {
 .tl-editor-body.tl-unplaced-hidden .tl-tiers-zone { flex: 1; }
 
 /* Template : ni image ni placement possible dans les tiers — panneau Tiers (labels seuls,
-   largeur réduite) et panneau Éléments non placés affichés côte à côte plutôt qu'empilés. */
+   largeur réduite) et panneau Éléments non placés affichés côte à côte plutôt qu'empilés.
+   align-items:stretch + height:auto (comme le mode normal) pour que les deux cadres remplissent
+   toute la hauteur disponible au lieu de se limiter à leur height:60vh de base. */
 .tl-editor-body--template {
   flex-direction: row;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 16px;
 }
 .tl-editor-body--template .tl-tiers-zone {
   width: 220px;
+  height: auto;
   flex-shrink: 0;
 }
 .tl-editor-body--template .tl-tier-row { min-height: 56px; }
@@ -2910,10 +2915,36 @@ body.solo-tierlist-mode .tl-layout {
 .tl-editor-body--template .tl-unplaced-section {
   flex: 1;
   min-width: 0;
+  height: auto;
 }
 .tl-editor-body--template .tl-unplaced-expand-btn { display: none; }
 /* Le template n'a pas de vrais tiers remplis (labels seuls) : "à placer" n'a aucun sens pour lui. */
 .tl-editor-body--template .tl-toplace-zone { display: none; }
+
+/* Template : cadre non placés compact — tous les groupes de boutons sur une seule rangée qui
+   wrap si besoin (jamais 4 rangées empilées comme en mode normal), alignés à gauche sauf "Max"
+   repoussé tout à droite (order:1 le place après tous les autres groupes quel que soit l'ordre
+   DOM, partagé avec le mode normal où "Max" apparaît juste après "Non placés"). */
+.tl-editor-body--template .tl-unplaced-header {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 6px;
+}
+.tl-editor-body--template .tl-unplaced-header-row {
+  justify-content: flex-start;
+  width: auto;
+}
+.tl-editor-body--template .tl-unplaced-header-row--top {
+  display: contents;
+}
+.tl-editor-body--template .tl-unplaced-header-row--top-spacer {
+  display: none;
+}
+.tl-editor-body--template .tl-unplaced-header-row--top-right {
+  order: 1;
+  margin-left: auto;
+}
 
 /* ── Zone des tiers — cadre distinct, scroll interne indépendant de la zone non placée ── */
 .tl-tiers-zone {
@@ -3251,14 +3282,50 @@ body.solo-tierlist-mode .tl-layout {
   padding: 10px;
 }
 
+/* ── Bande du haut : "À placer" (taille fixe) à gauche + header (titre/boutons) à droite ── */
+.tl-unplaced-top {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .tl-unplaced-header {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-unplaced-header-row {
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   flex-wrap: wrap;
 }
+/* 1ère rangée : "Non placés"/compteur à gauche, "Max" plaqué à droite. */
+.tl-unplaced-header-row--top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tl-unplaced-header-row--top-spacer { display: none; }
+.tl-unplaced-header-row--top-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.tl-unplaced-header-row--top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
 
-/* ── Corps de la zone non placée : "À placer" fixe à gauche + liste scrollable à droite ── */
+/* ── Corps de la zone non placée : liste scrollable des cartes ── */
 .tl-unplaced-body {
   display: flex;
   flex-direction: row;
@@ -3267,15 +3334,13 @@ body.solo-tierlist-mode .tl-layout {
   min-height: 0;
 }
 
-/* Zone "À placer" — fixe (ne scrolle jamais), même taille qu'une image seule (nom exclu :
-   la largeur/hauteur réelle vient du style inline posé par _tlRenderToPlaceZone sur
-   .tl-toplace-content, à partir de imgSize — reste identique que la zone soit vide ou non). */
+/* Zone "À placer" — fixe (ne scrolle jamais), taille fixe 150px quelle que soit la taille
+   réglée pour les cartes du cadre non placés (imgSize forcé à 150 dans _tlRenderToPlaceZone). */
 .tl-toplace-zone {
   display: flex;
   align-items: flex-start;
   justify-content: center;
   flex-shrink: 0;
-  align-self: flex-start;
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   padding: 3px;
@@ -3756,12 +3821,14 @@ body.solo-tierlist-mode .tl-layout {
 
 .tl-btn-toggle-labels,
 .tl-btn-toggle-labels.active {
-  background: #f0b429;
-  border-color: #f0b429;
-  color: #1a1a1f;
+  background: var(--surface-2) !important;
+  color: var(--text-muted) !important;
+  border: 1px solid var(--border) !important;
 }
 .tl-btn-toggle-labels:hover {
-  filter: brightness(1.08);
+  border-color: var(--accent-dim) !important;
+  color: var(--accent) !important;
+  background: var(--accent-glow) !important;
 }
 
 /* ── Aperçu temps réel du dépôt (placeholder qui pousse les cartes voisines) ── */

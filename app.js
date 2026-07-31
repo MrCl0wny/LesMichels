@@ -20,6 +20,9 @@ let _compareTierlistIds = (_soloGridParams.get('compareTierlists') || '')
   .map(s => s.trim())
   .filter(Boolean);
 let _compareModeApplied = false;
+// true si la page a été ouverte directement sur ?compareTierlists= (fenêtre dédiée créée par
+// window.open() depuis le modal "Comparer" — donc fermable par le script qui l'a ouverte).
+const _compareModeIsDedicatedWindow = _compareTierlistIds.length >= 2;
 
 // ──────────────────────────────────────────────
 // Désactivation des bulles d'aide (tooltips title="...")
@@ -354,6 +357,27 @@ function _applySoloGridModeIfNeeded() {
   }
 }
 
+// #tl-split-slider-label et #tl-btn-toggle-unplaced vivent dans la toolbar du mode normal et
+// dans la barre plein écran (.tl-solo-toolbar) en solo-tierlist-mode — mêmes éléments physiques
+// déplacés en JS, jamais deux jeux de contrôles désynchronisés (comme #font-scale-label côté Bingo).
+function _tlEnterSoloToolbarLayout() {
+  const splitLabel = document.getElementById('tl-split-slider-label');
+  const soloLeft = document.querySelector('.tl-solo-toolbar-left');
+  if (splitLabel && soloLeft) soloLeft.appendChild(splitLabel);
+  const toggleUnplacedBtn = document.getElementById('tl-btn-toggle-unplaced');
+  const soloRight = document.querySelector('.tl-solo-toolbar-right');
+  const exitBtn = document.getElementById('tl-btn-exit-solo');
+  if (toggleUnplacedBtn && soloRight) soloRight.insertBefore(toggleUnplacedBtn, exitBtn);
+}
+function _tlExitSoloToolbarLayout() {
+  const splitLabel = document.getElementById('tl-split-slider-label');
+  const toolbarRight = document.querySelector('.ctrl-row-toolbar-right');
+  if (splitLabel && toolbarRight) toolbarRight.appendChild(splitLabel);
+  const toggleUnplacedBtn = document.getElementById('tl-btn-toggle-unplaced');
+  const line1Right = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-right');
+  if (toggleUnplacedBtn && line1Right) line1Right.appendChild(toggleUnplacedBtn);
+}
+
 function _applySoloTierlistModeIfNeeded() {
   if (!_soloTierlistId || _soloTierlistApplied) return;
   const tl = tlState.tierlists.find(t => t.id === _soloTierlistId && !t.archived);
@@ -364,6 +388,7 @@ function _applySoloTierlistModeIfNeeded() {
   if (window._switchPage) window._switchPage('tierlist');
   document.title = (_tlFullTitlePath(tl) || tl.name || 'Tier list') + ' — LesMichels';
   document.body.classList.add('solo-tierlist-mode');
+  _tlEnterSoloToolbarLayout();
   requestAnimationFrame(_adjustTlLayoutHeight);
 }
 
@@ -381,6 +406,14 @@ function _applyCompareTierlistModeIfNeeded() {
     _tlLocalActiveTierlistId = null;
     if (window._switchPage) window._switchPage('tierlist');
     document.body.classList.add('compare-tierlist-mode');
+    if (_compareModeIsDedicatedWindow) {
+      const exitBtn = document.getElementById('tl-compare-btn-exit');
+      if (exitBtn) {
+        exitBtn.innerHTML = '<i data-lucide="x"></i> Fermer';
+        exitBtn.title = 'Fermer cette fenêtre';
+        if (window.lucide) lucide.createIcons();
+      }
+    }
   }
   document.title = 'Comparaison : ' + _tlCommonTitlePath(tls) + ' — LesMichels';
   _tlRenderCompareView(tls);
@@ -390,6 +423,7 @@ function _exitSoloTierlistMode() {
   document.body.classList.remove('solo-tierlist-mode');
   document.title = 'LesMichels';
   document.getElementById('tl-options-menu')?.classList.add('hidden');
+  _tlExitSoloToolbarLayout();
   // Empêche le listener Firebase (_dbTierlist.on('value')) de rouvrir le mode au prochain snapshot
   _soloTierlistId = null;
   _soloTierlistApplied = false;
@@ -397,6 +431,12 @@ function _exitSoloTierlistMode() {
 }
 
 function _exitCompareTierlistMode() {
+  // Fenêtre dédiée ouverte via window.open() depuis le modal "Comparer" (?compareTierlists=
+  // dès le chargement) : window.close() fonctionne car la page a été ouverte par script.
+  // Si window.close() échoue (bloqué par le navigateur), on retombe sur le comportement normal.
+  if (_compareModeIsDedicatedWindow) {
+    window.close();
+  }
   document.body.classList.remove('compare-tierlist-mode');
   document.title = 'LesMichels';
   // Empêche le listener Firebase (_dbTierlist.on('value')) de rouvrir le mode au prochain snapshot
@@ -447,16 +487,19 @@ function _applyPrefsAndRender() {
   if (_tlLocalShowLabels !== null) _tlUpdateShowLabelsBtn(_tlLocalShowLabels);
   if (_tlLocalUnplacedShowLabels !== null) _tlUpdateUnplacedShowLabelsBtn(_tlLocalUnplacedShowLabels);
   if (_tlLocalImgSize    !== null) {
+    _tlLocalImgSize = _tlClampImgSize(_tlLocalImgSize);
     tlImgSizeSlider.value = _tlLocalImgSize;
     const tlImgSizeValueInputEl = document.getElementById('tl-img-size-value-input');
     if (tlImgSizeValueInputEl) tlImgSizeValueInputEl.value = _tlLocalImgSize;
   }
   if (_tlLocalUnplacedImgSize !== null && tlUnplacedImgSizeSlider) {
+    _tlLocalUnplacedImgSize = _tlClampImgSize(_tlLocalUnplacedImgSize);
     tlUnplacedImgSizeSlider.value = _tlLocalUnplacedImgSize;
     const tlUnplacedImgSizeValueInputEl = document.getElementById('tl-unplaced-img-size-value-input');
     if (tlUnplacedImgSizeValueInputEl) tlUnplacedImgSizeValueInputEl.value = _tlLocalUnplacedImgSize;
   }
   if (_tlLocalSplit !== null) {
+    _tlLocalSplit = Math.max(30, Math.min(70, _tlLocalSplit));
     if (tlSplitSlider) tlSplitSlider.value = _tlLocalSplit;
     if (tlSplitValueInput) tlSplitValueInput.value = _tlLocalSplit;
     if (tlSplitValueInputRight) tlSplitValueInputRight.value = 100 - _tlLocalSplit;
@@ -4965,6 +5008,12 @@ let tlState = { tierlists: [], folders: [] };
 let _tlRemoteUpdate = false; // anti-boucle Firebase
 const _dbTierlist = firebase.database().ref('tierlist');
 
+// Borne une taille d'image tierlist dans la plage valide (100–200), y compris une valeur
+// stockée avant l'introduction de cette borne (ex: anciennes tierlists à 50/60/80).
+function _tlClampImgSize(v) {
+  return Math.max(100, Math.min(200, v || 100));
+}
+
 // Prefs tierlist — personnelles par utilisateur (non partagées)
 let _tlLocalShowLabels      = null; // null = pas encore chargé
 let _tlLocalImgSize         = null;
@@ -5228,7 +5277,7 @@ function tlDefaultTierlist(name, isTemplate = false) {
     name,
     archived: false,
     showLabels: true,
-    imgSize: 80,
+    imgSize: 100,
     unplacedSort: 'manual',
     isTemplate,
     tiers: TL_DEFAULT_TIERS.map(t => ({ id: uid(), label: t.label, color: t.color, items: [] })),
@@ -5891,8 +5940,8 @@ function tlRender() {
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
   const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
   const unplacedShowLabels = _tlLocalUnplacedShowLabels !== null ? _tlLocalUnplacedShowLabels : !!tl.showLabels;
-  const imgSize    = _tlLocalImgSize    !== null ? _tlLocalImgSize    : (tl.imgSize || 80);
-  const unplacedImgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : (tl.imgSize || 80);
+  const imgSize    = _tlLocalImgSize    !== null ? _tlLocalImgSize    : _tlClampImgSize(tl.imgSize);
+  const unplacedImgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : _tlClampImgSize(tl.imgSize);
   _tlUpdateShowLabelsBtn(showLabels);
   _tlUpdateUnplacedShowLabelsBtn(unplacedShowLabels);
   tlImgSizeSlider.value      = imgSize;
@@ -6172,7 +6221,7 @@ function _tlRenderToPlaceZone(tl) {
   const root = _tlGroupRoot(tl);
   const members = _tlGetGroupParticipants(tl);
   const imgId = root.toPlaceImgId;
-  const imgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : (tl.imgSize || 80);
+  const imgSize = 150; // taille fixe, indépendante du slider "Taille" du cadre non placés
 
   const allPlaced = !imgId || members.every(m => _tlMemberResolvedFor(m, imgId));
   zone.classList.toggle('tl-toplace-empty', allPlaced);
@@ -6570,7 +6619,7 @@ function _tlClearTierDropPlaceholder() {
 
 function tlRenderTiers(tl) {
   tlTiersZone.innerHTML = '';
-  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
+  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : _tlClampImgSize(tl.imgSize);
 
   tl.tiers.forEach((tier, tierIdx) => {
     const wrap = document.createElement('div');
@@ -6935,7 +6984,7 @@ document.addEventListener('keydown', e => {
 
 // ── Mode comparaison (fenêtre séparée, lecture seule) ────────────────────────
 let _tlCompareTierlists = null; // dernière liste rendue, pour re-render au changement de taille
-let _tlCompareImgSize = 80;
+let _tlCompareImgSize = 100;
 
 function _tlRenderCompareView(tls) {
   const container = document.getElementById('tl-compare-view');
@@ -7054,7 +7103,7 @@ document.getElementById('tl-compare-btn-exit')?.addEventListener('click', _exitC
 
 function tlRenderUnplaced(tl) {
   tlUnplacedZone.innerHTML = '';
-  const imgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : (tl.imgSize || 80);
+  const imgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : _tlClampImgSize(tl.imgSize);
 
   if (tl.unplaced.length === 0) {
     const hint = document.createElement('div');
@@ -7926,7 +7975,7 @@ async function _tlBuildCanvas(tl) {
   // Même taille que celle affichée à l'écran : la préférence locale (slider "Taille") prévaut sur
   // tl.imgSize, comme dans tlRender()/tlRenderTiers()/tlRenderUnplaced() — sinon l'export ne
   // correspond plus à ce que l'utilisateur voit s'il n'a pas sauvegardé cette taille sur la tierlist.
-  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : (tl.imgSize || 80);
+  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : _tlClampImgSize(tl.imgSize);
   const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
   const labelW = 140;
   const padding = 6;
@@ -9100,11 +9149,18 @@ function tlOpenCompareModal() {
   tlModalCompare.classList.remove('hidden');
 }
 
+let _tlCompareChoiceIds = null;
+
 function tlConfirmCompareModal() {
   const checked = [...document.querySelectorAll('#tl-compare-checklist input:checked')].map(cb => cb.value);
   if (checked.length < 2) { alert('Sélectionne au moins 2 tier lists.'); return; }
   tlModalCompare.classList.add('hidden');
-  const tls = checked.map(id => tlState.tierlists.find(t => t.id === id)).filter(Boolean);
+  _tlCompareChoiceIds = checked;
+  document.getElementById('modal-tl-compare-choice').classList.remove('hidden');
+}
+
+function _tlCompareHere(ids) {
+  const tls = ids.map(id => tlState.tierlists.find(t => t.id === id)).filter(Boolean);
   if (tls.length < 2) return;
   document.title = 'Comparaison : ' + _tlCommonTitlePath(tls) + ' — LesMichels';
   document.body.classList.add('compare-tierlist-mode');
@@ -9115,6 +9171,32 @@ document.getElementById('tl-btn-compare').addEventListener('click', tlOpenCompar
 document.getElementById('tl-modal-compare-confirm').addEventListener('click', tlConfirmCompareModal);
 document.getElementById('tl-modal-compare-cancel').addEventListener('click', () => tlModalCompare.classList.add('hidden'));
 document.getElementById('tl-modal-compare-close').addEventListener('click', () => tlModalCompare.classList.add('hidden'));
+
+// ── Modal choix Comparer (cette fenêtre ou nouvelle fenêtre) ─────────────────────
+const _tlModalCompareChoice = document.getElementById('modal-tl-compare-choice');
+document.getElementById('btn-tl-compare-choice-here').addEventListener('click', () => {
+  _tlModalCompareChoice.classList.add('hidden');
+  if (_tlCompareChoiceIds) _tlCompareHere(_tlCompareChoiceIds);
+  _tlCompareChoiceIds = null;
+});
+document.getElementById('btn-tl-compare-choice-window').addEventListener('click', () => {
+  _tlModalCompareChoice.classList.add('hidden');
+  if (_tlCompareChoiceIds) {
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.searchParams.set('compareTierlists', _tlCompareChoiceIds.join(','));
+    window.open(url.toString(), '_blank');
+  }
+  _tlCompareChoiceIds = null;
+});
+document.getElementById('btn-cancel-tl-compare-choice').addEventListener('click', () => {
+  _tlModalCompareChoice.classList.add('hidden');
+  _tlCompareChoiceIds = null;
+});
+document.getElementById('btn-close-tl-compare-choice').addEventListener('click', () => {
+  _tlModalCompareChoice.classList.add('hidden');
+  _tlCompareChoiceIds = null;
+});
 
 // ── Menu contextuel tierlist (clic droit sur onglet) ─────────────────────────
 function tlOpenManageModal(id, anchorEl, context) {
@@ -9160,30 +9242,6 @@ function tlCapture() {
   });
 }
 
-// ── Titre inline edit ─────────────────────────────────────────────────────────
-function tlStartTitleEdit() {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-  tlTitleInput.value = tl.name;
-  tlTitleDisplay.classList.add('hidden');
-  tlTitleInput.classList.remove('hidden');
-  tlTitleInput.focus();
-  tlTitleInput.select();
-}
-
-function tlCommitTitleEdit() {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-  const newName = tlTitleInput.value.trim();
-  tlTitleInput.classList.add('hidden');
-  tlTitleDisplay.classList.remove('hidden');
-  if (newName && newName !== tl.name) {
-    tlRename(tl.id, newName);
-  } else {
-    tlTitleDisplay.textContent = tl.name;
-  }
-}
-
 // ── Sidebar drawer tierlist ───────────────────────────────────────────────────
 function openTlSidebar() {
   document.getElementById('tl-sidebar').classList.add('open');
@@ -9222,6 +9280,7 @@ document.getElementById('tl-btn-open-window').addEventListener('click', () => {
   if (!tl) return;
   document.title = (_tlFullTitlePath(tl) || tl.name || 'Tier list') + ' — LesMichels';
   document.body.classList.add('solo-tierlist-mode');
+  _tlEnterSoloToolbarLayout();
   requestAnimationFrame(_adjustTlLayoutHeight);
 });
 document.getElementById('tl-btn-exit-solo')?.addEventListener('click', _exitSoloTierlistMode);
@@ -9250,13 +9309,13 @@ if (_tlOptionsMenu) {
 
 // Ligne composite pour les dropdowns Template/Tier lists : nom cliquable (switch) + bouton ⋮
 // (renommer/dupliquer/archiver/supprimer…, via le même tlOpenManageModal que partout ailleurs).
-function _tlAddDropdownSwitchItem(menu, member, isActive, closeMenu) {
+function _tlAddDropdownSwitchItem(menu, member, isActive, closeMenu, displayName) {
   const item = document.createElement('div');
   item.className = 'grid-tab tl-dropdown-item' + (isActive ? ' active' : '');
 
   const nameSpan = document.createElement('span');
   nameSpan.className = 'grid-tab-name';
-  nameSpan.textContent = member.name;
+  nameSpan.textContent = displayName || member.name;
   nameSpan.addEventListener('click', () => { closeMenu(); tlSwitch(member.id, false); });
   item.appendChild(nameSpan);
 
@@ -9302,6 +9361,8 @@ if (_tlBtnTierlistDropdown) {
     if (!root) return;
     const members = tlState.tierlists.filter(t => !t.archived && t.templateId === root.id);
     const { menu, addItem, addSep, close } = _tlMakeCtxMenu(_tlBtnTierlistDropdown, null, { noCloseBtn: true });
+    _tlAddDropdownSwitchItem(menu, root, root.id === tl.id, close, root.name + ' (template)');
+    addSep();
     members.forEach(member => _tlAddDropdownSwitchItem(menu, member, member.id === tl.id, close));
     if (members.length) addSep();
     addItem('', '+ Tier list', 'green', () => tlOpenGenerateFromTemplateModal(root.id));
@@ -9349,19 +9410,6 @@ tlModalNewClose.addEventListener('click', () => tlModalNew.classList.add('hidden
 tlModalNewInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmNewModal();
   if (e.key === 'Escape') tlModalNew.classList.add('hidden');
-});
-
-// Titre inline edit
-tlTitleDisplay.addEventListener('click', tlStartTitleEdit);
-tlTitleInput.addEventListener('blur', tlCommitTitleEdit);
-tlTitleInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') { tlTitleInput.blur(); }
-  if (e.key === 'Escape') {
-    tlTitleInput.classList.add('hidden');
-    tlTitleDisplay.classList.remove('hidden');
-    const tl = tlActiveTierlist();
-    if (tl) tlTitleDisplay.textContent = tl.name;
-  }
 });
 
 // (tlCloseManageModal supprimé — remplacé par menus contextuels dynamiques)
@@ -9651,7 +9699,7 @@ if (tlUnplacedShowLabelsToggle) {
 
 // Synchronise un curseur de taille d'images avec son input number associé (deux sens).
 function _tlWireImgSizeControls(slider, valueInput, onChange) {
-  const clamp = v => Math.max(50, Math.min(200, v));
+  const clamp = v => Math.max(100, Math.min(200, v));
   slider.addEventListener('input', () => {
     const v = clamp(parseInt(slider.value));
     if (valueInput) valueInput.value = v;
@@ -9685,7 +9733,7 @@ if (tlUnplacedImgSizeSlider) {
 }
 
 function _tlApplySplit(value) {
-  _tlLocalSplit = Math.max(20, Math.min(80, value));
+  _tlLocalSplit = Math.max(30, Math.min(70, value));
   if (tlSplitSlider) tlSplitSlider.value = _tlLocalSplit;
   if (tlSplitValueInput) tlSplitValueInput.value = _tlLocalSplit;
   if (tlSplitValueInputRight) tlSplitValueInputRight.value = 100 - _tlLocalSplit;
