@@ -280,16 +280,16 @@ body {
 .ctrl-row-grids-center {
   display: flex;
   align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
 }
 .ctrl-row-grids-right { justify-content: flex-end; }
 .ctrl-row-toolbar       { padding-bottom: 4px; }
 
-/* Ligne 1 tier list : Dossiers (toujours visible) + groupe masquable hors template, imbriqué
-   sans sa propre bordure (celle de .ctrl-row-line1 fait déjà office de séparateur). */
-.ctrl-row-line1 { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-.ctrl-row-line1 .ctrl-row-grids { border-bottom: none; padding-bottom: 0; flex: 1; min-width: 0; }
-.ctrl-row-line1 .tl-btn-toggle-unplaced { flex-shrink: 0; margin-left: auto; }
+/* Ligne 1 tier list : Dossiers + chemin + Options Dossier à gauche, Plein écran/Comparaison
+   centrés (3 zones flex:1 via .ctrl-row-grids-left/center/right, partagées avec le Bingo). */
+.ctrl-row-line1 { border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.tl-group-breadcrumb-hidden { display: none !important; }
 
 .tl-btn-toggle-unplaced {
   font-size: 0.82rem;
@@ -312,12 +312,14 @@ body {
   flex-wrap: wrap;
   gap: 8px;
   flex: 1;
+  min-width: 0;
   justify-content: center;
 }
 
-/* ── Boutons Dossiers / Cases — même style que Archives/Corbeille ── */
+/* ── Boutons Dossiers / Cases / Grilles / Options Grilles — incolores ── */
 .btn-folders-panel,
-.btn-cases-panel {
+.btn-cases-panel,
+.btn-neutral-action {
   font-size: 0.82rem;
   padding: 5px 12px;
   flex-shrink: 0;
@@ -326,7 +328,8 @@ body {
   border: 1px solid var(--border) !important;
 }
 .btn-folders-panel:hover,
-.btn-cases-panel:hover {
+.btn-cases-panel:hover,
+.btn-neutral-action:hover {
   border-color: var(--accent-dim) !important;
   color: var(--accent) !important;
   background: var(--accent-glow) !important;
@@ -893,11 +896,6 @@ body.solo-grid-mode .ctrl-row-toolbar-center {
   flex: 1;
   justify-content: flex-start;
 }
-body.solo-grid-mode .bingo-fullscreen-breadcrumb {
-  flex: 1;
-  justify-content: center;
-  text-align: center;
-}
 body.solo-grid-mode .ctrl-row-toolbar-right {
   flex: 1;
   justify-content: flex-end;
@@ -906,52 +904,69 @@ body.solo-grid-mode .btn-exit-solo-mode,
 body.solo-grid-mode .btn-fullscreen-only {
   display: inline-flex !important;
 }
-.bingo-fullscreen-breadcrumb {
-  display: none;
-}
-body.solo-grid-mode .bingo-fullscreen-breadcrumb {
+/* .bingo-breadcrumb-title : le chemin d'accès sert de titre au centre de la 2e rangée, visible
+   en mode normal ET en plein écran (même taille que les autres titres de l'appli). */
+.bingo-breadcrumb-title {
   display: block;
   min-width: 0;
   color: var(--accent);
-  font-weight: 600;
-  font-size: 1.64rem;
+  font-weight: 400;
+  font-size: clamp(0.9rem, 2vw, 1.5rem);
   white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
 }
 
 /* ── Mode "tier list plein écran" (overlay interne, plus de popup) ── */
 /* !important nécessaire : .tl-toolbar-btn (définie plus bas dans ce fichier) impose display:inline-flex
    avec la même spécificité — sans ça, la cascade la fait gagner et le bouton reste visible hors overlay. */
-.tl-btn-exit-mode { display: none !important; }
+.tl-btn-exit-mode,
+.btn-fullscreen-only { display: none !important; }
 body.solo-tierlist-mode .header,
 body.solo-tierlist-mode .ctrl-row-line1,
-body.solo-tierlist-mode .tl-editor-header {
+body.solo-tierlist-mode .ctrl-row-toolbar {
   display: none;
 }
 body.solo-tierlist-mode .main {
   padding: 8px;
 }
-body.solo-tierlist-mode .ctrl-row-toolbar {
-  flex-wrap: nowrap;
-  overflow-x: auto;
+body.solo-tierlist-mode .btn-fullscreen-only,
+body.solo-tierlist-mode .tl-btn-exit-mode {
+  display: flex !important;
 }
-body.solo-tierlist-mode .ctrl-row-toolbar-center {
+/* Plein écran tierlist : une seule rangée — [Options] ... chemin centré (taille fluide
+   via clamp() pour rétrécir plutôt que tronquer) ... [Quitter plein écran]. */
+.tl-solo-toolbar {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   flex-wrap: nowrap;
-}
-body.solo-tierlist-mode #tl-btn-exit-solo {
-  display: inline-flex !important;
 }
 .tl-fullscreen-breadcrumb {
   display: none;
   color: #fff;
-  font-weight: 600;
+  font-weight: 400;
   font-size: 0.85rem;
   white-space: nowrap;
   margin-right: auto;
   padding-right: 8px;
 }
-body.solo-tierlist-mode .ctrl-row-toolbar > .tl-fullscreen-breadcrumb {
+.tl-solo-toolbar .tl-fullscreen-breadcrumb {
   display: block;
+  flex: 1;
+  min-width: 0;
+  margin-right: 0;
+  padding-right: 0;
+  color: var(--accent);
+  font-size: clamp(0.9rem, 2vw, 1.5rem);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl-solo-toolbar #tl-btn-solo-options,
+.tl-solo-toolbar #tl-btn-exit-solo {
+  flex-shrink: 0;
 }
 /* Mode comparer : la barre reste centrée comme avant (justify-content:center sur
    .tl-compare-toolbar) — le chemin est donc positionné en absolu tout à gauche plutôt
@@ -959,14 +974,18 @@ body.solo-tierlist-mode .ctrl-row-toolbar > .tl-fullscreen-breadcrumb {
 #tl-compare-breadcrumb.tl-fullscreen-breadcrumb {
   display: block;
   position: absolute;
-  left: 16px;
+  left: 50%;
   top: 50%;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
   margin-right: 0;
   padding-right: 0;
-  max-width: 30%;
+  max-width: 50%;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--accent);
+  font-size: clamp(0.9rem, 2vw, 1.5rem);
+  text-align: center;
+  pointer-events: none;
 }
 
 /* ── Mode "comparaison" (overlay interne, lecture seule) ── */
@@ -1013,8 +1032,10 @@ body.compare-tierlist-mode .main {
 }
 .tl-compare-column-title {
   margin: 0 0 4px;
-  font-size: 1rem;
-  color: var(--text);
+  font-size: clamp(0.9rem, 2vw, 1.5rem);
+  font-weight: 400;
+  color: var(--accent);
+  text-align: center;
 }
 .tl-compare-tier-row {
   display: flex;
@@ -1298,12 +1319,6 @@ textarea.element-edit-input {
 .hidden { display: none !important; }
 
 /* ── Grilles ── */
-.grids-list {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
 .grid-tab {
   display: flex;
   align-items: center;
@@ -1375,28 +1390,6 @@ textarea.element-edit-input {
 .btn-new-grid:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
 .btn-new-grid:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
-.btn-new-grid-inline {
-  background: var(--surface-2);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  color: #3ecf6e;
-  font-family: Arial, sans-serif;
-  font-size: 0.82rem;
-  font-weight: 700;
-  height: 32px;
-  padding: 0 10px;
-  cursor: pointer;
-  transition: var(--transition);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  white-space: nowrap;
-  align-self: center;
-}
-.btn-new-grid-inline:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
-.btn-new-grid-inline:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
-
 
 /* ── Toolbar ── */
 /* 3 zones de largeur égale (flex:1 gauche/droite) pour que le centre soit vraiment
@@ -1406,6 +1399,21 @@ textarea.element-edit-input {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
+  position: relative;
+}
+/* Chemin d'accès Bingo (titre, 2e rangée) centré par rapport à TOUTE la ligne (position
+   absolue), pas par flex:1, pour rester centré quelle que soit la largeur du contenu de
+   chaque côté — même principe que .tl-ctrl-row-toolbar côté Tier List. */
+#bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 50%;
+  pointer-events: none;
+}
+body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
+  max-width: 40%;
 }
 .ctrl-row-toolbar-left,
 .ctrl-row-toolbar-right {
@@ -1417,6 +1425,48 @@ textarea.element-edit-input {
 }
 .ctrl-row-toolbar-right {
   justify-content: flex-end;
+}
+/* Ligne "Template + Tier lists (dropdowns) + Options" tierlist : largeur naturelle
+   (ne grandit pas au-delà de son contenu) ; wrap sur 2 lignes seulement si vraiment
+   trop étroit pour les 3 boutons eux-mêmes. */
+.tl-group-row {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.tl-shrink-0 { flex-shrink: 0; }
+/* Chemin d'accès centré par rapport à TOUTE la ligne (position absolue) plutôt que dans
+   l'espace restant après les boutons de gauche, qui ne fait pas un centrage symétrique
+   puisqu'il n'y a pas de zone à droite de largeur équivalente. */
+.tl-ctrl-row-toolbar {
+  position: relative;
+}
+.tl-ctrl-row-toolbar .ctrl-row-toolbar-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  flex: 0 1 auto;
+  max-width: 60%;
+  pointer-events: none;
+}
+.tl-ctrl-row-toolbar .ctrl-row-toolbar-center .tl-title-row {
+  pointer-events: auto;
+}
+/* Le curseur Répartition (.tl-toggle-label empilé texte+slider, ~41px) est plus haut que
+   les boutons voisins (32px) : sans contrainte, son apparition/disparition agrandit toute
+   la ligne 2 et donc le panneau de contrôle. On le fait tenir sur la hauteur des boutons
+   en resserrant son empilement vertical, seulement dans ce contexte. */
+.ctrl-row-toolbar-right .tl-toggle-label {
+  height: 32px;
+  justify-content: center;
+  gap: 1px;
+}
+.ctrl-row-toolbar-right .tl-toggle-label-head {
+  height: 14px;
+  font-size: 0.72rem;
+}
+.ctrl-row-toolbar-right .tl-toggle-label-row {
+  height: 16px;
 }
 
 .size-btn {
@@ -1657,7 +1707,7 @@ textarea.element-edit-input {
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 4px;
-  padding: 0 190px 0 110px;
+  padding: 0 190px;
   box-sizing: border-box;
 }
 
@@ -1675,7 +1725,7 @@ textarea.element-edit-input {
   border-bottom: 1px dashed transparent;
   color: var(--accent);
   font-family: Arial, sans-serif;
-  font-weight: 700;
+  font-weight: 400;
   text-align: center;
   width: auto;
   min-width: 0;
@@ -1687,6 +1737,9 @@ textarea.element-edit-input {
   cursor: default;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Taille fixe (150%) — ne rétrécit que si la largeur de l'écran est trop étroite,
+     jamais en fonction du nombre de caractères du titre. */
+  font-size: clamp(0.9rem, 2vw, 1.5rem);
 }
 .grid-view-title-input::placeholder { color: var(--text-faint); font-weight: 400; font-style: italic; }
 .grid-view-title-input:hover { border-bottom-color: var(--border); cursor: text; }
@@ -1792,7 +1845,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   text-align: center;
   font-size: 1rem;
   font-family: Arial, sans-serif;
-  font-weight: 700;
+  font-weight: 400;
   color: var(--text);
   cursor: pointer;
   padding: 6px;
@@ -1923,6 +1976,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 
 /* ── Message bingo inline (par grille), aligné à droite sur la rangée du titre ── */
+/* Même taille que les titres (150%, clamp basé sur la largeur d'écran, jamais sur le texte). */
 .bingo-message-inline {
   position: absolute;
   right: 0;
@@ -1932,8 +1986,8 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   align-items: center;
   gap: 4px;
   font-family: Arial, sans-serif;
-  font-size: 1.9rem;
-  font-weight: 800;
+  font-size: clamp(0.9rem, 2vw, 1.5rem);
+  font-weight: 400;
   color: var(--bingo-green);
   letter-spacing: 0.03em;
   white-space: nowrap;
@@ -1979,6 +2033,18 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .ctx-close-btn:hover { color: var(--danger); }
 .ctx-close-btn [data-lucide] { margin-right: 0; }
+.ctx-menu-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text);
+  padding: 0 28px 8px 16px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
 .ctx-menu-item {
   display: block;
   width: 100%;
@@ -1995,6 +2061,38 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .ctx-menu-item:hover { background: var(--surface-3); color: var(--accent); }
 .ctx-menu-item.ctx-danger:hover { color: var(--danger); background: rgba(232,91,71,0.1); }
+.ctx-menu-item.ctx-green { color: #3ecf6e; }
+.ctx-menu-item.ctx-green:hover { color: #3ecf6e; background: rgba(62,207,110,0.1); }
+
+/* ── Menu Options (mode normal + plein écran tierlist) : boutons/curseur empilés ── */
+#tl-options-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 12px 12px;
+}
+#tl-options-menu .tl-toolbar-btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+#tl-options-menu .tl-toggle-label {
+  width: 100%;
+}
+
+/* ── Ligne composite des dropdowns Template/Tier lists : nom cliquable (switch) +
+   bouton ⋮ (renommer/dupliquer/archiver/supprimer…), réutilise le style .grid-tab
+   mais en pleine largeur et sans bordure, empilée comme un item de menu classique. */
+.tl-dropdown-item {
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: none;
+  justify-content: space-between;
+  padding: 6px 16px;
+}
+.tl-dropdown-item:hover { background: var(--surface-3); }
+.tl-dropdown-item.active { background: var(--accent-glow); color: var(--accent); }
+.tl-dropdown-item .grid-tab-name { flex: 1; cursor: pointer; }
 
 /* ── Modal thèmes archivés ── */
 .modal-overlay {
@@ -2532,33 +2630,34 @@ body.solo-tierlist-mode .tl-layout {
 .tl-editor { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
 .tl-editor.hidden { display: none; }
 
-/* ── Header éditeur ── */
-.tl-editor-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
+/* ── Chemin d'accès (ligne 2 du panneau de contrôle, centré) : taille 150% de base,
+   réduit automatiquement via clamp() si l'écran est trop petit pour tout afficher. */
 .tl-title-row {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
+/* Taille fixe (150%), identique au titre de grille Bingo — ne rétrécit que si la largeur
+   de l'écran est trop étroite, jamais en fonction du nombre de caractères du titre. */
 .tl-title-prefix {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-muted);
+  font-size: clamp(0.9rem, 2vw, 1.5rem);
+  font-weight: 400;
+  color: var(--accent);
   letter-spacing: -0.01em;
 }
 
 .tl-title-display {
-  font-size: 1.1rem;
-  font-weight: 800;
-  color: var(--text);
+  font-size: clamp(0.9rem, 2vw, 1.5rem);
+  font-weight: 400;
+  color: var(--accent);
   letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tl-title-editable {
   cursor: pointer;
@@ -2568,12 +2667,11 @@ body.solo-tierlist-mode .tl-layout {
 }
 .tl-title-editable:hover {
   border-bottom-color: var(--accent-dim);
-  color: var(--accent);
 }
 .tl-title-input {
-  font-size: 1.1rem;
-  font-weight: 800;
-  color: var(--text);
+  font-size: clamp(0.9rem, 2vw, 1.5rem);
+  font-weight: 400;
+  color: var(--accent);
   letter-spacing: -0.01em;
   background: var(--surface-2);
   border: 1.5px solid var(--accent-dim);
@@ -2581,7 +2679,7 @@ body.solo-tierlist-mode .tl-layout {
   padding: 2px 8px;
   outline: none;
   min-width: 120px;
-  max-width: 260px;
+  max-width: 400px;
 }
 .tl-title-input:focus {
   border-color: var(--accent);
@@ -2706,14 +2804,52 @@ body.solo-tierlist-mode .tl-layout {
   border-color: #818cf8;
 }
 .tl-btn-capture:hover { background: rgba(129,140,248,0.28); border-color: #818cf8; color: #818cf8; }
-.tl-btn-add-tier { color: var(--accent) !important; border-color: var(--accent) !important; background: var(--accent-glow) !important; font-weight: 700; }
-.tl-btn-add-tier:hover { filter: brightness(1.1); }
-.tl-btn-open-window {
-  background: #4b5563;
-  color: #e5e7eb;
-  border: 1px solid #4b5563;
+/* Boutons incolores (neutres) : Dossiers, Options Dossier, Options Tiers */
+.tl-btn-neutral {
+  background: var(--surface-2) !important;
+  color: var(--text-muted) !important;
+  border: 1px solid var(--border) !important;
 }
-.tl-btn-open-window:hover { background: #6b7280; border-color: #6b7280; color: #e5e7eb; }
+.tl-btn-neutral:hover {
+  border-color: var(--accent-dim) !important;
+  color: var(--accent) !important;
+  background: var(--accent-glow) !important;
+}
+/* Boutons jaunes (accent) : Plein écran, Comparaison, Quitter comparaison/plein écran */
+.tl-btn-yellow,
+.tl-btn-exit-mode {
+  color: #111 !important;
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  font-weight: 700;
+}
+.tl-btn-yellow:hover,
+.tl-btn-exit-mode:hover { filter: brightness(1.1); }
+/* Bouton orange : Annuler */
+.tl-btn-orange {
+  background: rgba(224,120,0,0.15) !important;
+  color: #e07800 !important;
+  border-color: #e07800 !important;
+}
+.tl-btn-orange:hover {
+  background: rgba(224,120,0,0.28) !important;
+  color: #ff9518 !important;
+  border-color: #ff9518 !important;
+}
+.tl-toolbar-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tl-toolbar-side-left { margin-right: auto; }
+.tl-toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 24px;
+  background: var(--text-muted);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
 .tl-btn-reset {
   background: rgba(232,91,71,0.12) !important;
   color: var(--danger) !important;
@@ -2863,7 +2999,7 @@ body.solo-tierlist-mode .tl-layout {
   width: 140px;
   flex-shrink: 0;
   color: #111;
-  font-weight: 800;
+  font-weight: 400;
   font-size: 1.1rem;
   letter-spacing: 0.02em;
   user-select: none;
@@ -3047,7 +3183,7 @@ body.solo-tierlist-mode .tl-layout {
   padding: 4px;
   box-sizing: border-box;
   color: #fff;
-  font-weight: 600;
+  font-weight: 400;
   font-size: 0.78rem;
   word-break: break-word;
   overflow: hidden;
@@ -3069,7 +3205,7 @@ body.solo-tierlist-mode .tl-layout {
   word-break: break-word;
   line-height: 1.4;
   cursor: text;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .tl-img-label-input {
@@ -3286,9 +3422,9 @@ body.solo-tierlist-mode .tl-layout {
 .tl-btn-add-image [data-lucide] { width: 13px; height: 13px; margin-right: 0; }
 
 .tl-add-text-wrap {
-  flex: 1 1 200px;
-  min-width: 160px;
-  max-width: 320px;
+  flex: 0 1 140px;
+  min-width: 90px;
+  max-width: 140px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -3304,7 +3440,6 @@ body.solo-tierlist-mode .tl-layout {
   border-color: #5b9de8;
   background: rgba(91,157,232,0.08);
 }
-.tl-add-text-wrap [data-lucide] { flex-shrink: 0; width: 13px; height: 13px; }
 .tl-add-text-input {
   flex: 1;
   min-width: 0;

@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=190" />
+  <link rel="stylesheet" href="style.css?v=208" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -57,15 +57,16 @@
       <!-- ── Vue comparaison (fenêtre séparée, lecture seule) ── -->
       <div id="tl-compare-toolbar" class="tl-compare-toolbar hidden">
         <div id="tl-compare-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
-        <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image">Afficher noms</button>
-        <label class="tl-toggle-label" title="Régler la taille des images (50–200 px)">
-          <span class="tl-toggle-label-head">Taille <input type="number" id="tl-compare-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
-          <div class="tl-toggle-label-slider-row">
-            <input type="range" id="tl-compare-img-size-slider" min="50" max="200" value="80" class="tl-slider" />
-          </div>
-        </label>
-        <button class="tl-toolbar-btn tl-btn-export" id="tl-compare-btn-export" title="Exporter la comparaison en PNG"><i data-lucide="download"></i> Export PNG</button>
-        <button class="tl-toolbar-btn tl-btn-capture" id="tl-compare-btn-capture" title="Copier la comparaison dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
+        <div class="tl-toolbar-side tl-toolbar-side-left">
+          <label class="tl-toggle-label" title="Régler la taille des images (50–200 px)">
+            <span class="tl-toggle-label-head">Taille <input type="number" id="tl-compare-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
+            <div class="tl-toggle-label-slider-row">
+              <input type="range" id="tl-compare-img-size-slider" min="50" max="200" value="80" class="tl-slider" />
+            </div>
+          </label>
+          <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Afficher noms</button>
+          <button class="tl-toolbar-btn tl-btn-capture" id="tl-compare-btn-capture" title="Capturer la comparaison"><i data-lucide="camera"></i> Capture</button>
+        </div>
         <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-compare-btn-exit" title="Quitter le mode comparaison"><i data-lucide="x"></i> Quitter comparaison</button>
       </div>
       <div id="tl-compare-view" class="tl-compare-view hidden"></div>
@@ -74,31 +75,40 @@
       <div class="tl-control-panel hidden" id="tl-control-panel">
         <div class="tl-control-panel-body" id="tl-control-panel-body">
 
-          <!-- Ligne 1 : Dossiers à gauche (toujours visible), chemin + bulles du groupe + actions (masqués hors groupe template) -->
+          <!-- Ligne 1 : Dossiers + chemin + séparateur + Options Dossier à gauche, Plein écran/Comparaison centrés, Masquer non placés à droite -->
           <div class="ctrl-row ctrl-row-line1">
-            <button class="tl-toolbar-btn tl-btn-folders" id="tl-btn-folders" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
-            <div class="ctrl-row ctrl-row-grids" id="tl-ctrl-row-group">
-              <div id="tl-group-breadcrumb" class="grids-breadcrumb"></div>
-              <div id="tl-group-list" class="grids-list"></div>
-              <button class="btn-new-grid-inline hidden" id="tl-btn-new-from-template" title="Générer une nouvelle tier list depuis ce template">+ Tier list</button>
-              <button class="tl-toolbar-btn hidden" id="tl-btn-compare" title="Comparer plusieurs tier lists de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparer</button>
-              <button class="tl-toolbar-btn tl-btn-open-window" id="tl-btn-open-window" title="Ouvrir cette tier list en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
+            <div class="ctrl-row-grids-left">
+              <button class="tl-toolbar-btn tl-btn-neutral tl-btn-folders" id="tl-btn-folders" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
+              <div id="tl-group-breadcrumb" class="grids-breadcrumb tl-group-breadcrumb-hidden"></div>
+              <button class="tl-toolbar-btn tl-btn-neutral tl-btn-folder-options" id="tl-btn-folder-options" title="Options du dossier actif"><i data-lucide="settings"></i> Options Dossier</button>
             </div>
-            <button class="tl-toolbar-btn tl-btn-toggle-unplaced" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="panel-right-close"></i> Masquer éléments non placés</button>
+            <div class="ctrl-row-grids-center">
+              <button class="tl-toolbar-btn tl-btn-yellow tl-group-elem hidden" id="tl-btn-compare" title="Comparer plusieurs tier lists de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparaison</button>
+              <button class="tl-toolbar-btn tl-btn-yellow tl-btn-open-window tl-group-elem" id="tl-btn-open-window" title="Ouvrir cette tier list en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
+            </div>
+            <div class="ctrl-row-grids-right">
+              <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Masquer non placés</button>
+            </div>
           </div>
 
-          <!-- Ligne 2 : réglages centrés -->
-          <div class="ctrl-row ctrl-row-toolbar">
-            <div id="tl-fullscreen-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
+          <!-- Ligne 2 : Template (dropdown) + Tier lists (dropdown) à gauche, chemin centré (taille adaptable), Options (menu) -->
+          <div class="ctrl-row ctrl-row-toolbar tl-ctrl-row-toolbar">
+            <div class="ctrl-row-toolbar-left tl-group-row">
+              <button class="tl-toolbar-btn tl-btn-neutral tl-group-elem hidden tl-shrink-0" id="tl-btn-template-dropdown" title="Choisir un template de ce dossier"><i data-lucide="chevron-down"></i> <span id="tl-template-dropdown-label"></span></button>
+              <button class="tl-toolbar-btn tl-btn-neutral tl-group-elem hidden tl-btn-hide-solo-mode tl-shrink-0" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une tier list"><i data-lucide="chevron-down"></i> <span id="tl-tierlist-dropdown-label"></span></button>
+              <div class="tl-toolbar-sep tl-group-elem tl-shrink-0"></div>
+              <button class="tl-toolbar-btn tl-btn-neutral tl-shrink-0" id="tl-btn-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Tier list</button>
+              <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
+            </div>
             <div class="ctrl-row-toolbar-center">
-              <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image">Afficher noms</button>
-              <label class="tl-toggle-label" title="Régler la taille des images (50–200 px)">
-                <span class="tl-toggle-label-head">Taille <input type="number" id="tl-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
-                <div class="tl-toggle-label-slider-row">
-                  <input type="range" id="tl-img-size-slider" min="50" max="200" value="80" class="tl-slider" />
-                </div>
-              </label>
-              <label class="tl-toggle-label" id="tl-split-slider-label" title="Régler la répartition largeur entre les tiers et les éléments non placés">
+              <div class="tl-title-row">
+                <span id="tl-title-prefix" class="tl-title-prefix hidden"></span>
+                <span id="tl-title-display" class="tl-title-display tl-title-editable" title="Clic gauche : renommer la tier list"></span>
+                <input type="text" id="tl-title-input" class="tl-title-input hidden" maxlength="60" />
+              </div>
+            </div>
+            <div class="ctrl-row-toolbar-right">
+              <label class="tl-toggle-label tl-shrink-0" id="tl-split-slider-label" title="Régler la répartition largeur entre les tiers et les éléments non placés">
                 <span>Répartition</span>
                 <div class="tl-toggle-label-row">
                   <input type="number" id="tl-split-value-input" min="20" max="80" value="60" class="tl-split-value-input" />
@@ -106,17 +116,34 @@
                   <input type="number" id="tl-split-value-input-right" min="20" max="80" value="40" class="tl-split-value-input" />
                 </div>
               </label>
-              <button class="tl-toolbar-btn tl-btn-add-tier" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="list-tree"></i> Gérer tiers</button>
-              <button class="tl-toolbar-btn tl-btn-undo" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
-              <button class="tl-toolbar-btn tl-btn-reset" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
-              <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
-              <button class="tl-toolbar-btn tl-btn-export" id="tl-btn-export" title="Exporter la tier list en PNG"><i data-lucide="download"></i> Export PNG</button>
-              <button class="tl-toolbar-btn tl-btn-capture" id="tl-btn-capture" title="Copier la tier list dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
-              <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-btn-exit-solo" title="Quitter le mode plein écran"><i data-lucide="x"></i> Quitter plein écran</button>
             </div>
           </div>
 
+          <!-- Barre plein écran : Options (menu) à gauche, chemin centré (taille adaptable), Quitter à droite -->
+          <div class="ctrl-row tl-solo-toolbar btn-fullscreen-only">
+            <button class="tl-toolbar-btn tl-btn-neutral" id="tl-btn-solo-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Tier list</button>
+            <div id="tl-fullscreen-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
+            <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-btn-exit-solo" title="Quitter le mode plein écran"><i data-lucide="x"></i> Quitter plein écran</button>
+          </div>
+
         </div>
+      </div>
+
+      <!-- Menu Options (mode normal ET plein écran) : regroupe Capture/Taille/Afficher noms/
+           Options Tiers/Annuler/Reset — un seul menu, ouvert par le bouton
+           Options actif (normal ou plein écran). -->
+      <div id="tl-options-menu" class="ctx-menu hidden">
+        <label class="tl-toggle-label tl-shrink-0" id="tl-img-size-label" title="Régler la taille des images (50–200 px)">
+          <span class="tl-toggle-label-head">Taille <input type="number" id="tl-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
+          <div class="tl-toggle-label-slider-row">
+            <input type="range" id="tl-img-size-slider" min="50" max="200" value="80" class="tl-slider" />
+          </div>
+        </label>
+        <button class="tl-toolbar-btn tl-btn-capture tl-shrink-0" id="tl-btn-capture" title="Capturer la tier list"><i data-lucide="camera"></i> Capture</button>
+        <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Afficher noms</button>
+        <button class="tl-toolbar-btn tl-btn-neutral tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Options Tiers</button>
+        <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
+        <button class="tl-toolbar-btn tl-btn-reset tl-shrink-0" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
       </div>
 
       <div class="tl-layout">
@@ -170,15 +197,6 @@
 
           <div id="tl-editor" class="tl-editor hidden">
 
-            <!-- Header éditeur -->
-            <div class="tl-editor-header">
-              <div class="tl-title-row">
-                <span id="tl-title-prefix" class="tl-title-prefix hidden"></span>
-                <span id="tl-title-display" class="tl-title-display tl-title-editable" title="Clic gauche : renommer la tier list"></span>
-                <input type="text" id="tl-title-input" class="tl-title-input hidden" maxlength="60" />
-              </div>
-            </div>
-
             <!-- Corps éditeur : tiers + éléments non placés (empilés, ou côte à côte pour un template) -->
             <div id="tl-editor-body" class="tl-editor-body">
 
@@ -191,12 +209,11 @@
                   <span class="tl-unplaced-label">Éléments non placés</span>
                   <span id="tl-unplaced-count" class="tl-unplaced-count">0</span>
                   <button id="tl-unplaced-sort-btn" class="tl-unplaced-sort-btn" title="Trier les éléments non placés"><i data-lucide="arrow-down-a-z"></i> Tri</button>
-                  <button id="tl-btn-add-image" class="tl-btn-add-image" title="Ajouter des images&#10;Clic : importer des fichiers ou coller depuis le presse-papier"><i data-lucide="image-plus"></i> Image</button>
+                  <button id="tl-btn-add-image" class="tl-btn-add-image" title="Ajouter des images&#10;Clic : importer des fichiers ou coller depuis le presse-papier">+ Image</button>
                   <span id="tl-add-text-wrap" class="tl-add-text-wrap">
-                    <i data-lucide="a-large-small"></i>
-                    <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Ajouter un texte..." title="Taper un texte puis Entrée pour ajouter une carte" />
+                    <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Ajouter texte..." title="Taper un texte puis Entrée pour ajouter une carte" />
                   </span>
-                  <button type="button" id="tl-unplaced-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image du cadre Éléments non placés">Afficher noms</button>
+                  <button type="button" id="tl-unplaced-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image du cadre Éléments non placés"><i data-lucide="eye"></i> Afficher noms</button>
                   <label class="tl-toggle-label" title="Régler la taille des images du cadre Éléments non placés (50–200 px)">
                     <span class="tl-toggle-label-head">Taille <input type="number" id="tl-unplaced-img-size-value-input" min="50" max="200" value="80" class="tl-split-value-input" /></span>
                     <div class="tl-toggle-label-slider-row">
@@ -243,7 +260,7 @@
           <div class="ctrl-row ctrl-row-grids">
             <div class="ctrl-row-grids-left">
               <button class="btn-action btn-folders-panel" id="btn-folders-panel" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
-              <div id="grids-breadcrumb" class="grids-breadcrumb"></div>
+              <div id="grids-breadcrumb" class="grids-breadcrumb hidden"></div>
               <button class="btn-action btn-folders-panel" id="btn-folder-options" title="Options du dossier actif"><i data-lucide="settings"></i> Options Dossier</button>
             </div>
             <div class="ctrl-row-grids-center">
@@ -256,39 +273,49 @@
 
           <!-- Ligne 3 : Toolbar -->
           <div class="ctrl-row ctrl-row-toolbar">
-            <div class="ctrl-row-toolbar-left">
-              <div id="grids-list" class="grids-list btn-hide-solo-mode"></div>
-              <button class="btn-new-grid-inline btn-hide-solo-mode" id="btn-new-grid-inline" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
+            <div class="ctrl-row-toolbar-left btn-hide-solo-mode">
+              <button class="btn-action btn-neutral-action" id="btn-grids-dropdown" title="Choisir les grilles à afficher"><i data-lucide="chevron-down"></i> Grilles</button>
+              <button class="btn-action btn-neutral-action" id="btn-grids-options" title="Options des grilles affichées"><i data-lucide="settings"></i> Options Grilles</button>
             </div>
-            <div class="ctrl-row-toolbar-center">
-              <label class="tl-toggle-label" title="Régler la taille du texte (50–200 %)">
-                <span class="tl-toggle-label-head">Taille <input type="number" id="font-scale-value-input" min="50" max="200" step="10" value="100" class="tl-split-value-input" /></span>
-                <div class="tl-toggle-label-slider-row">
-                  <input type="range" id="font-scale-input" class="tl-slider" min="50" max="200" step="10" value="100" title="Taille du texte" />
-                </div>
-              </label>
-              <div class="lock-group btn-hide-solo-mode">
-                <button type="button" class="lock-generate-label" id="chk-lock-generate" title="Bloquer la génération aléatoire, le redimensionnement et la réinitialisation de toutes les grilles" aria-pressed="false">
-                  <i data-lucide="lock-keyhole-open"></i>
-                </button>
-                <div class="subgrid-size-control" id="global-size-control" title="Redimensionner toutes les grilles affichées">
-                  <button class="size-btn size-btn-sm" id="btn-size-minus" title="Réduire les grilles">−</button>
-                  <span id="grid-size-display" class="subgrid-size-display">4×4</span>
-                  <button class="size-btn size-btn-sm" id="btn-size-plus" title="Agrandir les grilles">+</button>
-                </div>
-                <button class="btn-action btn-generate-global" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées"><i data-lucide="dices"></i> Générer</button>
-                <button class="btn-action btn-clear-grids" id="btn-clear-grids" title="Vider toutes les grilles affichées"><i data-lucide="eraser"></i> Vider</button>
-                <button class="btn-action btn-reset" id="btn-reset" title="Réinitialise toutes les cases du sous-thème"><i data-lucide="undo-dot"></i> Reset</button>
-              </div>
+            <div class="ctrl-row-toolbar-center btn-fullscreen-only" id="bingo-solo-toolbar-center">
               <button class="btn-action btn-screenshot-bingo btn-fullscreen-only" id="btn-screenshot-bingo-global" title="Copier les grilles affichées dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
             </div>
-            <div id="bingo-fullscreen-breadcrumb" class="bingo-fullscreen-breadcrumb"></div>
+            <div id="bingo-fullscreen-breadcrumb" class="bingo-fullscreen-breadcrumb bingo-breadcrumb-title"></div>
             <div class="ctrl-row-toolbar-right">
               <button class="btn-action btn-exit-solo-mode" id="btn-exit-solo-grid" title="Quitter le mode plein écran"><i data-lucide="x"></i> Quitter plein écran</button>
             </div>
           </div>
 
         </div>
+      </div>
+
+      <!-- Menu déroulant Grilles (mode normal) : cocher/décocher pour afficher (max 3),
+           + Grille, et bouton ⋮ par grille pour Renommer/Archiver/Supprimer. -->
+      <div id="grids-dropdown-menu" class="ctx-menu hidden"></div>
+
+      <!-- Menu Options Grilles (mode normal) : Taille/Bloquer/Redimensionner/Générer/Vider/Reset.
+           #font-scale-label est déplacé ici depuis la barre plein écran (et inversement) en JS,
+           pour ne garder qu'un seul jeu de contrôles physiques, jamais désynchronisés. -->
+      <div id="grids-options-menu" class="ctx-menu hidden">
+        <label class="tl-toggle-label tl-shrink-0" id="font-scale-label" title="Régler la taille du texte (50–200 %)">
+          <span class="tl-toggle-label-head">Taille <input type="number" id="font-scale-value-input" min="50" max="200" step="10" value="100" class="tl-split-value-input" /></span>
+          <div class="tl-toggle-label-slider-row">
+            <input type="range" id="font-scale-input" class="tl-slider" min="50" max="200" step="10" value="100" title="Taille du texte" />
+          </div>
+        </label>
+        <div class="lock-group">
+          <button type="button" class="lock-generate-label" id="chk-lock-generate" title="Bloquer la génération aléatoire, le redimensionnement et la réinitialisation de toutes les grilles" aria-pressed="false">
+            <i data-lucide="lock-keyhole-open"></i>
+          </button>
+          <div class="subgrid-size-control" id="global-size-control" title="Redimensionner toutes les grilles affichées">
+            <button class="size-btn size-btn-sm" id="btn-size-minus" title="Réduire les grilles">−</button>
+            <span id="grid-size-display" class="subgrid-size-display">4×4</span>
+            <button class="size-btn size-btn-sm" id="btn-size-plus" title="Agrandir les grilles">+</button>
+          </div>
+        </div>
+        <button class="btn-action btn-generate-global tl-shrink-0" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées"><i data-lucide="dices"></i> Générer</button>
+        <button class="btn-action btn-clear-grids tl-shrink-0" id="btn-clear-grids" title="Vider toutes les grilles affichées"><i data-lucide="eraser"></i> Vider</button>
+        <button class="btn-action btn-reset tl-shrink-0" id="btn-reset" title="Réinitialise toutes les cases du sous-thème"><i data-lucide="undo-dot"></i> Reset</button>
       </div>
 
       <div class="bingo-layout" id="bingo-layout">
@@ -471,7 +498,7 @@
   <div id="tl-modal-move" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
-        <h3 id="tl-modal-move-title">Ranger</h3>
+        <h3 id="tl-modal-move-title">Déplacer</h3>
         <button class="modal-close" id="tl-modal-move-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
@@ -673,6 +700,7 @@
   <!-- Menu contextuel dossier (clic droit) -->
   <div id="ctx-menu-folder" class="ctx-menu hidden">
     <button class="ctx-close-btn" id="ctx-folder-cancel" title="Fermer"><i data-lucide="x"></i></button>
+    <div class="ctx-menu-title" id="ctx-folder-title"></div>
     <button class="ctx-menu-item" id="ctx-folder-new-child"><i data-lucide="folder-closed"></i> Nouveau dossier enfant</button>
     <button class="ctx-menu-item" id="ctx-folder-rename"><i data-lucide="pencil"></i> Renommer</button>
     <button class="ctx-menu-item" id="ctx-folder-duplicate"><i data-lucide="copy-plus"></i> Dupliquer</button>
@@ -684,13 +712,14 @@
   <!-- Menu contextuel grille (clic droit) -->
   <div id="ctx-menu-grid" class="ctx-menu hidden">
     <button class="ctx-close-btn" id="ctx-grid-cancel" title="Fermer"><i data-lucide="x"></i></button>
+    <div class="ctx-menu-title" id="ctx-grid-title"></div>
     <button class="ctx-menu-item" id="ctx-grid-rename"><i data-lucide="pencil"></i> Renommer</button>
-    <button class="ctx-menu-item" id="ctx-grid-duplicate"><i data-lucide="copy-plus"></i> Dupliquer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-grid-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
 
   <div id="ctx-menu-element" class="ctx-menu hidden">
     <button class="ctx-close-btn" id="ctx-element-cancel" title="Fermer"><i data-lucide="x"></i></button>
+    <div class="ctx-menu-title" id="ctx-element-title"></div>
     <button class="ctx-menu-item" id="ctx-element-edit"><i data-lucide="pencil"></i> Modifier</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-archive"><i data-lucide="package"></i> Archiver</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-delete-active"><i data-lucide="trash-2"></i> Supprimer</button>
@@ -698,6 +727,7 @@
 
   <div id="ctx-menu-element-archived" class="ctx-menu hidden">
     <button class="ctx-close-btn" id="ctx-element-archived-cancel" title="Fermer"><i data-lucide="x"></i></button>
+    <div class="ctx-menu-title" id="ctx-element-archived-title"></div>
     <button class="ctx-menu-item" id="ctx-element-restore"><i data-lucide="undo-2"></i> Restaurer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
@@ -1068,6 +1098,24 @@
     </div>
   </div>
 
+  <!-- Modal choix Capture tierlist (capture d'écran presse-papier ou export PNG) -->
+  <div id="modal-tl-capture-choice" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Capture</h3>
+        <button class="modal-close" id="btn-close-tl-capture-choice"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Copier une capture d'écran dans le presse-papier ou exporter en PNG ?</p>
+        <div class="modal-actions modal-actions-wrap">
+          <button class="btn-action" id="btn-tl-capture-choice-screenshot"><i data-lucide="camera"></i> Capture d'écran</button>
+          <button class="btn-action" id="btn-tl-capture-choice-export"><i data-lucide="download"></i> Export PNG</button>
+          <button class="btn-action btn-secondary" id="btn-cancel-tl-capture-choice">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal choix Générer (toutes les cases ou seulement les vides) -->
   <div id="modal-generate-choice" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -1194,6 +1242,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=275"></script>
+  <script src="app.js?v=291"></script>
 </body>
 </html>

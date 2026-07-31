@@ -364,6 +364,7 @@ function _applySoloTierlistModeIfNeeded() {
   if (window._switchPage) window._switchPage('tierlist');
   document.title = (_tlFullTitlePath(tl) || tl.name || 'Tier list') + ' — LesMichels';
   document.body.classList.add('solo-tierlist-mode');
+  requestAnimationFrame(_adjustTlLayoutHeight);
 }
 
 function _applyCompareTierlistModeIfNeeded() {
@@ -388,9 +389,11 @@ function _applyCompareTierlistModeIfNeeded() {
 function _exitSoloTierlistMode() {
   document.body.classList.remove('solo-tierlist-mode');
   document.title = 'LesMichels';
+  document.getElementById('tl-options-menu')?.classList.add('hidden');
   // Empêche le listener Firebase (_dbTierlist.on('value')) de rouvrir le mode au prochain snapshot
   _soloTierlistId = null;
   _soloTierlistApplied = false;
+  requestAnimationFrame(_adjustTlLayoutHeight);
 }
 
 function _exitCompareTierlistMode() {
@@ -1375,7 +1378,6 @@ const btnSizePlus      = document.getElementById('btn-size-plus');
 const btnGenerate      = document.getElementById('btn-generate');
 const btnReset         = document.getElementById('btn-reset');
 const gridError        = document.getElementById('grid-error');
-const gridsList        = document.getElementById('grids-list');
 const btnNewGrid       = document.getElementById('btn-new-grid');
 const fontScaleInput     = document.getElementById('font-scale-input');
 const gridWrapper        = document.getElementById('grid-wrapper');
@@ -1680,32 +1682,15 @@ function renderAllFolders() {
 // ──────────────────────────────────────────────
 // Rendu : breadcrumb chemin complet dans ctrl-row-grids
 // ──────────────────────────────────────────────
-// Réduit la taille de police d'un élément par pas de 0.05rem tant que son contenu déborde
-// de sa largeur disponible, au lieu de tronquer avec une ellipsis.
-function _shrinkToFit(el, baseFontRem, minFontRem = 0.35) {
-  if (!el) return;
-  let size = baseFontRem;
-  el.style.fontSize = size + 'rem';
-  while (el.scrollWidth > el.clientWidth + 1 && size > minFontRem) {
-    size -= 0.05;
-    el.style.fontSize = size + 'rem';
-  }
-}
-
-const GRIDS_BREADCRUMB_BASE_REM = 0.82;
-const BINGO_FULLSCREEN_BREADCRUMB_BASE_REM = 1.64;
 
 function renderGridsBreadcrumb() {
   const container = document.getElementById('grids-breadcrumb');
   const fsContainer = document.getElementById('bingo-fullscreen-breadcrumb');
-  if (container) { container.innerHTML = ''; container.style.fontSize = ''; }
-  if (fsContainer) { fsContainer.textContent = ''; fsContainer.style.fontSize = ''; }
+  if (container) container.innerHTML = '';
+  if (fsContainer) fsContainer.textContent = '';
   if (!_localActiveFolderId) return;
   const path = getFolderPath(state.folders, _localActiveFolderId);
-  if (fsContainer) {
-    fsContainer.textContent = path.map(f => f.name).join(' › ');
-    _shrinkToFit(fsContainer, BINGO_FULLSCREEN_BREADCRUMB_BASE_REM);
-  }
+  if (fsContainer) fsContainer.textContent = path.map(f => f.name).join(' › ');
   if (!container) return;
   path.forEach((f, i) => {
     if (i > 0) {
@@ -1719,7 +1704,6 @@ function renderGridsBreadcrumb() {
     span.textContent = f.name;
     container.appendChild(span);
   });
-  _shrinkToFit(container, GRIDS_BREADCRUMB_BASE_REM);
 }
 
 function toggleGridSelection(gridId) {
@@ -1946,9 +1930,8 @@ function renderFoldersPanelTree() {
       });
       const openGridMenu = (e, anchor) => {
         e.stopPropagation();
-        const { addItem } = _tlMakeCtxMenu(anchor, e);
+        const { addItem } = _tlMakeCtxMenu(anchor, e, { title: g.name });
         addItem('pencil', 'Renommer',   false, () => openRenameGridModal(g.id));
-        addItem('copy-plus', 'Dupliquer',  false, () => duplicateGrid(g.id));
         addItem('trash-2', 'Supprimer', true,  () => deleteGrid(g.id));
       };
       gCtx.addEventListener('click', e => openGridMenu(e, gRow));
@@ -1979,7 +1962,7 @@ function renderFoldersPanelTree() {
 
     const openFolderMenu = (e, anchor) => {
       e.stopPropagation();
-      const { addItem } = _tlMakeCtxMenu(anchor, e);
+      const { addItem } = _tlMakeCtxMenu(anchor, e, { title: f.name });
       addItem('folder-closed', 'Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
       addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
       addItem('copy-plus', 'Dupliquer',            false, () => openDuplicateFolderModal(f.id));
@@ -2418,101 +2401,17 @@ function duplicateGrid(id) {
   renderGrid();
 }
 
+// Le rendu visuel des grilles (cocher/afficher, ⋮ options) se fait à la demande dans le menu
+// déroulant "Grilles" (_renderGridsDropdownMenu) — cette fonction ne fait plus que garder l'état
+// à jour (breadcrumb, bouton soirée en cours, nettoyage des sélections obsolètes).
 function renderGridsList() {
   renderGridsBreadcrumb();
   _updateCeSetHeaderBtn();
-  gridsList.innerHTML = '';
   const s = activeSubtheme();
   if (!s) return;
   const activeGrids = s.grids.filter(g => !g.archived);
-
   // Nettoyer les ids sélectionnés obsolètes (grilles supprimées/archivées)
   _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id));
-
-  activeGrids.forEach(g => {
-    const isSelected = _selectedGridIds.includes(g.id);
-    const isActive = g.id === s.activeGridId;
-    const item = document.createElement('div');
-    item.className = 'grid-tab' + (isSelected ? ' active' : '');
-    item.dataset.id = g.id;
-    item.draggable = true;
-    item.title = (isSelected ? 'Clic gauche : masquer cette grille' : 'Clic gauche : afficher cette grille (max 3)') + '\nClic droit : renommer, dupliquer, archiver, supprimer\nGlisser-déposer : réordonner';
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'grid-tab-name';
-    nameSpan.textContent = g.name;
-    item.appendChild(nameSpan);
-
-    const ctxBtn = document.createElement('button');
-    ctxBtn.className = 'grid-tab-ctx-btn';
-    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-    ctxBtn.title = 'Options';
-    ctxBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      if (_clickTimer) { clearTimeout(_clickTimer); _clickTimer = null; }
-      openCtxMenuGrid(g.id, e, item);
-    });
-    item.appendChild(ctxBtn);
-
-    // Drag & drop pour réordonner
-    item.addEventListener('dragstart', e => {
-      e.dataTransfer.setData('text/plain', g.id);
-      item.classList.add('dragging');
-    });
-    item.addEventListener('dragend', () => item.classList.remove('dragging'));
-    item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over-tab'); });
-    item.addEventListener('dragleave', () => item.classList.remove('drag-over-tab'));
-    item.addEventListener('drop', e => {
-      e.preventDefault();
-      item.classList.remove('drag-over-tab');
-      const srcId = e.dataTransfer.getData('text/plain');
-      if (srcId === g.id) return;
-      const sNow = activeSubtheme();
-      if (!sNow) return;
-      const srcIdx = sNow.grids.findIndex(x => x.id === srcId);
-      const dstIdx = sNow.grids.findIndex(x => x.id === g.id);
-      if (srcIdx === -1 || dstIdx === -1) return;
-      const [moved] = sNow.grids.splice(srcIdx, 1);
-      sNow.grids.splice(dstIdx, 0, moved);
-      saveState();
-      renderGridsList();
-      renderGrid();
-    });
-
-    let _clickTimer = null;
-    item.addEventListener('click', e => {
-      if (_clickTimer) { clearTimeout(_clickTimer); _clickTimer = null; return; }
-      _clickTimer = setTimeout(() => {
-        _clickTimer = null;
-        const sNow = activeSubtheme();
-        if (!sNow) return;
-        const nowSelected = _selectedGridIds.includes(g.id);
-        if (nowSelected) {
-          _selectedGridIds = _selectedGridIds.filter(id => id !== g.id);
-          if (sNow.activeGridId === g.id) {
-            sNow.activeGridId = _selectedGridIds.length > 0 ? _selectedGridIds[0] : null;
-          }
-        } else {
-          if (_selectedGridIds.length >= 3) return;
-          _selectedGridIds.push(g.id);
-          sNow.activeGridId = g.id;
-        }
-        saveLocalSelectedGrids(_selectedGridIds);
-        saveState();
-        renderGridsList();
-        renderGrid();
-      }, 220);
-    });
-
-    item.addEventListener('contextmenu', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (_clickTimer) { clearTimeout(_clickTimer); _clickTimer = null; }
-      openCtxMenuGrid(g.id, e, item);
-    });
-
-    gridsList.appendChild(item);
-  });
 }
 
 function openRenameGridModal(id) {
@@ -2666,11 +2565,6 @@ function getCellFontSize(text, scale) {
   return (base * scale).toFixed(2) + 'rem';
 }
 
-// Le nom de grille est toujours affiché à l'échelle 200%, indépendamment du curseur "Taille"
-function getGridTitleFontSize() {
-  return (0.78 * 2).toFixed(2) + 'rem';
-}
-
 // Mode placement manuel supprimé
 const manualMode = false;
 
@@ -2702,7 +2596,6 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   titleInput.value = g.title || g.name;
   titleInput.maxLength = 60;
   titleInput.title = 'Renommer la grille';
-  titleInput.style.fontSize = getGridTitleFontSize();
   const _syncTitleInputSize = () => {
     titleInput.size = Math.max(1, (titleInput.value || titleInput.placeholder || '').length);
   };
@@ -2716,9 +2609,6 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     const val = titleInput.value.trim();
     gNow.title = val;
     gNow.name = val || gNow.name;
-    // Mettre à jour l'onglet en live sans re-render complet
-    const tabEl = gridsList.querySelector(`.grid-tab[data-id="${g.id}"] .grid-tab-name`);
-    if (tabEl && val) tabEl.textContent = val;
   });
   titleInput.addEventListener('change', () => {
     const sNow = activeSubtheme();
@@ -3215,10 +3105,6 @@ function _adjustBingoGridSizes() {
 
 window.addEventListener('resize', () => {
   if (document.getElementById('page-bingo').classList.contains('active')) _adjustBingoGridSizes();
-  if (document.body.classList.contains('solo-grid-mode')) {
-    const fsContainer = document.getElementById('bingo-fullscreen-breadcrumb');
-    if (fsContainer) _shrinkToFit(fsContainer, BINGO_FULLSCREEN_BREADCRUMB_BASE_REM);
-  }
 });
 
 // ──────────────────────────────────────────────
@@ -3939,6 +3825,115 @@ document.getElementById('cases-panel-close').addEventListener('click', () => {
   document.getElementById('cases-panel').classList.remove('open');
 });
 
+// ── Menu "Options Grilles" (mode normal) : Taille/Bloquer/Redimensionner/Générer/Vider/Reset ──
+const _gridsOptionsMenu = document.getElementById('grids-options-menu');
+const _btnGridsOptions = document.getElementById('btn-grids-options');
+if (_btnGridsOptions && _gridsOptionsMenu) {
+  _btnGridsOptions.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = !_gridsOptionsMenu.classList.contains('hidden');
+    if (isOpen) {
+      _gridsOptionsMenu.classList.add('hidden');
+    } else {
+      _gridsOptionsMenu.classList.remove('hidden');
+      positionCtxMenu(_gridsOptionsMenu, null, _btnGridsOptions);
+      if (window.lucide) lucide.createIcons();
+    }
+  });
+  _gridsOptionsMenu.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', () => _gridsOptionsMenu.classList.add('hidden'));
+}
+
+// ── Menu déroulant "Grilles" (mode normal) : cocher/décocher pour afficher (max 3), + Grille,
+// et bouton ⋮ par grille (Renommer/Archiver/Supprimer, pas de Dupliquer). ──
+const _btnGridsDropdown = document.getElementById('btn-grids-dropdown');
+if (_btnGridsDropdown) {
+  _btnGridsDropdown.addEventListener('click', e => {
+    e.stopPropagation();
+    _renderGridsDropdownMenu();
+  });
+}
+
+function _renderGridsDropdownMenu() {
+  const menu = document.getElementById('grids-dropdown-menu');
+  if (!menu) return;
+  const s = activeSubtheme();
+  menu.innerHTML = '';
+  menu.classList.remove('hidden');
+  positionCtxMenu(menu, null, _btnGridsDropdown);
+
+  const closeMenu = () => menu.classList.add('hidden');
+  const onDocClick = () => closeMenu();
+  setTimeout(() => document.addEventListener('click', onDocClick, { once: true }), 0);
+  menu.addEventListener('click', e => e.stopPropagation());
+
+  if (!s) { if (window.lucide) lucide.createIcons(); return; }
+  const activeGrids = s.grids.filter(g => !g.archived);
+  _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id));
+
+  activeGrids.forEach(g => {
+    const isSelected = _selectedGridIds.includes(g.id);
+    const item = document.createElement('div');
+    item.className = 'grid-tab tl-dropdown-item' + (isSelected ? ' active' : '');
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = isSelected;
+    cb.title = isSelected ? 'Masquer cette grille' : 'Afficher cette grille (max 3)';
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      const sNow = activeSubtheme();
+      if (!sNow) return;
+      if (cb.checked) {
+        if (_selectedGridIds.length >= 3) { cb.checked = false; return; }
+        _selectedGridIds.push(g.id);
+        sNow.activeGridId = g.id;
+      } else {
+        _selectedGridIds = _selectedGridIds.filter(id => id !== g.id);
+        if (sNow.activeGridId === g.id) {
+          sNow.activeGridId = _selectedGridIds.length > 0 ? _selectedGridIds[0] : null;
+        }
+      }
+      saveLocalSelectedGrids(_selectedGridIds);
+      saveState();
+      renderGridsList();
+      renderGrid();
+    });
+    item.appendChild(cb);
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'grid-tab-name';
+    nameSpan.textContent = g.name;
+    nameSpan.addEventListener('click', () => cb.click());
+    item.appendChild(nameSpan);
+
+    const ctxBtn = document.createElement('button');
+    ctxBtn.className = 'grid-tab-ctx-btn';
+    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+    ctxBtn.title = 'Options';
+    ctxBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      openCtxMenuGrid(g.id, null, ctxBtn);
+      closeMenu();
+    });
+    item.appendChild(ctxBtn);
+
+    menu.appendChild(item);
+  });
+
+  const sep = document.createElement('div');
+  sep.style.cssText = 'height:1px;background:var(--border);margin:4px 0;';
+  menu.appendChild(sep);
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'ctx-menu-item ctx-green';
+  addBtn.textContent = '+ Grille';
+  addBtn.addEventListener('click', () => { closeMenu(); openNewGridModal(); });
+  menu.appendChild(addBtn);
+
+  if (window.lucide) lucide.createIcons();
+}
+
 
 // ──────────────────────────────────────────────
 // Menu contextuel — Dossiers (remplace ctx-menu-theme)
@@ -3954,6 +3949,11 @@ function closeCtxMenuTheme() { closeCtxMenuFolder(); }
 function openCtxMenuFolder(id, e, anchorEl) {
   closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
   _ctxThemeId = id;
+  const _titleEl = document.getElementById('ctx-folder-title');
+  if (_titleEl) {
+    const folder = findFolderById(state.folders, id);
+    _titleEl.textContent = folder ? folder.name : '';
+  }
   const _ceBtn = document.getElementById('ctx-folder-set-current-event');
   if (_ceBtn) {
     const isCurrentEvent = state.currentEventFolderId === id;
@@ -4006,12 +4006,17 @@ if (_ctxFolderCancelBtn) _ctxFolderCancelBtn.addEventListener('click', () => clo
 // ──────────────────────────────────────────────
 const ctxMenuGrid    = document.getElementById('ctx-menu-grid');
 const ctxGridRename    = document.getElementById('ctx-grid-rename');
-const ctxGridDuplicate = document.getElementById('ctx-grid-duplicate');
 let _ctxGridId = null;
 
 function openCtxMenuGrid(id, e, anchorEl) {
   closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuElement();
   _ctxGridId = id;
+  const _titleEl = document.getElementById('ctx-grid-title');
+  if (_titleEl) {
+    const s = activeSubtheme();
+    const g = s && s.grids.find(g => g.id === id);
+    _titleEl.textContent = g ? g.name : '';
+  }
   positionCtxMenu(ctxMenuGrid, e, anchorEl);
   ctxMenuGrid.classList.remove('hidden');
 }
@@ -4023,10 +4028,6 @@ function closeCtxMenuGrid() {
 
 ctxGridRename.addEventListener('click', () => {
   if (_ctxGridId) openRenameGridModal(_ctxGridId);
-  closeCtxMenuGrid();
-});
-ctxGridDuplicate.addEventListener('click', () => {
-  if (_ctxGridId) duplicateGrid(_ctxGridId);
   closeCtxMenuGrid();
 });
 document.getElementById('ctx-grid-delete').addEventListener('click', () => {
@@ -4046,6 +4047,8 @@ function openCtxMenuElement(id, span, e, anchorEl) {
   closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuGrid();
   _ctxElementId = id;
   _ctxElementSpan = span;
+  const _titleEl = document.getElementById('ctx-element-title');
+  if (_titleEl) _titleEl.textContent = span ? span.textContent : '';
   positionCtxMenu(ctxMenuElement, e, anchorEl);
   ctxMenuElement.classList.remove('hidden');
 }
@@ -4074,6 +4077,12 @@ let _ctxElementArchivedId    = null;
 function openCtxMenuElementArchived(id, e, anchorEl) {
   closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
   _ctxElementArchivedId = id;
+  const _titleEl = document.getElementById('ctx-element-archived-title');
+  if (_titleEl) {
+    const s = activeSubtheme();
+    const el = s && (s.elements || []).find(e => e.id === id);
+    _titleEl.textContent = el ? el.text : '';
+  }
   positionCtxMenu(ctxMenuElementArchived, e, anchorEl);
   ctxMenuElementArchived.classList.remove('hidden');
 }
@@ -4134,21 +4143,25 @@ document.getElementById('btn-open-grids-window').addEventListener('click', () =>
     ? (grids[0].title || grids[0].name || 'Grille')
     : `${grids.length} grilles`) + ' — LesMichels';
   document.body.classList.add('solo-grid-mode');
+  // #font-scale-label vit dans #grids-options-menu en mode normal (menu Options Grilles) et
+  // dans la barre plein écran en solo-grid-mode — un seul élément physique déplacé, jamais
+  // deux jeux de contrôles désynchronisés.
+  const fontScaleLabel = document.getElementById('font-scale-label');
+  const soloCenter = document.getElementById('bingo-solo-toolbar-center');
+  if (fontScaleLabel && soloCenter) soloCenter.insertBefore(fontScaleLabel, soloCenter.firstChild);
   // Le layout plein écran change la taille disponible sans déclencher de 'resize' :
   // recalculer une fois que le nouveau layout est peint, sinon les grilles gardent
   // la taille calculée pour l'affichage normal jusqu'à la prochaine interaction.
   requestAnimationFrame(_adjustBingoGridSizes);
-  // Le breadcrumb plein écran était display:none (clientWidth=0) au dernier rendu —
-  // recalculer sa taille de police une fois qu'il est réellement visible et mesurable.
-  requestAnimationFrame(() => {
-    const fsContainer = document.getElementById('bingo-fullscreen-breadcrumb');
-    if (fsContainer) _shrinkToFit(fsContainer, BINGO_FULLSCREEN_BREADCRUMB_BASE_REM);
-  });
 });
 document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
   document.body.classList.remove('solo-grid-mode');
   document.title = 'LesMichels';
   requestAnimationFrame(_adjustBingoGridSizes);
+  // Rendre #font-scale-label au menu Options Grilles (mode normal).
+  const fontScaleLabel = document.getElementById('font-scale-label');
+  const optionsMenu = document.getElementById('grids-options-menu');
+  if (fontScaleLabel && optionsMenu) optionsMenu.insertBefore(fontScaleLabel, optionsMenu.firstChild);
 });
 // Modale de choix "Capture" (plein écran) : toutes les grilles affichées ou une grille précise
 const modalCaptureChoice = document.getElementById('modal-capture-choice');
@@ -4508,14 +4521,6 @@ btnNewGrid.addEventListener('click', () => {
   if (!activeSubtheme()) return;
   openNewGridModal();
 });
-
-const _btnNewGridInline = document.getElementById('btn-new-grid-inline');
-if (_btnNewGridInline) {
-  _btnNewGridInline.addEventListener('click', () => {
-    if (!activeSubtheme()) return;
-    openNewGridModal();
-  });
-}
 
 const _btnCeNavigate = document.getElementById('btn-ce-navigate');
 if (_btnCeNavigate) {
@@ -5557,19 +5562,24 @@ const tlTitleInput        = document.getElementById('tl-title-input');
 const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
 const tlUnplacedShowLabelsToggle = document.getElementById('tl-unplaced-show-labels-toggle');
 
+function _tlEyeToggleHtml(shown) {
+  return `<i data-lucide="${shown ? 'eye-off' : 'eye'}"></i> ${shown ? 'Masquer noms' : 'Afficher noms'}`;
+}
 function _tlUpdateShowLabelsBtn(showLabels) {
-  tlShowLabelsToggle.textContent = showLabels ? 'Masquer noms' : 'Afficher noms';
+  tlShowLabelsToggle.innerHTML = _tlEyeToggleHtml(showLabels);
   tlShowLabelsToggle.classList.toggle('active', !!showLabels);
   const compareToggle = document.getElementById('tl-compare-show-labels-toggle');
   if (compareToggle) {
-    compareToggle.textContent = showLabels ? 'Masquer noms' : 'Afficher noms';
+    compareToggle.innerHTML = _tlEyeToggleHtml(showLabels);
     compareToggle.classList.toggle('active', !!showLabels);
   }
+  if (window.lucide) lucide.createIcons();
 }
 function _tlUpdateUnplacedShowLabelsBtn(showLabels) {
   if (!tlUnplacedShowLabelsToggle) return;
-  tlUnplacedShowLabelsToggle.textContent = showLabels ? 'Masquer noms' : 'Afficher noms';
+  tlUnplacedShowLabelsToggle.innerHTML = _tlEyeToggleHtml(showLabels);
   tlUnplacedShowLabelsToggle.classList.toggle('active', !!showLabels);
+  if (window.lucide) lucide.createIcons();
 }
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
 const tlUnplacedImgSizeSlider = document.getElementById('tl-unplaced-img-size-slider');
@@ -5590,9 +5600,8 @@ const tlBtnAddImage       = document.getElementById('tl-btn-add-image');
 const tlAddTextInput      = document.getElementById('tl-add-text-input');
 const tlMaxImagesInput    = document.getElementById('tl-max-images-input');
 const tlControlPanel      = document.getElementById('tl-control-panel');
-const tlCtrlRowGroup      = document.getElementById('tl-ctrl-row-group');
+const tlGroupElems        = document.querySelectorAll('.tl-group-elem');
 const tlGroupBreadcrumb   = document.getElementById('tl-group-breadcrumb');
-const tlGroupList         = document.getElementById('tl-group-list');
 
 // Fallback dragover sur le conteneur de tiers lui-même : ses zones de padding/marges entre tiers
 // ne sont couvertes par aucun listener dragover enfant (.tl-tier-wrap / .tl-tier-images), donc le
@@ -5813,8 +5822,28 @@ function _tlSidebarDropOnItem(e, targetId, targetType, targetEl) {
   tlRender();
 }
 
+// Plafonne .tl-layout à l'espace réellement visible sous sa position actuelle,
+// mesuré dynamiquement — au lieu d'un calc(100vh - Npx) fixe qui suppose une hauteur
+// de header/control-panel constante. Même piège que côté Bingo (_adjustBingoGridSizes) :
+// un magic number déconnecté du DOM réel sous-estime l'espace pris par le padding-bottom
+// de .main et laisse un débordement de quelques pixels indépendant de la résolution.
+function _adjustTlLayoutHeight() {
+  const layout = document.querySelector('.tl-layout');
+  if (!layout || layout.offsetParent === null) return;
+  const main = document.querySelector('.main');
+  const mainPaddingBottom = main ? parseFloat(getComputedStyle(main).paddingBottom) || 0 : 0;
+  const top = layout.getBoundingClientRect().top;
+  const h = Math.max(120, window.innerHeight - top - mainPaddingBottom);
+  layout.style.height = h + 'px';
+}
+window.addEventListener('resize', () => {
+  if (document.getElementById('page-tierlist').classList.contains('active')) _adjustTlLayoutHeight();
+});
+
 // ── Rendu principal ───────────────────────────────────────────────────────────
 function tlRender() {
+  _adjustTlLayoutHeight();
+  requestAnimationFrame(_adjustTlLayoutHeight);
   tlUpdateUndoBtn();
   tlRenderList();
   renderCurrentEventButton();
@@ -5859,8 +5888,6 @@ function tlRender() {
   tlTitlePrefix.classList.toggle('hidden', !prefixPath);
   const fullscreenBreadcrumb = document.getElementById('tl-fullscreen-breadcrumb');
   if (fullscreenBreadcrumb) fullscreenBreadcrumb.textContent = _tlFullTitlePath(tl);
-  const tlBtnNewFromTemplate = document.getElementById('tl-btn-new-from-template');
-  if (tlBtnNewFromTemplate) tlBtnNewFromTemplate.classList.toggle('hidden', !_tlGroupRoot(tl).isTemplate);
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
   const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
   const unplacedShowLabels = _tlLocalUnplacedShowLabels !== null ? _tlLocalUnplacedShowLabels : !!tl.showLabels;
@@ -5886,13 +5913,13 @@ function tlRender() {
 function tlRenderGroupPanel(tl) {
   const root = tl ? _tlGroupRoot(tl) : tlState.tierlists.find(t => t.id === _tlLastGroupRootId && t.isTemplate) || null;
   if (!root || !root.isTemplate || root.archived) {
-    tlCtrlRowGroup.classList.add('hidden');
+    tlGroupElems.forEach(el => el.classList.add('hidden'));
     _tlLastGroupRootId = null;
     return;
   }
   _tlLastGroupRootId = root.id;
   const members = tlState.tierlists.filter(t => !t.archived && (t.id === root.id || t.templateId === root.id));
-  tlCtrlRowGroup.classList.remove('hidden');
+  tlGroupElems.forEach(el => el.classList.remove('hidden'));
 
   tlGroupBreadcrumb.innerHTML = '';
   const folderPath = _tlFolderPath(root.folderId);
@@ -5911,37 +5938,14 @@ function tlRenderGroupPanel(tl) {
     });
   }
 
-  tlGroupList.innerHTML = '';
-  members.forEach(member => {
-    const item = document.createElement('div');
-    item.className = 'grid-tab' + (tl && member.id === tl.id ? ' active' : '');
-    item.dataset.id = member.id;
-    item.title = (member.isTemplate ? 'Template' : 'Clic gauche : ouvrir cette tier list') + '\nClic droit : options';
+  // Dropdown Template : libellé = nom du template actif
+  const tlTemplateDropdownLabel = document.getElementById('tl-template-dropdown-label');
+  if (tlTemplateDropdownLabel) tlTemplateDropdownLabel.textContent = root.name;
 
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'grid-tab-name';
-    nameSpan.textContent = member.name + (member.isTemplate ? ' (template)' : '');
-    item.appendChild(nameSpan);
+  // Dropdown Tier lists : libellé = nom de la tier list active, ou "Choisir" si aucune sélectionnée
+  const tlTierlistDropdownLabel = document.getElementById('tl-tierlist-dropdown-label');
+  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate) ? tl.name : 'Tier lists';
 
-    const ctxBtn = document.createElement('button');
-    ctxBtn.className = 'grid-tab-ctx-btn';
-    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-    ctxBtn.title = 'Options';
-    ctxBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      tlOpenManageModal(member.id, item);
-    });
-    item.appendChild(ctxBtn);
-
-    item.addEventListener('click', () => tlSwitch(member.id, false));
-    item.addEventListener('contextmenu', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      tlOpenManageModal(member.id, item);
-    });
-
-    tlGroupList.appendChild(item);
-  });
   const tlBtnCompare = document.getElementById('tl-btn-compare');
   if (tlBtnCompare) tlBtnCompare.classList.toggle('hidden', members.filter(m => !m.isTemplate).length < 2);
   if (window.lucide) lucide.createIcons();
@@ -6776,18 +6780,37 @@ function _tlInlineRenameTier(spanEl, tl, tier, caretOffset) {
 // close() supprime le menu + retire les listeners document
 let _tlActiveCtxMenu = null; // un seul menu TL ouvert à la fois
 
-function _tlMakeCtxMenu(anchorEl, e) {
+function _tlMakeCtxMenu(anchorEl, e, opts) {
+  // Capturer la position de l'ancre AVANT de fermer un menu TL déjà ouvert : si anchorEl est
+  // lui-même un élément de ce menu (ex. bouton ⋮ d'un dropdown), le retirer du DOM d'abord
+  // ferait perdre son rect (tout à 0,0) et positionnerait le nouveau menu en haut à gauche.
+  let frozenRect = null;
+  if (anchorEl) {
+    const r = anchorEl.getBoundingClientRect();
+    frozenRect = { top: r.top, left: r.left, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+  }
   // Fermer tout menu TL déjà ouvert
   if (_tlActiveCtxMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; }
 
   const menu = document.createElement('div');
   menu.className = 'ctx-menu';
 
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'ctx-close-btn';
-  closeBtn.title = 'Fermer';
-  closeBtn.innerHTML = '<i data-lucide="x"></i>';
-  menu.appendChild(closeBtn);
+  if (opts && opts.title) {
+    const titleEl = document.createElement('div');
+    titleEl.className = 'ctx-menu-title';
+    titleEl.textContent = opts.title;
+    titleEl.title = opts.title;
+    menu.appendChild(titleEl);
+  }
+
+  if (!opts || !opts.noCloseBtn) {
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'ctx-close-btn';
+    closeBtn.title = 'Fermer';
+    closeBtn.innerHTML = '<i data-lucide="x"></i>';
+    menu.appendChild(closeBtn);
+    closeBtn.addEventListener('click', e => { e.stopPropagation(); close(); });
+  }
   if (window.lucide) lucide.createIcons();
 
   const close = () => {
@@ -6797,12 +6820,10 @@ function _tlMakeCtxMenu(anchorEl, e) {
     document.removeEventListener('contextmenu', onDocCtx);
   };
 
-  closeBtn.addEventListener('click', e => { e.stopPropagation(); close(); });
-
   // iconName: nom d'icône Lucide (ou '' pour aucune icône), text: libellé affiché
   const addItem = (iconName, text, danger, fn) => {
     const btn = document.createElement('button');
-    btn.className = 'ctx-menu-item' + (danger ? ' ctx-danger' : '');
+    btn.className = 'ctx-menu-item' + (danger === 'green' ? ' ctx-green' : danger ? ' ctx-danger' : '');
     if (iconName) {
       const i = document.createElement('i');
       i.setAttribute('data-lucide', iconName);
@@ -6824,7 +6845,7 @@ function _tlMakeCtxMenu(anchorEl, e) {
   document.body.appendChild(menu);
   _tlActiveCtxMenu = menu;
 
-  if (anchorEl) positionCtxMenu(menu, null, anchorEl);
+  if (frozenRect) positionCtxMenu(menu, null, { getBoundingClientRect: () => frozenRect });
   else positionCtxMenu(menu, e, null);
 
   const onDocClick = () => close();
@@ -6839,7 +6860,7 @@ function _tlMakeCtxMenu(anchorEl, e) {
 
 // ── Menu contextuel tier ──────────────────────────────────────────────────────
 function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
-  const { addItem, addSep } = _tlMakeCtxMenu(null, e);
+  const { addItem, addSep } = _tlMakeCtxMenu(null, e, { title: tier.label });
 
   addItem('pencil', 'Renommer', false, () => {
     if (labelSpan && document.body.contains(labelSpan)) _tlInlineRenameTier(labelSpan, tl, tier);
@@ -7028,8 +7049,7 @@ function tlCompareCapture() {
   });
 }
 
-document.getElementById('tl-compare-btn-export')?.addEventListener('click', tlCompareExport);
-document.getElementById('tl-compare-btn-capture')?.addEventListener('click', tlCompareCapture);
+document.getElementById('tl-compare-btn-capture')?.addEventListener('click', () => openTlCaptureChoiceModal(tlCompareCapture, tlCompareExport));
 document.getElementById('tl-compare-btn-exit')?.addEventListener('click', _exitCompareTierlistMode);
 
 function tlRenderUnplaced(tl) {
@@ -7240,7 +7260,7 @@ function _tlInlineRenameImg(labelEl, tl, img, size, caretOffset) {
 
 // ── Menu contextuel image ─────────────────────────────────────────────────────
 function _tlShowImgCtxMenu(e, tl, img) {
-  const { addItem } = _tlMakeCtxMenu(null, e);
+  const { addItem } = _tlMakeCtxMenu(null, e, { title: img.name });
   const isText = (img.type || 'image') === 'text';
   if (!isText) addItem('zoom-in', 'Zoomer', false, () => _tlOpenImgZoom(img, tl));
   if (!tl.isTemplate) addItem('pin', 'À placer', false, () => _tlSetImageToPlace(tl, img.id));
@@ -8879,7 +8899,7 @@ function tlConfirmTierModal() {
 function tlOpenFolderManageModal(id, anchorEl) {
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
-  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null);
+  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null, { title: folder.name });
   addItem('pencil', 'Renommer', false, () => tlOpenFolderModal('edit', id));
   addItem('copy-plus', 'Dupliquer', false, () => tlOpenFolderModal('duplicate', id));
   addItem('move', 'Déplacer dans un dossier', false, () => tlOpenMoveFolderModal(id));
@@ -9097,24 +9117,28 @@ document.getElementById('tl-modal-compare-cancel').addEventListener('click', () 
 document.getElementById('tl-modal-compare-close').addEventListener('click', () => tlModalCompare.classList.add('hidden'));
 
 // ── Menu contextuel tierlist (clic droit sur onglet) ─────────────────────────
-function tlOpenManageModal(id, anchorEl) {
+function tlOpenManageModal(id, anchorEl, context) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
-  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null);
+  const ctx = context || 'folders'; // 'folders' | 'dropdown'
+  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null, { title: tl.name });
   addItem('pencil', 'Renommer', false, () => tlOpenRenameModal(id));
-  addItem('copy-plus', 'Dupliquer', false, () => tlCopy(id));
+  if (!(ctx === 'dropdown' && !tl.isTemplate)) addItem('copy-plus', 'Dupliquer', false, () => tlCopy(id));
   // Une tierlist rattachée à un template vivant suit toujours le dossier du template — se déplace via lui.
-  if (!_tlHasLiveTemplate(tl)) addItem('shelving-unit', 'Ranger dans un dossier', false, () => tlOpenMoveModal(id));
-  const ceRoot = typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
-  const ceIsActive = state.currentEventTierlistId === (ceRoot ? ceRoot.id : id);
-  const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
-  addItem('party-popper', ceLabel, false, () => confirmSetCurrentEventTierlist(id));
+  if (!(ctx === 'dropdown' && tl.isTemplate) && !_tlHasLiveTemplate(tl)) addItem('shelving-unit', 'Déplacer', false, () => tlOpenMoveModal(id));
+  // "Définir soirée en cours" : retiré pour les tierlists (dropdown ET panneau dossiers),
+  // gardé seulement pour les templates (hors dropdown Template, où il est aussi retiré).
+  if (tl.isTemplate && ctx !== 'dropdown') {
+    const ceRoot = typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
+    const ceIsActive = state.currentEventTierlistId === (ceRoot ? ceRoot.id : id);
+    const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
+    addItem('party-popper', ceLabel, false, () => confirmSetCurrentEventTierlist(id));
+  }
   if (!tl.isTemplate) {
     if (!tl.templateId) addItem('scroll', 'Convertir en template', false, () => tlConvertToTemplate(id));
-  } else {
+  } else if (ctx !== 'dropdown') {
     addItem('scroll-text', 'Générer depuis ce template', false, () => tlOpenGenerateFromTemplateModal(id));
   }
-  addItem('list-tree', 'Gérer les tiers…', false, () => tlOpenTiersSourceModal(id));
   addSep();
   addItem('package', 'Archiver', true, () => tlArchive(id));
   addItem('trash-2', 'Supprimer', true, () => tlDelete(id));
@@ -9176,6 +9200,15 @@ document.getElementById('tl-btn-folders').addEventListener('click', () => {
 document.getElementById('tl-empty-btn-folders').addEventListener('click', openTlSidebar);
 document.getElementById('tl-sidebar-close').addEventListener('click', closeTlSidebar);
 
+const _tlBtnFolderOptions = document.getElementById('tl-btn-folder-options');
+if (_tlBtnFolderOptions) {
+  _tlBtnFolderOptions.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const folderId = _tlCurrentSelectedFolderId();
+    if (folderId) tlOpenFolderManageModal(folderId, _tlBtnFolderOptions);
+  });
+}
+
 const _tlFoldersSortSelect = document.getElementById('tl-folders-sort-select');
 if (_tlFoldersSortSelect) {
   _tlFoldersSortSelect.addEventListener('change', () => {
@@ -9189,15 +9222,92 @@ document.getElementById('tl-btn-open-window').addEventListener('click', () => {
   if (!tl) return;
   document.title = (_tlFullTitlePath(tl) || tl.name || 'Tier list') + ' — LesMichels';
   document.body.classList.add('solo-tierlist-mode');
+  requestAnimationFrame(_adjustTlLayoutHeight);
 });
 document.getElementById('tl-btn-exit-solo')?.addEventListener('click', _exitSoloTierlistMode);
 
-document.getElementById('tl-btn-new-from-template').addEventListener('click', () => {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-  const root = _tlGroupRoot(tl);
-  if (root && root.isTemplate) tlOpenGenerateFromTemplateModal(root.id);
+// ── Menu Options (partagé mode normal + plein écran) ────────────────────────────
+const _tlOptionsMenu = document.getElementById('tl-options-menu');
+function _tlToggleOptionsMenu(anchorBtn) {
+  if (!_tlOptionsMenu) return;
+  const isOpen = !_tlOptionsMenu.classList.contains('hidden');
+  if (isOpen) {
+    _tlOptionsMenu.classList.add('hidden');
+  } else {
+    _tlOptionsMenu.classList.remove('hidden');
+    positionCtxMenu(_tlOptionsMenu, null, anchorBtn);
+    if (window.lucide) lucide.createIcons();
+  }
+}
+['tl-btn-options', 'tl-btn-solo-options'].forEach(id => {
+  const btn = document.getElementById(id);
+  if (btn) btn.addEventListener('click', e => { e.stopPropagation(); _tlToggleOptionsMenu(btn); });
 });
+if (_tlOptionsMenu) {
+  _tlOptionsMenu.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', () => _tlOptionsMenu.classList.add('hidden'));
+}
+
+// Ligne composite pour les dropdowns Template/Tier lists : nom cliquable (switch) + bouton ⋮
+// (renommer/dupliquer/archiver/supprimer…, via le même tlOpenManageModal que partout ailleurs).
+function _tlAddDropdownSwitchItem(menu, member, isActive, closeMenu) {
+  const item = document.createElement('div');
+  item.className = 'grid-tab tl-dropdown-item' + (isActive ? ' active' : '');
+
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'grid-tab-name';
+  nameSpan.textContent = member.name;
+  nameSpan.addEventListener('click', () => { closeMenu(); tlSwitch(member.id, false); });
+  item.appendChild(nameSpan);
+
+  const ctxBtn = document.createElement('button');
+  ctxBtn.className = 'grid-tab-ctx-btn';
+  ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+  ctxBtn.title = 'Options';
+  ctxBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    tlOpenManageModal(member.id, item, 'dropdown');
+  });
+  item.appendChild(ctxBtn);
+
+  menu.appendChild(item);
+}
+
+// ── Dropdown Template : liste les templates du dossier du template actif ────────
+const _tlBtnTemplateDropdown = document.getElementById('tl-btn-template-dropdown');
+if (_tlBtnTemplateDropdown) {
+  _tlBtnTemplateDropdown.addEventListener('click', e => {
+    e.stopPropagation();
+    const tl = tlActiveTierlist();
+    if (!tl) return;
+    const root = _tlGroupRoot(tl);
+    if (!root) return;
+    const templates = tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === root.folderId);
+    const { menu, addItem, addSep, close } = _tlMakeCtxMenu(_tlBtnTemplateDropdown, null, { noCloseBtn: true });
+    templates.forEach(tpl => _tlAddDropdownSwitchItem(menu, tpl, tpl.id === root.id, close));
+    if (templates.length) addSep();
+    addItem('', '+ Template', 'green', () => tlOpenNewTemplateModal(root.folderId));
+    if (window.lucide) lucide.createIcons();
+  });
+}
+
+// ── Dropdown Tier lists : liste les tier lists du groupe + option "Nouvelle" ────
+const _tlBtnTierlistDropdown = document.getElementById('tl-btn-tierlist-dropdown');
+if (_tlBtnTierlistDropdown) {
+  _tlBtnTierlistDropdown.addEventListener('click', e => {
+    e.stopPropagation();
+    const tl = tlActiveTierlist();
+    if (!tl) return;
+    const root = _tlGroupRoot(tl);
+    if (!root) return;
+    const members = tlState.tierlists.filter(t => !t.archived && t.templateId === root.id);
+    const { menu, addItem, addSep, close } = _tlMakeCtxMenu(_tlBtnTierlistDropdown, null, { noCloseBtn: true });
+    members.forEach(member => _tlAddDropdownSwitchItem(menu, member, member.id === tl.id, close));
+    if (members.length) addSep();
+    addItem('', '+ Tier list', 'green', () => tlOpenGenerateFromTemplateModal(root.id));
+    if (window.lucide) lucide.createIcons();
+  });
+}
 
 // Fermer le menu contextuel TL actif sur Escape
 document.addEventListener('keydown', e => {
@@ -9256,7 +9366,7 @@ tlTitleInput.addEventListener('keydown', e => {
 
 // (tlCloseManageModal supprimé — remplacé par menus contextuels dynamiques)
 
-// ── Modal "Ranger dans un dossier" ───────────────────────────────────────────
+// ── Modal "Déplacer" ──────────────────────────────────────────────────────────
 let _tlMoveTargetId = null;
 let _tlMoveTargetType = 'tierlist'; // 'tierlist' | 'folder'
 const tlModalMove        = document.getElementById('tl-modal-move');
@@ -9272,7 +9382,7 @@ function tlOpenMoveModal(id) {
   if (_tlHasLiveTemplate(tl)) { tlOpenMoveModal(tl.templateId); return; }
   _tlMoveTargetId = id;
   _tlMoveTargetType = 'tierlist';
-  document.getElementById('tl-modal-move-title').textContent = 'Ranger "' + tl.name + '"';
+  document.getElementById('tl-modal-move-title').textContent = 'Déplacer "' + tl.name + '"';
   tlPopulateFolderSelect(tlModalMoveSelect, tl.folderId || '');
   tlModalMoveSelect.options[0].textContent = '— Aucun dossier (racine) —';
   tlModalMove.classList.remove('hidden');
@@ -9488,9 +9598,36 @@ function tlRenderTrashList() {
   if (window.lucide) lucide.createIcons();
 }
 
-tlBtnExport.addEventListener('click', tlExport);
-tlBtnCapture.addEventListener('click', tlCapture);
+tlBtnExport?.addEventListener('click', tlExport);
+tlBtnCapture?.addEventListener('click', () => openTlCaptureChoiceModal(tlCapture, tlExport));
 document.getElementById('tl-btn-export-images')?.addEventListener('click', tlExportImages);
+
+// ── Modal choix Capture tierlist (capture d'écran presse-papier ou export PNG) ──
+const modalTlCaptureChoice = document.getElementById('modal-tl-capture-choice');
+let _tlCaptureChoiceScreenshotFn = null;
+let _tlCaptureChoiceExportFn = null;
+function openTlCaptureChoiceModal(screenshotFn, exportFn) {
+  _tlCaptureChoiceScreenshotFn = screenshotFn;
+  _tlCaptureChoiceExportFn = exportFn;
+  modalTlCaptureChoice.classList.remove('hidden');
+}
+function closeTlCaptureChoiceModal() {
+  modalTlCaptureChoice.classList.add('hidden');
+  _tlCaptureChoiceScreenshotFn = null;
+  _tlCaptureChoiceExportFn = null;
+}
+document.getElementById('btn-tl-capture-choice-screenshot').addEventListener('click', () => {
+  const fn = _tlCaptureChoiceScreenshotFn;
+  closeTlCaptureChoiceModal();
+  if (fn) fn();
+});
+document.getElementById('btn-tl-capture-choice-export').addEventListener('click', () => {
+  const fn = _tlCaptureChoiceExportFn;
+  closeTlCaptureChoiceModal();
+  if (fn) fn();
+});
+document.getElementById('btn-cancel-tl-capture-choice').addEventListener('click', closeTlCaptureChoiceModal);
+document.getElementById('btn-close-tl-capture-choice').addEventListener('click', closeTlCaptureChoiceModal);
 
 tlShowLabelsToggle.addEventListener('click', () => {
   const tl = tlActiveTierlist();
@@ -9683,8 +9820,8 @@ const tlBtnToggleUnplaced = document.getElementById('tl-btn-toggle-unplaced');
 function _tlUpdateToggleUnplacedBtn() {
   if (!tlBtnToggleUnplaced) return;
   tlBtnToggleUnplaced.innerHTML = _tlLocalUnplacedHidden
-    ? '<i data-lucide="panel-right-open"></i> Afficher éléments non placés'
-    : '<i data-lucide="panel-right-close"></i> Masquer éléments non placés';
+    ? '<i data-lucide="eye"></i> Afficher non placés'
+    : '<i data-lucide="eye-off"></i> Masquer non placés';
   tlBtnToggleUnplaced.title = _tlLocalUnplacedHidden ? 'Afficher le cadre Éléments non placés' : 'Masquer le cadre Éléments non placés';
   if (window.lucide) lucide.createIcons();
 }
