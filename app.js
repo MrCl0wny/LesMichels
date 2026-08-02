@@ -7190,6 +7190,7 @@ function _tlPasteFromClipboard(tl) {
       alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`); return;
     }
     const now = new Date();
+    const addedImgs = [];
     const promises = imageItems.map(item => {
       const type = item.types.find(t => t.startsWith('image/'));
       return item.getType(type).then(blob => {
@@ -7204,10 +7205,14 @@ function _tlPasteFromClipboard(tl) {
           _tlGetGroupMembers(tl).forEach(member => {
             if (!member.unplaced.includes(img.id)) member.unplaced.push(img.id);
           });
+          addedImgs.push(img);
         });
       });
     });
-    Promise.all(promises).then(() => { tlSave(); tlRender(); }).catch(e => {
+    Promise.all(promises).then(() => {
+      tlSave(); tlRender();
+      _tlNameNewImgsSequentially(tl, addedImgs);
+    }).catch(e => {
       console.warn('TL clipboard paste error:', e);
       alert('Impossible de lire le presse-papier. Essaie Ctrl+V à la place.');
     });
@@ -7929,25 +7934,53 @@ window.tlToPlaceDragLeave = tlToPlaceDragLeave;
 // ── Renommer image ────────────────────────────────────────────────────────────
 let tlRenameImgContext = null;
 
+// Retrouve l'image par id dans l'état courant — ne jamais garder de référence directe à l'objet
+// image d'un contexte async : un aller-retour Firebase (_dbTierlist.on('value')) reconstruit
+// tl.images entre-temps et rend toute référence capturée obsolète.
+function _tlFindImgById(tlId, imgId) {
+  const tl = tlState.tierlists.find(t => t.id === tlId);
+  if (!tl) return null;
+  const images = _tlGetGroupImages(tl);
+  return images.find(i => i.id === imgId) || null;
+}
+
 function tlOpenRenameImg(tl, img) {
-  tlRenameImgContext = { tl, img };
+  tlRenameImgContext = { tlId: tl.id, imgId: img.id, isNew: false };
   tlModalImgNameInput.value = img.name;
   tlModalImgName.classList.remove('hidden');
   setTimeout(() => { tlModalImgNameInput.focus(); tlModalImgNameInput.select(); }, 50);
 }
 
+// Ouvre la modal de nom pour une image tout juste collée (isNew: true → champ vide, placeholder =
+// nom auto ; afterConfirm sert à enchaîner sur l'image collée suivante s'il y en a plusieurs).
+function tlOpenNameNewImg(tl, img, afterConfirm) {
+  tlRenameImgContext = { tlId: tl.id, imgId: img.id, isNew: true, afterConfirm };
+  tlModalImgNameInput.value = '';
+  tlModalImgNameInput.placeholder = img.name;
+  tlModalImgName.classList.remove('hidden');
+  setTimeout(() => { tlModalImgNameInput.focus(); }, 50);
+}
+
 function tlConfirmRenameImg() {
   if (!tlRenameImgContext) return;
-  const { tl, img } = tlRenameImgContext;
+  const { tlId, imgId, isNew, afterConfirm } = tlRenameImgContext;
+  const img = _tlFindImgById(tlId, imgId);
   const newName = tlModalImgNameInput.value.trim();
-  if (newName && newName !== img.name) {
-    _tlPushUndoOp({ tierlistId: tl.id, groupRootId: _tlGroupRoot(tl).id, type: 'renameImage', imgId: img.id, oldName: img.name });
-    img.name = newName;
+  if (img) {
+    if (isNew) {
+      if (newName) img.name = newName;
+    } else if (newName && newName !== img.name) {
+      const tl = tlState.tierlists.find(t => t.id === tlId);
+      _tlPushUndoOp({ tierlistId: tlId, groupRootId: _tlGroupRoot(tl).id, type: 'renameImage', imgId: img.id, oldName: img.name });
+      img.name = newName;
+    }
   }
   tlModalImgName.classList.add('hidden');
+  tlModalImgNameInput.placeholder = "Nom de l'image...";
   tlRenameImgContext = null;
   tlSave();
   tlRender();
+  if (isNew && afterConfirm) afterConfirm();
 }
 
 // Dessine une image dans un carré size×size en respectant son ratio (comme object-fit:contain
@@ -9888,12 +9921,19 @@ document.getElementById('tl-btn-confirm-trash-empty').addEventListener('click', 
   tlRenderTrashList();
 });
 
+function _tlCancelRenameImgModal() {
+  const afterConfirm = tlRenameImgContext && tlRenameImgContext.isNew ? tlRenameImgContext.afterConfirm : null;
+  tlModalImgName.classList.add('hidden');
+  tlModalImgNameInput.placeholder = "Nom de l'image...";
+  tlRenameImgContext = null;
+  if (afterConfirm) afterConfirm();
+}
 tlModalImgNameConfirm.addEventListener('click', tlConfirmRenameImg);
-tlModalImgNameCancel.addEventListener('click', () => { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; });
-tlModalImgNameClose.addEventListener('click', () => { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; });
+tlModalImgNameCancel.addEventListener('click', _tlCancelRenameImgModal);
+tlModalImgNameClose.addEventListener('click', _tlCancelRenameImgModal);
 tlModalImgNameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmRenameImg();
-  if (e.key === 'Escape') { tlModalImgName.classList.add('hidden'); tlRenameImgContext = null; }
+  if (e.key === 'Escape') _tlCancelRenameImgModal();
 });
 
 // Drag & drop global — images depuis le bureau
@@ -10003,6 +10043,7 @@ document.addEventListener('paste', e => {
     return;
   }
   const now = new Date();
+  const addedImgs = [];
   const promises = imageItems.map(it => {
     const file = it.getAsFile();
     if (!file) return Promise.resolve();
@@ -10014,11 +10055,23 @@ document.addEventListener('paste', e => {
       _tlSrcCache[img.id] = src;
       tl.images.push(img);
       tl.unplaced.push(img.id);
+      addedImgs.push(img);
     });
   });
 
-  Promise.all(promises).then(() => { tlTouchFolderChain(_tlEffectiveFolderId(tl)); tlSave(); tlRender(); tlUpdateUndoBtn(); }).catch(e => console.warn('TL paste error:', e));
+  Promise.all(promises).then(() => {
+    tlTouchFolderChain(_tlEffectiveFolderId(tl));
+    tlSave(); tlRender(); tlUpdateUndoBtn();
+    _tlNameNewImgsSequentially(tl, addedImgs);
+  }).catch(e => console.warn('TL paste error:', e));
 });
+
+// Ouvre la modal de nom pour chaque image collée, l'une après l'autre.
+function _tlNameNewImgsSequentially(tl, imgs) {
+  if (imgs.length === 0) return;
+  const [first, ...rest] = imgs;
+  tlOpenNameNewImg(tl, first, () => _tlNameNewImgsSequentially(tl, rest));
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Initialisation Firebase temps réel
