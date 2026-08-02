@@ -1,4 +1,4 @@
-/* ═══════════════════════════════════════════════
+﻿/* ═══════════════════════════════════════════════
    LesMichels — app.js
 ═══════════════════════════════════════════════ */
 
@@ -323,8 +323,9 @@ function loadUserPrefs() {
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
     if (prefs.tlActiveFolderId    != null) _tlLocalActiveFolderId   = prefs.tlActiveFolderId;
     if (prefs.tlNoSelection       != null) _tlLocalNoSelection      = !!prefs.tlNoSelection;
-    // Page active
-    if (prefs.activePage   != null && window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId) _switchPage(prefs.activePage);
+    // Page active — l'app démarre toujours sur l'accueil (sauf lien direct vers une grille/tierlist
+    // en plein écran solo) ; prefs.activePage n'est utilisée que pour les changements d'onglet en cours de session.
+    if (window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId) _switchPage('home');
     _prefsReady = true;
     // Appliquer les prefs visuelles
     fontScaleInput.value = Math.round(_localFontScale * 100);
@@ -507,6 +508,7 @@ function _applyPrefsAndRender() {
   }
   // Re-render la Tier List avec la bonne tierlist active
   if (typeof tlRender === 'function') tlRender();
+  if (typeof renderHomePage === 'function') renderHomePage();
 }
 
 // ──────────────────────────────────────────────
@@ -895,6 +897,12 @@ function renderCurrentEventButton() {
 function _updateCeSetHeaderBtn() {
   const ceSet = document.getElementById('btn-ce-set-header');
   if (!ceSet) return;
+  const onHomePage = document.getElementById('page-home')?.classList.contains('active');
+  if (onHomePage) {
+    ceSet.style.display = 'none';
+    return;
+  }
+  ceSet.style.display = '';
   const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
   let isCurrentEvent;
   if (onTlPage) {
@@ -3200,6 +3208,9 @@ const btnCloseNewThemeModal = document.getElementById('btn-close-new-folder-moda
 
 let _editFolderId = null; // null = mode création, sinon id du dossier en cours d'édition ou de duplication
 let _folderModalMode = 'create'; // 'create' | 'edit' | 'duplicate'
+// "Nouveau Bingo" depuis l'accueil : fait apparaître la section grille dans le modal "Nouveau
+// dossier" (fusion des deux modals) — voir openNewThemeModal / confirmNewTheme.
+let _homeNewGridAfterFolder = false;
 
 // Lit l'état des 2 checkboxes exclusives Saison/Épisode : retourne 'season' | 'episode' | null
 function _readNumberingType(seasonCb, episodeCb) {
@@ -3287,6 +3298,19 @@ function openNewThemeModal(parentId = null) {
   if (numberingWrap) numberingWrap.classList.add('hidden');
   if (numberingNumber) numberingNumber.value = '';
   _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'));
+
+  // Section grille (fusion avec le modal "Nouvelle grille") : visible uniquement pour
+  // "Nouveau Bingo" depuis l'accueil (_homeNewGridAfterFolder).
+  const gridWrap = document.getElementById('new-folder-grid-wrap');
+  if (gridWrap) {
+    gridWrap.classList.toggle('hidden', !_homeNewGridAfterFolder);
+    if (_homeNewGridAfterFolder) {
+      const gridNameInput = document.getElementById('new-folder-grid-name-input');
+      if (gridNameInput) gridNameInput.value = '';
+      gridWrap.querySelectorAll('.grid-name-preset-check input').forEach(cb => { cb.checked = false; });
+    }
+  }
+
   modalNewTheme.classList.remove('hidden');
   setTimeout(() => { newThemeNameInput.focus(); newThemeNameInput.select(); }, 50);
 }
@@ -3412,8 +3436,26 @@ function confirmNewTheme() {
   }
   const sel = document.getElementById('new-folder-parent-select');
   const parentId = (sel && sel.value) ? sel.value : null;
+  // "Nouveau Bingo" depuis l'accueil : lire la section grille fusionnée AVANT de fermer le
+  // modal (closeNewThemeModal ne vide pas ces champs, mais autant lire pendant qu'ils sont là).
+  const fromHome = _homeNewGridAfterFolder;
+  let gridNames = [];
+  if (fromHome) {
+    const checked = [...document.querySelectorAll('#new-folder-grid-wrap .grid-name-preset-check input:checked')].map(cb => cb.value);
+    const gridNameInput = document.getElementById('new-folder-grid-name-input');
+    gridNames = checked.length > 0 ? checked : [(gridNameInput?.value.trim()) || 'Grille 1'];
+  }
   closeNewThemeModal();
   createFolder(name, parentId, numbering);
+  if (fromHome) {
+    _homeNewGridAfterFolder = false;
+    const folder = activeFolder();
+    if (folder) {
+      gridNames.forEach(gname => createGrid(gname));
+      // Rejoindre directement le Bingo qu'on vient de créer (comme "Rejoindre Bingo").
+      if (typeof _homeGoToBingoFolder === 'function') _homeGoToBingoFolder(folder.id);
+    }
+  }
 }
 
 function createTheme(name) { createFolder(name, null); }
@@ -4946,6 +4988,7 @@ renameGridInput.addEventListener('keydown', e => {
     if (target === 'bingo' && typeof _adjustBingoGridSizes === 'function') {
       requestAnimationFrame(_adjustBingoGridSizes);
     }
+    if (target === 'home' && typeof renderHomePage === 'function') renderHomePage();
   };
 
   navBtns.forEach(btn => {
@@ -8312,6 +8355,9 @@ function tlRenderArchivedModal() {
 // ── Modal nouvelle tierlist ───────────────────────────────────────────────────
 let tlModalNewMode = 'create'; // 'create' | 'rename' | 'create-template'
 let tlModalNewTargetId = null;
+// "Nouveau Template" depuis l'accueil : fait apparaître la section génération dans ce même
+// modal (fusion avec "Générer depuis ce template") — voir tlOpenNewTemplateModal / tlConfirmNewModal.
+let _homeGenerateAfterTemplate = false;
 
 function tlPopulateFolderSelect(selectEl, selectedId, excludeId) {
   const activeFolders = (tlState.folders || []).filter(f => !f.archived);
@@ -8792,10 +8838,11 @@ function tlOpenNewModal(presetFolderId) {
   setTimeout(() => { tlModalNewInput.focus(); }, 50);
 }
 
-function tlOpenNewTemplateModal(presetFolderId) {
+function tlOpenNewTemplateModal(presetFolderId, fromHome = false) {
   tlModalNewMode = 'create-template';
   tlModalNewTargetId = null;
   _tlNewModalImportSourceId = null;
+  _homeGenerateAfterTemplate = fromHome;
   tlModalNewTitle.textContent = 'Nouveau template';
   tlModalNewInput.value = '';
   tlModalNewInput.placeholder = 'Nom du template...';
@@ -8809,6 +8856,17 @@ function tlOpenNewTemplateModal(presetFolderId) {
     presetWrap.style.display = '';
     tlPopulatePresetSelect(document.getElementById('tl-modal-new-preset-select'));
     _tlSetupNewModalImportBtn();
+  }
+  // Section génération (fusion avec le modal "Générer depuis ce template") : visible uniquement
+  // pour "Nouveau Template" depuis l'accueil (_homeGenerateAfterTemplate).
+  const generateWrap = document.getElementById('tl-modal-new-generate-wrap');
+  if (generateWrap) {
+    generateWrap.classList.toggle('hidden', !fromHome);
+    if (fromHome) {
+      const nameInput = document.getElementById('tl-modal-new-generate-name-input');
+      if (nameInput) nameInput.value = '';
+      generateWrap.querySelectorAll('.grid-name-preset-check input').forEach(cb => { cb.checked = false; });
+    }
   }
   tlModalNew.classList.remove('hidden');
   setTimeout(() => { tlModalNewInput.focus(); }, 50);
@@ -8834,6 +8892,15 @@ function tlOpenRenameModal(id) {
 function tlConfirmNewModal() {
   const val = tlModalNewInput.value.trim();
   if (!val) return;
+  // "Nouveau Template" depuis l'accueil : lire la section génération fusionnée AVANT de fermer
+  // le modal (mêmes champs que l'ex-modal "Générer depuis ce template").
+  const generateAfter = tlModalNewMode === 'create-template' && _homeGenerateAfterTemplate;
+  let generateNames = [];
+  if (generateAfter) {
+    const checked = [...document.querySelectorAll('#tl-modal-new-generate-wrap .grid-name-preset-check input:checked')].map(cb => cb.value);
+    const nameInput = document.getElementById('tl-modal-new-generate-name-input');
+    generateNames = checked.length > 0 ? checked : [(nameInput?.value.trim()) || 'Tier list 1'];
+  }
   tlModalNew.classList.add('hidden');
   if (tlModalNewMode === 'create' || tlModalNewMode === 'create-template') {
     const folderId = tlModalNewFolderSelect ? tlModalNewFolderSelect.value || null : null;
@@ -8850,9 +8917,23 @@ function tlConfirmNewModal() {
       tlImportTiersFrom(createdFresh, _tlNewModalImportSourceId);
     } else {
       const presetSelect = document.getElementById('tl-modal-new-preset-select');
-      tlCreate(val, folderId, isTemplate, presetSelect ? presetSelect.value || null : null);
+      created = tlCreate(val, folderId, isTemplate, presetSelect ? presetSelect.value || null : null);
     }
     _tlNewModalImportSourceId = null;
+    if (generateAfter && created) {
+      _homeGenerateAfterTemplate = false;
+      let lastGenerated = null;
+      generateNames.forEach(gname => { lastGenerated = _tlCreateFromTemplate(created.id, gname); });
+      tlSave();
+      // Rejoindre directement la tier list générée (comme "Rejoindre Template").
+      if (lastGenerated) {
+        _tlLocalActiveTierlistId = lastGenerated.id;
+        _tlLocalNoSelection = false;
+        saveUserPrefs({ tlActiveTierlistId: lastGenerated.id, tlNoSelection: false });
+      }
+      window._switchPage('tierlist');
+      tlRender();
+    }
   } else if (tlModalNewMode === 'rename') {
     tlRename(tlModalNewTargetId, val);
   }
@@ -10006,6 +10087,7 @@ _dbBingo.on('value', snapshot => {
     renderGrid();
     setTimeout(setBingoReadyForEffect, 0);
   }
+  if (typeof renderHomePage === 'function') renderHomePage();
   // Si _prefsReady est false mais currentUser existe : loadUserPrefs() appellera _applyPrefsAndRender() lui-même
   _bingoRemoteUpdate = false;
 });
@@ -10041,6 +10123,333 @@ _dbTierlist.on('value', snapshot => {
   _applySoloTierlistModeIfNeeded();
   _applyCompareTierlistModeIfNeeded();
   tlRender();
+  if (typeof renderHomePage === 'function') renderHomePage();
   _tlRemoteUpdate = false;
   if (_needsMigrationSave) tlSave();
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PAGE D'ACCUEIL
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Va sur la page Bingo/Tier List et active un dossier donné (racine ou sous-dossier),
+// en dépliant ses ancêtres dans le drawer Dossiers correspondant — même logique que
+// les liens "Récents" des drawers, réutilisée ici pour "rejoindre" depuis l'accueil.
+function _homeGoToBingoFolder(folderId) {
+  window._switchPage('bingo');
+  _expandFolderAncestors(folderId);
+  if (_localActiveFolderId !== folderId) switchFolder(folderId);
+  saveUserPrefs({ activePage: 'bingo' });
+}
+
+function _homeGoToBingoGrid(folder, grid) {
+  window._switchPage('bingo');
+  _expandFolderAncestors(folder.id);
+  if (_localActiveFolderId !== folder.id) switchFolder(folder.id);
+  _selectedGridIds = [grid.id];
+  saveLocalSelectedGrids(_selectedGridIds);
+  folder.activeGridId = grid.id;
+  saveState();
+  renderAllFolders();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+  saveUserPrefs({ activePage: 'bingo' });
+}
+
+function _homeGoToTlTierlist(tl) {
+  window._switchPage('tierlist');
+  const root = typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
+  if (tl.folderId) _tlExpandFolderAncestors(tl.folderId);
+  _tlLocalActiveTierlistId = root.id;
+  _tlLocalNoSelection = false;
+  saveUserPrefs({ activePage: 'tierlist', tlActiveTierlistId: root.id, tlNoSelection: false });
+  tlRender();
+}
+
+// ── Récents (2 listes séparées de 5 : Bingo / Tier List) ──────────────────────
+function _homeRenderRecentBingo() {
+  const container = document.getElementById('home-recent-bingo');
+  if (!container) return;
+  container.innerHTML = '';
+  const ancestorIdsOf = id => getFolderPath(state.folders, id).slice(0, -1).map(f => f.id);
+  // Seuls les dossiers contenant au moins une grille (chemin qui "aboutit" à une grille) — exclut
+  // les dossiers purement organisationnels qui n'ont que des sous-dossiers.
+  const sorted = _flattenFoldersForRecent(state.folders)
+    .filter(f => f.updatedAt && (f.grids || []).some(g => !g.archived))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || ancestorIdsOf(b.id).length - ancestorIdsOf(a.id).length);
+  const recent = _dedupeAncestorFolders(sorted, ancestorIdsOf).slice(0, 5);
+  if (recent.length === 0) return;
+
+  const title = document.createElement('div');
+  title.className = 'home-recent-title';
+  title.innerHTML = '<i data-lucide="grid-3x3"></i> Bingos récents';
+  container.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'home-recent-list';
+  recent.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'home-recent-row';
+    row.innerHTML = '<span class="home-recent-icon"><i data-lucide="folder-closed"></i></span><span class="home-recent-path"></span>';
+    row.querySelector('.home-recent-path').textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' › ');
+    row.addEventListener('click', () => _homeGoToBingoFolder(f.id));
+    list.appendChild(row);
+  });
+  container.appendChild(list);
+}
+
+function _homeRenderRecentTl() {
+  const container = document.getElementById('home-recent-tl');
+  if (!container) return;
+  container.innerHTML = '';
+  // Seuls les dossiers contenant au moins un template (chemin qui "aboutit" à un template) —
+  // exclut les dossiers purement organisationnels qui n'ont que des sous-dossiers.
+  const hasTemplate = f => tlState.tierlists.some(t => t.isTemplate && !t.archived && t.folderId === f.id);
+  const sorted = (tlState.folders || [])
+    .filter(f => !f.archived && f.updatedAt && hasTemplate(f))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || _tlDepthOf(b.id) - _tlDepthOf(a.id));
+  const recent = _dedupeAncestorFolders(sorted, _tlAncestorIdsOf).slice(0, 5);
+  if (recent.length === 0) return;
+
+  const title = document.createElement('div');
+  title.className = 'home-recent-title';
+  title.innerHTML = '<i data-lucide="list-ordered"></i> Tier lists récentes';
+  container.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'home-recent-list';
+  recent.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'home-recent-row';
+    row.innerHTML = '<span class="home-recent-icon"><i data-lucide="folder-closed"></i></span><span class="home-recent-path"></span>';
+    let pathText = _tlFolderPath(f.id);
+    const templatesHere = tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === f.id);
+    if (templatesHere.length === 1) pathText += ' › ' + templatesHere[0].name;
+    row.querySelector('.home-recent-path').textContent = pathText;
+    row.addEventListener('click', () => {
+      if (templatesHere.length === 1) _homeGoToTlTierlist(templatesHere[0]);
+      else {
+        window._switchPage('tierlist');
+        _tlExpandFolderAncestors(f.id);
+        _tlLocalActiveFolderId = f.id;
+        _tlLocalActiveTierlistId = null;
+        _tlLocalNoSelection = true;
+        saveUserPrefs({ activePage: 'tierlist', tlActiveFolderId: f.id, tlActiveTierlistId: null, tlNoSelection: true });
+        tlRender();
+      }
+    });
+    list.appendChild(row);
+  });
+  container.appendChild(list);
+}
+
+function _homeRenderHero() {
+  const btn = document.getElementById('home-btn-current-event');
+  const lbl = document.getElementById('home-ce-label');
+  if (!btn) return;
+
+  const ceTl = state.currentEventTierlistId;
+  if (ceTl) {
+    const tl = (tlState.tierlists || []).find(t => t.id === ceTl && !t.archived);
+    if (tl) {
+      btn.style.display = 'inline-flex';
+      if (lbl) {
+        // Même construction de chemin que renderCurrentEventButton() (header) : Tier List › dossiers › nom
+        const parts = ['Tier List'];
+        if (tl.folderId) {
+          const folderParts = [];
+          let current = (tlState.folders || []).find(f => f.id === tl.folderId);
+          while (current) {
+            folderParts.unshift(current.name);
+            current = (tlState.folders || []).find(f => f.id === current.parentId);
+          }
+          parts.push(...folderParts);
+        }
+        parts.push(tl.name);
+        lbl.textContent = 'Rejoindre la soirée en cours : ' + parts.join(' › ');
+      }
+      return;
+    }
+  }
+  const ceFolder = state.currentEventFolderId;
+  if (ceFolder) {
+    const folder = findFolderById(state.folders, ceFolder);
+    if (folder && !folder.archived) {
+      btn.style.display = 'inline-flex';
+      if (lbl) {
+        const path = getFolderPath(state.folders, ceFolder);
+        lbl.textContent = 'Rejoindre la soirée en cours : Bingo › ' + path.map(f => f.name).join(' › ');
+      }
+      return;
+    }
+  }
+  btn.style.display = 'none';
+}
+
+function renderHomePage() {
+  if (!currentUser) return;
+  _homeRenderHero();
+  _homeRenderRecentBingo();
+  _homeRenderRecentTl();
+  if (window.lucide) lucide.createIcons();
+}
+
+document.getElementById('home-btn-current-event')?.addEventListener('click', () => {
+  document.getElementById('btn-ce-navigate')?.click();
+});
+
+// ── "Nouveau Bingo" — le modal "Nouveau dossier" affiche en plus sa section grille
+// (_homeNewGridAfterFolder, voir openNewThemeModal/confirmNewTheme) : dossier + première grille
+// créés en une seule action depuis l'accueil.
+document.getElementById('home-btn-bingo-new-folder')?.addEventListener('click', () => {
+  _homeNewGridAfterFolder = false;
+  openNewFolderModal(null);
+});
+document.getElementById('home-btn-bingo-new-grid')?.addEventListener('click', () => {
+  _homeNewGridAfterFolder = true;
+  openNewFolderModal(null);
+});
+document.getElementById('home-btn-tl-new-folder')?.addEventListener('click', () => tlOpenFolderModal('create', null, '', null));
+document.getElementById('home-btn-tl-new-template')?.addEventListener('click', () => tlOpenNewTemplateModal(null, true));
+
+// ── "Rejoindre Bingo / Template" — menu déroulant en cascade, dossier par dossier ─────────────
+// Chaque sous-menu est un ctx-menu positionné à côté du précédent (comme un menu en cascade
+// classique) ; cliquer une grille/un template navigue vers la page correspondante.
+let _homeJoinCascadeMenus = [];
+function _homeCloseJoinCascade() {
+  _homeJoinCascadeMenus.forEach(m => m.remove());
+  _homeJoinCascadeMenus = [];
+  document.removeEventListener('click', _homeCloseJoinCascade);
+}
+
+// Rend une liste d'items déjà préparés (utilisé par le niveau racine et les niveaux suivants)
+function _homeRenderJoinItems(anchorEl, depth, items) {
+  // Geler le rect de l'ancre AVANT de fermer les sous-menus plus profonds : si anchorEl vit
+  // dans un menu qu'on est sur le point de retirer du DOM, lire son rect après coup renverrait
+  // (0,0) — même piège que _tlMakeCtxMenu (voir positionCtxMenu).
+  const frozenRect = anchorEl ? anchorEl.getBoundingClientRect() : null;
+  while (_homeJoinCascadeMenus.length > depth) {
+    _homeJoinCascadeMenus.pop().remove();
+  }
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu home-join-menu';
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'ctx-menu-title';
+    empty.textContent = 'Vide.';
+    menu.appendChild(empty);
+  } else {
+    items.forEach(item => {
+      const btn = document.createElement('button');
+      btn.className = 'ctx-menu-item';
+      btn.innerHTML = '<i data-lucide="' + item.icon + '"></i> ';
+      btn.append(item.label);
+      btn.addEventListener('click', e => { e.stopPropagation(); item.onClick(btn); });
+      menu.appendChild(btn);
+    });
+  }
+  document.body.appendChild(menu);
+  if (frozenRect) {
+    menu.style.left = (frozenRect.right + 4) + 'px';
+    menu.style.top  = frozenRect.top + 'px';
+    requestAnimationFrame(() => {
+      const rect = menu.getBoundingClientRect();
+      if (rect.right  > window.innerWidth  - 8) menu.style.left = (frozenRect.left - rect.width - 4) + 'px';
+      if (rect.bottom > window.innerHeight - 8) menu.style.top  = (frozenRect.bottom - rect.height) + 'px';
+    });
+  } else {
+    positionCtxMenu(menu, null, null);
+  }
+  _homeJoinCascadeMenus.push(menu);
+  if (window.lucide) lucide.createIcons();
+}
+
+function _homeStartBingoJoin(triggerBtn) {
+  _homeCloseJoinCascade();
+  const roots = (state.folders || []).filter(f => !f.archived);
+  const items = roots.map(f => ({
+    icon: 'folder-closed',
+    label: f.name,
+    onClick: (btn) => {
+      const subFolders = (f.folders || []).filter(sf => !sf.archived);
+      const grids = (f.grids || []).filter(g => !g.archived);
+      const nextItems = [
+        ...subFolders.map(sf => ({
+          icon: 'folder-closed', label: sf.name,
+          onClick: (b2) => _homeExpandBingoFolder(b2, 1, sf),
+        })),
+        ...grids.map(g => ({
+          icon: 'grid-3x3', label: g.name,
+          onClick: () => { _homeCloseJoinCascade(); _homeGoToBingoGrid(f, g); },
+        })),
+      ];
+      _homeRenderJoinItems(btn, 1, nextItems);
+    }
+  }));
+  _homeRenderJoinItems(triggerBtn, 0, items);
+  setTimeout(() => document.addEventListener('click', _homeCloseJoinCascade), 0);
+}
+
+function _homeExpandBingoFolder(anchorEl, depth, folder) {
+  const subFolders = (folder.folders || []).filter(sf => !sf.archived);
+  const grids = (folder.grids || []).filter(g => !g.archived);
+  const nextItems = [
+    ...subFolders.map(sf => ({
+      icon: 'folder-closed', label: sf.name,
+      onClick: (b2) => _homeExpandBingoFolder(b2, depth + 1, sf),
+    })),
+    ...grids.map(g => ({
+      icon: 'grid-3x3', label: g.name,
+      onClick: () => { _homeCloseJoinCascade(); _homeGoToBingoGrid(folder, g); },
+    })),
+  ];
+  _homeRenderJoinItems(anchorEl, depth, nextItems);
+}
+
+function _homeExpandTlFolder(anchorEl, depth, folder) {
+  const subFolders = (tlState.folders || []).filter(sf => !sf.archived && sf.parentId === folder.id);
+  const templates = tlState.tierlists.filter(t => !t.archived && t.folderId === folder.id && !_tlHasLiveTemplate(t));
+  const nextItems = [
+    ...subFolders.map(sf => ({
+      icon: 'folder-closed', label: sf.name,
+      onClick: (b2) => _homeExpandTlFolder(b2, depth + 1, sf),
+    })),
+    ...templates.map(t => ({
+      icon: t.isTemplate ? 'layout-template' : 'list-ordered', label: t.name,
+      onClick: () => { _homeCloseJoinCascade(); _homeGoToTlTierlist(t); },
+    })),
+  ];
+  _homeRenderJoinItems(anchorEl, depth, nextItems);
+}
+
+function _homeStartTlJoin(triggerBtn) {
+  _homeCloseJoinCascade();
+  const roots = (tlState.folders || []).filter(f => !f.archived && !f.parentId);
+  // Templates qui ne sont dans aucun dossier (racine) — mêmes conditions que tlRenderList().
+  const rootTemplates = tlState.tierlists.filter(t => t.isTemplate && !t.archived && !t.folderId && !_tlHasLiveTemplate(t));
+  const items = [
+    ...roots.map(f => ({
+      icon: 'folder-closed',
+      label: f.name,
+      onClick: (btn) => _homeExpandTlFolder(btn, 1, f),
+    })),
+    ...rootTemplates.map(t => ({
+      icon: 'layout-template',
+      label: t.name,
+      onClick: () => { _homeCloseJoinCascade(); _homeGoToTlTierlist(t); },
+    })),
+  ];
+  _homeRenderJoinItems(triggerBtn, 0, items);
+  setTimeout(() => document.addEventListener('click', _homeCloseJoinCascade), 0);
+}
+
+document.getElementById('home-btn-bingo-join')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  _homeStartBingoJoin(e.currentTarget);
+});
+document.getElementById('home-btn-tl-join')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  _homeStartTlJoin(e.currentTarget);
+});
+
