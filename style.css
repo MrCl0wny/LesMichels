@@ -1006,8 +1006,25 @@ body.compare-tierlist-mode #tl-editor {
 body.compare-tierlist-mode #tl-compare-btn-exit {
   display: inline-flex !important;
 }
+/* Même modèle que body.solo-grid-mode .main (éprouvé) : .main devient lui-même le plafond de
+   hauteur EXPLICITE (height:100vh + overflow:hidden), impossible à déborder peu importe le
+   contenu — plutôt qu'un calc(100vh - Npx) sur .tl-compare-view qui suppose une hauteur de
+   toolbar fixe et peut légèrement déborder (le contenu passe alors visuellement par-dessus la
+   toolbar, qui elle n'est pas sticky). #page-tierlist doit relayer le flex jusqu'à .tl-compare-view
+   (un display:block de .page intermédiaire suffit à casser toute la chaîne). */
 body.compare-tierlist-mode .main {
   padding: 8px;
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.compare-tierlist-mode #page-tierlist.page.active {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
 }
 .tl-compare-toolbar {
   display: flex;
@@ -1017,32 +1034,57 @@ body.compare-tierlist-mode .main {
   flex-wrap: nowrap;
   overflow-x: auto;
   position: relative;
+  flex-shrink: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 10px 16px 6px;
   margin-bottom: 14px;
-  position: relative;
 }
 .tl-compare-view {
   display: flex;
+  align-items: stretch;
   gap: 16px;
   overflow-x: auto;
-  padding: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .tl-compare-column {
   flex: 1 1 0;
   min-width: 320px;
+  max-width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
 }
+.tl-compare-column::-webkit-scrollbar { width: 4px; }
+.tl-compare-column::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+/* position:sticky s'arrête à top:0 du conteneur de scroll (.tl-compare-column), mais son
+   padding:4px laisse une bande transparente au-dessus du titre — les cartes qui remontent au
+   scroll y redevenaient visibles par transparence. Marge négative égale au padding parent +
+   padding compensé en retour : le fond opaque du titre couvre alors bien toute la bande, y
+   compris ce qui dépasse au-dessus de top:0. */
 .tl-compare-column-title {
-  margin: 0 0 4px;
+  margin: -4px -4px 4px;
+  padding: 6px 4px 4px;
   font-size: clamp(0.9rem, 2vw, 1.5rem);
   font-weight: 400;
   color: var(--accent);
   text-align: center;
+  position: sticky;
+  top: -4px;
+  /* Doit rester au-dessus de .tl-img-zoom-btn (z-index:2, sur chaque carte) — sinon son bouton
+     zoom en position:absolute continue d'apparaître par-dessus le titre pendant le scroll. */
+  background: var(--surface-2);
+  z-index: 3;
+  flex-shrink: 0;
 }
 .tl-compare-tier-row {
   display: flex;
@@ -1051,6 +1093,7 @@ body.compare-tierlist-mode .main {
   border-radius: var(--radius);
   overflow: hidden;
   min-height: 60px;
+  flex-shrink: 0;
 }
 .tl-compare-tier-row .tl-tier-images {
   flex: 1;
@@ -1058,6 +1101,18 @@ body.compare-tierlist-mode .main {
   flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
+}
+.tl-compare-tier-row .tl-tier-images.drag-over { background: var(--accent-glow); }
+
+/* Menu "Listes" (mode comparaison) : un .ctx-menu classique, positionné en fixed via JS
+   (positionCtxMenu) — jamais en absolute dans la toolbar, qui a overflow-x:auto et le couperait. */
+#tl-compare-lists-menu { padding-top: 6px; }
+
+/* Surbrillance clic gauche en mode comparaison : bordure + léger fond, distincte de .selected */
+.tl-img-card.tl-compare-highlight {
+  border-color: #e8b23e;
+  box-shadow: 0 0 0 1.5px #e8b23e;
+  background: rgba(232, 178, 62, 0.15);
 }
 
 /* ── Panneaux ── */

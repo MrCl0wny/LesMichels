@@ -387,7 +387,7 @@ function _applySoloTierlistModeIfNeeded() {
   _tlLocalActiveTierlistId = tl.id;
   _tlLocalNoSelection = false;
   if (window._switchPage) window._switchPage('tierlist');
-  document.title = (_tlFullTitlePath(tl) || tl.name || 'Tier list') + ' — LesMichels';
+  document.title = (_tlFullTitlePath(tl) || tl.name || 'Liste') + ' — LesMichels';
   document.body.classList.add('solo-tierlist-mode');
   _tlEnterSoloToolbarLayout();
   requestAnimationFrame(_adjustTlLayoutHeight);
@@ -417,6 +417,9 @@ function _applyCompareTierlistModeIfNeeded() {
     }
   }
   document.title = 'Comparaison : ' + _tlCommonTitlePath(tls) + ' — LesMichels';
+  _tlCompareGroupMembers = tls;
+  _tlCompareSelectedIds = tls.map(t => t.id);
+  if (typeof _tlRenderCompareListsMenu === 'function') _tlRenderCompareListsMenu();
   _tlRenderCompareView(tls);
 }
 
@@ -443,6 +446,8 @@ function _exitCompareTierlistMode() {
   // Empêche le listener Firebase (_dbTierlist.on('value')) de rouvrir le mode au prochain snapshot
   _compareTierlistIds = [];
   _compareModeApplied = false;
+  _tlCompareGroupMembers = null;
+  _tlCompareSelectedIds = null;
   // _tlRenderCompareView() démasque ces deux éléments indépendamment de la classe du body — sans ça
   // ils restent visibles même après la sortie du mode.
   document.getElementById('tl-compare-toolbar')?.classList.add('hidden');
@@ -848,7 +853,7 @@ function renderCurrentEventButton() {
       btn.style.display = 'flex';
       if (lbl) {
         // Remonter le chemin du dossier si la TL est dans un dossier
-        const parts = ['Tier List'];
+        const parts = ['Liste'];
         if (tl.folderId && typeof tlState !== 'undefined') {
           const folderParts = [];
           let current = (tlState.folders || []).find(f => f.id === tl.folderId);
@@ -970,7 +975,7 @@ function confirmSetCurrentEventTierlist(id) {
   }
   _pendingCurrentEventTierlistId = targetId;
   const msg = document.getElementById('modal-current-event-msg');
-  if (msg) msg.textContent = root ? `Définir "${root.name}" comme soirée en cours ?` : 'Définir cette tier list comme soirée en cours ?';
+  if (msg) msg.textContent = root ? `Définir "${root.name}" comme soirée en cours ?` : 'Définir cette liste comme soirée en cours ?';
   document.getElementById('modal-confirm-current-event').classList.remove('hidden');
 }
 
@@ -5408,17 +5413,12 @@ function _tlFullTitlePath(tl) {
   return prefix ? prefix + ' › ' + tl.name : tl.name;
 }
 
-// Segment de chemin (dossiers › template › ...) partagé par toutes les tierlists comparées —
-// ex. "Miss Univers › 2026 › Brésil (template) › Jérôme" vs "... › Adrien" → "Miss Univers › 2026".
+// Chemin commun affiché en mode comparaison : toujours le chemin jusqu'au template (dossiers ›
+// template), jamais le nom propre d'un membre — qu'il y ait 1 ou plusieurs listes sélectionnées.
+// ex. "Miss Univers › 2026 › Brésil (template)", que la comparaison montre Jérôme, Adrien, ou les deux.
 function _tlCommonTitlePath(tls) {
-  const paths = tls.map(tl => _tlFullTitlePath(tl).split(' › '));
-  const common = [];
-  for (let i = 0; i < paths[0].length; i++) {
-    const segment = paths[0][i];
-    if (paths.every(p => p[i] === segment)) common.push(segment);
-    else break;
-  }
-  return common.length ? common.join(' › ') : tls.map(_tlFullTitlePath).join(' vs ');
+  const prefix = _tlTitlePathPrefix(tls[0]);
+  return prefix || tls.map(_tlFullTitlePath).join(' vs ');
 }
 
 // Retourne tous les ids descendants d'un dossier (récursif)
@@ -6036,7 +6036,7 @@ function tlRenderGroupPanel(tl) {
 
   // Dropdown Tier lists : libellé = nom de la tier list active, ou "Choisir" si aucune sélectionnée
   const tlTierlistDropdownLabel = document.getElementById('tl-tierlist-dropdown-label');
-  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate) ? tl.name : 'Tier lists';
+  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate) ? tl.name : 'Listes';
 
   const tlBtnCompare = document.getElementById('tl-btn-compare');
   if (tlBtnCompare) tlBtnCompare.classList.toggle('hidden', members.filter(m => !m.isTemplate).length < 2);
@@ -6386,7 +6386,7 @@ function _tlBuildTemplateGroupEl(template, depth) {
   if (generated.length === 0) {
     const empty = document.createElement('div');
     empty.style.cssText = 'color:var(--text-faint);font-style:italic;font-size:0.75rem;padding:3px 4px;';
-    empty.textContent = 'Aucune tier list générée';
+    empty.textContent = 'Aucune liste générée';
     children.appendChild(empty);
   } else {
     generated.forEach(t => children.appendChild(tlBuildTierlistItem(t)));
@@ -6621,7 +6621,7 @@ function tlRenderList() {
     const msg = document.createElement('div');
     msg.className = 'tl-list-empty';
     msg.style.cssText = 'color:var(--text-faint);font-style:italic;font-size:0.82rem;padding:8px 4px;';
-    msg.textContent = 'Aucune tier list';
+    msg.textContent = 'Aucune liste';
     tlList.appendChild(msg);
     return;
   }
@@ -7025,9 +7025,12 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') _tlCloseImgZoom();
 });
 
-// ── Mode comparaison (fenêtre séparée, lecture seule) ────────────────────────
+// ── Mode comparaison (overlay interne) ────────────────────────
 let _tlCompareTierlists = null; // dernière liste rendue, pour re-render au changement de taille
 let _tlCompareImgSize = 100;
+let _tlCompareHighlightImgId = null; // élément en surbrillance dans toutes les colonnes (clic gauche)
+let _tlCompareDragImgId = null;      // id de l'image en cours de glisser-déposer
+let _tlCompareDragTlId = null;       // tierlist d'origine du drag (jamais de drop inter-liste)
 
 function _tlRenderCompareView(tls) {
   const container = document.getElementById('tl-compare-view');
@@ -7046,6 +7049,7 @@ function _tlRenderCompareView(tls) {
   tls.forEach(tl => {
     const col = document.createElement('div');
     col.className = 'tl-compare-column';
+    col.dataset.tlId = tl.id;
 
     const title = document.createElement('h3');
     title.className = 'tl-compare-column-title';
@@ -7069,9 +7073,14 @@ function _tlRenderCompareView(tls) {
 
       const imgsDiv = document.createElement('div');
       imgsDiv.className = 'tl-tier-images';
+      imgsDiv.dataset.tierId = tier.id;
+      imgsDiv.dataset.tlId = tl.id;
+      imgsDiv.addEventListener('dragover', e => _tlCompareDragOver(e, tl.id));
+      imgsDiv.addEventListener('dragleave', _tlCompareDragLeave);
+      imgsDiv.addEventListener('drop', e => _tlCompareDrop(e, tl, tier.id));
       tier.items.forEach(imgId => {
         const img = tlFindImage(tl, imgId);
-        if (img) imgsDiv.appendChild(tlBuildImgCard(tl, img, imgSize, true));
+        if (img) imgsDiv.appendChild(_tlBuildCompareImgCard(tl, img, imgSize));
       });
       row.appendChild(imgsDiv);
 
@@ -7081,6 +7090,121 @@ function _tlRenderCompareView(tls) {
     container.appendChild(col);
   });
   if (window.lucide) lucide.createIcons();
+}
+
+// Carte en mode comparaison : pas de renommage/suppression (contrairement à l'éditeur normal),
+// mais interactive — clic gauche = surbrillance croisée, double-clic = scroll auto vers l'élément
+// dans les autres colonnes, glisser-déposer = réordonner/changer de tier DANS la même liste.
+function _tlBuildCompareImgCard(tl, img, size) {
+  const card = tlBuildImgCard(tl, img, size, true);
+  card.classList.toggle('tl-compare-highlight', img.id === _tlCompareHighlightImgId);
+  card.draggable = true;
+  card.title = img.name + '\nClic gauche : surligner dans toutes les listes · Double-clic : localiser · Glisser pour réordonner';
+
+  card.addEventListener('click', e => {
+    e.stopPropagation();
+    _tlCompareHighlightImgId = (_tlCompareHighlightImgId === img.id) ? null : img.id;
+    _tlApplyCompareHighlight();
+  });
+  card.addEventListener('dblclick', e => {
+    e.stopPropagation();
+    _tlCompareHighlightImgId = img.id;
+    _tlApplyCompareHighlight();
+    _tlCompareScrollToImg(img.id);
+  });
+  card.addEventListener('dragstart', e => {
+    _tlCompareDragImgId = img.id;
+    _tlCompareDragTlId = tl.id;
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => card.classList.add('dragging'), 0);
+  });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+    _tlCompareDragImgId = null;
+    _tlCompareDragTlId = null;
+    tlClearDropBefore();
+    document.querySelectorAll('.tl-compare-view .tl-tier-images.drag-over').forEach(z => z.classList.remove('drag-over'));
+  });
+
+  return card;
+}
+
+function _tlApplyCompareHighlight() {
+  document.querySelectorAll('#tl-compare-view .tl-img-card').forEach(card => {
+    card.classList.toggle('tl-compare-highlight', card.dataset.imgId === _tlCompareHighlightImgId);
+  });
+}
+
+// Scrolle chaque colonne où l'élément n'est pas déjà visible jusqu'à sa carte.
+function _tlCompareScrollToImg(imgId) {
+  document.querySelectorAll('#tl-compare-view .tl-compare-column').forEach(col => {
+    const card = col.querySelector(`.tl-img-card[data-img-id="${imgId}"]`);
+    if (!card) return;
+    const colRect = col.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const alreadyVisible = cardRect.top >= colRect.top && cardRect.bottom <= colRect.bottom;
+    if (!alreadyVisible) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+}
+
+// Glisser-déposer en mode comparaison : réutilise le même calcul de position que l'éditeur normal
+// (_tlComputeDropIndex) mais jamais entre deux tierlists différentes de la comparaison — le drop
+// est ignoré si la zone survolée/déposée n'appartient pas à la tierlist d'origine du drag.
+function _tlCompareDragOver(e, zoneTlId) {
+  if (!_tlCompareDragImgId || zoneTlId !== _tlCompareDragTlId) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const zone = e.currentTarget;
+  zone.classList.add('drag-over');
+
+  const sourceCard = document.querySelector(`#tl-compare-view .tl-img-card[data-img-id="${_tlCompareDragImgId}"]`);
+  if (sourceCard) sourceCard.classList.add('drag-source-hidden');
+
+  const { idx, cards } = _tlComputeDropIndex(zone, _tlCompareDragImgId, e.clientX, e.clientY);
+  let placeholder = zone.querySelector('.tl-drop-placeholder');
+  if (!placeholder) {
+    placeholder = document.createElement('div');
+    placeholder.className = 'tl-drop-placeholder';
+  } else if (placeholder.parentElement !== zone) {
+    placeholder.remove();
+  }
+  const refCard = cards[0] || zone.querySelector('.tl-img-card');
+  if (refCard) {
+    const size = refCard.getBoundingClientRect();
+    placeholder.style.width = size.width + 'px';
+    placeholder.style.height = size.height + 'px';
+  }
+  const refNode = cards[idx] || null;
+  if (placeholder.nextSibling !== refNode || placeholder.parentElement !== zone) {
+    zone.insertBefore(placeholder, refNode);
+  }
+}
+
+function _tlCompareDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+  if (!e.currentTarget.contains(e.relatedTarget)) tlClearDropBefore();
+}
+
+function _tlCompareDrop(e, tl, targetTierId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  tlClearDropBefore();
+  const imgId = _tlCompareDragImgId;
+  if (!imgId || _tlCompareDragTlId !== tl.id) return;
+
+  const from = _tlLocateImage(tl, imgId);
+  if (from) _tlPushUndoOp({ tierlistId: tl.id, type: 'moveImage', imgId, fromZone: from.zone, fromIndex: from.index });
+
+  _tlRemoveImageFromAllZones(tl, imgId);
+  const tier = tl.tiers.find(t => t.id === targetTierId);
+  if (!tier) return;
+  const imgsDiv = e.currentTarget;
+  const { idx: insertIdx } = _tlComputeDropIndex(imgsDiv, imgId, e.clientX, e.clientY);
+  tier.items.splice(insertIdx, 0, imgId);
+
+  tlTouchFolderChain(_tlEffectiveFolderId(tl));
+  tlSave();
+  _tlRenderCompareView(null);
 }
 
 const tlCompareShowLabelsToggle = document.getElementById('tl-compare-show-labels-toggle');
@@ -8332,7 +8456,7 @@ function tlRenderArchivedModal() {
   if (orphanArchivedTL.length > 0) {
     const sep = document.createElement('p');
     sep.style.cssText = 'font-size:0.72rem;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;margin:' + (archivedFolders.length > 0 ? '10px 0 6px' : '0 0 6px') + ';';
-    sep.innerHTML = '<i data-lucide="square-mouse-pointer"></i> Tier lists archivées';
+    sep.innerHTML = '<i data-lucide="square-mouse-pointer"></i> Listes archivées';
     tlArchivedList.appendChild(sep);
 
     // Grouper par dossier actif
@@ -8360,7 +8484,7 @@ function tlRenderArchivedModal() {
       const arrowBtn = document.createElement('button');
       arrowBtn.style.cssText = 'background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:0.65rem;padding:0 4px;transition:transform 0.15s;flex-shrink:0;';
       arrowBtn.innerHTML = '<i data-lucide="chevron-right"></i>';
-      arrowBtn.title = 'Voir les tier lists';
+      arrowBtn.title = 'Voir les listes';
       const childrenDiv = document.createElement('div');
       childrenDiv.style.cssText = 'display:none;flex-direction:column;gap:4px;padding:4px 0 0 14px;border-left:2px solid var(--border);margin-left:6px;';
       arrowBtn.addEventListener('click', e => {
@@ -8852,9 +8976,9 @@ function tlOpenNewModal(presetFolderId) {
   tlModalNewMode = 'create';
   tlModalNewTargetId = null;
   _tlNewModalImportSourceId = null;
-  tlModalNewTitle.textContent = 'Nouvelle tier list';
+  tlModalNewTitle.textContent = 'Nouvelle liste';
   tlModalNewInput.value = '';
-  tlModalNewInput.placeholder = 'Nom de la tier list...';
+  tlModalNewInput.placeholder = 'Nom de la liste...';
   // Afficher/cacher le select dossier selon le mode
   const wrap = document.getElementById('tl-modal-new-folder-wrap');
   if (wrap) {
@@ -8910,9 +9034,9 @@ function tlOpenRenameModal(id) {
   if (!tl) return;
   tlModalNewMode = 'rename';
   tlModalNewTargetId = id;
-  tlModalNewTitle.textContent = 'Renommer la tier list';
+  tlModalNewTitle.textContent = 'Renommer la liste';
   tlModalNewInput.value = tl.name;
-  tlModalNewInput.placeholder = 'Nom de la tier list...';
+  tlModalNewInput.placeholder = 'Nom de la liste...';
   // Cacher le select dossier et le select preset en mode rename
   const wrap = document.getElementById('tl-modal-new-folder-wrap');
   if (wrap) wrap.style.display = 'none';
@@ -8932,7 +9056,7 @@ function tlConfirmNewModal() {
   if (generateAfter) {
     const checked = [...document.querySelectorAll('#tl-modal-new-generate-wrap .grid-name-preset-check input:checked')].map(cb => cb.value);
     const nameInput = document.getElementById('tl-modal-new-generate-name-input');
-    generateNames = checked.length > 0 ? checked : [(nameInput?.value.trim()) || 'Tier list 1'];
+    generateNames = checked.length > 0 ? checked : [(nameInput?.value.trim()) || 'Liste 1'];
   }
   tlModalNew.classList.add('hidden');
   if (tlModalNewMode === 'create' || tlModalNewMode === 'create-template') {
@@ -8958,7 +9082,7 @@ function tlConfirmNewModal() {
       let lastGenerated = null;
       generateNames.forEach(gname => { lastGenerated = _tlCreateFromTemplate(created.id, gname); });
       tlSave();
-      // Rejoindre directement la tier list générée (comme "Rejoindre Template").
+      // Rejoindre directement la liste générée (comme "Rejoindre Template").
       if (lastGenerated) {
         _tlLocalActiveTierlistId = lastGenerated.id;
         _tlLocalNoSelection = false;
@@ -9237,79 +9361,91 @@ const tlModalTiersSource = document.getElementById('tl-modal-tiers-source');
 document.getElementById('tl-modal-tiers-source-close').addEventListener('click', () => tlModalTiersSource.classList.add('hidden'));
 document.getElementById('tl-modal-tiers-source-cancel').addEventListener('click', () => tlModalTiersSource.classList.add('hidden'));
 
-// ── Modal "Comparer" ──────────────────────────────────────────────────────────
-const tlModalCompare = document.getElementById('tl-modal-compare');
+// ── Comparaison : menu déroulant "Listes" ouvert au CLIC (cocher/décocher, tout coché par
+// défaut) + ouverture automatique dans cette fenêtre au clic sur "Comparaison" (plus de modal).
+let _tlCompareSelectedIds = null; // ids cochés en session ; null = pas encore initialisé (tout coché)
 
-function tlOpenCompareModal() {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-  const members = _tlGetGroupMembers(tl).filter(m => !m.isTemplate);
-  if (members.length < 2) return;
-  const checklist = document.getElementById('tl-compare-checklist');
-  checklist.innerHTML = '';
+// Membres du groupe de la comparaison en cours (figé à l'ouverture, indépendant de la tierlist
+// active du mode normal — le menu "Listes" doit continuer à cocher/décocher les mêmes membres
+// tant qu'on reste en mode comparaison, même si l'utilisateur ne peut plus changer de tierlist active).
+let _tlCompareGroupMembers = null;
+
+function _tlRenderCompareListsMenu() {
+  const menu = document.getElementById('tl-compare-lists-menu');
+  if (!menu) return;
+  const members = _tlCompareGroupMembers || [];
+  if (members.length < 2) { menu.innerHTML = ''; return; }
+
+  if (!_tlCompareSelectedIds) _tlCompareSelectedIds = members.map(m => m.id);
+  else _tlCompareSelectedIds = _tlCompareSelectedIds.filter(id => members.some(m => m.id === id));
+  if (_tlCompareSelectedIds.length === 0) _tlCompareSelectedIds = members.map(m => m.id);
+
+  menu.innerHTML = '';
   members.forEach(m => {
-    const row = document.createElement('label');
-    row.className = 'modal-item-row';
+    const isSelected = _tlCompareSelectedIds.includes(m.id);
+    const item = document.createElement('label');
+    item.className = 'grid-tab tl-dropdown-item' + (isSelected ? ' active' : '');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.value = m.id;
-    cb.checked = true;
-    row.appendChild(cb);
-    const span = document.createElement('span');
-    span.textContent = m.name;
-    row.appendChild(span);
-    checklist.appendChild(row);
+    cb.checked = isSelected;
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        if (!_tlCompareSelectedIds.includes(m.id)) _tlCompareSelectedIds.push(m.id);
+      } else {
+        _tlCompareSelectedIds = _tlCompareSelectedIds.filter(id => id !== m.id);
+      }
+      item.classList.toggle('active', cb.checked);
+      _tlOpenCompareInline();
+    });
+    item.appendChild(cb);
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'grid-tab-name';
+    nameSpan.textContent = m.name;
+    // Ne PAS appeler cb.click() ici : un clic sur un enfant d'un <label> transfère déjà
+    // nativement le clic vers son <input> associé — un second cb.click() manuel double le
+    // toggle (coché → décoché → recoché), ce qui annule silencieusement le décochage.
+    nameSpan.addEventListener('click', e => e.stopPropagation());
+    item.appendChild(nameSpan);
+    menu.appendChild(item);
   });
-  tlModalCompare.classList.remove('hidden');
 }
 
-let _tlCompareChoiceIds = null;
-
-function tlConfirmCompareModal() {
-  const checked = [...document.querySelectorAll('#tl-compare-checklist input:checked')].map(cb => cb.value);
-  if (checked.length < 2) { alert('Sélectionne au moins 2 tier lists.'); return; }
-  tlModalCompare.classList.add('hidden');
-  _tlCompareChoiceIds = checked;
-  document.getElementById('modal-tl-compare-choice').classList.remove('hidden');
-}
-
-function _tlCompareHere(ids) {
+function _tlOpenCompareInline() {
+  const ids = _tlCompareSelectedIds || [];
   const tls = ids.map(id => tlState.tierlists.find(t => t.id === id)).filter(Boolean);
-  if (tls.length < 2) return;
-  document.title = 'Comparaison : ' + _tlCommonTitlePath(tls) + ' — LesMichels';
   document.body.classList.add('compare-tierlist-mode');
+  if (tls.length === 0) {
+    document.title = 'Comparaison — LesMichels';
+    _tlCompareTierlists = [];
+    const container = document.getElementById('tl-compare-view');
+    if (container) container.innerHTML = '';
+    return;
+  }
+  document.title = 'Comparaison : ' + _tlCommonTitlePath(tls) + ' — LesMichels';
   _tlRenderCompareView(tls);
 }
 
-document.getElementById('tl-btn-compare').addEventListener('click', tlOpenCompareModal);
-document.getElementById('tl-modal-compare-confirm').addEventListener('click', tlConfirmCompareModal);
-document.getElementById('tl-modal-compare-cancel').addEventListener('click', () => tlModalCompare.classList.add('hidden'));
-document.getElementById('tl-modal-compare-close').addEventListener('click', () => tlModalCompare.classList.add('hidden'));
+const _tlCompareListsMenu = document.getElementById('tl-compare-lists-menu');
+const _tlCompareBtnLists = document.getElementById('tl-compare-btn-lists');
+document.getElementById('tl-compare-btn-lists')?.addEventListener('click', e => {
+  e.stopPropagation();
+  const opening = _tlCompareListsMenu.classList.contains('hidden');
+  if (!opening) { _tlCompareListsMenu.classList.add('hidden'); return; }
+  _tlRenderCompareListsMenu();
+  positionCtxMenu(_tlCompareListsMenu, null, _tlCompareBtnLists);
+  _tlCompareListsMenu.classList.remove('hidden');
+});
+_tlCompareListsMenu?.addEventListener('click', e => e.stopPropagation());
+document.addEventListener('click', () => _tlCompareListsMenu?.classList.add('hidden'));
 
-// ── Modal choix Comparer (cette fenêtre ou nouvelle fenêtre) ─────────────────────
-const _tlModalCompareChoice = document.getElementById('modal-tl-compare-choice');
-document.getElementById('btn-tl-compare-choice-here').addEventListener('click', () => {
-  _tlModalCompareChoice.classList.add('hidden');
-  if (_tlCompareChoiceIds) _tlCompareHere(_tlCompareChoiceIds);
-  _tlCompareChoiceIds = null;
-});
-document.getElementById('btn-tl-compare-choice-window').addEventListener('click', () => {
-  _tlModalCompareChoice.classList.add('hidden');
-  if (_tlCompareChoiceIds) {
-    const url = new URL(window.location.href);
-    url.search = '';
-    url.searchParams.set('compareTierlists', _tlCompareChoiceIds.join(','));
-    window.open(url.toString(), '_blank');
-  }
-  _tlCompareChoiceIds = null;
-});
-document.getElementById('btn-cancel-tl-compare-choice').addEventListener('click', () => {
-  _tlModalCompareChoice.classList.add('hidden');
-  _tlCompareChoiceIds = null;
-});
-document.getElementById('btn-close-tl-compare-choice').addEventListener('click', () => {
-  _tlModalCompareChoice.classList.add('hidden');
-  _tlCompareChoiceIds = null;
+document.getElementById('tl-btn-compare')?.addEventListener('click', () => {
+  const tl = tlActiveTierlist();
+  const members = tl ? _tlGetGroupMembers(tl).filter(m => !m.isTemplate) : [];
+  if (members.length < 2) return;
+  _tlCompareGroupMembers = members;
+  _tlCompareSelectedIds = members.map(m => m.id);
+  _tlOpenCompareInline();
 });
 
 // ── Menu contextuel tierlist (clic droit sur onglet) ─────────────────────────
@@ -9392,7 +9528,7 @@ if (_tlFoldersSortSelect) {
 document.getElementById('tl-btn-open-window').addEventListener('click', () => {
   const tl = tlActiveTierlist();
   if (!tl) return;
-  document.title = (_tlFullTitlePath(tl) || tl.name || 'Tier list') + ' — LesMichels';
+  document.title = (_tlFullTitlePath(tl) || tl.name || 'Liste') + ' — LesMichels';
   document.body.classList.add('solo-tierlist-mode');
   _tlEnterSoloToolbarLayout();
   requestAnimationFrame(_adjustTlLayoutHeight);
@@ -9479,7 +9615,7 @@ if (_tlBtnTierlistDropdown) {
     addSep();
     members.forEach(member => _tlAddDropdownSwitchItem(menu, member, member.id === tl.id, close));
     if (members.length) addSep();
-    addItem('', '+ Tier list', 'green', () => tlOpenGenerateFromTemplateModal(root.id));
+    addItem('', '+ Liste', 'green', () => tlOpenGenerateFromTemplateModal(root.id));
     if (window.lucide) lucide.createIcons();
   });
 }
@@ -10267,7 +10403,7 @@ function _homeRenderRecentTl() {
 
   const title = document.createElement('div');
   title.className = 'home-recent-title';
-  title.innerHTML = '<i data-lucide="list-ordered"></i> Tier lists récentes';
+  title.innerHTML = '<i data-lucide="list-ordered"></i> Listes récentes';
   container.appendChild(title);
 
   const list = document.createElement('div');
@@ -10309,7 +10445,7 @@ function _homeRenderHero() {
       btn.style.display = 'inline-flex';
       if (lbl) {
         // Même construction de chemin que renderCurrentEventButton() (header) : Tier List › dossiers › nom
-        const parts = ['Tier List'];
+        const parts = ['Liste'];
         if (tl.folderId) {
           const folderParts = [];
           let current = (tlState.folders || []).find(f => f.id === tl.folderId);

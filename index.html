@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=221" />
+  <link rel="stylesheet" href="style.css?v=228" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -80,10 +80,10 @@
 
           <div class="home-col">
             <div class="home-col-header">
-              <span class="home-col-title"><i data-lucide="list-ordered"></i> Tier List</span>
+              <span class="home-col-title"><i data-lucide="list-ordered"></i> Liste</span>
             </div>
             <div class="home-big-buttons">
-              <button class="home-big-btn home-big-btn-blue" id="home-btn-tl-new-folder"><i data-lucide="folder-plus"></i> Nouveau Dossier Tier List</button>
+              <button class="home-big-btn home-big-btn-blue" id="home-btn-tl-new-folder"><i data-lucide="folder-plus"></i> Nouveau Dossier Liste</button>
               <button class="home-big-btn home-big-btn-accent" id="home-btn-tl-new-template"><i data-lucide="plus"></i> Nouveau Template</button>
               <button class="home-big-btn home-big-btn-yellow" id="home-btn-tl-join"><i data-lucide="log-in"></i> Rejoindre Template existant</button>
             </div>
@@ -100,6 +100,7 @@
       <div id="tl-compare-toolbar" class="tl-compare-toolbar hidden">
         <div id="tl-compare-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
         <div class="tl-toolbar-side tl-toolbar-side-left">
+          <button class="tl-toolbar-btn tl-btn-neutral" id="tl-compare-btn-lists" title="Choisir les listes affichées"><i data-lucide="chevron-down"></i> Listes</button>
           <label class="tl-toggle-label" title="Régler la taille des images (50–200 px)">
             <span class="tl-toggle-label-head">Taille <input type="number" id="tl-compare-img-size-value-input" min="100" max="200" value="100" class="tl-split-value-input" /></span>
             <div class="tl-toggle-label-slider-row">
@@ -112,6 +113,7 @@
         <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-compare-btn-exit" title="Quitter le mode comparaison"><i data-lucide="x"></i> Quitter comparaison</button>
       </div>
       <div id="tl-compare-view" class="tl-compare-view hidden"></div>
+      <div id="tl-compare-lists-menu" class="ctx-menu hidden"></div>
 
       <!-- ── Panneau de contrôle tier list (cadre séparé, comme le Bingo) ── -->
       <div class="tl-control-panel hidden" id="tl-control-panel">
@@ -125,8 +127,8 @@
               <button class="tl-toolbar-btn tl-btn-neutral tl-btn-folder-options" id="tl-btn-folder-options" title="Options du dossier actif"><i data-lucide="settings"></i> Options Dossier</button>
             </div>
             <div class="ctrl-row-grids-center">
-              <button class="tl-toolbar-btn tl-btn-yellow tl-group-elem hidden" id="tl-btn-compare" title="Comparer plusieurs tier lists de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparaison</button>
-              <button class="tl-toolbar-btn tl-btn-yellow tl-btn-open-window tl-group-elem" id="tl-btn-open-window" title="Ouvrir cette tier list en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
+              <button class="tl-toolbar-btn tl-btn-yellow tl-group-elem hidden" id="tl-btn-compare" title="Comparer plusieurs listes de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparaison</button>
+              <button class="tl-toolbar-btn tl-btn-yellow tl-btn-open-window tl-group-elem" id="tl-btn-open-window" title="Ouvrir cette liste en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
             </div>
             <div class="ctrl-row-grids-right">
               <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Masquer non placés</button>
@@ -137,9 +139,9 @@
           <div class="ctrl-row ctrl-row-toolbar tl-ctrl-row-toolbar">
             <div class="ctrl-row-toolbar-left tl-group-row">
               <button class="tl-toolbar-btn tl-btn-neutral tl-group-elem hidden tl-shrink-0" id="tl-btn-template-dropdown" title="Choisir un template de ce dossier"><i data-lucide="chevron-down"></i> <span id="tl-template-dropdown-label"></span></button>
-              <button class="tl-toolbar-btn tl-btn-blue tl-group-elem hidden tl-btn-hide-solo-mode tl-shrink-0" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une tier list"><i data-lucide="chevron-down"></i> <span id="tl-tierlist-dropdown-label"></span></button>
+              <button class="tl-toolbar-btn tl-btn-blue tl-group-elem hidden tl-btn-hide-solo-mode tl-shrink-0" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une liste"><i data-lucide="chevron-down"></i> <span id="tl-tierlist-dropdown-label"></span></button>
               <div class="tl-toolbar-sep tl-group-elem tl-shrink-0"></div>
-              <button class="tl-toolbar-btn tl-btn-neutral tl-shrink-0" id="tl-btn-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Tier list</button>
+              <button class="tl-toolbar-btn tl-btn-neutral tl-shrink-0" id="tl-btn-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Liste</button>
               <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
             </div>
             <div class="ctrl-row-toolbar-center">
@@ -167,7 +169,7 @@
                jeux de contrôles désynchronisés) — voir _tlEnterSoloToolbarLayout/_tlExitSoloToolbarLayout. -->
           <div class="ctrl-row tl-solo-toolbar btn-fullscreen-only">
             <div class="tl-solo-toolbar-left">
-              <button class="tl-toolbar-btn tl-btn-neutral" id="tl-btn-solo-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Tier list</button>
+              <button class="tl-toolbar-btn tl-btn-neutral" id="tl-btn-solo-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Liste</button>
             </div>
             <div id="tl-fullscreen-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
             <div class="tl-solo-toolbar-right">
@@ -188,7 +190,7 @@
             <input type="range" id="tl-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
           </div>
         </label>
-        <button class="tl-toolbar-btn tl-btn-capture tl-shrink-0" id="tl-btn-capture" title="Capturer la tier list"><i data-lucide="camera"></i> Capture</button>
+        <button class="tl-toolbar-btn tl-btn-capture tl-shrink-0" id="tl-btn-capture" title="Capturer la liste"><i data-lucide="camera"></i> Capture</button>
         <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Afficher noms</button>
         <button class="tl-toolbar-btn tl-btn-neutral tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Options Tiers</button>
         <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
@@ -468,11 +470,11 @@
   <div id="tl-modal-new" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
-        <h3 id="tl-modal-new-title">Nouvelle tier list</h3>
+        <h3 id="tl-modal-new-title">Nouvelle liste</h3>
         <button class="modal-close" id="tl-modal-new-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
-        <input type="text" id="tl-modal-new-input" class="modal-text-input" placeholder="Nom de la tier list..." maxlength="60" />
+        <input type="text" id="tl-modal-new-input" class="modal-text-input" placeholder="Nom de la liste..." maxlength="60" />
         <div id="tl-modal-new-folder-wrap">
           <span class="modal-folder-select-label">Ranger (optionnel)</span>
           <select id="tl-modal-new-folder-select" class="modal-folder-select">
@@ -492,7 +494,7 @@
              fusionnant ce modal avec le modal "Générer depuis ce template" — le template ET sa
              première tier list générée en un seul geste (voir _homeGenerateAfterTemplate). -->
         <div id="tl-modal-new-generate-wrap" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
-          <span class="modal-folder-select-label">Première tier list générée</span>
+          <span class="modal-folder-select-label">Première liste générée</span>
           <div class="grid-name-presets">
             <span class="grid-name-preset-label">Noms prédéfinis :</span>
             <label class="grid-name-preset-check"><input type="checkbox" value="Jérôme"> Jérôme</label>
@@ -694,40 +696,6 @@
     </div>
   </div>
 
-  <!-- Modal sélection des tier lists à comparer -->
-  <div id="tl-modal-compare" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Comparer des tier lists</h3>
-        <button class="modal-close" id="tl-modal-compare-close"><i data-lucide="x"></i></button>
-      </div>
-      <div class="modal-body">
-        <div id="tl-compare-checklist" class="modal-items-list"></div>
-        <div class="modal-actions">
-          <button class="btn-action" id="tl-modal-compare-confirm">Comparer</button>
-          <button class="btn-action btn-secondary" id="tl-modal-compare-cancel">Annuler</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal choix Comparer (dans cette fenêtre ou nouvelle fenêtre) -->
-  <div id="modal-tl-compare-choice" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Comparer</h3>
-        <button class="modal-close" id="btn-close-tl-compare-choice"><i data-lucide="x"></i></button>
-      </div>
-      <div class="modal-body">
-        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Afficher la comparaison dans cette fenêtre ou dans une nouvelle fenêtre ?</p>
-        <div class="modal-actions modal-actions-wrap">
-          <button class="btn-action" id="btn-tl-compare-choice-here"><i data-lucide="columns-2"></i> Cette fenêtre</button>
-          <button class="btn-action" id="btn-tl-compare-choice-window"><i data-lucide="external-link"></i> Nouvelle fenêtre</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-tl-compare-choice">Annuler</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- Panneau Archives tier list (drawer flottant, tierlists + dossiers) -->
   <div id="tl-modal-archived" class="folders-panel archives-panel">
@@ -1350,6 +1318,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=308"></script>
+  <script src="app.js?v=316"></script>
 </body>
 </html>
