@@ -286,9 +286,25 @@ body {
 .ctrl-row-grids-right { justify-content: flex-end; }
 .ctrl-row-toolbar       { padding-bottom: 4px; }
 
-/* Ligne 1 tier list : Dossiers + chemin + Options Dossier à gauche, Plein écran/Comparaison
-   centrés (3 zones flex:1 via .ctrl-row-grids-left/center/right, partagées avec le Bingo). */
-.ctrl-row-line1 { border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+/* Ligne 1 tier list : Dossiers + Chemin/Template/Listes à gauche, Répartition centrée,
+   Non placés à droite. */
+.ctrl-row-line1 { border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; position: relative; }
+/* Les boutons Dossier/Template/Liste ont un petit titre au-dessus (2 lignes) alors que "Dossiers"
+   n'en a qu'une : aligner sur le bas plutôt que le centre pour que les boutons eux-mêmes
+   restent à la même hauteur visuelle. */
+.ctrl-row-line1 .ctrl-row-grids-left {
+  align-items: flex-end;
+}
+/* Répartition centrée sur TOUTE la ligne (position absolue), pas seulement dans l'espace restant
+   entre gauche et droite — la zone gauche (Dossiers+Chemin+Template+Liste) est bien plus chargée
+   que la zone droite (Non placés seul), donc un centrage flex classique la collerait à gauche. */
+.ctrl-row-line1 .ctrl-row-grids-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  flex: 0 0 auto;
+}
 .tl-group-breadcrumb-hidden { display: none !important; }
 
 .tl-btn-toggle-unplaced {
@@ -935,65 +951,39 @@ body.solo-tierlist-mode .btn-fullscreen-only,
 body.solo-tierlist-mode .tl-btn-exit-mode {
   display: flex !important;
 }
-/* Plein écran tierlist : une seule rangée — [Options] ... chemin centré (taille fluide
-   via clamp() pour rétrécir plutôt que tronquer) ... [Quitter plein écran]. */
+/* En plein écran, un template ne peut pas s'afficher (voir _applySoloTierlistModeIfNeeded) : les
+   options propres à un template (Tiers = gérer les tiers du template, Reset) n'ont pas leur place
+   dans le cadre Options Liste une fois déplacé côté plein écran — le bouton Liste (déplacé par
+   _tlEnterSoloToolbarLayout) les remplace pour permettre de changer de liste sans quitter le
+   plein écran. */
+body.solo-tierlist-mode #tl-btn-add-tier,
+body.solo-tierlist-mode #tl-btn-reset {
+  display: none !important;
+}
+/* Plein écran tierlist : [Liste + cadre Options Liste + Annuler] à gauche / Répartition centrée
+   sur TOUTE la barre (position absolue, comme sur la ligne 1 du mode normal — sinon elle colle à
+   la zone gauche, plus chargée que la droite) / [Non placés + Quitter plein écran] à droite. */
 .tl-solo-toolbar {
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   flex-wrap: nowrap;
+  justify-content: space-between;
+  position: relative;
 }
-.tl-fullscreen-breadcrumb {
-  display: none;
-  color: #fff;
-  font-weight: 400;
-  font-size: 0.85rem;
-  white-space: nowrap;
-  margin-right: auto;
-  padding-right: 8px;
-}
-.tl-solo-toolbar .tl-fullscreen-breadcrumb {
-  display: block;
-  flex: 1;
-  min-width: 0;
-  margin-right: 0;
-  padding-right: 0;
-  color: var(--accent);
-  font-size: clamp(0.9rem, 2vw, 1.5rem);
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tl-solo-toolbar #tl-btn-solo-options,
-.tl-solo-toolbar #tl-btn-exit-solo {
-  flex-shrink: 0;
+#tl-split-slider-label.tl-solo-toolbar-split-centered {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
 .tl-solo-toolbar-left,
 .tl-solo-toolbar-right {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex-shrink: 0;
+  min-width: 0;
 }
-/* Mode comparer : la barre reste centrée comme avant (justify-content:center sur
-   .tl-compare-toolbar) — le chemin est donc positionné en absolu tout à gauche plutôt
-   que de pousser les boutons via margin-right:auto, qui casserait leur centrage. */
-#tl-compare-breadcrumb.tl-fullscreen-breadcrumb {
-  display: block;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  margin-right: 0;
-  padding-right: 0;
-  max-width: 50%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--accent);
-  font-size: clamp(0.9rem, 2vw, 1.5rem);
-  text-align: center;
-  pointer-events: none;
-}
+.tl-solo-toolbar-right { justify-content: flex-end; }
 
 /* ── Mode "comparaison" (overlay interne, lecture seule) ── */
 body.compare-tierlist-mode .header,
@@ -1496,40 +1486,83 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   min-width: 0;
 }
 .tl-shrink-0 { flex-shrink: 0; }
-/* Chemin d'accès centré par rapport à TOUTE la ligne (position absolue) plutôt que dans
-   l'espace restant après les boutons de gauche, qui ne fait pas un centrage symétrique
-   puisqu'il n'y a pas de zone à droite de largeur équivalente. */
-.tl-ctrl-row-toolbar {
-  position: relative;
+/* Bouton Chemin : largeur NATURELLE comme Template/Liste (pas de largeur imposée — les forcer à
+   une largeur commune les écrase tous à la largeur du plus étroit, texte illisible/chevauchant).
+   Seule sa propre largeur est plafonnée (voir TL_PATH_BTN_MAX_WIDTH en JS, _tlFitPathBtnLabel) car
+   son texte peut être très long ; au-delà il wrap sur 2 lignes + réduit sa police. L'alignement
+   avec Template/Liste se fait via align-items:flex-end sur .ctrl-row-grids-left ci-dessous. */
+.tl-toolbar-btn.tl-btn-path {
+  height: auto;
+  min-height: 32px;
+  padding: 4px 12px;
+  line-height: 1.2;
+  text-align: center;
 }
-.tl-ctrl-row-toolbar .ctrl-row-toolbar-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  flex: 0 1 auto;
-  max-width: 60%;
-  pointer-events: none;
+.tl-btn-path #tl-path-dropdown-label {
+  display: inline-block;
+  vertical-align: middle;
 }
-.tl-ctrl-row-toolbar .ctrl-row-toolbar-center .tl-title-row {
-  pointer-events: auto;
+/* Petit titre discret au-dessus des boutons Dossier/Template/Liste (ligne 1 gauche), centré
+   par rapport au bouton lui-même. */
+.tl-labeled-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.tl-labeled-btn-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  text-align: center;
+}
+/* Cadre discret regroupant les options propres à la liste active (comme .grid-view-wrapper
+   pour une grille bingo individuelle), masqué sur un template (voir tlRender). Toujours sur
+   une seule ligne (jamais de wrap) — la zone gauche 2x plus large (voir .ctrl-row-toolbar-left)
+   lui laisse la place nécessaire. */
+.tl-list-options-frame {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 5px 10px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.22);
+  max-width: 100%;
+}
+/* Ligne 2 : [cadre Options Liste + Annuler] à gauche / rien au centre / [Comparaison + Plein
+   écran] à droite — Répartition vit sur la ligne 1 (voir .ctrl-row-line1), donc la zone gauche
+   ici n'a plus qu'Annuler à côté du cadre : 3 zones flex:1 égales suffisent, plus besoin
+   d'asymétrie. */
+.tl-ctrl-row-toolbar .ctrl-row-toolbar-left,
+.tl-ctrl-row-toolbar .ctrl-row-toolbar-center,
+.tl-ctrl-row-toolbar .ctrl-row-toolbar-right {
+  flex: 1;
+  min-width: 0;
 }
 /* Le curseur Répartition (.tl-toggle-label empilé texte+slider, ~41px) est plus haut que
    les boutons voisins (32px) : sans contrainte, son apparition/disparition agrandit toute
-   la ligne 2 et donc le panneau de contrôle. On le fait tenir sur la hauteur des boutons
+   la ligne et donc le panneau de contrôle. On le fait tenir sur la hauteur des boutons
    en resserrant son empilement vertical, seulement dans ce contexte. */
-.ctrl-row-toolbar-right .tl-toggle-label,
+.ctrl-row-grids-right .tl-toggle-label,
+.tl-list-options-frame .tl-toggle-label,
 .tl-solo-toolbar-left .tl-toggle-label {
   height: 32px;
   justify-content: center;
   gap: 1px;
 }
-.ctrl-row-toolbar-right .tl-toggle-label-head,
+.ctrl-row-grids-right .tl-toggle-label-head,
+.tl-list-options-frame .tl-toggle-label-head,
 .tl-solo-toolbar-left .tl-toggle-label-head {
   height: 14px;
   font-size: 0.72rem;
 }
-.ctrl-row-toolbar-right .tl-toggle-label-row,
+.ctrl-row-grids-right .tl-toggle-label-row,
+.tl-list-options-frame .tl-toggle-label-row,
 .tl-solo-toolbar-left .tl-toggle-label-row {
   height: 16px;
 }
@@ -2129,21 +2162,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 .ctx-menu-item.ctx-green { color: #3ecf6e; }
 .ctx-menu-item.ctx-green:hover { color: #3ecf6e; background: rgba(62,207,110,0.1); }
 
-/* ── Menu Options (mode normal + plein écran tierlist) : boutons/curseur empilés ── */
-#tl-options-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 20px 12px 12px;
-}
-#tl-options-menu .tl-toolbar-btn {
-  width: 100%;
-  justify-content: flex-start;
-}
-#tl-options-menu .tl-toggle-label {
-  width: 100%;
-}
-
 /* ── Ligne composite des dropdowns Template/Tier lists : nom cliquable (switch) +
    bouton ⋮ (renommer/dupliquer/archiver/supprimer…), réutilise le style .grid-tab
    mais en pleine largeur et sans bordure, empilée comme un item de menu classique. */
@@ -2158,6 +2176,39 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 .tl-dropdown-item:hover { background: var(--surface-3); }
 .tl-dropdown-item.active { background: var(--accent-glow); color: var(--accent); }
 .tl-dropdown-item .grid-tab-name { flex: 1; cursor: pointer; }
+
+/* ── Menu déroulant Chemin : arborescence pliable/dépliable (même look que .tl-folder-header
+   dans le drawer Dossiers), chevron séparé du nom pour ne pas naviguer en voulant déplier. ── */
+.tl-path-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+.tl-path-menu-row:hover { background: var(--surface-3); }
+.tl-path-menu-arrow {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  transition: transform 0.15s;
+  flex-shrink: 0;
+  width: 14px;
+  display: inline-flex;
+}
+.tl-path-menu-arrow.open { transform: rotate(90deg); }
+.tl-path-menu-icon { font-size: 0.85rem; flex-shrink: 0; }
+.tl-path-menu-icon [data-lucide] { margin-right: 0; }
+.tl-path-menu-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ── Modal thèmes archivés ── */
 .modal-overlay {
@@ -2694,53 +2745,6 @@ body.solo-tierlist-mode .tl-layout {
 
 .tl-editor { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
 .tl-editor.hidden { display: none; }
-
-/* ── Chemin d'accès (ligne 2 du panneau de contrôle, centré) : taille 150% de base,
-   réduit automatiquement via clamp() si l'écran est trop petit pour tout afficher. */
-.tl-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* Taille fixe (150%), identique au titre de grille Bingo — ne rétrécit que si la largeur
-   de l'écran est trop étroite, jamais en fonction du nombre de caractères du titre. */
-.tl-title-prefix {
-  font-size: clamp(0.9rem, 2vw, 1.5rem);
-  font-weight: 400;
-  color: var(--accent);
-  letter-spacing: -0.01em;
-}
-
-.tl-title-display {
-  font-size: clamp(0.9rem, 2vw, 1.5rem);
-  font-weight: 400;
-  color: var(--accent);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tl-title-input {
-  font-size: clamp(0.9rem, 2vw, 1.5rem);
-  font-weight: 400;
-  color: var(--accent);
-  letter-spacing: -0.01em;
-  background: var(--surface-2);
-  border: 1.5px solid var(--accent-dim);
-  border-radius: var(--radius);
-  padding: 2px 8px;
-  outline: none;
-  min-width: 120px;
-  max-width: 400px;
-}
-.tl-title-input:focus {
-  border-color: var(--accent);
-  background: var(--surface-3);
-}
 
 .tl-icon-btn {
   background: none;

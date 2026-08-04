@@ -358,25 +358,54 @@ function _applySoloGridModeIfNeeded() {
   }
 }
 
-// #tl-split-slider-label et #tl-btn-toggle-unplaced vivent dans la toolbar du mode normal et
-// dans la barre plein écran (.tl-solo-toolbar) en solo-tierlist-mode — mêmes éléments physiques
-// déplacés en JS, jamais deux jeux de contrôles désynchronisés (comme #font-scale-label côté Bingo).
+// #tl-split-slider-label, #tl-btn-undo, #tl-btn-toggle-unplaced, #tl-list-options-frame et le
+// wrapper du bouton Liste vivent dans la toolbar du mode normal (lignes 1 et 2) et dans la barre
+// plein écran (.tl-solo-toolbar) en solo-tierlist-mode — mêmes éléments physiques déplacés en JS,
+// jamais deux jeux de contrôles désynchronisés (comme #font-scale-label côté Bingo). En plein
+// écran, un template ne peut pas s'afficher : le bouton Liste y remplace Tiers/Reset (masqués via
+// body.solo-tierlist-mode, voir CSS) pour permettre de changer de liste sans repasser en mode normal.
 function _tlEnterSoloToolbarLayout() {
   const splitLabel = document.getElementById('tl-split-slider-label');
-  const soloLeft = document.querySelector('.tl-solo-toolbar-left');
-  if (splitLabel && soloLeft) soloLeft.appendChild(splitLabel);
+  const undoBtn = document.getElementById('tl-btn-undo');
+  const optionsFrame = document.getElementById('tl-list-options-frame');
   const toggleUnplacedBtn = document.getElementById('tl-btn-toggle-unplaced');
+  const listWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
+  const soloToolbar = document.querySelector('.tl-solo-toolbar');
+  const soloLeft = document.querySelector('.tl-solo-toolbar-left');
   const soloRight = document.querySelector('.tl-solo-toolbar-right');
   const exitBtn = document.getElementById('tl-btn-exit-solo');
+  if (listWrap && soloLeft) soloLeft.appendChild(listWrap);
+  if (optionsFrame && soloLeft) soloLeft.appendChild(optionsFrame);
+  if (undoBtn && soloLeft) soloLeft.appendChild(undoBtn);
+  // Répartition centrée sur TOUTE la barre (position absolue) : enfant direct de .tl-solo-toolbar,
+  // pas de .tl-solo-toolbar-left, sinon elle colle à cette zone plus chargée que la droite.
+  if (splitLabel && soloToolbar && soloRight) {
+    splitLabel.classList.add('tl-solo-toolbar-split-centered');
+    soloToolbar.insertBefore(splitLabel, soloRight);
+  }
   if (toggleUnplacedBtn && soloRight) soloRight.insertBefore(toggleUnplacedBtn, exitBtn);
 }
 function _tlExitSoloToolbarLayout() {
   const splitLabel = document.getElementById('tl-split-slider-label');
-  const toolbarRight = document.querySelector('.ctrl-row-toolbar-right');
-  if (splitLabel && toolbarRight) toolbarRight.appendChild(splitLabel);
+  const undoBtn = document.getElementById('tl-btn-undo');
+  const optionsFrame = document.getElementById('tl-list-options-frame');
   const toggleUnplacedBtn = document.getElementById('tl-btn-toggle-unplaced');
+  const listWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
   const line1Right = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-right');
+  const line1Center = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-center');
+  const line1Left = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-left');
+  const toolbarLeft = document.querySelector('.ctrl-row-toolbar-left');
   if (toggleUnplacedBtn && line1Right) line1Right.appendChild(toggleUnplacedBtn);
+  // Répartition retourne dans .ctrl-row-grids-center (centrée sur la ligne 1 en mode normal),
+  // pas dans .ctrl-row-grids-right avec Non placés — sinon elle se retrouve collée à droite au
+  // retour du plein écran.
+  if (splitLabel) {
+    splitLabel.classList.remove('tl-solo-toolbar-split-centered');
+    if (line1Center) line1Center.appendChild(splitLabel);
+  }
+  if (optionsFrame && toolbarLeft) toolbarLeft.appendChild(optionsFrame);
+  if (undoBtn && toolbarLeft) toolbarLeft.appendChild(undoBtn);
+  if (listWrap && line1Left) line1Left.appendChild(listWrap);
 }
 
 function _applySoloTierlistModeIfNeeded() {
@@ -426,7 +455,6 @@ function _applyCompareTierlistModeIfNeeded() {
 function _exitSoloTierlistMode() {
   document.body.classList.remove('solo-tierlist-mode');
   document.title = 'LesMichels';
-  document.getElementById('tl-options-menu')?.classList.add('hidden');
   _tlExitSoloToolbarLayout();
   // Empêche le listener Firebase (_dbTierlist.on('value')) de rouvrir le mode au prochain snapshot
   _soloTierlistId = null;
@@ -5072,10 +5100,6 @@ let _tlLocalSplit           = null; // % de largeur allouée aux tiers (le reste
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
 let _tlLocalActiveFolderId  = null; // dossier sélectionné (vide) sans tierlist active
 let _tlLocalNoSelection     = false; // true = l'utilisateur a délibérément désélectionné
-// Dernier groupe (id du template racine) affiché dans le panneau de contrôle — reste mémorisé même
-// quand _tlLocalActiveTierlistId passe à null (désélection), pour garder les bulles du groupe visibles
-// (comme le Bingo garde les bulles de grilles du dossier actif même quand aucune grille n'est affichée).
-let _tlLastGroupRootId = null;
 
 function tlSave() {
   if (_tlRemoteUpdate) return;
@@ -5702,14 +5726,11 @@ const tlList              = document.getElementById('tl-list');
 const tlEmptyState        = document.getElementById('tl-empty-state');
 const tlEditor            = document.getElementById('tl-editor');
 const tlEditorBody        = document.getElementById('tl-editor-body');
-const tlTitlePrefix       = document.getElementById('tl-title-prefix');
-const tlTitleDisplay      = document.getElementById('tl-title-display');
-const tlTitleInput        = document.getElementById('tl-title-input');
 const tlShowLabelsToggle  = document.getElementById('tl-show-labels-toggle');
 const tlUnplacedShowLabelsToggle = document.getElementById('tl-unplaced-show-labels-toggle');
 
 function _tlEyeToggleHtml(shown) {
-  return `<i data-lucide="${shown ? 'eye-off' : 'eye'}"></i> ${shown ? 'Masquer noms' : 'Afficher noms'}`;
+  return `<i data-lucide="${shown ? 'eye-off' : 'eye'}"></i> Noms`;
 }
 function _tlUpdateShowLabelsBtn(showLabels) {
   tlShowLabelsToggle.innerHTML = _tlEyeToggleHtml(showLabels);
@@ -6009,10 +6030,17 @@ function tlRender() {
   renderCurrentEventButton();
   _updateCeSetHeaderBtn();
   const tl = tlActiveTierlist();
+  // Le panneau de contrôle (Dossiers + Chemin/Template/Listes du dernier groupe ouvert) reste
+  // affiché même sans tierlist/template actif dans le dossier courant — seule la zone éditeur
+  // (titre, tiers, cadre Options Liste, Plein écran…) dépend d'une tierlist active.
+  tlControlPanel.classList.remove('hidden');
   if (!tl || tl.archived) {
     tlEditor.classList.add('hidden');
-    tlControlPanel.classList.add('hidden');
     tlRenderGroupPanel(null);
+    const tlListOptionsFrameEmpty = document.getElementById('tl-list-options-frame');
+    if (tlListOptionsFrameEmpty) tlListOptionsFrameEmpty.classList.add('hidden');
+    if (tlBtnToggleUnplaced) tlBtnToggleUnplaced.classList.add('hidden');
+    _tlUpdateSplitSliderVisibility(null);
     const activeFolder = _tlLocalActiveFolderId
       ? (tlState.folders || []).find(f => f.id === _tlLocalActiveFolderId && !f.archived)
       : null;
@@ -6029,10 +6057,11 @@ function tlRender() {
   _tlHideFolderEmptyState();
   tlEmptyState.classList.add('hidden');
   tlEditor.classList.remove('hidden');
-  tlControlPanel.classList.remove('hidden');
   tlEditorBody.classList.toggle('tl-editor-body--template', !!tl.isTemplate);
   const tlBtnExportImages = document.getElementById('tl-btn-export-images');
   if (tlBtnExportImages) tlBtnExportImages.classList.toggle('hidden', !tl.isTemplate);
+  const tlListOptionsFrame = document.getElementById('tl-list-options-frame');
+  if (tlListOptionsFrame) tlListOptionsFrame.classList.toggle('hidden', !!tl.isTemplate);
   if (tlBtnToggleUnplaced) {
     tlBtnToggleUnplaced.classList.toggle('hidden', !!tl.isTemplate);
     tlEditorBody.classList.toggle('tl-unplaced-hidden', !tl.isTemplate && _tlLocalUnplacedHidden);
@@ -6041,13 +6070,6 @@ function tlRender() {
   _tlUpdateSplitSliderVisibility(tl);
   tlRenderGroupPanel(tl);
 
-  tlTitleDisplay.textContent = tl.name;
-  tlTitleInput.value = tl.name;
-  const prefixPath = _tlTitlePathPrefix(tl);
-  tlTitlePrefix.textContent = prefixPath ? prefixPath + ' › ' : '';
-  tlTitlePrefix.classList.toggle('hidden', !prefixPath);
-  const fullscreenBreadcrumb = document.getElementById('tl-fullscreen-breadcrumb');
-  if (fullscreenBreadcrumb) fullscreenBreadcrumb.textContent = _tlFullTitlePath(tl);
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
   const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
   const unplacedShowLabels = _tlLocalUnplacedShowLabels !== null ? _tlLocalUnplacedShowLabels : !!tl.showLabels;
@@ -6064,50 +6086,104 @@ function tlRender() {
   if (window.lucide) lucide.createIcons();
 }
 
+// Contexte du panneau Chemin/Template/Listes : toujours basé sur le DOSSIER actif (pas sur la
+// dernière tierlist sélectionnée), pour que naviguer via le menu Chemin mette immédiatement à jour
+// les boutons Template/Listes vers ce qui existe réellement dans ce dossier — y compris "aucun
+// template ici". folderId vient de la tierlist active si elle existe, sinon du dossier explicitement
+// sélectionné (_tlLocalActiveFolderId, mis à jour par _tlGoToFolder).
+function _tlActiveGroupContext() {
+  const tl = tlActiveTierlist();
+  const folderId = tl ? _tlEffectiveFolderId(tl) : _tlLocalActiveFolderId;
+  const templatesHere = tlState.tierlists.filter(t => t.isTemplate && !t.archived && (t.folderId || null) === (folderId || null));
+  // Le template affiché est celui du groupe de la tierlist active s'il est dans ce dossier,
+  // sinon le premier template du dossier (ordre naturel), sinon aucun.
+  const tlRoot = tl ? _tlGroupRoot(tl) : null;
+  const root = (tlRoot && templatesHere.some(t => t.id === tlRoot.id)) ? tlRoot : (templatesHere[0] || null);
+  return { tl, folderId, templatesHere, root };
+}
+
+// Le bouton Chemin garde sa largeur NATURELLE comme Template/Liste (pas de largeur commune —
+// ça les écrasait tous à la largeur du plus étroit, texte illisible/chevauchant, voir capture
+// rapportée). Seule sa largeur est plafonnée (160px) puisque son texte peut être très long ; au-delà
+// il wrap sur 2 lignes + réduit sa police si besoin. L'alignement du groupe (Chemin sur 2 lignes
+// vs Template/Liste sur 1) se fait en CSS via align-items:flex-end sur .ctrl-row-grids-left (voir
+// style.css) — pas en forçant une hauteur commune en JS.
+const TL_PATH_BTN_MAX_WIDTH = 160;
+function _tlFitPathBtnLabel(labelEl) {
+  const btn = labelEl.closest('.tl-btn-path');
+  if (!btn) return;
+  btn.style.width = '';
+  labelEl.style.whiteSpace = '';
+  labelEl.style.wordBreak = '';
+  labelEl.style.fontSize = '';
+  const naturalWidth = btn.scrollWidth;
+  if (naturalWidth <= TL_PATH_BTN_MAX_WIDTH) return;
+  btn.style.width = TL_PATH_BTN_MAX_WIDTH + 'px';
+  labelEl.style.whiteSpace = 'normal';
+  labelEl.style.wordBreak = 'break-word';
+  const baseFontSize = parseFloat(getComputedStyle(labelEl).fontSize);
+  const baseLineHeight = baseFontSize * 1.2; // line-height:1.2 défini en CSS sur le bouton
+  const sizes = [1, 0.88, 0.78, 0.68];
+  for (const scale of sizes) {
+    if (scale !== 1) labelEl.style.fontSize = (baseFontSize * scale) + 'px';
+    const lines = Math.round(labelEl.scrollHeight / (baseLineHeight * scale));
+    if (lines <= 2) break;
+  }
+}
+
 // Panneau de contrôle tier list : bulles des tierlists d'un même groupe (template + générées),
 // sélection unique — cliquer une bulle ouvre directement cette tierlist (pas de multi-affichage
 // comme pour les grilles bingo, une tier list ne s'affiche jamais qu'une à la fois).
-// tl peut être null (tierlist désélectionnée) : dans ce cas on continue d'afficher les bulles du
-// dernier groupe ouvert (_tlLastGroupRootId), sans bulle active — comme le Bingo garde les bulles de
-// grilles visibles même quand aucune grille n'est affichée dans le dossier actif.
 function tlRenderGroupPanel(tl) {
-  const root = tl ? _tlGroupRoot(tl) : tlState.tierlists.find(t => t.id === _tlLastGroupRootId && t.isTemplate) || null;
-  if (!root || !root.isTemplate || root.archived) {
-    tlGroupElems.forEach(el => el.classList.add('hidden'));
-    _tlLastGroupRootId = null;
+  const { folderId, templatesHere, root } = _tlActiveGroupContext();
+  const folderPath = _tlFolderPath(folderId) || 'Racine';
+
+  // Dropdown Chemin : toujours visible dès qu'un dossier est sélectionné ou qu'une tierlist est
+  // active (contrairement à Template/Listes/Comparaison/Plein écran, qui dépendent d'un template).
+  const tlPathWrap = document.getElementById('tl-btn-path-dropdown')?.closest('.tl-labeled-btn');
+  if (tlPathWrap) tlPathWrap.classList.toggle('hidden', !folderId && !tl);
+  const tlPathDropdownLabel = document.getElementById('tl-path-dropdown-label');
+  if (tlPathDropdownLabel) {
+    tlPathDropdownLabel.textContent = folderPath;
+    _tlFitPathBtnLabel(tlPathDropdownLabel);
+  }
+
+  const tlTemplateWrap = document.getElementById('tl-btn-template-dropdown')?.closest('.tl-labeled-btn');
+  const tlTierlistWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
+  const tlBtnCompare = document.getElementById('tl-btn-compare');
+  const tlBtnOpenWindow = document.getElementById('tl-btn-open-window');
+
+  if (tlTemplateWrap) tlTemplateWrap.classList.remove('hidden');
+  if (tlTierlistWrap) tlTierlistWrap.classList.remove('hidden');
+
+  const tlTemplateDropdownLabel = document.getElementById('tl-template-dropdown-label');
+  const tlTierlistDropdownLabel = document.getElementById('tl-tierlist-dropdown-label');
+
+  const tlBtnUndoEl = document.getElementById('tl-btn-undo');
+
+  if (!root) {
+    // Dossier sans aucun template : Template/Listes affichent "Vide", Comparaison/Plein écran/Annuler cachés.
+    if (tlTemplateDropdownLabel) tlTemplateDropdownLabel.textContent = 'Vide';
+    if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = 'Vide';
+    if (tlBtnCompare) tlBtnCompare.classList.add('hidden');
+    if (tlBtnOpenWindow) tlBtnOpenWindow.classList.add('hidden');
+    if (tlBtnUndoEl) tlBtnUndoEl.classList.add('hidden');
+    if (window.lucide) lucide.createIcons();
     return;
   }
-  _tlLastGroupRootId = root.id;
+
   const members = tlState.tierlists.filter(t => !t.archived && (t.id === root.id || t.templateId === root.id));
-  tlGroupElems.forEach(el => el.classList.remove('hidden'));
 
-  tlGroupBreadcrumb.innerHTML = '';
-  const folderPath = _tlFolderPath(root.folderId);
-  if (folderPath) {
-    folderPath.split(' › ').forEach((name, idx, arr) => {
-      const item = document.createElement('span');
-      item.className = 'grids-breadcrumb-item' + (idx === arr.length - 1 ? ' last' : '');
-      item.textContent = name;
-      tlGroupBreadcrumb.appendChild(item);
-      if (idx < arr.length - 1) {
-        const sep = document.createElement('span');
-        sep.className = 'grids-breadcrumb-sep';
-        sep.textContent = '›';
-        tlGroupBreadcrumb.appendChild(sep);
-      }
-    });
-  }
-
-  // Dropdown Template : libellé = nom du template actif
-  const tlTemplateDropdownLabel = document.getElementById('tl-template-dropdown-label');
   if (tlTemplateDropdownLabel) tlTemplateDropdownLabel.textContent = root.name;
+  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate && tl.templateId === root.id) ? tl.name : 'Vide';
 
-  // Dropdown Tier lists : libellé = nom de la tier list active, ou "Choisir" si aucune sélectionnée
-  const tlTierlistDropdownLabel = document.getElementById('tl-tierlist-dropdown-label');
-  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate) ? tl.name : 'Listes';
-
-  const tlBtnCompare = document.getElementById('tl-btn-compare');
-  if (tlBtnCompare) tlBtnCompare.classList.toggle('hidden', members.filter(m => !m.isTemplate).length < 2);
+  // Plein écran/Comparaison/Annuler n'ont de sens que si une tierlist de CE groupe est réellement
+  // affichée dans l'éditeur (pas seulement un dossier sélectionné sans tierlist active). Annuler
+  // reste visible sur un template comme sur une liste générée (undo agit sur tiers/images des deux).
+  const tlIsGroupMember = !!(tl && (tl.id === root.id || tl.templateId === root.id));
+  if (tlBtnOpenWindow) tlBtnOpenWindow.classList.toggle('hidden', !tlIsGroupMember);
+  if (tlBtnCompare) tlBtnCompare.classList.toggle('hidden', !tlIsGroupMember || members.filter(m => !m.isTemplate).length < 2);
+  if (tlBtnUndoEl) tlBtnUndoEl.classList.toggle('hidden', !tlIsGroupMember);
   if (window.lucide) lucide.createIcons();
 }
 
@@ -7109,8 +7185,6 @@ function _tlRenderCompareView(tls) {
 
   const toolbar = document.getElementById('tl-compare-toolbar');
   if (toolbar) toolbar.classList.remove('hidden');
-  const compareBreadcrumb = document.getElementById('tl-compare-breadcrumb');
-  if (compareBreadcrumb) compareBreadcrumb.textContent = _tlCommonTitlePath(tls);
 
   container.classList.remove('hidden');
   container.innerHTML = '';
@@ -8272,8 +8346,7 @@ async function _tlBuildCanvas(tl) {
   ctx.fillRect(0, 0, totalWidth, canvas.height);
   ctx.fillStyle = '#e8e8f0';
   ctx.font = 'bold 18px Arial';
-  // Titre = chemin complet (dossiers › template › nom), comme affiché dans l'éditeur (tl-title-prefix
-  // + tl-title-display) — pas seulement le nom de la tierlist.
+  // Titre = chemin complet (dossiers › template › nom), pas seulement le nom de la tierlist.
   ctx.fillText(_tlFullTitlePath(tl), 12, 26, totalWidth - 24);
 
   const loadImage = (src) => new Promise((resolve) => {
@@ -9604,28 +9677,6 @@ document.getElementById('tl-btn-open-window').addEventListener('click', () => {
 });
 document.getElementById('tl-btn-exit-solo')?.addEventListener('click', _exitSoloTierlistMode);
 
-// ── Menu Options (partagé mode normal + plein écran) ────────────────────────────
-const _tlOptionsMenu = document.getElementById('tl-options-menu');
-function _tlToggleOptionsMenu(anchorBtn) {
-  if (!_tlOptionsMenu) return;
-  const isOpen = !_tlOptionsMenu.classList.contains('hidden');
-  if (isOpen) {
-    _tlOptionsMenu.classList.add('hidden');
-  } else {
-    _tlOptionsMenu.classList.remove('hidden');
-    positionCtxMenu(_tlOptionsMenu, null, anchorBtn);
-    if (window.lucide) lucide.createIcons();
-  }
-}
-['tl-btn-options', 'tl-btn-solo-options'].forEach(id => {
-  const btn = document.getElementById(id);
-  if (btn) btn.addEventListener('click', e => { e.stopPropagation(); _tlToggleOptionsMenu(btn); });
-});
-if (_tlOptionsMenu) {
-  _tlOptionsMenu.addEventListener('click', e => e.stopPropagation());
-  document.addEventListener('click', () => _tlOptionsMenu.classList.add('hidden'));
-}
-
 // Ligne composite pour les dropdowns Template/Tier lists : nom cliquable (switch) + bouton ⋮
 // (renommer/dupliquer/archiver/supprimer…, via le même tlOpenManageModal que partout ailleurs).
 function _tlAddDropdownSwitchItem(menu, member, isActive, closeMenu, displayName) {
@@ -9651,38 +9702,119 @@ function _tlAddDropdownSwitchItem(menu, member, isActive, closeMenu, displayName
   menu.appendChild(item);
 }
 
-// ── Dropdown Template : liste les templates du dossier du template actif ────────
+// Navigue vers un dossier de l'arborescence tierlist (désélectionne la liste/template actif).
+function _tlGoToFolder(folderId) {
+  _tlExpandFolderAncestors(folderId);
+  _tlLocalActiveFolderId = folderId;
+  _tlLocalActiveTierlistId = null;
+  _tlLocalNoSelection = true;
+  saveUserPrefs({ tlActiveFolderId: folderId, tlActiveTierlistId: null, tlNoSelection: true });
+  tlRender();
+}
+
+// ── Dropdown Chemin : arborescence des dossiers ──────────────────────────────────
+// Dessine les lignes de dossiers dans le menu Chemin (pliable/depliable comme le drawer Dossiers,
+// meme sessionStorage tl_folder_open_<id> - un dossier ouvert dans l'un reste ouvert dans l'autre).
+// Lignes construites a la main (chevron separe du nom) plutot qu'avec addItem, qui ne gere qu'une
+// ligne plate sans sous-comportement cliquable.
+function _tlRenderPathMenuRows(menu, activeFolders, close) {
+  menu.querySelectorAll('.tl-path-menu-row').forEach(el => el.remove());
+
+  const buildRow = (folder, depth) => {
+    const hasChildren = activeFolders.some(f => (f.parentId || null) === folder.id);
+    const key = 'tl_folder_open_' + folder.id;
+    const isOpen = sessionStorage.getItem(key) === '1';
+
+    const row = document.createElement('div');
+    row.className = 'tl-path-menu-row';
+    row.style.paddingLeft = (depth * 14) + 'px';
+
+    const arrow = document.createElement('span');
+    arrow.className = 'tl-path-menu-arrow' + (isOpen ? ' open' : '');
+    arrow.innerHTML = hasChildren ? '<i data-lucide="chevron-right"></i>' : '';
+    if (hasChildren) {
+      arrow.addEventListener('click', ev => {
+        ev.stopPropagation();
+        sessionStorage.setItem(key, isOpen ? '0' : '1');
+        _tlRenderPathMenuRows(menu, activeFolders, close);
+      });
+    }
+    row.appendChild(arrow);
+
+    const icon = document.createElement('span');
+    icon.className = 'tl-path-menu-icon';
+    icon.innerHTML = '<i data-lucide="folder"></i>';
+    row.appendChild(icon);
+
+    const name = document.createElement('span');
+    name.className = 'tl-path-menu-name';
+    name.textContent = folder.name;
+    row.appendChild(name);
+
+    row.addEventListener('click', () => { close(); _tlGoToFolder(folder.id); });
+    return row;
+  };
+
+  const addFolderRows = (parentId, depth) => {
+    activeFolders
+      .filter(f => (f.parentId || null) === (parentId || null))
+      .forEach(f => {
+        menu.appendChild(buildRow(f, depth));
+        if (sessionStorage.getItem('tl_folder_open_' + f.id) === '1') addFolderRows(f.id, depth + 1);
+      });
+  };
+  addFolderRows(null, 0);
+
+  if (activeFolders.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'tl-path-menu-row';
+    empty.style.cssText = 'opacity:0.6;cursor:default;';
+    empty.textContent = 'Aucun dossier';
+    menu.appendChild(empty);
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+const _tlBtnPathDropdown = document.getElementById('tl-btn-path-dropdown');
+if (_tlBtnPathDropdown) {
+  _tlBtnPathDropdown.addEventListener('click', e => {
+    e.stopPropagation();
+    const { menu, close } = _tlMakeCtxMenu(_tlBtnPathDropdown, null, { noCloseBtn: true, title: 'Aller à un dossier' });
+    const activeFolders = (tlState.folders || []).filter(f => !f.archived);
+    _tlRenderPathMenuRows(menu, activeFolders, close);
+  });
+}
+
+// ── Dropdown Template : liste les templates du dossier actif (voir _tlActiveGroupContext) ──
 const _tlBtnTemplateDropdown = document.getElementById('tl-btn-template-dropdown');
 if (_tlBtnTemplateDropdown) {
   _tlBtnTemplateDropdown.addEventListener('click', e => {
     e.stopPropagation();
-    const tl = tlActiveTierlist();
-    if (!tl) return;
-    const root = _tlGroupRoot(tl);
-    if (!root) return;
-    const templates = tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === root.folderId);
+    const { folderId, templatesHere, root } = _tlActiveGroupContext();
     const { menu, addItem, addSep, close } = _tlMakeCtxMenu(_tlBtnTemplateDropdown, null, { noCloseBtn: true });
-    templates.forEach(tpl => _tlAddDropdownSwitchItem(menu, tpl, tpl.id === root.id, close));
-    if (templates.length) addSep();
-    addItem('', '+ Template', 'green', () => tlOpenNewTemplateModal(root.folderId));
+    templatesHere.forEach(tpl => _tlAddDropdownSwitchItem(menu, tpl, root && tpl.id === root.id, close));
+    if (templatesHere.length) addSep();
+    addItem('', '+ Template', 'green', () => tlOpenNewTemplateModal(folderId));
     if (window.lucide) lucide.createIcons();
   });
 }
 
-// ── Dropdown Tier lists : liste les tier lists du groupe + option "Nouvelle" ────
+// ── Dropdown Tier lists : liste les tier lists du groupe actif + option "Nouvelle" ──
 const _tlBtnTierlistDropdown = document.getElementById('tl-btn-tierlist-dropdown');
 if (_tlBtnTierlistDropdown) {
   _tlBtnTierlistDropdown.addEventListener('click', e => {
     e.stopPropagation();
-    const tl = tlActiveTierlist();
-    if (!tl) return;
-    const root = _tlGroupRoot(tl);
+    const { tl, root } = _tlActiveGroupContext();
     if (!root) return;
     const members = tlState.tierlists.filter(t => !t.archived && t.templateId === root.id);
     const { menu, addItem, addSep, close } = _tlMakeCtxMenu(_tlBtnTierlistDropdown, null, { noCloseBtn: true });
-    _tlAddDropdownSwitchItem(menu, root, root.id === tl.id, close, root.name + ' (template)');
-    addSep();
-    members.forEach(member => _tlAddDropdownSwitchItem(menu, member, member.id === tl.id, close));
+    // En plein écran, un template ne peut pas s'afficher (voir _applySoloTierlistModeIfNeeded) :
+    // on ne propose donc que les listes générées, jamais le template lui-même.
+    if (!document.body.classList.contains('solo-tierlist-mode')) {
+      _tlAddDropdownSwitchItem(menu, root, !!tl && root.id === tl.id, close, root.name + ' (template)');
+      addSep();
+    }
+    members.forEach(member => _tlAddDropdownSwitchItem(menu, member, !!tl && member.id === tl.id, close));
     if (members.length) addSep();
     addItem('', '+ Liste', 'green', () => tlOpenGenerateFromTemplateModal(root.id));
     if (window.lucide) lucide.createIcons();
@@ -10194,8 +10326,8 @@ const tlBtnToggleUnplaced = document.getElementById('tl-btn-toggle-unplaced');
 function _tlUpdateToggleUnplacedBtn() {
   if (!tlBtnToggleUnplaced) return;
   tlBtnToggleUnplaced.innerHTML = _tlLocalUnplacedHidden
-    ? '<i data-lucide="eye"></i> Afficher non placés'
-    : '<i data-lucide="eye-off"></i> Masquer non placés';
+    ? '<i data-lucide="eye"></i> Non placés'
+    : '<i data-lucide="eye-off"></i> Non placés';
   tlBtnToggleUnplaced.title = _tlLocalUnplacedHidden ? 'Afficher le cadre Éléments non placés' : 'Masquer le cadre Éléments non placés';
   if (window.lucide) lucide.createIcons();
 }

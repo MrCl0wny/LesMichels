@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=228" />
+  <link rel="stylesheet" href="style.css?v=239" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -98,7 +98,6 @@
 
       <!-- ── Vue comparaison (fenêtre séparée, lecture seule) ── -->
       <div id="tl-compare-toolbar" class="tl-compare-toolbar hidden">
-        <div id="tl-compare-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
         <div class="tl-toolbar-side tl-toolbar-side-left">
           <button class="tl-toolbar-btn tl-btn-neutral" id="tl-compare-btn-lists" title="Choisir les listes affichées"><i data-lucide="chevron-down"></i> Listes</button>
           <label class="tl-toggle-label" title="Régler la taille des images (50–200 px)">
@@ -107,7 +106,7 @@
               <input type="range" id="tl-compare-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
             </div>
           </label>
-          <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Afficher noms</button>
+          <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
           <button class="tl-toolbar-btn tl-btn-capture" id="tl-compare-btn-capture" title="Capturer la comparaison"><i data-lucide="camera"></i> Capture</button>
         </div>
         <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-compare-btn-exit" title="Quitter le mode comparaison"><i data-lucide="x"></i> Quitter comparaison</button>
@@ -119,39 +118,27 @@
       <div class="tl-control-panel hidden" id="tl-control-panel">
         <div class="tl-control-panel-body" id="tl-control-panel-body">
 
-          <!-- Ligne 1 : Dossiers + chemin + séparateur + Options Dossier à gauche, Plein écran/Comparaison centrés, Masquer non placés à droite -->
+          <!-- Ligne 1 : Dossiers + Chemin/Template/Listes (avec mini-titres centrés) à gauche,
+               rien au centre, Répartition + Non placés à droite. -->
           <div class="ctrl-row ctrl-row-line1">
-            <div class="ctrl-row-grids-left">
-              <button class="tl-toolbar-btn tl-btn-neutral tl-btn-folders" id="tl-btn-folders" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
+            <div class="ctrl-row-grids-left tl-group-row">
+              <button class="tl-toolbar-btn tl-btn-neutral tl-btn-folders tl-shrink-0" id="tl-btn-folders" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
               <div id="tl-group-breadcrumb" class="grids-breadcrumb tl-group-breadcrumb-hidden"></div>
-              <button class="tl-toolbar-btn tl-btn-neutral tl-btn-folder-options" id="tl-btn-folder-options" title="Options du dossier actif"><i data-lucide="settings"></i> Options Dossier</button>
-            </div>
-            <div class="ctrl-row-grids-center">
-              <button class="tl-toolbar-btn tl-btn-yellow tl-group-elem hidden" id="tl-btn-compare" title="Comparer plusieurs listes de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparaison</button>
-              <button class="tl-toolbar-btn tl-btn-yellow tl-btn-open-window tl-group-elem" id="tl-btn-open-window" title="Ouvrir cette liste en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
-            </div>
-            <div class="ctrl-row-grids-right">
-              <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Masquer non placés</button>
-            </div>
-          </div>
-
-          <!-- Ligne 2 : Template (dropdown) + Tier lists (dropdown) à gauche, chemin centré (taille adaptable), Options (menu) -->
-          <div class="ctrl-row ctrl-row-toolbar tl-ctrl-row-toolbar">
-            <div class="ctrl-row-toolbar-left tl-group-row">
-              <button class="tl-toolbar-btn tl-btn-neutral tl-group-elem hidden tl-shrink-0" id="tl-btn-template-dropdown" title="Choisir un template de ce dossier"><i data-lucide="chevron-down"></i> <span id="tl-template-dropdown-label"></span></button>
-              <button class="tl-toolbar-btn tl-btn-blue tl-group-elem hidden tl-btn-hide-solo-mode tl-shrink-0" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une liste"><i data-lucide="chevron-down"></i> <span id="tl-tierlist-dropdown-label"></span></button>
-              <div class="tl-toolbar-sep tl-group-elem tl-shrink-0"></div>
-              <button class="tl-toolbar-btn tl-btn-neutral tl-shrink-0" id="tl-btn-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Liste</button>
+              <div class="tl-labeled-btn tl-group-elem hidden tl-shrink-0">
+                <span class="tl-labeled-btn-label">Chemin</span>
+                <button class="tl-toolbar-btn tl-btn-neutral tl-btn-path" id="tl-btn-path-dropdown" title="Aller à un dossier"><i data-lucide="chevron-down"></i> <span id="tl-path-dropdown-label"></span></button>
+              </div>
+              <div class="tl-labeled-btn tl-group-elem hidden tl-shrink-0">
+                <span class="tl-labeled-btn-label">Template</span>
+                <button class="tl-toolbar-btn tl-btn-neutral" id="tl-btn-template-dropdown" title="Choisir un template de ce dossier"><i data-lucide="chevron-down"></i> <span id="tl-template-dropdown-label"></span></button>
+              </div>
+              <div class="tl-labeled-btn tl-group-elem hidden tl-shrink-0">
+                <span class="tl-labeled-btn-label">Liste</span>
+                <button class="tl-toolbar-btn tl-btn-blue" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une liste"><i data-lucide="chevron-down"></i> <span id="tl-tierlist-dropdown-label"></span></button>
+              </div>
               <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
             </div>
-            <div class="ctrl-row-toolbar-center">
-              <div class="tl-title-row">
-                <span id="tl-title-prefix" class="tl-title-prefix hidden"></span>
-                <span id="tl-title-display" class="tl-title-display"></span>
-                <input type="text" id="tl-title-input" class="tl-title-input hidden" maxlength="60" />
-              </div>
-            </div>
-            <div class="ctrl-row-toolbar-right">
+            <div class="ctrl-row-grids-center">
               <label class="tl-toggle-label tl-shrink-0" id="tl-split-slider-label" title="Régler la répartition largeur entre les tiers et les éléments non placés">
                 <span>Répartition</span>
                 <div class="tl-toggle-label-row">
@@ -161,40 +148,50 @@
                 </div>
               </label>
             </div>
+            <div class="ctrl-row-grids-right">
+              <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Non placés</button>
+            </div>
           </div>
 
-          <!-- Barre plein écran : Options + Répartition à gauche, chemin centré (taille adaptable),
-               Masquer non placés + Quitter à droite. #tl-split-slider-label et #tl-btn-toggle-unplaced
-               sont les mêmes éléments physiques que le mode normal, déplacés ici en JS (jamais deux
-               jeux de contrôles désynchronisés) — voir _tlEnterSoloToolbarLayout/_tlExitSoloToolbarLayout. -->
-          <div class="ctrl-row tl-solo-toolbar btn-fullscreen-only">
-            <div class="tl-solo-toolbar-left">
-              <button class="tl-toolbar-btn tl-btn-neutral" id="tl-btn-solo-options" title="Options d'affichage"><i data-lucide="settings"></i> Options Liste</button>
+          <!-- Ligne 2 : cadre Options Liste + Annuler à gauche (masqués sur un template ou sans
+               liste active), rien au centre, Comparaison + Plein écran à droite. -->
+          <div class="ctrl-row ctrl-row-toolbar tl-ctrl-row-toolbar">
+            <div class="ctrl-row-toolbar-left">
+              <div class="tl-list-options-frame" id="tl-list-options-frame">
+                <label class="tl-toggle-label tl-shrink-0" id="tl-img-size-label" title="Régler la taille des images (100–200 px)">
+                  <span class="tl-toggle-label-head">Taille <input type="number" id="tl-img-size-value-input" min="100" max="200" value="100" class="tl-split-value-input" /></span>
+                  <div class="tl-toggle-label-slider-row">
+                    <input type="range" id="tl-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
+                  </div>
+                </label>
+                <button class="tl-toolbar-btn tl-btn-capture tl-shrink-0" id="tl-btn-capture" title="Capturer la liste"><i data-lucide="camera"></i> Capture</button>
+                <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
+                <button class="tl-toolbar-btn tl-btn-neutral tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Tiers</button>
+                <button class="tl-toolbar-btn tl-btn-reset tl-shrink-0" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
+              </div>
+              <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
             </div>
-            <div id="tl-fullscreen-breadcrumb" class="tl-fullscreen-breadcrumb"></div>
+            <div class="ctrl-row-toolbar-center"></div>
+            <div class="ctrl-row-toolbar-right">
+              <button class="tl-toolbar-btn tl-btn-yellow tl-group-elem hidden" id="tl-btn-compare" title="Comparer plusieurs listes de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparaison</button>
+              <button class="tl-toolbar-btn tl-btn-yellow tl-btn-open-window tl-group-elem" id="tl-btn-open-window" title="Ouvrir cette liste en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
+            </div>
+          </div>
+
+          <!-- Barre plein écran : cadre Options Liste + Annuler + Répartition à gauche,
+               Non placés + Quitter à droite. #tl-split-slider-label, #tl-btn-toggle-unplaced,
+               #tl-btn-undo et #tl-list-options-frame sont les mêmes éléments physiques que le mode
+               normal, déplacés ici en JS (jamais deux jeux de contrôles désynchronisés) — voir
+               _tlEnterSoloToolbarLayout/_tlExitSoloToolbarLayout. Pas de chemin en texte : la
+               barre plein écran est purement fonctionnelle, sans titre. -->
+          <div class="ctrl-row tl-solo-toolbar btn-fullscreen-only">
+            <div class="tl-solo-toolbar-left"></div>
             <div class="tl-solo-toolbar-right">
               <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-btn-exit-solo" title="Quitter le mode plein écran"><i data-lucide="x"></i> Quitter plein écran</button>
             </div>
           </div>
 
         </div>
-      </div>
-
-      <!-- Menu Options (mode normal ET plein écran) : regroupe Capture/Taille/Afficher noms/
-           Options Tiers/Annuler/Reset — un seul menu, ouvert par le bouton
-           Options actif (normal ou plein écran). -->
-      <div id="tl-options-menu" class="ctx-menu hidden">
-        <label class="tl-toggle-label tl-shrink-0" id="tl-img-size-label" title="Régler la taille des images (100–200 px)">
-          <span class="tl-toggle-label-head">Taille <input type="number" id="tl-img-size-value-input" min="100" max="200" value="100" class="tl-split-value-input" /></span>
-          <div class="tl-toggle-label-slider-row">
-            <input type="range" id="tl-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
-          </div>
-        </label>
-        <button class="tl-toolbar-btn tl-btn-capture tl-shrink-0" id="tl-btn-capture" title="Capturer la liste"><i data-lucide="camera"></i> Capture</button>
-        <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Afficher noms</button>
-        <button class="tl-toolbar-btn tl-btn-neutral tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Options Tiers</button>
-        <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
-        <button class="tl-toolbar-btn tl-btn-reset tl-shrink-0" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
       </div>
 
       <div class="tl-layout">
@@ -285,7 +282,7 @@
                     </div>
                     <div class="tl-unplaced-header-row">
                       <button id="tl-unplaced-sort-btn" class="tl-unplaced-sort-btn" title="Trier les éléments non placés"><i data-lucide="arrow-down-a-z"></i> Tri</button>
-                      <button type="button" id="tl-unplaced-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image du cadre Éléments non placés"><i data-lucide="eye"></i> Afficher noms</button>
+                      <button type="button" id="tl-unplaced-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image du cadre Éléments non placés"><i data-lucide="eye"></i> Noms</button>
                     </div>
                     <div class="tl-unplaced-header-row">
                       <label class="tl-toggle-label" title="Régler la taille des images du cadre Éléments non placés (100–200 px)">
@@ -1318,6 +1315,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=319"></script>
+  <script src="app.js?v=332"></script>
 </body>
 </html>
