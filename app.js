@@ -5234,6 +5234,14 @@ renameGridInput.addEventListener('keydown', e => {
     if (target === 'bingo' && typeof _adjustBingoGridSizes === 'function') {
       requestAnimationFrame(_adjustBingoGridSizes);
     }
+    // Même piège que Bingo ci-dessus : _adjustTlLayoutHeight() tourne à chaque tlRender(), mais
+    // si la page tierlist était encore masquée à ce moment (ex. rendue une fois avant que l'onglet
+    // ne soit cliqué), la mesure faisait un early-return et .tl-layout gardait son calc(100vh - 200px)
+    // de base — trop grand une fois le panneau de contrôle réellement affiché, d'où le scroll de
+    // page à la première visite. Recalculer après paint dès que Tier List redevient visible.
+    if (target === 'tierlist' && typeof _adjustTlLayoutHeight === 'function') {
+      requestAnimationFrame(_adjustTlLayoutHeight);
+    }
     if (target === 'home' && typeof renderHomePage === 'function') renderHomePage();
   };
 
