@@ -906,7 +906,7 @@ function renderCurrentEventButton() {
           parts.push(...folderParts);
         }
         parts.push(tl.name);
-        const fullPath = parts.join(' › ');
+        const fullPath = parts.join(' \\ ');
         lbl.textContent = fullPath;
         document.getElementById('btn-ce-navigate').title = 'Aller à la soirée en cours\n' + fullPath;
       }
@@ -928,7 +928,7 @@ function renderCurrentEventButton() {
   btn.style.display = 'flex';
   if (lbl) {
     const path = getFolderPath(state.folders, cef);
-    const fullPath = 'Bingo › ' + path.map(f => f.name).join(' › ');
+    const fullPath = 'Bingo \\ ' + path.map(f => f.name).join(' \\ ');
     lbl.textContent = fullPath;
     document.getElementById('btn-ce-navigate').title = 'Aller à la soirée en cours\n' + fullPath;
   }
@@ -1787,15 +1787,15 @@ function renderGridsBreadcrumb() {
   if (container) container.innerHTML = '';
   if (fsContainer) fsContainer.textContent = '';
   const path = _localActiveFolderId ? getFolderPath(state.folders, _localActiveFolderId) : [];
-  if (fsContainer) fsContainer.textContent = path.map(f => f.name).join(' › ');
+  if (fsContainer) fsContainer.textContent = path.map(f => f.name).join(' \\ ');
   const pathLabel = document.getElementById('path-dropdown-label');
-  if (pathLabel) pathLabel.textContent = path.length ? path.map(f => f.name).join(' › ') : 'Racine';
+  if (pathLabel) pathLabel.textContent = path.length ? path.map(f => f.name).join(' \\ ') : 'Racine';
   if (!container || !_localActiveFolderId) return;
   path.forEach((f, i) => {
     if (i > 0) {
       const sep = document.createElement('span');
       sep.className = 'grids-breadcrumb-sep';
-      sep.textContent = '›';
+      sep.textContent = '\\';
       container.appendChild(sep);
     }
     const span = document.createElement('span');
@@ -1983,7 +1983,7 @@ function _renderRecentFolderPaths() {
     icon.innerHTML = '<i data-lucide="folder-closed"></i>';
     const path = document.createElement('span');
     path.className = 'fp-recent-path';
-    path.textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' › ');
+    path.textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' \\ ');
     row.appendChild(icon);
     row.appendChild(path);
     row.addEventListener('click', () => {
@@ -2302,7 +2302,7 @@ function renderGridToCanvas(t, g, cellSize = 120) {
   const padV = Math.round(cellSize * 0.1);
   // Ligne 1 : chemin du dossier (petit, à gauche)
   const path = getFolderPath(state.folders, _localActiveFolderId);
-  const pathStr = path.map(f => f.name).join(' › ');
+  const pathStr = path.map(f => f.name).join(' \\ ');
   ctx.fillStyle = '#9090a8';
   ctx.font = `${pathFontPx}px Arial`;
   ctx.textAlign = 'center';
@@ -4456,7 +4456,7 @@ window.addEventListener('scroll', () => {
 document.getElementById('btn-open-grids-window').addEventListener('click', () => {
   const grids = getVisibleGrids();
   if (grids.length === 0) return;
-  document.title = getFolderPath(state.folders, _localActiveFolderId).map(f => f.name).join(' › ') + ' — LesMichels';
+  document.title = getFolderPath(state.folders, _localActiveFolderId).map(f => f.name).join(' \\ ') + ' — LesMichels';
   document.body.classList.add('solo-grid-mode');
   // En plein écran, tout doit tenir sur une seule rangée : #btn-grids-dropdown (ligne 1, mode
   // normal), #font-scale-label et le bouton Capture (2e rangée, mode normal) sont déplacés en JS
@@ -4877,7 +4877,7 @@ if (_btnCeNavigate) {
       _localActiveFolderId = state.currentEventFolderId;
       _saveLocalActiveFolderId(state.currentEventFolderId);
       const folder = findFolderById(state.folders, state.currentEventFolderId);
-      _selectedGridIds = folder?.grids?.filter(g => !g.archived).slice(0, 1).map(g => g.id) || [];
+      _selectedGridIds = folder?.grids?.filter(g => !g.archived).map(g => g.id) || [];
       saveLocalSelectedGrids(_selectedGridIds);
       renderAllFolders();
       renderElements();
@@ -5690,7 +5690,7 @@ function _tlEffectiveFolderId(tl) {
   return tl.folderId || null;
 }
 
-// Retourne le chemin complet d'un dossier ("Racine › Enfant › Petit-enfant")
+// Retourne le chemin complet d'un dossier ("Racine \ Enfant \ Petit-enfant")
 function _tlFolderPath(folderId) {
   const chain = [];
   let current = (tlState.folders || []).find(f => f.id === folderId);
@@ -5698,10 +5698,10 @@ function _tlFolderPath(folderId) {
     chain.unshift(current.name);
     current = current.parentId ? (tlState.folders || []).find(f => f.id === current.parentId) : null;
   }
-  return chain.join(' › ');
+  return chain.join(' \\ ');
 }
 
-// Préfixe de chemin affiché avant le nom de la tierlist : dossiers › (template) — même logique que
+// Préfixe de chemin affiché avant le nom de la tierlist : dossiers \ (template) — même logique que
 // le préfixe du titre dans l'éditeur (tlRender), réutilisée pour Export PNG / Capture (_tlBuildCanvas).
 // Retourne '' si la tierlist est à la racine (pas de dossier, pas de template).
 function _tlTitlePathPrefix(tl) {
@@ -5712,18 +5712,18 @@ function _tlTitlePathPrefix(tl) {
     const template = tlState.tierlists.find(t => t.id === tl.templateId && t.isTemplate);
     if (template) parts.push(template.name);
   }
-  return parts.join(' › ');
+  return parts.join(' \\ ');
 }
 
-// Chemin complet affiché en titre : dossiers › (template ›) nom de la tierlist.
+// Chemin complet affiché en titre : dossiers \ (template \) nom de la tierlist.
 function _tlFullTitlePath(tl) {
   const prefix = _tlTitlePathPrefix(tl);
-  return prefix ? prefix + ' › ' + tl.name : tl.name;
+  return prefix ? prefix + ' \\ ' + tl.name : tl.name;
 }
 
-// Chemin commun affiché en mode comparaison : toujours le chemin jusqu'au template (dossiers ›
+// Chemin commun affiché en mode comparaison : toujours le chemin jusqu'au template (dossiers \
 // template), jamais le nom propre d'un membre — qu'il y ait 1 ou plusieurs listes sélectionnées.
-// ex. "Miss Univers › 2026 › Brésil (template)", que la comparaison montre Jérôme, Adrien, ou les deux.
+// ex. "Miss Univers \ 2026 \ Brésil (template)", que la comparaison montre Jérôme, Adrien, ou les deux.
 function _tlCommonTitlePath(tls) {
   const prefix = _tlTitlePathPrefix(tls[0]);
   return prefix || tls.map(_tlFullTitlePath).join(' vs ');
@@ -6688,7 +6688,7 @@ function _tlRenderToPlaceZone(tl) {
   if (window.lucide) lucide.createIcons();
 }
 
-// Texte "(Template › Dossier)" à afficher à côté d'une tierlist archivée/supprimée, pour donner
+// Texte "(Template \ Dossier)" à afficher à côté d'une tierlist archivée/supprimée, pour donner
 // son contexte d'origine (elle n'apparaît plus dans son emplacement habituel du panneau Dossiers).
 // tl peut être un objet vivant de tlState.tierlists OU un objet figé venant de la corbeille (data).
 // includeFolder=false quand le dossier est déjà visuellement représenté par l'imbrication de l'affichage.
@@ -6702,7 +6702,7 @@ function _tlContextLabel(tl, includeFolder = true) {
     const folder = (tlState.folders || []).find(f => f.id === _tlEffectiveFolderId(tl));
     parts.push(folder ? folder.name : '(dossier supprimé)');
   }
-  return parts.length > 0 ? ' (' + parts.join(' › ') + ')' : '';
+  return parts.length > 0 ? ' (' + parts.join(' \\ ') + ')' : '';
 }
 
 // Rendu d'un template comme "dossier virtuel" repliable, contenant ses tierlists générées
@@ -6980,7 +6980,7 @@ function _tlRenderRecentFolderPaths() {
     path.className = 'fp-recent-path';
     let pathText = _tlFolderPath(f.id);
     const templatesHere = tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === f.id);
-    if (templatesHere.length === 1) pathText += ' › ' + templatesHere[0].name;
+    if (templatesHere.length === 1) pathText += ' \\ ' + templatesHere[0].name;
     path.textContent = pathText;
     row.appendChild(icon);
     row.appendChild(path);
@@ -8588,7 +8588,7 @@ async function _tlBuildCanvas(tl) {
   ctx.fillRect(0, 0, totalWidth, canvas.height);
   ctx.fillStyle = '#e8e8f0';
   ctx.font = 'bold 18px Arial';
-  // Titre = chemin complet (dossiers › template › nom), pas seulement le nom de la tierlist.
+  // Titre = chemin complet (dossiers | template | nom), pas seulement le nom de la tierlist.
   ctx.fillText(_tlFullTitlePath(tl), 12, 26, totalWidth - 24);
 
   const loadImage = (src) => new Promise((resolve) => {
@@ -10802,7 +10802,20 @@ _dbTierlist.on('value', snapshot => {
 function _homeGoToBingoFolder(folderId) {
   window._switchPage('bingo');
   _expandFolderAncestors(folderId);
-  if (_localActiveFolderId !== folderId) switchFolder(folderId);
+  if (_localActiveFolderId !== folderId) {
+    switchFolder(folderId);
+  } else {
+    // Dossier déjà actif localement (ex. déjà ouvert avant de "rejoindre" depuis l'accueil) :
+    // switchFolder() ne serait pas appelée, donc la sélection de grilles resterait bloquée sur
+    // son état précédent au lieu de repasser à "toutes les grilles non archivées" comme pour un
+    // vrai premier accès au dossier.
+    _selectedGridIds = (findFolderById(state.folders, folderId)?.grids || []).filter(g => !g.archived).map(g => g.id);
+    saveLocalSelectedGrids(_selectedGridIds);
+    renderAllFolders();
+    renderElements();
+    renderGridsList();
+    renderGrid();
+  }
   saveUserPrefs({ activePage: 'bingo' });
 }
 
@@ -10863,7 +10876,7 @@ function _homeRenderRecentBingo() {
     const row = document.createElement('div');
     row.className = 'home-recent-row';
     row.innerHTML = '<span class="home-recent-icon"><i data-lucide="folder-closed"></i></span><span class="home-recent-path"></span>';
-    row.querySelector('.home-recent-path').textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' › ');
+    row.querySelector('.home-recent-path').textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' \\ ');
     row.addEventListener('click', () => _homeGoToBingoFolder(f.id));
     list.appendChild(row);
   });
@@ -10896,7 +10909,7 @@ function _homeRenderRecentTl() {
     row.innerHTML = '<span class="home-recent-icon"><i data-lucide="folder-closed"></i></span><span class="home-recent-path"></span>';
     let pathText = _tlFolderPath(f.id);
     const templatesHere = tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === f.id);
-    if (templatesHere.length === 1) pathText += ' › ' + templatesHere[0].name;
+    if (templatesHere.length === 1) pathText += ' \\ ' + templatesHere[0].name;
     row.querySelector('.home-recent-path').textContent = pathText;
     row.addEventListener('click', () => {
       if (templatesHere.length === 1) _homeGoToTlTierlist(templatesHere[0]);
@@ -10921,7 +10934,7 @@ function _homeRenderHero() {
     if (tl) {
       btn.style.display = 'inline-flex';
       if (lbl) {
-        // Même construction de chemin que renderCurrentEventButton() (header) : Tier List › dossiers › nom
+        // Même construction de chemin que renderCurrentEventButton() (header) : Tier List | dossiers | nom
         const parts = ['Liste'];
         if (tl.folderId) {
           const folderParts = [];
@@ -10933,7 +10946,7 @@ function _homeRenderHero() {
           parts.push(...folderParts);
         }
         parts.push(tl.name);
-        lbl.textContent = 'Rejoindre la soirée en cours : ' + parts.join(' › ');
+        lbl.textContent = 'Rejoindre la soirée en cours : ' + parts.join(' \\ ');
       }
       return;
     }
@@ -10945,7 +10958,7 @@ function _homeRenderHero() {
       btn.style.display = 'inline-flex';
       if (lbl) {
         const path = getFolderPath(state.folders, ceFolder);
-        lbl.textContent = 'Rejoindre la soirée en cours : Bingo › ' + path.map(f => f.name).join(' › ');
+        lbl.textContent = 'Rejoindre la soirée en cours : Bingo \\ ' + path.map(f => f.name).join(' \\ ');
       }
       return;
     }
