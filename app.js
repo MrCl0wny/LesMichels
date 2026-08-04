@@ -5171,6 +5171,60 @@ function _tlNormalizeState(parsed) {
     });
     _tlMigrated = true;
   });
+  // Réparation : le même bug historique du Ctrl+V (cf. plus bas) a aussi pu écrire un id d'image dans
+  // unplaced/tiers d'un membre SANS jamais créer l'image correspondante dans root.images (l'ancien
+  // code faisait les deux opérations sur des objets différents — tl.images d'un côté, tl.unplaced de
+  // l'autre — donc l'une des deux a pu se perdre selon l'ordre exact des sync Firebase). Résultat :
+  // un id fantôme, compté dans "non placés" (tlRenderUnplaced ne filtre le rendu des cartes que via
+  // `if (img)`, pas le compteur lui-même) mais invisible et impossible à cliquer/supprimer puisque
+  // tlFindImage ne le retrouve dans aucune image existante. On retire ici tout id de unplaced/tiers
+  // qui ne correspond à aucune image de root.images, pour tous les membres du groupe (le template
+  // compris, puisqu'il peut aussi porter un toPlaceImgId orphelin).
+  parsed.tierlists.forEach(template => {
+    if (!template.isTemplate) return;
+    const validIds = new Set((template.images || []).map(i => i.id));
+    const members = parsed.tierlists.filter(t => t.id === template.id || t.templateId === template.id);
+    members.forEach(member => {
+      const beforeUnplaced = member.unplaced.length;
+      member.unplaced = member.unplaced.filter(id => validIds.has(id));
+      if (member.unplaced.length !== beforeUnplaced) _tlMigrated = true;
+      (member.tiers || []).forEach(tier => {
+        const beforeItems = tier.items.length;
+        tier.items = tier.items.filter(id => validIds.has(id));
+        if (tier.items.length !== beforeItems) _tlMigrated = true;
+      });
+    });
+    if (template.toPlaceImgId && !validIds.has(template.toPlaceImgId)) {
+      template.toPlaceImgId = null;
+      _tlMigrated = true;
+    }
+  });
+  // Réparation : bug historique (Ctrl+V ajoutait l'image sur tl.images/tl.unplaced du seul membre
+  // actif au lieu de root.images + unplaced de TOUS les membres, cf. paste listener) a pu laisser des
+  // images présentes dans root.images sans être référencées par certains participants — invisibles
+  // pour eux, et un compteur "non placés" qui ne correspond plus au nombre de cartes réellement
+  // rendues chez le membre qui les a collées (l'image existe bien dans root.images, mais si elle a
+  // ensuite été fusionnée/dédupliquée ci-dessus son id remappé n'a jamais été ajouté ailleurs que là
+  // où il existait déjà). On raccroche chaque image manquante à la zone "non placés" de chaque
+  // participant qui ne la référence encore nulle part, pour que tous les membres d'un même groupe
+  // aient toujours le même total d'éléments.
+  parsed.tierlists.forEach(template => {
+    if (!template.isTemplate || !Array.isArray(template.images) || template.images.length === 0) return;
+    // Le template lui-même a sa propre zone "non placés" (il ne place juste jamais rien dans ses
+    // tiers, cf. garde-fou tl.isTemplate && targetZoneId !== '__unplaced__') — il doit donc être
+    // réparé comme n'importe quel membre, sinon une image ajoutée par le bug ne réapparaît que chez
+    // les participants et reste absente du template lui-même.
+    const members = parsed.tierlists.filter(t => t.id === template.id || t.templateId === template.id);
+    if (members.length === 0) return;
+    const allImgIds = template.images.map(i => i.id);
+    members.forEach(member => {
+      const referenced = new Set(member.unplaced || []);
+      (member.tiers || []).forEach(tier => tier.items.forEach(id => referenced.add(id)));
+      allImgIds.forEach(id => {
+        if (!referenced.has(id)) { member.unplaced.push(id); referenced.add(id); _tlMigrated = true; }
+      });
+    });
+  });
   // Nettoyage défensif : un toPlaceImgId dont tous les participants existants ont déjà résolu
   // (typiquement des données antérieures à l'ajout de _tlClearToPlaceIfAllResolved, ou un état
   // Firebase resté figé) doit être effacé au chargement — sinon une tierlist créée ensuite hérite
@@ -5738,6 +5792,20 @@ document.addEventListener('dragover', e => {
     const distBottom = rect.bottom - e.clientY;
     if (distTop < TL_AUTOSCROLL_EDGE) { _tlSetAutoScroll(tlTiersZone, -1, 1 - Math.max(distTop, 0) / TL_AUTOSCROLL_EDGE); return; }
     if (distBottom < TL_AUTOSCROLL_EDGE) { _tlSetAutoScroll(tlTiersZone, 1, 1 - Math.max(distBottom, 0) / TL_AUTOSCROLL_EDGE); return; }
+    _tlSetAutoScroll(null, 0, 0);
+    return;
+  }
+  // Mode comparaison : chaque colonne a son propre scroll interne indépendant (pas de scroll de
+  // fenêtre possible, .main est en overflow:hidden) — il faut cibler la colonne sous le curseur.
+  const compareCol = e.target.closest && e.target.closest('.tl-compare-column');
+  if (compareCol) {
+    const rect = compareCol.getBoundingClientRect();
+    const distTop = e.clientY - rect.top;
+    const distBottom = rect.bottom - e.clientY;
+    if (distTop < TL_AUTOSCROLL_EDGE) { _tlSetAutoScroll(compareCol, -1, 1 - Math.max(distTop, 0) / TL_AUTOSCROLL_EDGE); return; }
+    if (distBottom < TL_AUTOSCROLL_EDGE) { _tlSetAutoScroll(compareCol, 1, 1 - Math.max(distBottom, 0) / TL_AUTOSCROLL_EDGE); return; }
+    _tlSetAutoScroll(null, 0, 0);
+    return;
   }
   const distTop = e.clientY;
   const distBottom = window.innerHeight - e.clientY;
@@ -7123,6 +7191,7 @@ function _tlBuildCompareImgCard(tl, img, size) {
     _tlCompareDragImgId = null;
     _tlCompareDragTlId = null;
     tlClearDropBefore();
+    _tlClearDragSourceHidden();
     document.querySelectorAll('.tl-compare-view .tl-tier-images.drag-over').forEach(z => z.classList.remove('drag-over'));
   });
 
@@ -10172,10 +10241,16 @@ document.addEventListener('paste', e => {
   const imageItems = Array.from(items).filter(it => it.type.startsWith('image/'));
   if (imageItems.length === 0) return;
 
-  if (!tl.images) tl.images = [];
+  // Les images appartiennent au groupe (template), pas à une tierlist individuelle — sans passer
+  // par root.images + _tlGetGroupMembers (comme tlImportImages / _tlPasteFromClipboard / _tlAddTextCard),
+  // l'image collée n'était visible que dans tl.images (jamais lu par tlFindImage, qui lit toujours
+  // _tlGetGroupImages = root.images) et jamais ajoutée aux autres membres du groupe : image "fantôme"
+  // invisible de tous, et listes du groupe désynchronisées en nombre d'éléments.
+  const root = _tlGroupRoot(tl);
+  if (!root.images) root.images = [];
   const maxImages = tlEffectiveMaxImages(tl);
-  if (tl.images.length >= maxImages) {
-    alert(`Limite atteinte — maximum ${maxImages} images par tierlist.`);
+  if (root.images.length >= maxImages) {
+    alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
     return;
   }
   const now = new Date();
@@ -10185,12 +10260,15 @@ document.addEventListener('paste', e => {
     if (!file) return Promise.resolve();
     const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
     return _tlCompressToBase64(file).then(src => {
-      if (tl.images.length >= maxImages) return;
-      if (tl.images.some(i => i.src === src)) return;
+      if (root.images.length >= maxImages) return;
+      if (root.images.some(i => i.src === src)) return;
       const img = { id: uid(), src, name };
       _tlSrcCache[img.id] = src;
-      tl.images.push(img);
-      tl.unplaced.push(img.id);
+      _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'addImage', imgId: img.id });
+      root.images.push(img);
+      _tlGetGroupMembers(tl).forEach(member => {
+        if (!member.unplaced.includes(img.id)) member.unplaced.push(img.id);
+      });
       addedImgs.push(img);
     });
   });
