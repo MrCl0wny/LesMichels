@@ -3990,6 +3990,69 @@ body.solo-tierlist-mode .tl-layout {
   margin-bottom: -8px;
 }
 
+/* ── Dropdown "Emplacement" arborescent (modals Nouveau Bingo / Nouveau Template) — même
+   méthode de rétractation que le panneau Dossiers (.fp-folder-row / .fp-children). ── */
+.folder-tree-dropdown-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.9rem;
+  padding: 9px 12px;
+  outline: none;
+  cursor: pointer;
+  transition: var(--transition);
+  text-align: left;
+}
+.folder-tree-dropdown-btn:hover { border-color: var(--accent-dim); }
+.folder-tree-dropdown-btn.open { border-color: var(--accent); }
+.folder-tree-dropdown-btn [data-lucide] { width: 15px; height: 15px; flex-shrink: 0; margin-right: 0; color: var(--text-muted); }
+.folder-tree-dropdown-btn span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-tree-dropdown-btn::after {
+  content: '';
+  flex-shrink: 0;
+  width: 10px;
+  height: 6px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%237a7a90' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.folder-tree-dropdown-panel {
+  position: fixed;
+  z-index: 1200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  padding: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.folder-tree-dropdown-root {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+  user-select: none;
+  transition: var(--transition);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.folder-tree-dropdown-root:hover { border-color: #60a5fa; background: var(--surface-3); }
+.folder-tree-dropdown-root.selected { border-color: var(--accent); background: var(--accent-glow); color: var(--accent); }
+
 .modal-numbering-checks {
   display: flex;
   align-items: center;
@@ -4361,7 +4424,7 @@ body.solo-tierlist-mode .tl-layout {
 .home-recent-path {
   flex: 1;
   font-size: 0.8rem;
-  color: var(--text-muted);
+  color: #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4439,12 +4502,22 @@ body.solo-tierlist-mode .tl-layout {
   color: var(--accent);
 }
 .home-big-btn-yellow:hover { border-color: var(--accent); background: rgba(232, 197, 71, 0.24); }
+.home-big-btn-purple {
+  border-color: #7c3aed80;
+  background: rgba(139, 92, 246, 0.14);
+  color: #c4b5fd;
+}
+.home-big-btn-purple:hover { border-color: #8b5cf6; background: rgba(139, 92, 246, 0.24); color: #ddd6fe; }
 
-/* ── Menus en cascade "Rejoindre" — chaque niveau est un .ctx-menu positionné à côté du
-   précédent ; ils scrollent individuellement si la liste dépasse la hauteur d'écran. ── */
-.home-join-menu {
+/* ── Modals "Rejoindre Bingo/Template" — même arborescence pliable que le panneau Dossiers
+   (.fp-folder-row/.fp-children), dans un modal centré au lieu d'un panneau flottant ancré au
+   bouton ; scrolle si la liste dépasse la hauteur du modal. ── */
+.home-join-modal-tree {
   max-height: 60vh;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .archived-theme-btn.del {

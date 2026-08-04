@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=244" />
+  <link rel="stylesheet" href="style.css?v=247" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -72,9 +72,8 @@
               <span class="home-col-title"><i data-lucide="grid-3x3"></i> Bingo</span>
             </div>
             <div class="home-big-buttons">
-              <button class="home-big-btn home-big-btn-blue" id="home-btn-bingo-new-folder"><i data-lucide="folder-plus"></i> Nouveau Dossier Bingo</button>
               <button class="home-big-btn home-big-btn-accent" id="home-btn-bingo-new-grid"><i data-lucide="plus"></i> Nouveau Bingo</button>
-              <button class="home-big-btn home-big-btn-yellow" id="home-btn-bingo-join"><i data-lucide="log-in"></i> Rejoindre Bingo existant</button>
+              <button class="home-big-btn home-big-btn-purple" id="home-btn-bingo-join"><i data-lucide="log-in"></i> Rejoindre Bingo existant</button>
             </div>
           </div>
 
@@ -83,9 +82,8 @@
               <span class="home-col-title"><i data-lucide="list-ordered"></i> Liste</span>
             </div>
             <div class="home-big-buttons">
-              <button class="home-big-btn home-big-btn-blue" id="home-btn-tl-new-folder"><i data-lucide="folder-plus"></i> Nouveau Dossier Liste</button>
               <button class="home-big-btn home-big-btn-accent" id="home-btn-tl-new-template"><i data-lucide="plus"></i> Nouveau Template</button>
-              <button class="home-big-btn home-big-btn-yellow" id="home-btn-tl-join"><i data-lucide="log-in"></i> Rejoindre Template existant</button>
+              <button class="home-big-btn home-big-btn-purple" id="home-btn-tl-join"><i data-lucide="log-in"></i> Rejoindre Template existant</button>
             </div>
           </div>
 
@@ -476,10 +474,11 @@
       <div class="modal-body">
         <input type="text" id="tl-modal-new-input" class="modal-text-input" placeholder="Nom de la liste..." maxlength="60" />
         <div id="tl-modal-new-folder-wrap">
-          <span class="modal-folder-select-label">Ranger (optionnel)</span>
-          <select id="tl-modal-new-folder-select" class="modal-folder-select">
+          <span class="modal-folder-select-label">Emplacement</span>
+          <select id="tl-modal-new-folder-select" class="modal-folder-select hidden">
             <option value="">— Aucun dossier —</option>
           </select>
+          <button type="button" class="folder-tree-dropdown-btn" id="tl-modal-new-folder-dropdown-btn"><i data-lucide="folder-closed"></i> <span></span></button>
         </div>
         <div id="tl-modal-new-preset-wrap" style="margin-top:8px;">
           <span class="modal-folder-select-label">Preset de tiers</span>
@@ -822,7 +821,8 @@
         </div>
         <div id="new-folder-parent-wrap" style="margin-top:12px">
           <span class="modal-folder-select-label">Emplacement</span>
-          <select id="new-folder-parent-select" class="modal-folder-select"></select>
+          <select id="new-folder-parent-select" class="modal-folder-select hidden"></select>
+          <button type="button" class="folder-tree-dropdown-btn" id="new-folder-parent-dropdown-btn"><i data-lucide="folder-closed"></i> <span></span></button>
         </div>
         <!-- Section grille : n'apparaît que pour "Nouveau Bingo" depuis l'accueil, fusionnant
              ce modal avec le modal "Nouvelle grille" — même dossier ET sa première grille en un
@@ -841,6 +841,32 @@
           <button class="btn-action" id="btn-confirm-new-folder">Créer</button>
           <button class="btn-action btn-secondary" id="btn-cancel-new-folder">Annuler</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal "Rejoindre Bingo existant" — arborescence pliable des dossiers/grilles (accueil) -->
+  <div id="modal-home-join-bingo" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>REJOINDRE BINGO</h3>
+        <button class="modal-close" id="btn-close-home-join-bingo"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div id="home-join-bingo-tree" class="home-join-modal-tree"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal "Rejoindre Template existant" — arborescence pliable des dossiers/templates (accueil) -->
+  <div id="modal-home-join-tl" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>REJOINDRE TEMPLATE</h3>
+        <button class="modal-close" id="btn-close-home-join-tl"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div id="home-join-tl-tree" class="home-join-modal-tree"></div>
       </div>
     </div>
   </div>
@@ -1318,6 +1344,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=339"></script>
+  <script src="app.js?v=343"></script>
 </body>
 </html>

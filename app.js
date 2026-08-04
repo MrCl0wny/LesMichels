@@ -3303,6 +3303,130 @@ function _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, p
   });
 }
 
+// ── Dropdown "Emplacement" arborescent (remplace visuellement un <select> de dossiers) ────────
+// Le <select> caché passé en paramètre reste la source de vérité (comme pour .tl-preset-dropdown) :
+// on ne fait que synchroniser un bouton + panneau flottant par-dessus, avec le même mécanisme de
+// rétractation par dossier (chevron, sessionStorage) que renderFoldersPanelTree.
+let _folderTreeDropdownPanel = null;
+let _folderTreeDropdownCloseHandler = null;
+function _closeFolderTreeDropdown() {
+  if (_folderTreeDropdownPanel) { _folderTreeDropdownPanel.remove(); _folderTreeDropdownPanel = null; }
+  if (_folderTreeDropdownCloseHandler) { document.removeEventListener('click', _folderTreeDropdownCloseHandler); _folderTreeDropdownCloseHandler = null; }
+  document.querySelectorAll('.folder-tree-dropdown-btn.open').forEach(b => b.classList.remove('open'));
+}
+
+// rootFolders : tableau de dossiers racine (chacun avec sa propriété `.folders` pour les enfants)
+// rootLabel : texte affiché pour l'option racine (aucun parent)
+function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, storageKey) {
+  const labelSpan = btnEl.querySelector('span');
+  const iconEl = btnEl.querySelector('[data-lucide]');
+
+  function findFolderLabel(folders, id) {
+    for (const f of (folders || [])) {
+      if (f.id === id) return f.name;
+      const found = findFolderLabel(f.folders, id);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function refreshBtn() {
+    const val = selectEl.value;
+    const name = val ? findFolderLabel(rootFolders, val) : null;
+    labelSpan.textContent = name || rootLabel;
+    if (iconEl) iconEl.setAttribute('data-lucide', name ? 'folder-closed' : 'house');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function selectFolder(id) {
+    selectEl.value = id || '';
+    refreshBtn();
+    _closeFolderTreeDropdown();
+  }
+
+  function renderFolderRow(f, depth) {
+    const wrapper = document.createElement('div');
+    const children = (f.folders || []).filter(sf => !sf.archived);
+    const hasChildren = children.length > 0;
+
+    const row = document.createElement('div');
+    row.className = 'fp-folder-row' + (selectEl.value === f.id ? ' active' : '');
+    row.style.paddingLeft = (8 + depth * 14) + 'px';
+
+    const collapseKey = storageKey + '_' + f.id;
+    let collapsed = sessionStorage.getItem(collapseKey) !== '0';
+
+    const arrow = document.createElement('span');
+    arrow.className = 'fp-folder-arrow' + (collapsed ? ' collapsed' : '');
+    arrow.innerHTML = '<i data-lucide="chevron-down"></i>';
+    if (!hasChildren) arrow.style.visibility = 'hidden';
+
+    const icon = document.createElement('span');
+    icon.className = 'fp-folder-icon';
+    icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
+
+    const name = document.createElement('span');
+    name.className = 'fp-folder-name';
+    name.textContent = f.name;
+
+    row.appendChild(arrow);
+    row.appendChild(icon);
+    row.appendChild(name);
+
+    const childrenEl = document.createElement('div');
+    childrenEl.className = 'fp-children' + (collapsed ? ' collapsed' : '');
+    children.forEach(sf => childrenEl.appendChild(renderFolderRow(sf, depth + 1)));
+
+    const toggleCollapse = e => {
+      e.stopPropagation();
+      collapsed = !collapsed;
+      sessionStorage.setItem(collapseKey, collapsed ? '1' : '0');
+      arrow.classList.toggle('collapsed', collapsed);
+      childrenEl.classList.toggle('collapsed', collapsed);
+      icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
+      if (window.lucide) lucide.createIcons();
+    };
+    arrow.addEventListener('click', toggleCollapse);
+    row.addEventListener('click', e => { e.stopPropagation(); selectFolder(f.id); });
+
+    wrapper.appendChild(row);
+    wrapper.appendChild(childrenEl);
+    return wrapper;
+  }
+
+  btnEl.onclick = e => {
+    e.stopPropagation();
+    if (_folderTreeDropdownPanel) { _closeFolderTreeDropdown(); return; }
+    const panel = document.createElement('div');
+    panel.className = 'folder-tree-dropdown-panel';
+
+    const rootRow = document.createElement('div');
+    rootRow.className = 'folder-tree-dropdown-root' + (!selectEl.value ? ' selected' : '');
+    rootRow.innerHTML = '<i data-lucide="house"></i> ' + rootLabel;
+    rootRow.addEventListener('click', e2 => { e2.stopPropagation(); selectFolder(''); });
+    panel.appendChild(rootRow);
+
+    rootFolders.filter(f => !f.archived).forEach(f => panel.appendChild(renderFolderRow(f, 0)));
+
+    document.body.appendChild(panel);
+    const rect = btnEl.getBoundingClientRect();
+    panel.style.left = rect.left + 'px';
+    panel.style.top = (rect.bottom + 4) + 'px';
+    panel.style.width = rect.width + 'px';
+    requestAnimationFrame(() => {
+      const pr = panel.getBoundingClientRect();
+      if (pr.bottom > window.innerHeight - 8) panel.style.top = (rect.top - pr.height - 4) + 'px';
+    });
+    btnEl.classList.add('open');
+    _folderTreeDropdownPanel = panel;
+    if (window.lucide) lucide.createIcons();
+    _folderTreeDropdownCloseHandler = () => _closeFolderTreeDropdown();
+    setTimeout(() => document.addEventListener('click', _folderTreeDropdownCloseHandler), 0);
+  };
+
+  refreshBtn();
+}
+
 function openNewThemeModal(parentId = null) {
   if (!modalNewTheme) return;
   _editFolderId = null;
@@ -3311,7 +3435,7 @@ function openNewThemeModal(parentId = null) {
   const parentWrap = document.getElementById('new-folder-parent-wrap');
   if (parentWrap) parentWrap.style.display = '';
   const modalTitle = document.getElementById('new-folder-modal-title');
-  if (modalTitle) modalTitle.textContent = 'Nouveau dossier';
+  if (modalTitle) modalTitle.textContent = _homeNewGridAfterFolder ? 'NOUVEAU BINGO' : 'Nouveau dossier';
   if (btnConfirmNewTheme) btnConfirmNewTheme.textContent = 'Créer';
 
   // Peupler le select parent
@@ -3333,6 +3457,8 @@ function openNewThemeModal(parentId = null) {
     }
     _addOptions(state.folders, 0);
     sel.value = parentId || '';
+    const dropdownBtn = document.getElementById('new-folder-parent-dropdown-btn');
+    if (dropdownBtn) _setupFolderTreeDropdown(sel, dropdownBtn, state.folders || [], '— Racine —', 'fp_newfolder_collapsed');
   }
 
   newThemeNameInput.value = '';
@@ -8711,6 +8837,19 @@ function tlPopulateFolderSelect(selectEl, selectedId, excludeId) {
   addOptions(null, 0);
 }
 
+// Reconstruit une arborescence `.folders` imbriquée à partir de la liste plate tlState.folders
+// (modèle `parentId`), pour réutiliser _setupFolderTreeDropdown (qui attend ce format, comme
+// state.folders côté Bingo).
+function _tlBuildFolderTree(excludeId) {
+  const activeFolders = (tlState.folders || []).filter(f => !f.archived);
+  const excluded = excludeId ? new Set([excludeId, ..._tlGetDescendantIds(excludeId)]) : new Set();
+  function build(parentId) {
+    return activeFolders.filter(f => (f.parentId || null) === parentId && !excluded.has(f.id))
+      .map(f => ({ id: f.id, name: f.name, archived: f.archived, folders: build(f.id) }));
+  }
+  return build(null);
+}
+
 // ── Modal "Gérer les tiers" (presets + import + sauvegarde) ─────────────────
 let _tlTiersSourceTargetId = null;
 
@@ -9161,6 +9300,8 @@ function tlOpenNewModal(presetFolderId) {
   if (wrap) {
     wrap.style.display = '';
     tlPopulateFolderSelect(tlModalNewFolderSelect, presetFolderId || '');
+    const dropdownBtn = document.getElementById('tl-modal-new-folder-dropdown-btn');
+    if (dropdownBtn) _setupFolderTreeDropdown(tlModalNewFolderSelect, dropdownBtn, _tlBuildFolderTree(), '— Aucun dossier —', 'fp_tlnewmodal_collapsed');
   }
   const presetWrap = document.getElementById('tl-modal-new-preset-wrap');
   if (presetWrap) {
@@ -9184,6 +9325,8 @@ function tlOpenNewTemplateModal(presetFolderId, fromHome = false) {
   if (wrap) {
     wrap.style.display = '';
     tlPopulateFolderSelect(tlModalNewFolderSelect, presetFolderId || '');
+    const dropdownBtn = document.getElementById('tl-modal-new-folder-dropdown-btn');
+    if (dropdownBtn) _setupFolderTreeDropdown(tlModalNewFolderSelect, dropdownBtn, _tlBuildFolderTree(), '— Aucun dossier —', 'fp_tlnewmodal_collapsed');
   }
   const presetWrap = document.getElementById('tl-modal-new-preset-wrap');
   if (presetWrap) {
@@ -10607,6 +10750,13 @@ function _homeGoToTlTierlist(tl) {
   tlRender();
 }
 
+// Équivalent _homeGoToBingoFolder côté Tier List — ouvre directement la page sur ce dossier
+// (voir _homeRenderRecentTl pour le même enchaînement _switchPage + _tlGoToFolder).
+function _homeGoToTlFolder(folderId) {
+  window._switchPage('tierlist');
+  _tlGoToFolder(folderId);
+}
+
 // ── Récents (2 listes séparées de 5 : Bingo / Tier List) ──────────────────────
 function _homeRenderRecentBingo() {
   const container = document.getElementById('home-recent-bingo');
@@ -10737,154 +10887,169 @@ document.getElementById('home-btn-current-event')?.addEventListener('click', () 
 // ── "Nouveau Bingo" — le modal "Nouveau dossier" affiche en plus sa section grille
 // (_homeNewGridAfterFolder, voir openNewThemeModal/confirmNewTheme) : dossier + première grille
 // créés en une seule action depuis l'accueil.
-document.getElementById('home-btn-bingo-new-folder')?.addEventListener('click', () => {
-  _homeNewGridAfterFolder = false;
-  openNewFolderModal(null);
-});
 document.getElementById('home-btn-bingo-new-grid')?.addEventListener('click', () => {
   _homeNewGridAfterFolder = true;
   openNewFolderModal(null);
 });
-document.getElementById('home-btn-tl-new-folder')?.addEventListener('click', () => tlOpenFolderModal('create', null, '', null));
 document.getElementById('home-btn-tl-new-template')?.addEventListener('click', () => tlOpenNewTemplateModal(null, true));
 
-// ── "Rejoindre Bingo / Template" — menu déroulant en cascade, dossier par dossier ─────────────
-// Chaque sous-menu est un ctx-menu positionné à côté du précédent (comme un menu en cascade
-// classique) ; cliquer une grille/un template navigue vers la page correspondante.
-let _homeJoinCascadeMenus = [];
-function _homeCloseJoinCascade() {
-  _homeJoinCascadeMenus.forEach(m => m.remove());
-  _homeJoinCascadeMenus = [];
-  document.removeEventListener('click', _homeCloseJoinCascade);
-}
+// ── "Rejoindre Bingo / Template" — modal centré avec arborescence pliable ─────────────────────
+// Même méthode de rétractation que le panneau Dossiers (renderFoldersPanelTree) : chevron par
+// dossier, état collapse persisté en sessionStorage. Rendu dans un modal classique plutôt qu'un
+// panneau flottant ancré au bouton.
 
-// Rend une liste d'items déjà préparés (utilisé par le niveau racine et les niveaux suivants)
-function _homeRenderJoinItems(anchorEl, depth, items) {
-  // Geler le rect de l'ancre AVANT de fermer les sous-menus plus profonds : si anchorEl vit
-  // dans un menu qu'on est sur le point de retirer du DOM, lire son rect après coup renverrait
-  // (0,0) — même piège que _tlMakeCtxMenu (voir positionCtxMenu).
-  const frozenRect = anchorEl ? anchorEl.getBoundingClientRect() : null;
-  while (_homeJoinCascadeMenus.length > depth) {
-    _homeJoinCascadeMenus.pop().remove();
+// leafBuilder(folder) → tableau de { icon, label, onClick } pour les feuilles (grilles/templates) d'un dossier
+// childrenOf(folder) → sous-dossiers d'un dossier (ou racines si folder === null)
+// onFolderClick(folder) optionnel → si fourni, cliquer sur le NOM d'un dossier (pas sur son chevron)
+// navigue directement dedans au lieu de se contenter de plier/déplier (utilisé côté Bingo, où un
+// dossier a une page à part entière ; côté Tier List un dossier n'a rien à "ouvrir" en soi).
+function _homeRenderJoinTree(container, closeModal, storageKey, childrenOf, leafBuilder, onFolderClick) {
+  container.innerHTML = '';
+
+  function renderFolder(folder, depth) {
+    const leaves = leafBuilder(folder);
+    const subFolders = childrenOf(folder);
+    const hasChildren = leaves.length > 0 || subFolders.length > 0;
+
+    const wrapper = document.createElement('div');
+    const row = document.createElement('div');
+    row.className = 'fp-folder-row home-join-folder-row';
+    row.style.paddingLeft = (8 + depth * 14) + 'px';
+
+    const collapseKey = storageKey + '_' + folder.id;
+    let collapsed = sessionStorage.getItem(collapseKey) !== '0';
+
+    const arrow = document.createElement('span');
+    arrow.className = 'fp-folder-arrow' + (collapsed ? ' collapsed' : '');
+    arrow.innerHTML = '<i data-lucide="chevron-down"></i>';
+    if (!hasChildren) arrow.style.visibility = 'hidden';
+
+    const icon = document.createElement('span');
+    icon.className = 'fp-folder-icon';
+    icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
+
+    const name = document.createElement('span');
+    name.className = 'fp-folder-name';
+    name.textContent = folder.name;
+
+    row.appendChild(arrow);
+    row.appendChild(icon);
+    row.appendChild(name);
+
+    const childrenEl = document.createElement('div');
+    childrenEl.className = 'fp-children' + (collapsed ? ' collapsed' : '');
+
+    leaves.forEach(leaf => {
+      const lRow = document.createElement('div');
+      lRow.className = 'fp-grid-row home-join-leaf-row';
+      lRow.style.paddingLeft = (8 + (depth + 1) * 14) + 'px';
+      const lIcon = document.createElement('span');
+      lIcon.className = 'fp-grid-icon';
+      lIcon.innerHTML = '<i data-lucide="' + leaf.icon + '"></i>';
+      const lName = document.createElement('span');
+      lName.className = 'fp-grid-name';
+      lName.textContent = leaf.label;
+      lRow.appendChild(lIcon);
+      lRow.appendChild(lName);
+      lRow.addEventListener('click', e => { e.stopPropagation(); closeModal(); leaf.onClick(); });
+      childrenEl.appendChild(lRow);
+    });
+
+    subFolders.forEach(sf => childrenEl.appendChild(renderFolder(sf, depth + 1)));
+
+    const toggleCollapse = e => {
+      e.stopPropagation();
+      collapsed = !collapsed;
+      sessionStorage.setItem(collapseKey, collapsed ? '1' : '0');
+      arrow.classList.toggle('collapsed', collapsed);
+      childrenEl.classList.toggle('collapsed', collapsed);
+      icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
+      if (window.lucide) lucide.createIcons();
+    };
+    arrow.addEventListener('click', toggleCollapse);
+    if (onFolderClick) {
+      row.addEventListener('click', e => { e.stopPropagation(); closeModal(); onFolderClick(folder); });
+    } else {
+      row.addEventListener('click', e => { if (hasChildren) toggleCollapse(e); });
+    }
+
+    wrapper.appendChild(row);
+    wrapper.appendChild(childrenEl);
+    return wrapper;
   }
-  const menu = document.createElement('div');
-  menu.className = 'ctx-menu home-join-menu';
-  if (items.length === 0) {
+
+  const roots = childrenOf(null);
+  const rootLeaves = leafBuilder(null);
+  if (roots.length === 0 && rootLeaves.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'ctx-menu-title';
     empty.textContent = 'Vide.';
-    menu.appendChild(empty);
+    container.appendChild(empty);
   } else {
-    items.forEach(item => {
-      const btn = document.createElement('button');
-      btn.className = 'ctx-menu-item';
-      btn.innerHTML = '<i data-lucide="' + item.icon + '"></i> ';
-      btn.append(item.label);
-      btn.addEventListener('click', e => { e.stopPropagation(); item.onClick(btn); });
-      menu.appendChild(btn);
+    rootLeaves.forEach(leaf => {
+      const lRow = document.createElement('div');
+      lRow.className = 'fp-grid-row home-join-leaf-row';
+      lRow.style.paddingLeft = '8px';
+      const lIcon = document.createElement('span');
+      lIcon.className = 'fp-grid-icon';
+      lIcon.innerHTML = '<i data-lucide="' + leaf.icon + '"></i>';
+      const lName = document.createElement('span');
+      lName.className = 'fp-grid-name';
+      lName.textContent = leaf.label;
+      lRow.appendChild(lIcon);
+      lRow.appendChild(lName);
+      lRow.addEventListener('click', e => { e.stopPropagation(); closeModal(); leaf.onClick(); });
+      container.appendChild(lRow);
     });
+    roots.forEach(f => container.appendChild(renderFolder(f, 0)));
   }
-  document.body.appendChild(menu);
-  if (frozenRect) {
-    menu.style.left = (frozenRect.right + 4) + 'px';
-    menu.style.top  = frozenRect.top + 'px';
-    requestAnimationFrame(() => {
-      const rect = menu.getBoundingClientRect();
-      if (rect.right  > window.innerWidth  - 8) menu.style.left = (frozenRect.left - rect.width - 4) + 'px';
-      if (rect.bottom > window.innerHeight - 8) menu.style.top  = (frozenRect.bottom - rect.height) + 'px';
-    });
-  } else {
-    positionCtxMenu(menu, null, null);
-  }
-  _homeJoinCascadeMenus.push(menu);
+
   if (window.lucide) lucide.createIcons();
 }
 
-function _homeStartBingoJoin(triggerBtn) {
-  _homeCloseJoinCascade();
-  const roots = (state.folders || []).filter(f => !f.archived);
-  const items = roots.map(f => ({
-    icon: 'folder-closed',
-    label: f.name,
-    onClick: (btn) => {
-      const subFolders = (f.folders || []).filter(sf => !sf.archived);
-      const grids = (f.grids || []).filter(g => !g.archived);
-      const nextItems = [
-        ...subFolders.map(sf => ({
-          icon: 'folder-closed', label: sf.name,
-          onClick: (b2) => _homeExpandBingoFolder(b2, 1, sf),
-        })),
-        ...grids.map(g => ({
-          icon: 'grid-3x3', label: g.name,
-          onClick: () => { _homeCloseJoinCascade(); _homeGoToBingoGrid(f, g); },
-        })),
-      ];
-      _homeRenderJoinItems(btn, 1, nextItems);
-    }
-  }));
-  _homeRenderJoinItems(triggerBtn, 0, items);
-  setTimeout(() => document.addEventListener('click', _homeCloseJoinCascade), 0);
-}
+const modalHomeJoinBingo = document.getElementById('modal-home-join-bingo');
+const modalHomeJoinTl = document.getElementById('modal-home-join-tl');
 
-function _homeExpandBingoFolder(anchorEl, depth, folder) {
-  const subFolders = (folder.folders || []).filter(sf => !sf.archived);
-  const grids = (folder.grids || []).filter(g => !g.archived);
-  const nextItems = [
-    ...subFolders.map(sf => ({
-      icon: 'folder-closed', label: sf.name,
-      onClick: (b2) => _homeExpandBingoFolder(b2, depth + 1, sf),
-    })),
-    ...grids.map(g => ({
+function _homeCloseJoinBingoModal() { modalHomeJoinBingo?.classList.add('hidden'); }
+function _homeCloseJoinTlModal() { modalHomeJoinTl?.classList.add('hidden'); }
+
+function _homeStartBingoJoin() {
+  if (!modalHomeJoinBingo) return;
+  _homeRenderJoinTree(
+    document.getElementById('home-join-bingo-tree'),
+    _homeCloseJoinBingoModal,
+    'fp_home_bingo_collapsed',
+    folder => ((folder ? folder.folders : state.folders) || []).filter(f => !f.archived),
+    folder => folder ? (folder.grids || []).filter(g => !g.archived).map(g => ({
       icon: 'grid-3x3', label: g.name,
-      onClick: () => { _homeCloseJoinCascade(); _homeGoToBingoGrid(folder, g); },
-    })),
-  ];
-  _homeRenderJoinItems(anchorEl, depth, nextItems);
+      onClick: () => _homeGoToBingoGrid(folder, g),
+    })) : [],
+    folder => _homeGoToBingoFolder(folder.id)
+  );
+  modalHomeJoinBingo.classList.remove('hidden');
 }
 
-function _homeExpandTlFolder(anchorEl, depth, folder) {
-  const subFolders = (tlState.folders || []).filter(sf => !sf.archived && sf.parentId === folder.id);
-  const templates = tlState.tierlists.filter(t => !t.archived && t.folderId === folder.id && !_tlHasLiveTemplate(t));
-  const nextItems = [
-    ...subFolders.map(sf => ({
-      icon: 'folder-closed', label: sf.name,
-      onClick: (b2) => _homeExpandTlFolder(b2, depth + 1, sf),
+function _homeStartTlJoin() {
+  if (!modalHomeJoinTl) return;
+  _homeRenderJoinTree(
+    document.getElementById('home-join-tl-tree'),
+    _homeCloseJoinTlModal,
+    'fp_home_tl_collapsed',
+    folder => (tlState.folders || []).filter(f => !f.archived && (f.parentId || null) === (folder ? folder.id : null)),
+    folder => tlState.tierlists.filter(t => !t.archived && (t.folderId || null) === (folder ? folder.id : null) && t.isTemplate && !_tlHasLiveTemplate(t)).map(t => ({
+      icon: 'layout-template', label: t.name,
+      onClick: () => _homeGoToTlTierlist(t),
     })),
-    ...templates.map(t => ({
-      icon: t.isTemplate ? 'layout-template' : 'list-ordered', label: t.name,
-      onClick: () => { _homeCloseJoinCascade(); _homeGoToTlTierlist(t); },
-    })),
-  ];
-  _homeRenderJoinItems(anchorEl, depth, nextItems);
+    folder => _homeGoToTlFolder(folder.id)
+  );
+  modalHomeJoinTl.classList.remove('hidden');
 }
 
-function _homeStartTlJoin(triggerBtn) {
-  _homeCloseJoinCascade();
-  const roots = (tlState.folders || []).filter(f => !f.archived && !f.parentId);
-  // Templates qui ne sont dans aucun dossier (racine) — mêmes conditions que tlRenderList().
-  const rootTemplates = tlState.tierlists.filter(t => t.isTemplate && !t.archived && !t.folderId && !_tlHasLiveTemplate(t));
-  const items = [
-    ...roots.map(f => ({
-      icon: 'folder-closed',
-      label: f.name,
-      onClick: (btn) => _homeExpandTlFolder(btn, 1, f),
-    })),
-    ...rootTemplates.map(t => ({
-      icon: 'layout-template',
-      label: t.name,
-      onClick: () => { _homeCloseJoinCascade(); _homeGoToTlTierlist(t); },
-    })),
-  ];
-  _homeRenderJoinItems(triggerBtn, 0, items);
-  setTimeout(() => document.addEventListener('click', _homeCloseJoinCascade), 0);
-}
+document.getElementById('btn-close-home-join-bingo')?.addEventListener('click', _homeCloseJoinBingoModal);
+document.getElementById('btn-close-home-join-tl')?.addEventListener('click', _homeCloseJoinTlModal);
+modalHomeJoinBingo?.addEventListener('click', e => { if (e.target === modalHomeJoinBingo) _homeCloseJoinBingoModal(); });
+modalHomeJoinTl?.addEventListener('click', e => { if (e.target === modalHomeJoinTl) _homeCloseJoinTlModal(); });
 
-document.getElementById('home-btn-bingo-join')?.addEventListener('click', (e) => {
-  e.stopPropagation();
-  _homeStartBingoJoin(e.currentTarget);
-});
-document.getElementById('home-btn-tl-join')?.addEventListener('click', (e) => {
-  e.stopPropagation();
-  _homeStartTlJoin(e.currentTarget);
-});
+document.getElementById('home-btn-bingo-join')?.addEventListener('click', () => _homeStartBingoJoin());
+document.getElementById('home-btn-tl-join')?.addEventListener('click', () => _homeStartTlJoin());
 
