@@ -370,19 +370,16 @@ function _tlEnterSoloToolbarLayout() {
   const optionsFrame = document.getElementById('tl-list-options-frame');
   const toggleUnplacedBtn = document.getElementById('tl-btn-toggle-unplaced');
   const listWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
-  const soloToolbar = document.querySelector('.tl-solo-toolbar');
   const soloLeft = document.querySelector('.tl-solo-toolbar-left');
+  const soloCenter = document.querySelector('.tl-solo-toolbar-center');
   const soloRight = document.querySelector('.tl-solo-toolbar-right');
   const exitBtn = document.getElementById('tl-btn-exit-solo');
   if (listWrap && soloLeft) soloLeft.appendChild(listWrap);
   if (optionsFrame && soloLeft) soloLeft.appendChild(optionsFrame);
-  if (undoBtn && soloLeft) soloLeft.appendChild(undoBtn);
-  // Répartition centrée sur TOUTE la barre (position absolue) : enfant direct de .tl-solo-toolbar,
-  // pas de .tl-solo-toolbar-left, sinon elle colle à cette zone plus chargée que la droite.
-  if (splitLabel && soloToolbar && soloRight) {
-    splitLabel.classList.add('tl-solo-toolbar-split-centered');
-    soloToolbar.insertBefore(splitLabel, soloRight);
-  }
+  // Répartition + Annuler regroupés et centrés sur TOUTE la barre (voir .tl-solo-toolbar-center
+  // en CSS), pas dans .tl-solo-toolbar-left avec le cadre Options Liste.
+  if (splitLabel && soloCenter) soloCenter.appendChild(splitLabel);
+  if (undoBtn && soloCenter) soloCenter.appendChild(undoBtn);
   if (toggleUnplacedBtn && soloRight) soloRight.insertBefore(toggleUnplacedBtn, exitBtn);
 }
 function _tlExitSoloToolbarLayout() {
@@ -395,17 +392,31 @@ function _tlExitSoloToolbarLayout() {
   const line1Center = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-center');
   const line1Left = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-left');
   const toolbarLeft = document.querySelector('.ctrl-row-toolbar-left');
+  const toolbarCenter = document.querySelector('.tl-ctrl-row-toolbar .ctrl-row-toolbar-center');
   if (toggleUnplacedBtn && line1Right) line1Right.appendChild(toggleUnplacedBtn);
   // Répartition retourne dans .ctrl-row-grids-center (centrée sur la ligne 1 en mode normal),
   // pas dans .ctrl-row-grids-right avec Non placés — sinon elle se retrouve collée à droite au
   // retour du plein écran.
-  if (splitLabel) {
-    splitLabel.classList.remove('tl-solo-toolbar-split-centered');
-    if (line1Center) line1Center.appendChild(splitLabel);
-  }
+  if (splitLabel && line1Center) line1Center.appendChild(splitLabel);
   if (optionsFrame && toolbarLeft) toolbarLeft.appendChild(optionsFrame);
-  if (undoBtn && toolbarLeft) toolbarLeft.appendChild(undoBtn);
+  // Annuler retourne centré sur la ligne 2 (.ctrl-row-toolbar-center), pas à gauche avec le cadre
+  // Options Liste — même position qu'en mode normal avant l'entrée en plein écran.
+  if (undoBtn && toolbarCenter) toolbarCenter.appendChild(undoBtn);
   if (listWrap && line1Left) line1Left.appendChild(listWrap);
+}
+
+// Annuler centré sur TOUTE la barre comparaison (voir .tl-compare-toolbar-center en CSS), même
+// élément DOM physique que le mode normal/plein écran, déplacé en JS (même pattern que
+// _tlEnterSoloToolbarLayout/_tlExitSoloToolbarLayout ci-dessus).
+function _tlEnterCompareToolbarLayout() {
+  const undoBtn = document.getElementById('tl-btn-undo');
+  const compareCenter = document.querySelector('.tl-compare-toolbar-center');
+  if (undoBtn && compareCenter) compareCenter.appendChild(undoBtn);
+}
+function _tlExitCompareToolbarLayout() {
+  const undoBtn = document.getElementById('tl-btn-undo');
+  const toolbarCenter = document.querySelector('.tl-ctrl-row-toolbar .ctrl-row-toolbar-center');
+  if (undoBtn && toolbarCenter) toolbarCenter.appendChild(undoBtn);
 }
 
 function _applySoloTierlistModeIfNeeded() {
@@ -436,6 +447,8 @@ function _applyCompareTierlistModeIfNeeded() {
     _tlLocalActiveTierlistId = null;
     if (window._switchPage) window._switchPage('tierlist');
     document.body.classList.add('compare-tierlist-mode');
+    _tlEnterCompareToolbarLayout();
+    tlUpdateUndoBtn();
     if (_compareModeIsDedicatedWindow) {
       const exitBtn = document.getElementById('tl-compare-btn-exit');
       if (exitBtn) {
@@ -471,6 +484,7 @@ function _exitCompareTierlistMode() {
   }
   document.body.classList.remove('compare-tierlist-mode');
   document.title = 'LesMichels';
+  _tlExitCompareToolbarLayout();
   // Empêche le listener Firebase (_dbTierlist.on('value')) de rouvrir le mode au prochain snapshot
   _compareTierlistIds = [];
   _compareModeApplied = false;
@@ -5374,6 +5388,15 @@ function tlUndo() {
   }
   tlSave();
   tlRender();
+  // tlRender() ne touche jamais .tl-compare-view (masqué dans le mode comparaison, seule
+  // l'éditeur normal en dépend) — sans ce re-render dédié, l'undo modifiait bien les données mais
+  // l'écran de comparaison restait figé sur l'ancien état, donnant l'impression que le bouton ne
+  // faisait rien.
+  if (document.body.classList.contains('compare-tierlist-mode')) {
+    const ids = _tlCompareSelectedIds || [];
+    const tls = ids.map(id => tlState.tierlists.find(t => t.id === id)).filter(Boolean);
+    _tlRenderCompareView(tls);
+  }
   tlUpdateUndoBtn();
 }
 
@@ -6037,6 +6060,14 @@ function tlRender() {
   if (!tl || tl.archived) {
     tlEditor.classList.add('hidden');
     tlRenderGroupPanel(null);
+    // En mode comparaison, tlActiveTierlist() est null (pas de tierlist "active" unique, voir
+    // _tlOpenCompareInline) mais Annuler reste pertinent (undo agit sur le groupe entier) — le
+    // bouton est déplacé dans .tl-compare-toolbar-center (_tlEnterCompareToolbarLayout), donc
+    // tlRenderGroupPanel(null) ci-dessus l'a caché à tort, le réafficher explicitement ici.
+    if (document.body.classList.contains('compare-tierlist-mode')) {
+      const tlBtnUndoEl = document.getElementById('tl-btn-undo');
+      if (tlBtnUndoEl) tlBtnUndoEl.classList.remove('hidden');
+    }
     const tlListOptionsFrameEmpty = document.getElementById('tl-list-options-frame');
     if (tlListOptionsFrameEmpty) tlListOptionsFrameEmpty.classList.add('hidden');
     if (tlBtnToggleUnplaced) tlBtnToggleUnplaced.classList.add('hidden');
@@ -6105,10 +6136,16 @@ function _tlActiveGroupContext() {
 // Le bouton Chemin garde sa largeur NATURELLE comme Template/Liste (pas de largeur commune —
 // ça les écrasait tous à la largeur du plus étroit, texte illisible/chevauchant, voir capture
 // rapportée). Seule sa largeur est plafonnée (160px) puisque son texte peut être très long ; au-delà
-// il wrap sur 2 lignes + réduit sa police si besoin. L'alignement du groupe (Chemin sur 2 lignes
-// vs Template/Liste sur 1) se fait en CSS via align-items:flex-end sur .ctrl-row-grids-left (voir
-// style.css) — pas en forçant une hauteur commune en JS.
+// il wrap sur 2 lignes + réduit sa police si besoin. La hauteur du bouton est FIXE (32px, comme
+// Template/Liste, voir .tl-toolbar-btn.tl-btn-path en CSS) — jamais question de la faire varier.
+// Le texte doit donc être contraint à tenir dans ces 32px : on réduit la police jusqu'à ce que les
+// lignes réellement occupées (measurées après chaque changement de taille, pas juste "arrondi à 2")
+// tiennent dans la hauteur du bouton ; si même la plus petite taille déborde encore (chemin
+// extrêmement long), on tronque avec ellipsis en dernier recours plutôt que de laisser déborder
+// (bug initial : le calcul visait "≤2 lignes" sans jamais vérifier que 2 lignes à cette taille de
+// police tenaient réellement dans 32px, d'où débordement visuel du texte hors du bouton).
 const TL_PATH_BTN_MAX_WIDTH = 160;
+const TL_PATH_BTN_HEIGHT = 32;
 function _tlFitPathBtnLabel(labelEl) {
   const btn = labelEl.closest('.tl-btn-path');
   if (!btn) return;
@@ -6116,18 +6153,30 @@ function _tlFitPathBtnLabel(labelEl) {
   labelEl.style.whiteSpace = '';
   labelEl.style.wordBreak = '';
   labelEl.style.fontSize = '';
+  labelEl.style.overflow = '';
+  labelEl.style.textOverflow = '';
+  labelEl.style.display = '';
+  labelEl.style.webkitLineClamp = '';
+  labelEl.style.webkitBoxOrient = '';
   const naturalWidth = btn.scrollWidth;
   if (naturalWidth <= TL_PATH_BTN_MAX_WIDTH) return;
   btn.style.width = TL_PATH_BTN_MAX_WIDTH + 'px';
   labelEl.style.whiteSpace = 'normal';
   labelEl.style.wordBreak = 'break-word';
   const baseFontSize = parseFloat(getComputedStyle(labelEl).fontSize);
-  const baseLineHeight = baseFontSize * 1.2; // line-height:1.2 défini en CSS sur le bouton
-  const sizes = [1, 0.88, 0.78, 0.68];
+  const sizes = [1, 0.88, 0.78, 0.68, 0.6, 0.52];
+  let fits = false;
   for (const scale of sizes) {
-    if (scale !== 1) labelEl.style.fontSize = (baseFontSize * scale) + 'px';
-    const lines = Math.round(labelEl.scrollHeight / (baseLineHeight * scale));
-    if (lines <= 2) break;
+    labelEl.style.fontSize = (baseFontSize * scale) + 'px';
+    if (labelEl.scrollHeight <= TL_PATH_BTN_HEIGHT) { fits = true; break; }
+  }
+  if (!fits) {
+    // Dernier recours : tronque avec ellipsis sur 2 lignes plutôt que de déborder du bouton.
+    labelEl.style.overflow = 'hidden';
+    labelEl.style.textOverflow = 'ellipsis';
+    labelEl.style.display = '-webkit-box';
+    labelEl.style.webkitLineClamp = '2';
+    labelEl.style.webkitBoxOrient = 'vertical';
   }
 }
 
@@ -6162,9 +6211,9 @@ function tlRenderGroupPanel(tl) {
   const tlBtnUndoEl = document.getElementById('tl-btn-undo');
 
   if (!root) {
-    // Dossier sans aucun template : Template/Listes affichent "Vide", Comparaison/Plein écran/Annuler cachés.
-    if (tlTemplateDropdownLabel) tlTemplateDropdownLabel.textContent = 'Vide';
-    if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = 'Vide';
+    // Dossier sans aucun template : Template/Listes n'affichent rien, Comparaison/Plein écran/Annuler cachés.
+    if (tlTemplateDropdownLabel) tlTemplateDropdownLabel.textContent = '';
+    if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = '';
     if (tlBtnCompare) tlBtnCompare.classList.add('hidden');
     if (tlBtnOpenWindow) tlBtnOpenWindow.classList.add('hidden');
     if (tlBtnUndoEl) tlBtnUndoEl.classList.add('hidden');
@@ -6175,13 +6224,16 @@ function tlRenderGroupPanel(tl) {
   const members = tlState.tierlists.filter(t => !t.archived && (t.id === root.id || t.templateId === root.id));
 
   if (tlTemplateDropdownLabel) tlTemplateDropdownLabel.textContent = root.name;
-  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate && tl.templateId === root.id) ? tl.name : 'Vide';
+  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate && tl.templateId === root.id) ? tl.name : '';
 
   // Plein écran/Comparaison/Annuler n'ont de sens que si une tierlist de CE groupe est réellement
   // affichée dans l'éditeur (pas seulement un dossier sélectionné sans tierlist active). Annuler
   // reste visible sur un template comme sur une liste générée (undo agit sur tiers/images des deux).
+  // Plein écran, lui, n'a de sens que sur une liste générée : un template n'a pas de mode plein
+  // écran dédié (_applySoloTierlistModeIfNeeded masque Tiers/Reset pour permettre de changer de
+  // liste sans repasser en mode normal — un template n'a pas cette notion de "changer de liste").
   const tlIsGroupMember = !!(tl && (tl.id === root.id || tl.templateId === root.id));
-  if (tlBtnOpenWindow) tlBtnOpenWindow.classList.toggle('hidden', !tlIsGroupMember);
+  if (tlBtnOpenWindow) tlBtnOpenWindow.classList.toggle('hidden', !tlIsGroupMember || tl.isTemplate);
   if (tlBtnCompare) tlBtnCompare.classList.toggle('hidden', !tlIsGroupMember || members.filter(m => !m.isTemplate).length < 2);
   if (tlBtnUndoEl) tlBtnUndoEl.classList.toggle('hidden', !tlIsGroupMember);
   if (window.lucide) lucide.createIcons();
@@ -6621,11 +6673,7 @@ function _tlBuildFolderEl(folder, depth) {
 
   header.addEventListener('click', e => {
     if (e.target.closest('.tl-folder-arrow, .tl-folder-ctx-btn')) return;
-    _tlLocalActiveFolderId = folder.id;
-    _tlLocalActiveTierlistId = null;
-    _tlLocalNoSelection = true;
-    saveUserPrefs({ tlActiveFolderId: folder.id, tlActiveTierlistId: null, tlNoSelection: true });
-    tlRender();
+    _tlGoToFolder(folder.id);
   });
 
   // Une tierlist peut toujours être glissée dans ce dossier (fonctionnalité distincte du
@@ -6729,20 +6777,7 @@ function _tlRenderRecentFolderPaths() {
     path.textContent = pathText;
     row.appendChild(icon);
     row.appendChild(path);
-    row.addEventListener('click', () => {
-      _tlExpandFolderAncestors(f.id);
-      _tlLocalActiveFolderId = f.id;
-      if (templatesHere.length === 1) {
-        _tlLocalActiveTierlistId = templatesHere[0].id;
-        _tlLocalNoSelection = false;
-        saveUserPrefs({ tlActiveFolderId: f.id, tlActiveTierlistId: templatesHere[0].id, tlNoSelection: false });
-      } else {
-        _tlLocalActiveTierlistId = null;
-        _tlLocalNoSelection = true;
-        saveUserPrefs({ tlActiveFolderId: f.id, tlActiveTierlistId: null, tlNoSelection: true });
-      }
-      tlRender();
-    });
+    row.addEventListener('click', () => _tlGoToFolder(f.id));
     container.appendChild(row);
   });
   if (window.lucide) lucide.createIcons();
@@ -9557,6 +9592,8 @@ function _tlOpenCompareInline() {
   const ids = _tlCompareSelectedIds || [];
   const tls = ids.map(id => tlState.tierlists.find(t => t.id === id)).filter(Boolean);
   document.body.classList.add('compare-tierlist-mode');
+  _tlEnterCompareToolbarLayout();
+  tlUpdateUndoBtn();
   if (tls.length === 0) {
     document.title = 'Comparaison — LesMichels';
     _tlCompareTierlists = [];
@@ -9702,13 +9739,17 @@ function _tlAddDropdownSwitchItem(menu, member, isActive, closeMenu, displayName
   menu.appendChild(item);
 }
 
-// Navigue vers un dossier de l'arborescence tierlist (désélectionne la liste/template actif).
+// Navigue vers un dossier de l'arborescence tierlist. S'il contient au moins un template, ouvre
+// directement le plus récent (dernier créé = dernier du tableau, push en fin dans tlCreate) plutôt
+// que de désélectionner — sinon reste sur l'écran "gros boutons" du dossier vide.
 function _tlGoToFolder(folderId) {
   _tlExpandFolderAncestors(folderId);
   _tlLocalActiveFolderId = folderId;
-  _tlLocalActiveTierlistId = null;
-  _tlLocalNoSelection = true;
-  saveUserPrefs({ tlActiveFolderId: folderId, tlActiveTierlistId: null, tlNoSelection: true });
+  const templatesHere = tlState.tierlists.filter(t => t.isTemplate && !t.archived && (t.folderId || null) === (folderId || null));
+  const mostRecent = templatesHere[templatesHere.length - 1] || null;
+  _tlLocalActiveTierlistId = mostRecent ? mostRecent.id : null;
+  _tlLocalNoSelection = !mostRecent;
+  saveUserPrefs({ tlActiveFolderId: folderId, tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: _tlLocalNoSelection });
   tlRender();
 }
 
@@ -10630,12 +10671,7 @@ function _homeRenderRecentTl() {
       if (templatesHere.length === 1) _homeGoToTlTierlist(templatesHere[0]);
       else {
         window._switchPage('tierlist');
-        _tlExpandFolderAncestors(f.id);
-        _tlLocalActiveFolderId = f.id;
-        _tlLocalActiveTierlistId = null;
-        _tlLocalNoSelection = true;
-        saveUserPrefs({ activePage: 'tierlist', tlActiveFolderId: f.id, tlActiveTierlistId: null, tlNoSelection: true });
-        tlRender();
+        _tlGoToFolder(f.id);
       }
     });
     list.appendChild(row);

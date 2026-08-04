@@ -962,19 +962,31 @@ body.solo-tierlist-mode #tl-btn-reset {
 }
 /* Plein écran tierlist : [Liste + cadre Options Liste + Annuler] à gauche / Répartition centrée
    sur TOUTE la barre (position absolue, comme sur la ligne 1 du mode normal — sinon elle colle à
-   la zone gauche, plus chargée que la droite) / [Non placés + Quitter plein écran] à droite. */
+   la zone gauche, plus chargée que la droite) / [Non placés + Quitter plein écran] à droite.
+   align-items:flex-end (pas center) : la zone gauche est plus haute que la droite à cause du
+   titre "LISTE" au-dessus du bouton Liste (voir .tl-solo-toolbar-left) — centrer les deux zones
+   l'une par rapport à l'autre les décale, la droite (plus petite) se retrouvant plus haute que
+   la gauche même si chacune est déjà correctement alignée en interne (bug rapporté). */
 .tl-solo-toolbar {
-  align-items: center;
+  align-items: flex-end;
   gap: 12px;
   flex-wrap: nowrap;
   justify-content: space-between;
   position: relative;
 }
-#tl-split-slider-label.tl-solo-toolbar-split-centered {
+/* Répartition + Annuler regroupés et centrés sur TOUTE la barre plein écran (position absolue,
+   enfant direct de .tl-solo-toolbar) — Annuler est déplacé ici en JS (_tlEnterSoloToolbarLayout)
+   pour rester à côté de Répartition plutôt que dans .tl-solo-toolbar-left avec le cadre Options
+   Liste, comme demandé. align-items:flex-end car Répartition (curseur+label empilés, ~41px) est
+   plus haute que le bouton Annuler (32px) : sans ça leurs bas ne seraient pas alignés. */
+.tl-solo-toolbar-center {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
 }
 .tl-solo-toolbar-left,
 .tl-solo-toolbar-right {
@@ -982,6 +994,16 @@ body.solo-tierlist-mode #tl-btn-reset {
   align-items: center;
   gap: 12px;
   min-width: 0;
+}
+/* Le bouton Liste (déplacé ici en plein écran, voir _tlEnterSoloToolbarLayout) a un petit titre
+   "Liste" au-dessus comme en mode normal (.ctrl-row-line1 .ctrl-row-grids-left), ce qui rend
+   .tl-solo-toolbar-left plus haut que .tl-solo-toolbar-right (Non placés/Quitter, sans titre).
+   Les DEUX zones doivent aligner sur le bas (flex-end), pas seulement la gauche : sinon la rangée
+   entière prend la hauteur de la zone gauche (la plus haute) et la zone droite, restée centrée
+   sur cette hauteur totale, se retrouve trop haute par rapport à Liste/Capture/Noms (bug rapporté). */
+.tl-solo-toolbar-left,
+.tl-solo-toolbar-right {
+  align-items: flex-end;
 }
 .tl-solo-toolbar-right { justify-content: flex-end; }
 
@@ -1030,6 +1052,15 @@ body.compare-tierlist-mode #page-tierlist.page.active {
   border-radius: var(--radius-lg);
   padding: 10px 16px 6px;
   margin-bottom: 14px;
+}
+/* Annuler centré sur TOUTE la barre comparaison (position absolue, comme Répartition+Annuler en
+   plein écran, voir .tl-solo-toolbar-center) — déplacé ici en JS depuis la ligne 2 du mode normal
+   (_tlEnterCompareToolbarLayout/_tlExitCompareToolbarLayout, même pattern que le plein écran). */
+.tl-compare-toolbar-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
 .tl-compare-view {
   display: flex;
@@ -1489,14 +1520,20 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 /* Bouton Chemin : largeur NATURELLE comme Template/Liste (pas de largeur imposée — les forcer à
    une largeur commune les écrase tous à la largeur du plus étroit, texte illisible/chevauchant).
    Seule sa propre largeur est plafonnée (voir TL_PATH_BTN_MAX_WIDTH en JS, _tlFitPathBtnLabel) car
-   son texte peut être très long ; au-delà il wrap sur 2 lignes + réduit sa police. L'alignement
-   avec Template/Liste se fait via align-items:flex-end sur .ctrl-row-grids-left ci-dessous. */
+   son texte peut être très long ; au-delà il wrap sur 2 lignes + réduit sa police jusqu'à ce que ça
+   tienne dans cette même hauteur de 32px (voir TL_PATH_BTN_HEIGHT en JS) — jamais l'inverse.
+   Hauteur FIXE 32px, identique à Template/Liste (jamais auto/min-height/40px) : sinon le bouton
+   grandit/rétrécit selon le texte affiché à chaque changement de dossier/template, ce qui décale
+   toute la rangée de boutons (bug rapporté, persistait avec 40px car le JS ne garantissait pas que
+   2 lignes réduites tenaient réellement dedans). Contenu centré verticalement via flexbox. */
 .tl-toolbar-btn.tl-btn-path {
-  height: auto;
-  min-height: 32px;
-  padding: 4px 12px;
+  height: 32px;
+  padding: 0 12px;
   line-height: 1.2;
   text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .tl-btn-path #tl-path-dropdown-label {
   display: inline-block;
@@ -1521,13 +1558,19 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 /* Cadre discret regroupant les options propres à la liste active (comme .grid-view-wrapper
    pour une grille bingo individuelle), masqué sur un template (voir tlRender). Toujours sur
    une seule ligne (jamais de wrap) — la zone gauche 2x plus large (voir .ctrl-row-toolbar-left)
-   lui laisse la place nécessaire. */
+   lui laisse la place nécessaire.
+   Padding vertical nul (seulement horizontal) : le cadre est déplacé tel quel dans
+   .tl-solo-toolbar-left en plein écran (_tlEnterSoloToolbarLayout), où le conteneur aligne tout
+   sur align-items:flex-end. Avec un padding vertical, le bord du cadre dépasse ses boutons
+   internes (32px) de ce padding, donc Capture/Noms apparaissaient plus haut que Liste/Annuler/
+   Non placés/Quitter plein écran, qui eux touchent directement le bas de la rangée (bug rapporté).
+   Sans padding vertical, le cadre épouse exactement la hauteur 32px de ses enfants. */
 .tl-list-options-frame {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
   gap: 6px 8px;
-  padding: 5px 10px;
+  padding: 0 10px;
   border-radius: var(--radius-lg);
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -2896,6 +2939,17 @@ body.solo-tierlist-mode .tl-layout {
   background: rgba(224,120,0,0.28) !important;
   color: #ff9518 !important;
   border-color: #ff9518 !important;
+}
+/* Grisé quand il n'y a rien à annuler (tlUpdateUndoBtn pose disabled selon _tlUndoStack.length),
+   quel que soit le mode (normal/plein écran/comparaison) puisque c'est le même bouton physique. */
+.tl-btn-orange:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.tl-btn-orange:disabled:hover {
+  background: rgba(224,120,0,0.15) !important;
+  color: #e07800 !important;
+  border-color: #e07800 !important;
 }
 .tl-toolbar-side {
   display: flex;

@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=239" />
+  <link rel="stylesheet" href="style.css?v=244" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -109,6 +109,7 @@
           <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
           <button class="tl-toolbar-btn tl-btn-capture" id="tl-compare-btn-capture" title="Capturer la comparaison"><i data-lucide="camera"></i> Capture</button>
         </div>
+        <div class="tl-compare-toolbar-center"></div>
         <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-compare-btn-exit" title="Quitter le mode comparaison"><i data-lucide="x"></i> Quitter comparaison</button>
       </div>
       <div id="tl-compare-view" class="tl-compare-view hidden"></div>
@@ -153,8 +154,8 @@
             </div>
           </div>
 
-          <!-- Ligne 2 : cadre Options Liste + Annuler à gauche (masqués sur un template ou sans
-               liste active), rien au centre, Comparaison + Plein écran à droite. -->
+          <!-- Ligne 2 : cadre Options Liste à gauche (masqué sur un template ou sans liste
+               active), Annuler centré, Comparaison + Plein écran à droite. -->
           <div class="ctrl-row ctrl-row-toolbar tl-ctrl-row-toolbar">
             <div class="ctrl-row-toolbar-left">
               <div class="tl-list-options-frame" id="tl-list-options-frame">
@@ -169,12 +170,13 @@
                 <button class="tl-toolbar-btn tl-btn-neutral tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Tiers</button>
                 <button class="tl-toolbar-btn tl-btn-reset tl-shrink-0" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
               </div>
+            </div>
+            <div class="ctrl-row-toolbar-center">
               <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
             </div>
-            <div class="ctrl-row-toolbar-center"></div>
             <div class="ctrl-row-toolbar-right">
-              <button class="tl-toolbar-btn tl-btn-yellow tl-group-elem hidden" id="tl-btn-compare" title="Comparer plusieurs listes de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparaison</button>
               <button class="tl-toolbar-btn tl-btn-yellow tl-btn-open-window tl-group-elem" id="tl-btn-open-window" title="Ouvrir cette liste en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
+              <button class="tl-toolbar-btn tl-btn-yellow tl-group-elem hidden" id="tl-btn-compare" title="Comparer plusieurs listes de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparaison</button>
             </div>
           </div>
 
@@ -186,6 +188,7 @@
                barre plein écran est purement fonctionnelle, sans titre. -->
           <div class="ctrl-row tl-solo-toolbar btn-fullscreen-only">
             <div class="tl-solo-toolbar-left"></div>
+            <div class="tl-solo-toolbar-center"></div>
             <div class="tl-solo-toolbar-right">
               <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-btn-exit-solo" title="Quitter le mode plein écran"><i data-lucide="x"></i> Quitter plein écran</button>
             </div>
@@ -1315,6 +1318,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=332"></script>
+  <script src="app.js?v=339"></script>
 </body>
 </html>
