@@ -521,7 +521,7 @@ function _applyPrefsAndRender() {
     _selectedGridIds = loadLocalSelectedGridsForFolder(folder.id);
     // Sélectionner toutes les grilles non archivées s'il n'y a jamais eu de sélection sauvegardée
     if (_selectedGridIds.length === 0 && !hasSavedSelection) {
-      _selectedGridIds = (folder.grids || []).filter(g => !g.archived).slice(0, 3).map(g => g.id);
+      _selectedGridIds = (folder.grids || []).filter(g => !g.archived).map(g => g.id);
     }
   }
   _applySoloGridModeIfNeeded();
@@ -572,7 +572,7 @@ function saveLocalFontScale(scale) {
   saveUserPrefs({ fontScale: _localFontScale });
 }
 
-// IDs des grilles sélectionnées (affichées simultanément, max 3)
+// IDs des grilles sélectionnées (affichées simultanément, nombre illimité)
 // Stocké par dossier : { [folderId]: [gridId, ...] }
 let _selectedGridIds = [];
 let _selectedGridsByFolder = {};
@@ -581,7 +581,7 @@ let _draggingGridWrapper = false;
 const _EMPTY_SELECTION = '__empty__';
 
 function saveLocalSelectedGrids(ids) {
-  _selectedGridIds = ids.slice(0, 3);
+  _selectedGridIds = ids.slice();
   const folder = activeFolder();
   if (folder) {
     // Firebase supprime les tableaux vides — on stocke un marqueur pour distinguer
@@ -1094,7 +1094,7 @@ function switchFolder(id) {
   if (_selectedGridIds.length === 0 && !hasSavedSelection) {
     const f = findFolderById(state.folders, id);
     if (f) {
-      _selectedGridIds = (f.grids || []).filter(g => !g.archived).slice(0, 3).map(g => g.id);
+      _selectedGridIds = (f.grids || []).filter(g => !g.archived).map(g => g.id);
     }
   }
   renderAllFolders();
@@ -1786,10 +1786,11 @@ function renderGridsBreadcrumb() {
   const fsContainer = document.getElementById('bingo-fullscreen-breadcrumb');
   if (container) container.innerHTML = '';
   if (fsContainer) fsContainer.textContent = '';
-  if (!_localActiveFolderId) return;
-  const path = getFolderPath(state.folders, _localActiveFolderId);
+  const path = _localActiveFolderId ? getFolderPath(state.folders, _localActiveFolderId) : [];
   if (fsContainer) fsContainer.textContent = path.map(f => f.name).join(' › ');
-  if (!container) return;
+  const pathLabel = document.getElementById('path-dropdown-label');
+  if (pathLabel) pathLabel.textContent = path.length ? path.map(f => f.name).join(' › ') : 'Racine';
+  if (!container || !_localActiveFolderId) return;
   path.forEach((f, i) => {
     if (i > 0) {
       const sep = document.createElement('span');
@@ -1804,6 +1805,84 @@ function renderGridsBreadcrumb() {
   });
 }
 
+// ── Bouton Chemin (mode normal) : arborescence pliable/dépliable des dossiers, même comportement
+// que le bouton Chemin de la partie Tier List (voir _tlRenderPathMenuRows/_tlGoToFolder). Les
+// dossiers bingo sont imbriqués (folder.folders), pas une liste plate avec parentId comme tlState.
+function _renderPathMenuRows(menu, rootFolders) {
+  menu.querySelectorAll('.tl-path-menu-row').forEach(el => el.remove());
+
+  const buildRow = (folder, depth) => {
+    const children = (folder.folders || []).filter(f => !f.archived);
+    const hasChildren = children.length > 0;
+    const key = 'bingo_folder_open_' + folder.id;
+    const isOpen = sessionStorage.getItem(key) === '1';
+
+    const row = document.createElement('div');
+    row.className = 'tl-path-menu-row';
+    row.style.paddingLeft = (depth * 14) + 'px';
+
+    const arrow = document.createElement('span');
+    arrow.className = 'tl-path-menu-arrow' + (isOpen ? ' open' : '');
+    arrow.innerHTML = hasChildren ? '<i data-lucide="chevron-right"></i>' : '';
+    if (hasChildren) {
+      arrow.addEventListener('click', ev => {
+        ev.stopPropagation();
+        sessionStorage.setItem(key, isOpen ? '0' : '1');
+        _renderPathMenuRows(menu, rootFolders);
+      });
+    }
+    row.appendChild(arrow);
+
+    const icon = document.createElement('span');
+    icon.className = 'tl-path-menu-icon';
+    icon.innerHTML = '<i data-lucide="folder"></i>';
+    row.appendChild(icon);
+
+    const name = document.createElement('span');
+    name.className = 'tl-path-menu-name';
+    name.textContent = folder.name;
+    row.appendChild(name);
+
+    row.addEventListener('click', () => {
+      menu.classList.add('hidden');
+      if (_localActiveFolderId !== folder.id) switchFolder(folder.id);
+    });
+
+    menu.appendChild(row);
+    if (hasChildren && isOpen) children.forEach(f => buildRow(f, depth + 1));
+  };
+
+  const roots = (rootFolders || []).filter(f => !f.archived);
+  roots.forEach(f => buildRow(f, 0));
+
+  if (roots.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'tl-path-menu-row';
+    empty.style.cssText = 'opacity:0.6;cursor:default;';
+    empty.textContent = 'Aucun dossier';
+    menu.appendChild(empty);
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+const _btnPathDropdown = document.getElementById('btn-path-dropdown');
+const _pathDropdownMenu = document.getElementById('path-dropdown-menu');
+if (_btnPathDropdown && _pathDropdownMenu) {
+  _btnPathDropdown.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = !_pathDropdownMenu.classList.contains('hidden');
+    if (isOpen) {
+      _pathDropdownMenu.classList.add('hidden');
+    } else {
+      _pathDropdownMenu.classList.remove('hidden');
+      positionCtxMenu(_pathDropdownMenu, null, _btnPathDropdown);
+      _renderPathMenuRows(_pathDropdownMenu, state.folders);
+    }
+  });
+  _pathDropdownMenu.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', () => _pathDropdownMenu.classList.add('hidden'));
+}
+
 function toggleGridSelection(gridId) {
   const s = activeSubtheme();
   if (!s) return;
@@ -1814,7 +1893,6 @@ function toggleGridSelection(gridId) {
       s.activeGridId = _selectedGridIds.length > 0 ? _selectedGridIds[0] : null;
     }
   } else {
-    if (_selectedGridIds.length >= 3) return;
     _selectedGridIds.push(gridId);
     s.activeGridId = gridId;
   }
@@ -2425,7 +2503,6 @@ function createGrid(name) {
   s.activeGridId = g.id;
   // Sélectionner automatiquement la nouvelle grille
   if (!_selectedGridIds.includes(g.id)) {
-    if (_selectedGridIds.length >= 3) _selectedGridIds.pop();
     _selectedGridIds.unshift(g.id);
     saveLocalSelectedGrids(_selectedGridIds);
   }
@@ -2982,6 +3059,7 @@ function renderGrid() {
   updateClearGridsButton();
   updateOpenGridsWindowButton();
   updateResetButton();
+  document.getElementById('btn-cases-panel')?.classList.remove('btn-attention');
   gridWrapper.innerHTML = '';
   gridWrapper.style.justifyContent = '';
   gridWrapper.style.alignItems = '';
@@ -3081,6 +3159,10 @@ function renderGrid() {
   const canGenerate = !locked && (enoughElements || canFillEmptyCellsVisibleGrids());
   btnGenerate.disabled = !canGenerate;
   btnGenerate.classList.toggle('btn-disabled', !canGenerate);
+  // Surbrillance du bouton Cases pilotée uniquement par le nombre minimal de cases (enoughElements),
+  // pas par canGenerate : tant que ce seuil n'est pas atteint, la surbrillance reste affichée même
+  // si canFillEmptyCellsVisibleGrids() permettrait déjà de générer partiellement.
+  document.getElementById('btn-cases-panel')?.classList.toggle('btn-attention', !enoughElements);
 
   gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}`;
 
@@ -3180,7 +3262,15 @@ function _adjustBingoGridSizes() {
   const panelGridStyle = getComputedStyle(gridWrapper.closest('.panel-grid'));
   const mainStyle = getComputedStyle(document.querySelector('.main'));
   const bottomReserve = parseFloat(panelGridStyle.paddingBottom) + parseFloat(panelGridStyle.borderBottomWidth) + parseFloat(mainStyle.paddingBottom);
-  const availableHeight = window.innerHeight - gridWrapper.getBoundingClientRect().top - bottomReserve;
+  const totalAvailableHeight = window.innerHeight - gridWrapper.getBoundingClientRect().top - bottomReserve;
+  // Avec flex-wrap, un grand nombre de grilles peut occuper plusieurs rangées : diviser la
+  // hauteur disponible par le nombre de rangées réellement affichées (détecté par les tops
+  // distincts des wrappers), sinon chaque grille tente de prendre toute la hauteur du viewport
+  // et déborde dès qu'il y a plus d'une rangée.
+  const rowTops = new Set(Array.from(wrappers).map(w => Math.round(w.getBoundingClientRect().top)));
+  const rowCount = Math.max(1, rowTops.size);
+  const wrapperGapV = parseFloat(getComputedStyle(gridWrapper).rowGap || getComputedStyle(gridWrapper).gap) || 0;
+  const availableHeight = (totalAvailableHeight - wrapperGapV * (rowCount - 1)) / rowCount;
   wrappers.forEach(wrapper => {
     const gridEl = wrapper.querySelector('.bingo-grid');
     if (!gridEl) return;
@@ -3728,68 +3818,58 @@ function confirmMoveFolder() {
 // ──────────────────────────────────────────────
 // Modale — importer les cases d'un autre dossier
 // ──────────────────────────────────────────────
-let _importElementsTargetId = null;
+let _elementPresetsTargetId = null;
+
+// Reconstruit un arbre filtré ne gardant que les dossiers éligibles (cases présentes, pas la
+// cible) et leurs ancêtres (nécessaires pour l'affichage hiérarchique, même sans case propre) —
+// pour réutiliser _setupFolderTreeDropdown (dropdown "Emplacement" arborescent générique).
+function _buildImportElementsSourceTree(folders, targetId) {
+  return (folders || []).filter(f => !f.archived).map(f => {
+    const children = _buildImportElementsSourceTree(f.folders, targetId);
+    const eligible = f.id !== targetId && (f.elements || []).length > 0;
+    if (!eligible && children.length === 0) return null;
+    return { id: f.id, name: f.name, folders: children };
+  }).filter(Boolean);
+}
 
 function openImportElementsModal(targetId) {
-  _importElementsTargetId = targetId;
+  _elementPresetsTargetId = targetId;
   const sel = document.getElementById('import-elements-source-select');
+  const dropdownBtn = document.getElementById('import-elements-source-dropdown-btn');
   if (sel) {
     sel.innerHTML = '';
     const placeholder = document.createElement('option');
     placeholder.value = '';
     placeholder.textContent = '— Choisir un dossier —';
     sel.appendChild(placeholder);
-    function _addSrc(folders, depth) {
-      (folders || []).filter(f => !f.archived).forEach(f => {
-        if (f.id !== targetId && (f.elements || []).length > 0) {
-          const opt = document.createElement('option');
-          opt.value = f.id;
-          opt.textContent = '  '.repeat(depth) + f.name;
-          sel.appendChild(opt);
-        }
-        _addSrc(f.folders, depth + 1);
-      });
-    }
-    _addSrc(state.folders, 0);
   }
-  const replaceCb = document.getElementById('import-elements-replace-checkbox');
+  if (sel && dropdownBtn) {
+    const tree = _buildImportElementsSourceTree(state.folders, targetId);
+    _setupFolderTreeDropdown(sel, dropdownBtn, tree, '— Choisir un dossier —', 'fp_importelements_collapsed');
+  }
+  const replaceCb = document.getElementById('element-preset-replace-checkbox');
   if (replaceCb) replaceCb.checked = false;
-  const modal = document.getElementById('modal-import-elements');
-  if (modal) modal.classList.remove('hidden');
-}
-
-function closeImportElementsModal() {
-  const modal = document.getElementById('modal-import-elements');
-  if (modal) modal.classList.add('hidden');
-  _importElementsTargetId = null;
 }
 
 function confirmImportElements() {
-  if (!_importElementsTargetId) return;
+  if (!_elementPresetsTargetId) return;
   const sel = document.getElementById('import-elements-source-select');
   const sourceRootId = sel ? sel.value : '';
   if (!sourceRootId) return;
-  const replaceCb = document.getElementById('import-elements-replace-checkbox');
+  const replaceCb = document.getElementById('element-preset-replace-checkbox');
   const replace = replaceCb ? replaceCb.checked : false;
-  const added = importElements(sourceRootId, _importElementsTargetId, replace);
-  closeImportElementsModal();
+  const added = importElements(sourceRootId, _elementPresetsTargetId, replace);
+  closeElementPresetsModal();
   if (added === 0 && !replace) {
     alert('Toutes les cases existent déjà dans ce dossier.');
   }
 }
 
-(function() {
-  const modal = document.getElementById('modal-import-elements');
-  const btnClose = document.getElementById('btn-close-import-elements-modal');
-  const btnConfirm = document.getElementById('btn-confirm-import-elements');
-  const btnCancel = document.getElementById('btn-cancel-import-elements');
-  if (btnClose) btnClose.addEventListener('click', closeImportElementsModal);
-  if (btnConfirm) btnConfirm.addEventListener('click', confirmImportElements);
-  if (btnCancel) btnCancel.addEventListener('click', closeImportElementsModal);
-})();
+document.getElementById('btn-confirm-import-elements').addEventListener('click', confirmImportElements);
 
 // ──────────────────────────────────────────────
-// Modale — gestion des presets de cases
+// Modale "Preset cases" — fusion import depuis un autre dossier + gestion des presets
+// enregistrés : cliquer un preset l'importe directement dans le dossier actif.
 // ──────────────────────────────────────────────
 function renderElementPresetList() {
   const list = document.getElementById('element-preset-list');
@@ -3811,9 +3891,18 @@ function renderElementPresetList() {
     btn.className = 'btn-action btn-secondary';
     btn.style.flex = '1';
     btn.style.textAlign = 'left';
-    btn.title = (p.elements || []).join(', ');
+    btn.title = 'Importer ce preset dans le dossier actif';
     btn.textContent = `${p.name} (${(p.elements || []).length})`;
-    btn.addEventListener('click', () => openElementPresetEditModal(p.id));
+    btn.addEventListener('click', () => {
+      if (!_elementPresetsTargetId) return;
+      const replaceCb = document.getElementById('element-preset-replace-checkbox');
+      const replace = replaceCb ? replaceCb.checked : false;
+      const added = importElementTexts(p.elements || [], _elementPresetsTargetId, replace);
+      closeElementPresetsModal();
+      if (added === 0 && !replace) {
+        alert('Toutes les cases existent déjà dans ce dossier.');
+      }
+    });
     row.appendChild(btn);
 
     const editBtn = document.createElement('button');
@@ -3837,7 +3926,8 @@ function renderElementPresetList() {
   if (window.lucide) lucide.createIcons();
 }
 
-function openElementPresetsModal() {
+function openElementPresetsModal(targetId) {
+  openImportElementsModal(targetId);
   renderElementPresetList();
   const saveInput = document.getElementById('element-preset-save-input');
   if (saveInput) saveInput.value = '';
@@ -3846,6 +3936,7 @@ function openElementPresetsModal() {
 
 function closeElementPresetsModal() {
   document.getElementById('modal-element-presets').classList.add('hidden');
+  _elementPresetsTargetId = null;
 }
 
 document.getElementById('btn-close-element-presets-modal').addEventListener('click', closeElementPresetsModal);
@@ -3864,16 +3955,55 @@ document.getElementById('btn-save-current-as-element-preset').addEventListener('
 });
 
 // ──────────────────────────────────────────────
-// Modale — édition d'un preset de cases (nom + textarea)
+// Modale — édition d'un preset de cases (nom + liste de cases individuelles, comme le panneau Cases)
 // ──────────────────────────────────────────────
 let _elementPresetEditId = null; // null = nouveau preset
+let _elementPresetEditTexts = [];
+
+function _updateElementPresetEditTitle() {
+  const titleEl = document.getElementById('element-preset-edit-title');
+  if (!titleEl) return;
+  const base = _elementPresetEditId ? 'Modifier le preset' : 'Nouveau preset';
+  titleEl.textContent = `${base} (${_elementPresetEditTexts.length})`;
+}
+
+function _renderElementPresetEditList() {
+  const list = document.getElementById('element-preset-edit-list');
+  if (!list) return;
+  _updateElementPresetEditTitle();
+  list.innerHTML = '';
+  _elementPresetEditTexts.forEach((text, idx) => {
+    const li = document.createElement('li');
+    li.className = 'element-item';
+
+    const span = document.createElement('span');
+    span.className = 'element-text';
+    span.textContent = text;
+    li.appendChild(span);
+
+    const del = document.createElement('button');
+    del.className = 'elem-menu-btn';
+    del.title = 'Supprimer cette case';
+    del.innerHTML = '<i data-lucide="x"></i>';
+    del.addEventListener('click', () => {
+      _elementPresetEditTexts.splice(idx, 1);
+      _renderElementPresetEditList();
+    });
+    li.appendChild(del);
+
+    list.appendChild(li);
+  });
+  if (window.lucide) lucide.createIcons();
+}
 
 function openElementPresetEditModal(presetId) {
   _elementPresetEditId = presetId;
   const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
-  document.getElementById('element-preset-edit-title').textContent = preset ? 'Modifier le preset' : 'Nouveau preset';
+  _elementPresetEditTexts = preset ? (preset.elements || []).slice() : [];
   document.getElementById('element-preset-edit-name').value = preset ? preset.name : '';
-  document.getElementById('element-preset-edit-textarea').value = preset ? (preset.elements || []).join('\n') : '';
+  const editInput = document.getElementById('element-preset-edit-input');
+  if (editInput) editInput.value = '';
+  _renderElementPresetEditList();
   document.getElementById('modal-element-presets').classList.add('hidden');
   document.getElementById('modal-element-preset-edit').classList.remove('hidden');
 }
@@ -3884,74 +4014,33 @@ function closeElementPresetEditModal() {
   renderElementPresetList();
 }
 
+function _addElementPresetEditText() {
+  const input = document.getElementById('element-preset-edit-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  _elementPresetEditTexts.push(text);
+  input.value = '';
+  _renderElementPresetEditList();
+  input.focus();
+}
+document.getElementById('btn-element-preset-edit-add').addEventListener('click', _addElementPresetEditText);
+document.getElementById('element-preset-edit-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') _addElementPresetEditText();
+});
+
 document.getElementById('btn-confirm-element-preset-edit').addEventListener('click', () => {
   const name = document.getElementById('element-preset-edit-name').value.trim();
   if (!name) return;
-  const texts = document.getElementById('element-preset-edit-textarea').value.split('\n').map(t => t.trim()).filter(Boolean);
   if (_elementPresetEditId) {
-    updateElementPreset(_elementPresetEditId, name, texts);
+    updateElementPreset(_elementPresetEditId, name, _elementPresetEditTexts);
   } else {
-    saveElementPreset(name, texts);
+    saveElementPreset(name, _elementPresetEditTexts);
   }
   closeElementPresetEditModal();
 });
 document.getElementById('btn-cancel-element-preset-edit').addEventListener('click', closeElementPresetEditModal);
 document.getElementById('btn-close-element-preset-edit-modal').addEventListener('click', closeElementPresetEditModal);
-
-// ──────────────────────────────────────────────
-// Modale — importer un preset de cases dans le dossier actif
-// ──────────────────────────────────────────────
-let _importPresetTargetId = null;
-
-function openImportPresetModal(targetId) {
-  _importPresetTargetId = targetId;
-  const sel = document.getElementById('import-preset-select');
-  sel.innerHTML = '';
-  const presets = getElementPresets();
-  if (presets.length === 0) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = '— Aucun preset —';
-    sel.appendChild(opt);
-  } else {
-    presets.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = `${p.name} (${(p.elements || []).length})`;
-      sel.appendChild(opt);
-    });
-  }
-  const replaceCb = document.getElementById('import-preset-replace-checkbox');
-  if (replaceCb) replaceCb.checked = false;
-  document.getElementById('modal-import-preset').classList.remove('hidden');
-}
-
-function closeImportPresetModal() {
-  document.getElementById('modal-import-preset').classList.add('hidden');
-  _importPresetTargetId = null;
-}
-
-document.getElementById('btn-close-import-preset-modal').addEventListener('click', closeImportPresetModal);
-document.getElementById('btn-cancel-import-preset').addEventListener('click', closeImportPresetModal);
-document.getElementById('btn-confirm-import-preset').addEventListener('click', () => {
-  if (!_importPresetTargetId) return;
-  const sel = document.getElementById('import-preset-select');
-  const presetId = sel ? sel.value : '';
-  if (!presetId) return;
-  const preset = getElementPresets().find(p => p.id === presetId);
-  if (!preset) return;
-  const replaceCb = document.getElementById('import-preset-replace-checkbox');
-  const replace = replaceCb ? replaceCb.checked : false;
-  const added = importElementTexts(preset.elements || [], _importPresetTargetId, replace);
-  closeImportPresetModal();
-  if (added === 0 && !replace) {
-    alert('Toutes les cases existent déjà dans ce dossier.');
-  }
-});
-document.getElementById('btn-manage-presets-from-import').addEventListener('click', () => {
-  closeImportPresetModal();
-  openElementPresetsModal();
-});
 
 // ──────────────────────────────────────────────
 // Onglets actifs / archivés
@@ -3978,20 +4067,10 @@ tabBtns.forEach(btn => {
 btnAdd.addEventListener('click', addElement);
 inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') addElement(); });
 
-document.getElementById('btn-import-elements-panel').addEventListener('click', () => {
-  const s = activeSubtheme();
-  if (!s) return;
-  openImportElementsModal(s.id);
-});
-
 document.getElementById('btn-presets-elements-panel').addEventListener('click', () => {
   const s = activeSubtheme();
   if (!s) return;
-  if (getElementPresets().length === 0) {
-    openElementPresetsModal();
-  } else {
-    openImportPresetModal(s.id);
-  }
+  openElementPresetsModal(s.id);
 });
 
 document.getElementById('btn-clear-elements-panel').addEventListener('click', () => {
@@ -4083,26 +4162,7 @@ document.getElementById('cases-panel-close').addEventListener('click', () => {
   document.getElementById('cases-panel').classList.remove('open');
 });
 
-// ── Menu "Options Grilles" (mode normal) : Taille/Bloquer/Redimensionner/Générer/Vider/Reset ──
-const _gridsOptionsMenu = document.getElementById('grids-options-menu');
-const _btnGridsOptions = document.getElementById('btn-grids-options');
-if (_btnGridsOptions && _gridsOptionsMenu) {
-  _btnGridsOptions.addEventListener('click', e => {
-    e.stopPropagation();
-    const isOpen = !_gridsOptionsMenu.classList.contains('hidden');
-    if (isOpen) {
-      _gridsOptionsMenu.classList.add('hidden');
-    } else {
-      _gridsOptionsMenu.classList.remove('hidden');
-      positionCtxMenu(_gridsOptionsMenu, null, _btnGridsOptions);
-      if (window.lucide) lucide.createIcons();
-    }
-  });
-  _gridsOptionsMenu.addEventListener('click', e => e.stopPropagation());
-  document.addEventListener('click', () => _gridsOptionsMenu.classList.add('hidden'));
-}
-
-// ── Menu déroulant "Grilles" (mode normal) : cocher/décocher pour afficher (max 3), + Grille,
+// ── Menu déroulant "Grilles" (mode normal) : cocher/décocher pour afficher, + Grille,
 // et bouton ⋮ par grille (Renommer/Archiver/Supprimer, pas de Dupliquer). ──
 const _btnGridsDropdown = document.getElementById('btn-grids-dropdown');
 if (_btnGridsDropdown) {
@@ -4137,13 +4197,12 @@ function _renderGridsDropdownMenu() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = isSelected;
-    cb.title = isSelected ? 'Masquer cette grille' : 'Afficher cette grille (max 3)';
+    cb.title = isSelected ? 'Masquer cette grille' : 'Afficher cette grille';
     cb.addEventListener('click', e => e.stopPropagation());
     cb.addEventListener('change', () => {
       const sNow = activeSubtheme();
       if (!sNow) return;
       if (cb.checked) {
-        if (_selectedGridIds.length >= 3) { cb.checked = false; return; }
         _selectedGridIds.push(g.id);
         sNow.activeGridId = g.id;
       } else {
@@ -4397,29 +4456,51 @@ window.addEventListener('scroll', () => {
 document.getElementById('btn-open-grids-window').addEventListener('click', () => {
   const grids = getVisibleGrids();
   if (grids.length === 0) return;
-  document.title = (grids.length === 1
-    ? (grids[0].title || grids[0].name || 'Grille')
-    : `${grids.length} grilles`) + ' — LesMichels';
+  document.title = getFolderPath(state.folders, _localActiveFolderId).map(f => f.name).join(' › ') + ' — LesMichels';
   document.body.classList.add('solo-grid-mode');
-  // #font-scale-label vit dans #grids-options-menu en mode normal (menu Options Grilles) et
-  // dans la barre plein écran en solo-grid-mode — un seul élément physique déplacé, jamais
-  // deux jeux de contrôles désynchronisés.
-  const fontScaleLabel = document.getElementById('font-scale-label');
+  // En plein écran, tout doit tenir sur une seule rangée : #btn-grids-dropdown (ligne 1, mode
+  // normal), #font-scale-label et le bouton Capture (2e rangée, mode normal) sont déplacés en JS
+  // dans #bingo-solo-toolbar-center, dans cet ordre (Grilles/Taille/Capture) — mêmes éléments
+  // physiques, jamais deux jeux de contrôles désynchronisés. Le chemin (#bingo-fullscreen-breadcrumb)
+  // reste un frère indépendant de ce groupe, centré par position absolue (voir CSS), pas dans ce
+  // conteneur — sinon un groupe trop large le pousse hors de son centrage.
   const soloCenter = document.getElementById('bingo-solo-toolbar-center');
-  if (fontScaleLabel && soloCenter) soloCenter.insertBefore(fontScaleLabel, soloCenter.firstChild);
+  const gridsDropdown = document.getElementById('btn-grids-dropdown');
+  const fontScaleLabel = document.getElementById('font-scale-label');
+  const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
+  if (soloCenter) {
+    if (gridsDropdown) soloCenter.appendChild(gridsDropdown);
+    if (fontScaleLabel) soloCenter.appendChild(fontScaleLabel);
+    if (captureBtn) soloCenter.appendChild(captureBtn);
+  }
+  // Fermer les panneaux Dossiers/Cases : affichage cassé si laissés ouverts en plein écran.
+  // Leur fermeture anime une transition CSS de largeur (0.22s, voir .folders-sidebar/.cases-sidebar) :
+  // recalculer seulement en requestAnimationFrame() mesurait encore l'ancienne largeur réduite (bug
+  // rapporté — la taille des grilles restait celle d'avant la fermeture des panneaux). Il faut
+  // attendre la fin de cette transition avant de mesurer la largeur réellement disponible.
+  closeFoldersPanel();
+  closeCasesPanel();
   // Le layout plein écran change la taille disponible sans déclencher de 'resize' :
   // recalculer une fois que le nouveau layout est peint, sinon les grilles gardent
   // la taille calculée pour l'affichage normal jusqu'à la prochaine interaction.
   requestAnimationFrame(_adjustBingoGridSizes);
+  setTimeout(_adjustBingoGridSizes, 240);
 });
 document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
   document.body.classList.remove('solo-grid-mode');
   document.title = 'LesMichels';
   requestAnimationFrame(_adjustBingoGridSizes);
-  // Rendre #font-scale-label au menu Options Grilles (mode normal).
+  // Rendre #btn-grids-dropdown à la ligne 1 (après le bouton Chemin), #font-scale-label (entre le
+  // cadre .lock-group et Capture) et Capture à la 2e rangée (mode normal).
+  const gridsDropdown = document.getElementById('btn-grids-dropdown');
+  const pathBtn = document.getElementById('btn-path-dropdown');
+  if (gridsDropdown && pathBtn) pathBtn.insertAdjacentElement('afterend', gridsDropdown);
+  const optionsRow = document.getElementById('bingo-grids-options-row');
+  const lockGroup = optionsRow ? optionsRow.querySelector('.lock-group') : null;
   const fontScaleLabel = document.getElementById('font-scale-label');
-  const optionsMenu = document.getElementById('grids-options-menu');
-  if (fontScaleLabel && optionsMenu) optionsMenu.insertBefore(fontScaleLabel, optionsMenu.firstChild);
+  if (fontScaleLabel && lockGroup) lockGroup.insertAdjacentElement('afterend', fontScaleLabel);
+  const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
+  if (captureBtn && optionsRow) optionsRow.appendChild(captureBtn);
 });
 // Modale de choix "Capture" (plein écran) : toutes les grilles affichées ou une grille précise
 const modalCaptureChoice = document.getElementById('modal-capture-choice');
@@ -4444,7 +4525,7 @@ function openCaptureChoiceModal() {
 function closeCaptureChoiceModal() {
   modalCaptureChoice.classList.add('hidden');
 }
-document.getElementById('btn-screenshot-bingo-global')?.addEventListener('click', openCaptureChoiceModal);
+document.getElementById('btn-screenshot-bingo-normal')?.addEventListener('click', openCaptureChoiceModal);
 document.getElementById('btn-capture-choice-all').addEventListener('click', () => {
   closeCaptureChoiceModal();
   bingoScreenshot();
@@ -4815,14 +4896,6 @@ if (_btnCeSetHeader) {
     } else if (_localActiveFolderId) {
       confirmSetCurrentEventFolder(_localActiveFolderId);
     }
-  });
-}
-
-const _btnFolderOptions = document.getElementById('btn-folder-options');
-if (_btnFolderOptions) {
-  _btnFolderOptions.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (_localActiveFolderId) openCtxMenuFolder(_localActiveFolderId, null, _btnFolderOptions);
   });
 }
 
@@ -10653,7 +10726,7 @@ _dbBingo.on('value', snapshot => {
     if (activeF) {
       const brandNewGrids = (activeF.grids || []).filter(g => !g.archived && !_knownGridIdsBefore.has(g.id));
       if (brandNewGrids.length > 0) {
-        const combined = [..._selectedGridIds, ...brandNewGrids.map(g => g.id)].slice(0, 3);
+        const combined = [..._selectedGridIds, ...brandNewGrids.map(g => g.id)];
         if (combined.length !== _selectedGridIds.length) {
           _selectedGridIds = combined;
           saveLocalSelectedGrids(_selectedGridIds);

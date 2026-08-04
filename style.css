@@ -351,6 +351,21 @@ body {
   background: var(--accent-glow) !important;
   opacity: 1;
 }
+
+/* Surbrillance forte du bouton Cases tant que le nombre minimal de cases n'est pas atteint
+   (disparaît dès que le seuil est atteint, voir enoughElements dans renderGrid()). Bordure épaisse
+   + fond saturé + glow large, largement plus marquée qu'un simple hover, pour que ce soit
+   immédiatement visible même en périphérie de vision. */
+.btn-cases-panel.btn-attention {
+  border: 2px solid #3b82f6 !important;
+  color: #fff !important;
+  background: rgba(59,130,246,0.4) !important;
+  animation: pulse-attention 1s ease-in-out infinite alternate;
+}
+@keyframes pulse-attention {
+  from { box-shadow: 0 0 6px rgba(59,130,246, 0.4); }
+  to   { box-shadow: 0 0 20px rgba(59,130,246, 1), 0 0 36px rgba(59,130,246, 0.5); }
+}
 /* ── Breadcrumb dans ctrl-row-grids ── */
 .grids-breadcrumb {
   display: flex;
@@ -868,7 +883,7 @@ body {
 body.solo-grid-mode .header,
 body.solo-grid-mode .ctrl-row-grids,
 body.solo-grid-mode .btn-hide-solo-mode {
-  display: none;
+  display: none !important;
 }
 body.solo-grid-mode .main {
   padding: 8px;
@@ -902,15 +917,16 @@ body.solo-grid-mode .grid-view-wrapper {
 body.solo-grid-mode .bingo-grid {
   max-height: 100%;
 }
-/* Plein écran : Taille + Capture à gauche, chemin centré, Quitter à droite — 3 zones
-   flex:1 de largeur égale pour que le chemin central soit vraiment centré et ne
-   chevauche jamais le contenu latéral, quelle que soit sa largeur. */
-body.solo-grid-mode .ctrl-row-toolbar-left {
-  display: none;
-}
+/* Plein écran : tout tient sur une seule rangée — Grilles/Taille/Capture à gauche (déplacés en
+   JS dans #bingo-solo-toolbar-center, voir btn-open-grids-window), chemin centré (position absolue,
+   indépendant de ce groupe), Quitter à droite. #bingo-grids-options-row (.ctrl-row-toolbar-left)
+   est entièrement masqué par .btn-hide-solo-mode, ses enfants utiles ayant été déplacés avant que
+   ce masquage s'applique. flex:1 pour que Quitter reste bien à droite quelle que soit la largeur
+   du contenu gauche. */
 body.solo-grid-mode .ctrl-row-toolbar-center {
   flex: 1;
   justify-content: flex-start;
+  gap: 10px;
 }
 body.solo-grid-mode .ctrl-row-toolbar-right {
   flex: 1;
@@ -1484,19 +1500,23 @@ textarea.element-edit-input {
   gap: 10px;
   position: relative;
 }
-/* Chemin d'accès Bingo (titre, 2e rangée) centré par rapport à TOUTE la ligne (position
-   absolue), pas par flex:1, pour rester centré quelle que soit la largeur du contenu de
-   chaque côté — même principe que .tl-ctrl-row-toolbar côté Tier List. */
+/* Chemin d'accès Bingo (titre, 2e rangée) : visible uniquement en plein écran (sert de titre
+   là-bas), plus affiché en mode normal. Centré par rapport à TOUTE la ligne (position absolue),
+   pas par flex, pour rester centré quelle que soit la largeur du contenu de chaque côté — Grilles/
+   Taille/Capture (déplacés en JS dans #bingo-solo-toolbar-center) restent groupés à gauche plutôt
+   que centrés, donc plus de risque de chevauchement avec ce titre (contrairement à une tentative
+   précédente où Capture vivait dans la même zone que le titre, voir historique). */
 #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
+  display: none;
+}
+body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
+  display: block;
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  max-width: 50%;
-  pointer-events: none;
-}
-body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   max-width: 40%;
+  pointer-events: none;
 }
 .ctrl-row-toolbar-left,
 .ctrl-row-toolbar-right {
@@ -1508,6 +1528,14 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 }
 .ctrl-row-toolbar-right {
   justify-content: flex-end;
+}
+/* Contrôles dégroupés de l'ex-"Options Grilles" (Taille/Bloquer+Dimension+Générer/Vider/
+   Reset/Capture), masqués en plein écran — #btn-grids-dropdown reste seul visible à gauche. */
+#bingo-grids-options-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 /* Ligne "Template + Tier lists (dropdowns) + Options" tierlist : largeur naturelle
    (ne grandit pas au-delà de son contenu) ; wrap sur 2 lignes seulement si vraiment
@@ -1730,14 +1758,17 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 .btn-action.btn-screenshot-bingo:hover { border-color: var(--success); color: var(--success); background: rgba(71,200,135,0.1); }
 
 /* ── Groupe Bloquer / Générer / Reset ── */
+/* Englobe aussi Générer/Vider/Reset (pas seulement Bloquer + Redimensionner) — un seul cadre
+   visuel pour toutes les actions "sur toutes les grilles affichées". */
 .lock-group {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
-  height: 32px;
+  min-height: 32px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0 10px 0 8px;
+  padding: 4px 10px 4px 8px;
   background: rgba(255,255,255,0.025);
   box-sizing: border-box;
 }
@@ -1799,25 +1830,30 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 }
 
 /* ── Grille bingo ── */
+/* flex-wrap: wrap — un nombre illimité de grilles peut être affiché simultanément (voir
+   _selectedGridIds, plus de limite à 3) ; au-delà de ce qui tient sur une ligne, ça passe
+   à la ligne suivante plutôt que d'écraser chaque grille à une largeur illisible. */
 .grid-wrapper {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-start;
   align-items: flex-start;
   gap: 12px;
   width: 100%;
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .grid-views-2 { gap: 10px; }
 .grid-views-3 { gap: 8px; }
+.grid-wrapper[class*="grid-views-"]:not(.grid-views-1):not(.grid-views-2):not(.grid-views-3) { gap: 8px; }
 
 .grid-view-wrapper {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  flex: 1 1 0;
+  flex: 1 1 260px;
   min-width: 0;
   max-width: 100%;
   padding: 6px 6px;
@@ -1827,6 +1863,12 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   box-shadow: 0 2px 16px rgba(0,0,0,0.22);
   transition: opacity 0.15s, border-color 0.15s;
   overflow: hidden;
+}
+/* Avec 1 ou 2 grilles affichées, garder le comportement précédent (elles se partagent
+   toute la largeur également plutôt que de rester bloquées à 260px). */
+.grid-views-1 .grid-view-wrapper,
+.grid-views-2 .grid-view-wrapper {
+  flex-basis: 0;
 }
 
 .grid-view-wrapper.grid-wrapper-dragging {
