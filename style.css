@@ -523,6 +523,31 @@ body {
   cursor: pointer;
 }
 
+/* Bascule vue liste / vue icônes du panneau Dossiers */
+.fp-view-toggle {
+  flex-shrink: 0;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.fp-view-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: var(--surface-2);
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.fp-view-toggle-btn + .fp-view-toggle-btn { border-left: 1px solid var(--border); }
+.fp-view-toggle-btn:hover { color: var(--text); background: var(--surface-3); }
+.fp-view-toggle-btn.active { color: #93c5fd; background: rgba(59,130,246,0.18); }
+.fp-view-toggle-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
+
 /* Cadre englobant l'arbre de dossiers, avec titre — lui seul scrolle en interne, pour que Récents
    et le tri restent toujours visibles en haut du panneau même avec beaucoup de dossiers. */
 .fp-tree-frame {
@@ -696,8 +721,12 @@ body {
 .fp-folder-row:hover { border-color: #60a5fa; background: var(--surface-3); }
 .fp-folder-row.active { border-color: #3b82f6; background: rgba(59,130,246,0.18); }
 .fp-folder-row.ancestor { border-color: #1e3a5f; background: rgba(30,58,95,0.45); }
+.fp-folder-row.selected { border-color: #3b82f6; background: rgba(59,130,246,0.18); }
 .fp-folder-icon { font-size: 0.8rem; flex-shrink: 0; }
 .fp-folder-icon [data-lucide] { margin-right: 0; }
+/* Ligne tierlist/template en vue liste — icône teintée en bleu, même code couleur que
+   .fp-icon-tile.is-bingo en vue icônes (dossiers-bingo Bingo / templates-tierlists Tier List). */
+.fp-list-item .fp-folder-icon { color: #60a5fa; }
 .fp-folder-name {
   flex: 1;
   font-size: 0.85rem;
@@ -782,6 +811,103 @@ body {
   margin-left: 10px;
 }
 .fp-children.collapsed { display: none; }
+
+/* Vue icônes du panneau Dossiers (façon Explorateur de fichiers) */
+.fp-icons-breadcrumb {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+.fp-icons-breadcrumb.hidden { display: none; }
+.fp-icons-crumb {
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.fp-icons-crumb:hover { color: var(--text); background: var(--surface-3); }
+.fp-icons-crumb.current { color: #93c5fd; cursor: default; font-weight: 600; }
+.fp-icons-crumb.current:hover { background: none; }
+.fp-icons-crumb-sep { color: var(--text-faint); }
+
+.folders-panel-icons {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
+}
+.folders-panel-icons.hidden { display: none; }
+.fp-icon-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 184px;
+  padding: 14px 8px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  user-select: none;
+  transition: var(--transition);
+  text-align: center;
+}
+.fp-icon-tile:hover { background: var(--surface-3); }
+.fp-icon-tile.selected { border-color: #3b82f6; background: rgba(59,130,246,0.18); }
+.fp-icon-tile.active { border-color: #3b82f6; }
+.fp-icon-tile-ctx-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition);
+}
+.fp-icon-tile:hover .fp-icon-tile-ctx-btn { opacity: 0.8; }
+.fp-icon-tile-ctx-btn:hover { color: var(--text); background: var(--surface-2); opacity: 1; }
+.fp-icon-tile-ctx-btn [data-lucide] { width: 13px; height: 13px; margin-right: 0; vertical-align: middle; }
+.fp-icon-tile-icon {
+  font-size: 4.8rem;
+  line-height: 1;
+  color: #f5c744;
+}
+.fp-icon-tile-icon [data-lucide] { width: 80px; height: 80px; margin-right: 0; }
+.fp-icon-tile.is-bingo .fp-icon-tile-icon { color: #60a5fa; }
+.fp-icon-tile-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fp-icon-tile-empty {
+  width: 100%;
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--text-faint);
+  font-style: italic;
+  font-size: 0.85rem;
+}
 
 /* Grilles dans le drawer */
 .fp-grid-row {
@@ -1535,6 +1661,27 @@ textarea.element-edit-input {
 .elem-menu-btn:hover { background: var(--surface-4, var(--surface-3)); color: var(--text); }
 
 .hidden { display: none !important; }
+
+/* Tooltip custom générique — remplace title="..." (désactivé globalement, voir
+   DISABLE_TITLE_TOOLTIPS dans app.js) pour les cas où une infobulle reste nécessaire, ex. nom de
+   dossier tronqué dans la vue icônes. Positionné en JS (_showAppTooltip), un seul nœud partagé. */
+#app-tooltip {
+  position: fixed;
+  z-index: 10000;
+  max-width: 280px;
+  padding: 5px 9px;
+  border-radius: var(--radius);
+  background: #0b1220;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.3;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  word-break: break-word;
+}
+#app-tooltip.hidden { display: none !important; }
 
 /* ── Grilles ── */
 .grid-tab {

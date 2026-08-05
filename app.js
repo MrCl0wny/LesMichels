@@ -47,6 +47,42 @@ if (DISABLE_TITLE_TOOLTIPS) {
 }
 
 // ──────────────────────────────────────────────
+// Tooltip custom générique (data-tooltip="...") — seul canal d'infobulle qui fonctionne encore une
+// fois title="..." désactivé ci-dessus. N'affiche rien si l'élément demande une troncature
+// explicite (voir _showAppTooltipIfTruncated) et que le texte n'est en fait pas tronqué.
+// ──────────────────────────────────────────────
+let _appTooltipEl = null;
+function _showAppTooltip(text, anchorRect) {
+  if (!_appTooltipEl) {
+    _appTooltipEl = document.createElement('div');
+    _appTooltipEl.id = 'app-tooltip';
+    _appTooltipEl.className = 'hidden';
+    document.body.appendChild(_appTooltipEl);
+  }
+  _appTooltipEl.textContent = text;
+  _appTooltipEl.classList.remove('hidden');
+  const top = anchorRect.bottom + 6;
+  let left = anchorRect.left + anchorRect.width / 2;
+  _appTooltipEl.style.top = top + 'px';
+  _appTooltipEl.style.left = left + 'px';
+  _appTooltipEl.style.transform = 'translateX(-50%)';
+  // Recale si ça dépasse à gauche/droite de la fenêtre
+  const rect = _appTooltipEl.getBoundingClientRect();
+  if (rect.left < 4) _appTooltipEl.style.left = (left + (4 - rect.left)) + 'px';
+  if (rect.right > window.innerWidth - 4) _appTooltipEl.style.left = (left - (rect.right - window.innerWidth + 4)) + 'px';
+}
+function _hideAppTooltip() {
+  if (_appTooltipEl) _appTooltipEl.classList.add('hidden');
+}
+// N'affiche le tooltip que si le texte de l'élément est réellement tronqué visuellement
+// (scrollWidth/scrollHeight > client*) — évite une infobulle redondante sur un nom déjà entier.
+function _showAppTooltipIfTruncated(el) {
+  const isTruncated = el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+  if (!isTruncated) return;
+  _showAppTooltip(el.dataset.tooltip || el.textContent, el.getBoundingClientRect());
+}
+
+// ──────────────────────────────────────────────
 // Icônes Lucide (remplacement progressif des emojis)
 // Ré-appeler lucide.createIcons() après tout ajout dynamique de <i data-lucide>
 // ──────────────────────────────────────────────
@@ -301,6 +337,8 @@ function loadUserPrefs() {
   ref.once('value').then(snap => {
     const prefs = snap.val() || {};
     if (prefs.fontScale        != null) _localFontScale        = prefs.fontScale;
+    if (prefs.foldersViewMode  != null) _foldersViewMode       = prefs.foldersViewMode;
+    if (prefs.tlFoldersViewMode != null) _tlFoldersViewMode    = prefs.tlFoldersViewMode;
     // Prefs dossiers (nouvelle structure)
     if (prefs.activeFolderId   != null) _localActiveFolderId   = prefs.activeFolderId;
     if (prefs.selectedGrids    != null) {
@@ -796,6 +834,14 @@ let _firebaseReady = false;
 let _prefsReady    = false;
 // activeFolderId est chargé depuis Firebase /users/{uid}/prefs
 let _localActiveFolderId   = null;
+// Vue du panneau Dossiers Bingo : 'list' (façon Explorateur, lignes) ou 'icons' (façon Explorateur,
+// tuiles) — les deux partagent la même navigation par niveau (_foldersNavFolderId), seule la
+// présentation change. Chargé depuis prefs.
+let _foldersViewMode = 'list';
+// Dossier actuellement ouvert dans le panneau Dossiers (null = racine), partagé entre vue liste et
+// vue icônes — indépendant de _localActiveFolderId : naviguer dans le panneau ne doit pas changer
+// le dossier bingo actif tant qu'on n'a pas explicitement "ouvert" un dossier-bingo.
+let _foldersNavFolderId = null;
 
 function initState() {
   return { folders: [], trash: [], currentEventFolderId: null, currentEventTierlistId: null, elementPresets: [] };
@@ -1920,13 +1966,6 @@ function _flattenFoldersForRecent(folders) {
   return out;
 }
 
-// Ouvre (déplie) tous les ancêtres d'un dossier dans le drawer (mécanisme sessionStorage fp_collapsed_<id>).
-function _expandFolderAncestors(folderId) {
-  getFolderPath(state.folders, folderId).slice(0, -1).forEach(f => {
-    sessionStorage.setItem('fp_collapsed_' + f.id, '0');
-  });
-}
-
 // Parmi une liste de dossiers déjà triés par updatedAt décroissant, retire tout dossier qui est
 // ancêtre d'un dossier déjà retenu — touchFolderChain() propage le même timestamp à toute la
 // chaîne, donc sans ça un même événement de modification ferait apparaître plusieurs fois le même
@@ -1976,7 +2015,8 @@ function _renderRecentFolderPaths() {
     row.appendChild(icon);
     row.appendChild(path);
     row.addEventListener('click', () => {
-      _expandFolderAncestors(f.id);
+      const ancestors = getFolderPath(state.folders, f.id).slice(0, -1);
+      _foldersNavFolderId = ancestors.length ? ancestors[ancestors.length - 1].id : null;
       if (_localActiveFolderId !== f.id) switchFolder(f.id);
     });
     list.appendChild(row);
@@ -1984,9 +2024,157 @@ function _renderRecentFolderPaths() {
   container.appendChild(list);
 }
 
+// Menu ⋮ / clic droit d'un dossier bingo — partagé entre la vue liste et la vue icônes.
+function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder) {
+  e.stopPropagation();
+  const { addItem } = _tlMakeCtxMenu(anchor, e, { title: f.name });
+  addItem('folder-open', 'Ouvrir',              false, openThisFolder);
+  addItem('folder-closed', 'Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
+  addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
+  addItem('copy-plus', 'Dupliquer',            false, () => openDuplicateFolderModal(f.id));
+  addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
+  const ceIsActive = state.currentEventFolderId === f.id;
+  const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
+  addItem('party-popper', ceLabel,                  false, () => confirmSetCurrentEventFolder(f.id));
+
+  addItem('package', 'Archiver',            true,  () => archiveFolder(f.id));
+  addItem('trash-2', 'Supprimer',           true,  () => deleteFolder(f.id));
+}
+
+// Bascule vue liste / vue icônes du panneau Dossiers Bingo (préférence mémorisée).
+function _setFoldersViewMode(mode) {
+  if (_foldersViewMode === mode) return;
+  _foldersViewMode = mode;
+  saveUserPrefs({ foldersViewMode: mode });
+  renderAllFolders();
+}
+
+document.getElementById('fp-view-toggle-list').addEventListener('click', () => _setFoldersViewMode('list'));
+document.getElementById('fp-view-toggle-icons').addEventListener('click', () => _setFoldersViewMode('icons'));
+
+// Fil d'Ariane partagé entre vue liste et vue icônes du panneau Dossiers Bingo — navigue via
+// _foldersNavFolderId, le même niveau courant que consomment les deux fonctions de rendu ci-dessous.
+function _renderFoldersBreadcrumb(onNavigate) {
+  const crumbContainer = document.getElementById('fp-icons-breadcrumb');
+  if (!crumbContainer) return { currentFolder: null, path: [] };
+
+  const currentFolder = _foldersNavFolderId ? findFolderById(state.folders, _foldersNavFolderId) : null;
+  if (_foldersNavFolderId && !currentFolder) _foldersNavFolderId = null;
+  const path = _foldersNavFolderId ? getFolderPath(state.folders, _foldersNavFolderId) : [];
+
+  crumbContainer.innerHTML = '';
+  const rootCrumb = document.createElement('span');
+  rootCrumb.className = 'fp-icons-crumb' + (path.length === 0 ? ' current' : '');
+  rootCrumb.textContent = 'Racine';
+  rootCrumb.addEventListener('click', () => { if (path.length) { _foldersNavFolderId = null; onNavigate(); } });
+  crumbContainer.appendChild(rootCrumb);
+  path.forEach((f, i) => {
+    const sep = document.createElement('span');
+    sep.className = 'fp-icons-crumb-sep';
+    sep.textContent = '\\';
+    crumbContainer.appendChild(sep);
+    const crumb = document.createElement('span');
+    const isLast = i === path.length - 1;
+    crumb.className = 'fp-icons-crumb' + (isLast ? ' current' : '');
+    crumb.textContent = f.name;
+    if (!isLast) crumb.addEventListener('click', () => { _foldersNavFolderId = f.id; onNavigate(); });
+    crumbContainer.appendChild(crumb);
+  });
+
+  return { currentFolder, path };
+}
+
+// Vue icônes du panneau Dossiers Bingo (façon Explorateur de fichiers) : grille de tuiles pour le
+// seul niveau courant (_foldersNavFolderId, null = racine), navigation par double-clic + fil d'Ariane.
+function _renderFoldersPanelIcons() {
+  const treeContainer = document.getElementById('folders-panel-icons');
+  if (!treeContainer) return;
+  treeContainer.innerHTML = '';
+
+  const sortMode = _folderSortMode('bingoFoldersSortMode');
+  const sortSelect = document.getElementById('folders-sort-select');
+  if (sortSelect) sortSelect.value = sortMode;
+
+  const { currentFolder } = _renderFoldersBreadcrumb(_renderFoldersPanelIcons);
+
+  const listSource = currentFolder ? (currentFolder.folders || []) : (state.folders || []);
+  const items = _sortFoldersList(listSource.filter(f => !f.archived), sortMode);
+
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'fp-icon-tile-empty';
+    empty.textContent = 'Aucun dossier ici.';
+    treeContainer.appendChild(empty);
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  items.forEach(f => {
+    const isBingoFolder = (f.grids || []).length > 0;
+    const isActive = f.id === _localActiveFolderId;
+
+    const tile = document.createElement('div');
+    tile.className = 'fp-icon-tile' + (isBingoFolder ? ' is-bingo' : '') + (isActive ? ' active' : '');
+    tile.dataset.folderId = f.id;
+
+    const iconEl = document.createElement('div');
+    iconEl.className = 'fp-icon-tile-icon';
+    iconEl.innerHTML = isBingoFolder ? '<i data-lucide="grid-3x3"></i>' : '<i data-lucide="folder"></i>';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'fp-icon-tile-name';
+    nameEl.textContent = f.name;
+    nameEl.addEventListener('mouseenter', () => _showAppTooltipIfTruncated(nameEl));
+    nameEl.addEventListener('mouseleave', _hideAppTooltip);
+
+    const ctxBtn = document.createElement('button');
+    ctxBtn.className = 'fp-icon-tile-ctx-btn';
+    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+    ctxBtn.title = 'Options';
+
+    tile.appendChild(ctxBtn);
+    tile.appendChild(iconEl);
+    tile.appendChild(nameEl);
+
+    const openThisFolder = () => { switchFolder(f.id); _switchPage('bingo'); };
+    const openMenu = e => _openBingoFolderCtxMenu(f, e, tile, openThisFolder);
+
+    tile.addEventListener('click', e => {
+      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+      e.stopPropagation();
+      treeContainer.querySelectorAll('.fp-icon-tile.selected').forEach(t => t.classList.remove('selected'));
+      tile.classList.add('selected');
+    });
+    // Double-clic : un dossier contenant des grilles (is-bingo) s'ouvre directement, même s'il a
+    // aussi des sous-dossiers — sinon (dossier "conteneur" pur) on descend dedans façon Explorateur.
+    tile.addEventListener('dblclick', e => {
+      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+      if (isBingoFolder) openThisFolder();
+      else { _foldersNavFolderId = f.id; _renderFoldersPanelIcons(); }
+    });
+    ctxBtn.addEventListener('click', openMenu);
+    tile.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(e); });
+
+    treeContainer.appendChild(tile);
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// Vue liste du panneau Dossiers Bingo, façon Explorateur de fichiers en mode "Liste" : lignes
+// plates du seul niveau courant (même navigation que la vue icônes, _foldersNavFolderId), plus
+// d'arborescence dépliable — double-clic descend d'un niveau, le fil d'Ariane remonte.
 function renderFoldersPanelTree() {
   const container = document.getElementById('folders-panel-tree');
   if (!container) return;
+
+  document.getElementById('fp-view-toggle-list').classList.toggle('active', _foldersViewMode === 'list');
+  document.getElementById('fp-view-toggle-icons').classList.toggle('active', _foldersViewMode === 'icons');
+  container.classList.toggle('hidden', _foldersViewMode !== 'list');
+  document.getElementById('folders-panel-icons').classList.toggle('hidden', _foldersViewMode !== 'icons');
+
+  if (_foldersViewMode === 'icons') { _renderFoldersPanelIcons(); return; }
+
   container.innerHTML = '';
   _renderRecentFolderPaths();
 
@@ -1994,43 +2182,30 @@ function renderFoldersPanelTree() {
   const sortSelect = document.getElementById('folders-sort-select');
   if (sortSelect) sortSelect.value = sortMode;
 
-  const roots = _sortFoldersList((state.folders || []).filter(f => !f.archived), sortMode);
-  if (roots.length === 0) {
+  const { currentFolder } = _renderFoldersBreadcrumb(renderFoldersPanelTree);
+
+  const listSource = currentFolder ? (currentFolder.folders || []) : (state.folders || []);
+  const items = _sortFoldersList(listSource.filter(f => !f.archived), sortMode);
+
+  if (items.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'fp-empty';
-    empty.textContent = 'Aucun dossier. Crée-en un !';
+    empty.textContent = 'Aucun dossier ici.';
     container.appendChild(empty);
     return;
   }
 
-  const activePath = getFolderPath(state.folders, _localActiveFolderId);
-  const ancestorIds = new Set(activePath.slice(0, -1).map(f => f.id));
-
-  function _renderFolder(f, parentEl, depth) {
-    const wrapper = document.createElement('div');
-
+  items.forEach(f => {
     const isActive = f.id === _localActiveFolderId;
-    const isAncestor = ancestorIds.has(f.id);
-    const children = _sortFoldersList((f.folders || []).filter(sf => !sf.archived), sortMode);
-    const hasChildren = children.length > 0;
-
-    // État collapse persisté dans l'élément DOM (non Firebase)
-    const collapseKey = 'fp_collapsed_' + f.id;
-    let collapsed = sessionStorage.getItem(collapseKey) !== '0';
+    const isBingoFolder = (f.grids || []).length > 0;
 
     const row = document.createElement('div');
-    row.className = 'fp-folder-row' + (isActive ? ' active' : '') + (isAncestor ? ' ancestor' : '');
+    row.className = 'fp-folder-row' + (isBingoFolder ? ' fp-list-item' : '') + (isActive ? ' active' : '');
+    row.dataset.folderId = f.id;
 
-    const arrow = document.createElement('span');
-    arrow.className = 'fp-folder-arrow' + (collapsed ? ' collapsed' : '');
-    arrow.innerHTML = '<i data-lucide="chevron-down"></i>';
-    if (!hasChildren) arrow.style.visibility = 'hidden';
-
-    const isBingoFolder = (f.grids || []).length > 0;
     const icon = document.createElement('span');
     icon.className = 'fp-folder-icon';
-    icon.innerHTML = isBingoFolder ? '<i data-lucide="grid-3x3"></i>'
-      : (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
+    icon.innerHTML = isBingoFolder ? '<i data-lucide="grid-3x3"></i>' : '<i data-lucide="folder"></i>';
 
     const name = document.createElement('span');
     name.className = 'fp-folder-name';
@@ -2041,70 +2216,32 @@ function renderFoldersPanelTree() {
     ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
     ctxBtn.title = 'Options';
 
-    row.appendChild(arrow);
     row.appendChild(icon);
     row.appendChild(name);
     row.appendChild(ctxBtn);
 
-    row.dataset.folderId = f.id;
-
-    const childrenEl = document.createElement('div');
-    childrenEl.className = 'fp-children' + (collapsed ? ' collapsed' : '');
-    childrenEl.style.paddingLeft = '14px';
-
-    // Dossiers enfants (récursif)
-    children.forEach(sf => _renderFolder(sf, childrenEl, depth + 1));
-
-    // Toggle collapse
-    const toggleCollapse = e => {
-      e.stopPropagation();
-      collapsed = !collapsed;
-      sessionStorage.setItem(collapseKey, collapsed ? '1' : '0');
-      arrow.classList.toggle('collapsed', collapsed);
-      childrenEl.classList.toggle('collapsed', collapsed);
-      icon.innerHTML = isBingoFolder ? '<i data-lucide="grid-3x3"></i>'
-        : (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
-      if (window.lucide) lucide.createIcons();
-    };
-    arrow.addEventListener('click', toggleCollapse);
-
     const openThisFolder = () => { switchFolder(f.id); _switchPage('bingo'); };
 
-    // Simple clic sur la ligne = même fonction que la flèche (plier/déplier) ; navigation
-    // réservée au double-clic et à l'item "Ouvrir" du menu ⋮.
     row.addEventListener('click', e => {
-      if (e.target === arrow || e.target === ctxBtn) return;
-      if (hasChildren) toggleCollapse(e);
+      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+      container.querySelectorAll('.fp-folder-row.selected').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
     });
+    // Double-clic : même règle que la vue icônes — un dossier-bingo s'ouvre directement, un dossier
+    // conteneur pur descend d'un niveau.
     row.addEventListener('dblclick', e => {
-      if (e.target === arrow || e.target === ctxBtn) return;
-      openThisFolder();
+      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+      if (isBingoFolder) openThisFolder();
+      else { _foldersNavFolderId = f.id; renderFoldersPanelTree(); }
     });
 
-    const openFolderMenu = (e, anchor) => {
-      e.stopPropagation();
-      const { addItem } = _tlMakeCtxMenu(anchor, e, { title: f.name });
-      addItem('folder-open', 'Ouvrir',              false, openThisFolder);
-      addItem('folder-closed', 'Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
-      addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
-      addItem('copy-plus', 'Dupliquer',            false, () => openDuplicateFolderModal(f.id));
-      addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
-      const ceIsActive = state.currentEventFolderId === f.id;
-      const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
-      addItem('party-popper', ceLabel,                  false, () => confirmSetCurrentEventFolder(f.id));
-
-      addItem('package', 'Archiver',            true,  () => archiveFolder(f.id));
-      addItem('trash-2', 'Supprimer',           true,  () => deleteFolder(f.id));
-    };
+    const openFolderMenu = (e, anchor) => _openBingoFolderCtxMenu(f, e, anchor, openThisFolder);
     ctxBtn.addEventListener('click', e => openFolderMenu(e, row));
     row.addEventListener('contextmenu', e => { e.preventDefault(); openFolderMenu(e, null); });
 
-    wrapper.appendChild(row);
-    wrapper.appendChild(childrenEl);
-    parentEl.appendChild(wrapper);
-  }
+    container.appendChild(row);
+  });
 
-  roots.forEach(f => _renderFolder(f, container, 0));
   if (window.lucide) lucide.createIcons();
 }
 
@@ -5313,6 +5450,13 @@ let _tlLocalSplit           = null; // % de largeur allouée aux tiers (le reste
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
 let _tlLocalActiveFolderId  = null; // dossier sélectionné (vide) sans tierlist active
 let _tlLocalNoSelection     = false; // true = l'utilisateur a délibérément désélectionné
+// Vue du panneau Dossiers Tier List : 'list' (façon Explorateur, lignes) ou 'icons' (façon
+// Explorateur, tuiles) — mêmes principes que côté Bingo (_foldersViewMode/_foldersNavFolderId).
+let _tlFoldersViewMode = 'list';
+// Dossier actuellement ouvert dans le panneau Dossiers (null = racine), partagé entre vue liste et
+// vue icônes — indépendant de _tlLocalActiveFolderId : naviguer dans le panneau ne doit pas changer
+// le dossier/tierlist actifs tant qu'on n'a pas explicitement "ouvert" quelque chose.
+let _tlFoldersNavFolderId = null;
 
 function tlSave() {
   if (_tlRemoteUpdate) return;
@@ -6394,7 +6538,9 @@ function _tlFitPathBtnLabel(labelEl) {
 // comme pour les grilles bingo, une tier list ne s'affiche jamais qu'une à la fois).
 function tlRenderGroupPanel(tl) {
   const { folderId, templatesHere, root } = _tlActiveGroupContext();
-  const folderPath = _tlFolderPath(folderId) || 'Racine';
+  // Le chemin s'arrête au template (inclus) quand il y en a un dans ce dossier — jamais aux
+  // tierlists générées individuelles, qui ne sont que des membres du même groupe.
+  const folderPath = (_tlFolderPath(folderId) || 'Racine') + (root ? ' \\ ' + root.name : '');
 
   // Dropdown Chemin : toujours visible dès qu'un dossier est sélectionné ou qu'une tierlist est
   // active (contrairement à Template/Listes/Comparaison/Plein écran, qui dépendent d'un template).
@@ -7008,36 +7154,299 @@ function _tlRenderRecentFolderPaths() {
   if (window.lucide) lucide.createIcons();
 }
 
+// Bascule vue liste / vue icônes du panneau Dossiers Tier List (préférence mémorisée).
+function _tlSetFoldersViewMode(mode) {
+  if (_tlFoldersViewMode === mode) return;
+  _tlFoldersViewMode = mode;
+  saveUserPrefs({ tlFoldersViewMode: mode });
+  tlRenderList();
+}
+
+document.getElementById('tl-fp-view-toggle-list').addEventListener('click', () => _tlSetFoldersViewMode('list'));
+document.getElementById('tl-fp-view-toggle-icons').addEventListener('click', () => _tlSetFoldersViewMode('icons'));
+
+// Fil d'Ariane partagé entre vue liste et vue icônes du panneau Dossiers Tier List — navigue via
+// _tlFoldersNavFolderId, le même niveau courant que consomment les deux fonctions de rendu.
+function _tlRenderFoldersBreadcrumb(onNavigate) {
+  const crumbContainer = document.getElementById('tl-icons-breadcrumb');
+  if (!crumbContainer) return { currentFolder: null, path: [] };
+
+  const currentFolder = _tlFoldersNavFolderId ? (tlState.folders || []).find(f => f.id === _tlFoldersNavFolderId) : null;
+  if (_tlFoldersNavFolderId && !currentFolder) _tlFoldersNavFolderId = null;
+
+  const path = [];
+  let anc = currentFolder;
+  while (anc) { path.unshift(anc); anc = anc.parentId ? (tlState.folders || []).find(f => f.id === anc.parentId) : null; }
+
+  crumbContainer.innerHTML = '';
+  const rootCrumb = document.createElement('span');
+  rootCrumb.className = 'fp-icons-crumb' + (path.length === 0 ? ' current' : '');
+  rootCrumb.textContent = 'Racine';
+  rootCrumb.addEventListener('click', () => { if (path.length) { _tlFoldersNavFolderId = null; onNavigate(); } });
+  crumbContainer.appendChild(rootCrumb);
+  path.forEach((f, i) => {
+    const sep = document.createElement('span');
+    sep.className = 'fp-icons-crumb-sep';
+    sep.textContent = '\\';
+    crumbContainer.appendChild(sep);
+    const crumb = document.createElement('span');
+    const isLast = i === path.length - 1;
+    crumb.className = 'fp-icons-crumb' + (isLast ? ' current' : '');
+    crumb.textContent = f.name;
+    if (!isLast) crumb.addEventListener('click', () => { _tlFoldersNavFolderId = f.id; onNavigate(); });
+    crumbContainer.appendChild(crumb);
+  });
+
+  return { currentFolder, path };
+}
+
+// Vue icônes du panneau Dossiers Tier List (façon Explorateur de fichiers), même principe que
+// _renderFoldersPanelIcons côté Bingo : grille de tuiles pour le seul niveau courant
+// (_tlFoldersNavFolderId, null = racine), navigation par double-clic + fil d'Ariane. Contrairement à
+// Bingo, un niveau peut aussi contenir des templates/tierlists isolées (pas que des sous-dossiers) —
+// elles deviennent aussi des tuiles (icône différente), au prix du glisser-déposer/regroupement de
+// templates que seule la vue liste conserve.
+function _renderTlFoldersPanelIcons() {
+  const treeContainer = document.getElementById('tl-folders-panel-icons');
+  if (!treeContainer) return;
+  treeContainer.innerHTML = '';
+
+  const sortMode = _folderSortMode('tlFoldersSortMode');
+  const sortSelect = document.getElementById('tl-folders-sort-select');
+  if (sortSelect) sortSelect.value = sortMode;
+
+  const { currentFolder } = _tlRenderFoldersBreadcrumb(_renderTlFoldersPanelIcons);
+  const parentId = currentFolder ? currentFolder.id : null;
+  const subFolders = _sortFoldersList((tlState.folders || []).filter(f => !f.archived && (f.parentId || null) === parentId), sortMode);
+  // Tierlists/templates de ce niveau — les tierlists rattachées à un template vivant n'apparaissent
+  // jamais à plat, seulement via leur template (même filtrage que la vue liste).
+  const levelTierlists = tlState.tierlists.filter(tl => !tl.archived && (tl.folderId || null) === parentId && !_tlHasLiveTemplate(tl));
+
+  if (subFolders.length === 0 && levelTierlists.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'fp-icon-tile-empty';
+    empty.textContent = 'Vide.';
+    treeContainer.appendChild(empty);
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  subFolders.forEach(f => {
+    const isActive = f.id === _tlLocalActiveFolderId;
+    const tile = document.createElement('div');
+    tile.className = 'fp-icon-tile' + (isActive ? ' active' : '');
+    tile.dataset.folderId = f.id;
+
+    const iconEl = document.createElement('div');
+    iconEl.className = 'fp-icon-tile-icon';
+    iconEl.innerHTML = '<i data-lucide="folder"></i>';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'fp-icon-tile-name';
+    nameEl.textContent = f.name;
+    nameEl.addEventListener('mouseenter', () => _showAppTooltipIfTruncated(nameEl));
+    nameEl.addEventListener('mouseleave', _hideAppTooltip);
+
+    const ctxBtn = document.createElement('button');
+    ctxBtn.className = 'fp-icon-tile-ctx-btn';
+    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+    ctxBtn.title = 'Options';
+
+    tile.appendChild(ctxBtn);
+    tile.appendChild(iconEl);
+    tile.appendChild(nameEl);
+
+    const openMenu = e => { e.stopPropagation(); tlOpenFolderManageModal(f.id, tile); };
+    tile.addEventListener('click', e => {
+      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+      e.stopPropagation();
+      treeContainer.querySelectorAll('.fp-icon-tile.selected').forEach(t => t.classList.remove('selected'));
+      tile.classList.add('selected');
+    });
+    // Double-clic = entrer dans le dossier (façon Explorateur), jamais l'ouvrir comme dossier actif
+    // — cette action-là reste réservée au menu ⋮ ("Ouvrir"), pour ne pas changer le contexte actif
+    // juste en naviguant dans la vue icônes.
+    tile.addEventListener('dblclick', e => {
+      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+      _tlFoldersNavFolderId = f.id; _renderTlFoldersPanelIcons();
+    });
+    ctxBtn.addEventListener('click', openMenu);
+    tile.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(e); });
+
+    treeContainer.appendChild(tile);
+  });
+
+  levelTierlists.forEach(tl => {
+    const isActive = tl.id === _tlLocalActiveTierlistId;
+    const tile = document.createElement('div');
+    tile.className = 'fp-icon-tile is-bingo' + (isActive ? ' active' : '');
+    tile.dataset.tierlistId = tl.id;
+
+    const iconEl = document.createElement('div');
+    iconEl.className = 'fp-icon-tile-icon';
+    iconEl.innerHTML = tl.isTemplate ? '<i data-lucide="scroll"></i>' : '<i data-lucide="scroll-text"></i>';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'fp-icon-tile-name';
+    nameEl.textContent = tl.name;
+    nameEl.addEventListener('mouseenter', () => _showAppTooltipIfTruncated(nameEl));
+    nameEl.addEventListener('mouseleave', _hideAppTooltip);
+
+    const ctxBtn = document.createElement('button');
+    ctxBtn.className = 'fp-icon-tile-ctx-btn';
+    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+    ctxBtn.title = 'Options';
+
+    tile.appendChild(ctxBtn);
+    tile.appendChild(iconEl);
+    tile.appendChild(nameEl);
+
+    const openThisTierlist = () => { tlSwitch(tl.id, false); _switchPage('tierlist'); };
+    const openMenu = e => { e.stopPropagation(); tlOpenManageModal(tl.id, tile, 'folders'); };
+    // Même logique que les tuiles dossier : simple clic = juste sélectionner visuellement,
+    // double-clic = ouvrir (façon Explorateur, cohérent avec les tuiles dossier de cette même vue).
+    tile.addEventListener('click', e => {
+      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+      e.stopPropagation();
+      treeContainer.querySelectorAll('.fp-icon-tile.selected').forEach(t => t.classList.remove('selected'));
+      tile.classList.add('selected');
+    });
+    tile.addEventListener('dblclick', e => {
+      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+      openThisTierlist();
+    });
+    ctxBtn.addEventListener('click', openMenu);
+    tile.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(e); });
+
+    treeContainer.appendChild(tile);
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// Ligne d'un sous-dossier en vue liste Tier List — même structure/classes que .fp-folder-row côté
+// Bingo, mais un dossier Tier List est toujours un pur conteneur (jamais de "contenu direct" à
+// ouvrir comme un dossier-bingo) : double-clic descend systématiquement dedans.
+function _tlBuildFolderListRow(f, container, rerender) {
+  const isActive = f.id === _tlLocalActiveFolderId;
+  const row = document.createElement('div');
+  row.className = 'fp-folder-row' + (isActive ? ' active' : '');
+  row.dataset.folderId = f.id;
+
+  const icon = document.createElement('span');
+  icon.className = 'fp-folder-icon';
+  icon.innerHTML = '<i data-lucide="folder"></i>';
+
+  const name = document.createElement('span');
+  name.className = 'fp-folder-name';
+  name.textContent = f.name;
+
+  const ctxBtn = document.createElement('button');
+  ctxBtn.className = 'fp-folder-ctx-btn';
+  ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+  ctxBtn.title = 'Options';
+
+  row.appendChild(icon);
+  row.appendChild(name);
+  row.appendChild(ctxBtn);
+
+  row.addEventListener('click', e => {
+    if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+    container.querySelectorAll('.fp-folder-row.selected, .fp-list-item.selected').forEach(r => r.classList.remove('selected'));
+    row.classList.add('selected');
+  });
+  row.addEventListener('dblclick', e => {
+    if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+    _tlFoldersNavFolderId = f.id; rerender();
+  });
+
+  const openMenu = e => { e.stopPropagation(); tlOpenFolderManageModal(f.id, row); };
+  ctxBtn.addEventListener('click', openMenu);
+  row.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(e); });
+
+  return row;
+}
+
+// Ligne d'une tierlist/template en vue liste Tier List — même comportement clic/double-clic que
+// la tuile équivalente en vue icônes (simple clic = sélection visuelle, double-clic = ouvrir).
+function _tlBuildTierlistListRow(tl, container) {
+  const isActive = tl.id === _tlLocalActiveTierlistId;
+  const row = document.createElement('div');
+  row.className = 'fp-folder-row fp-list-item' + (isActive ? ' active' : '');
+  row.dataset.tierlistId = tl.id;
+
+  const icon = document.createElement('span');
+  icon.className = 'fp-folder-icon';
+  icon.innerHTML = tl.isTemplate ? '<i data-lucide="scroll"></i>' : '<i data-lucide="scroll-text"></i>';
+
+  const name = document.createElement('span');
+  name.className = 'fp-folder-name';
+  name.textContent = tl.name;
+
+  const ctxBtn = document.createElement('button');
+  ctxBtn.className = 'fp-folder-ctx-btn';
+  ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+  ctxBtn.title = 'Options';
+
+  row.appendChild(icon);
+  row.appendChild(name);
+  row.appendChild(ctxBtn);
+
+  const openThisTierlist = () => { tlSwitch(tl.id, false); _switchPage('tierlist'); };
+  row.addEventListener('click', e => {
+    if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+    container.querySelectorAll('.fp-folder-row.selected, .fp-list-item.selected').forEach(r => r.classList.remove('selected'));
+    row.classList.add('selected');
+  });
+  row.addEventListener('dblclick', e => {
+    if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+    openThisTierlist();
+  });
+
+  const openMenu = e => { e.stopPropagation(); tlOpenManageModal(tl.id, row, 'folders'); };
+  ctxBtn.addEventListener('click', openMenu);
+  row.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(e); });
+
+  return row;
+}
+
 function tlRenderList() {
-  tlList.innerHTML = '';
   if (!tlState.folders) tlState.folders = [];
+
+  document.getElementById('tl-fp-view-toggle-list').classList.toggle('active', _tlFoldersViewMode === 'list');
+  document.getElementById('tl-fp-view-toggle-icons').classList.toggle('active', _tlFoldersViewMode === 'icons');
+  tlList.classList.toggle('hidden', _tlFoldersViewMode !== 'list');
+  document.getElementById('tl-folders-panel-icons').classList.toggle('hidden', _tlFoldersViewMode !== 'icons');
+
+  if (_tlFoldersViewMode === 'icons') { _renderTlFoldersPanelIcons(); if (window.lucide) lucide.createIcons(); return; }
+
+  tlList.innerHTML = '';
   _tlRenderRecentFolderPaths();
   const tlSortMode = _folderSortMode('tlFoldersSortMode');
   const tlSortSelect = document.getElementById('tl-folders-sort-select');
   if (tlSortSelect) tlSortSelect.value = tlSortMode;
-  const rootFolders = _sortFoldersList(tlState.folders.filter(f => !f.archived && !f.parentId), tlSortMode);
-  // Tierlists/templates sans dossier — les tierlists rattachées à un template vivant
-  // n'apparaissent jamais à plat, seulement sous leur groupe de template
-  const activeToplevel = tlState.tierlists.filter(tl => !tl.archived && !tl.folderId && !_tlHasLiveTemplate(tl));
-  const hasContent = rootFolders.length > 0 || activeToplevel.length > 0;
+
+  const { currentFolder } = _tlRenderFoldersBreadcrumb(tlRenderList);
+  const parentId = currentFolder ? currentFolder.id : null;
+
+  const subFolders = _sortFoldersList((tlState.folders || []).filter(f => !f.archived && (f.parentId || null) === parentId), tlSortMode);
+  // Tierlists/templates de ce niveau — les tierlists rattachées à un template vivant n'apparaissent
+  // jamais à plat, seulement via leur template (même filtrage que la vue icônes).
+  const levelTierlists = tlState.tierlists.filter(tl => !tl.archived && (tl.folderId || null) === parentId && !_tlHasLiveTemplate(tl));
+  const hasContent = subFolders.length > 0 || levelTierlists.length > 0;
 
   if (!hasContent) {
     const msg = document.createElement('div');
     msg.className = 'tl-list-empty';
     msg.style.cssText = 'color:var(--text-faint);font-style:italic;font-size:0.82rem;padding:8px 4px;';
-    msg.textContent = 'Aucune liste';
+    msg.textContent = 'Vide.';
     tlList.appendChild(msg);
     return;
   }
 
-  // Dossiers racine d'abord (récursif)
-  rootFolders.forEach(folder => tlList.appendChild(_tlBuildFolderEl(folder, 0)));
-
-  // Templates (groupes repliables) puis tierlists isolées, sans dossier ni template
-  const toplevelTemplates = activeToplevel.filter(tl => tl.isTemplate);
-  const toplevelPlain = activeToplevel.filter(tl => !tl.isTemplate);
-  toplevelTemplates.forEach(tpl => tlList.appendChild(_tlBuildTemplateGroupEl(tpl, 0)));
-  toplevelPlain.forEach(tl => tlList.appendChild(tlBuildTierlistItem(tl)));
+  subFolders.forEach(f => tlList.appendChild(_tlBuildFolderListRow(f, tlList, tlRenderList)));
+  levelTierlists.forEach(tl => tlList.appendChild(_tlBuildTierlistListRow(tl, tlList)));
+  if (window.lucide) lucide.createIcons();
 }
 
 // ── Drag & drop réordonnement des tiers ───────────────────────────────────────
@@ -10813,12 +11222,13 @@ _dbTierlist.on('value', snapshot => {
 // PAGE D'ACCUEIL
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Va sur la page Bingo/Tier List et active un dossier donné (racine ou sous-dossier),
-// en dépliant ses ancêtres dans le drawer Dossiers correspondant — même logique que
-// les liens "Récents" des drawers, réutilisée ici pour "rejoindre" depuis l'accueil.
+// Va sur la page Bingo/Tier List et active un dossier donné (racine ou sous-dossier), en
+// positionnant la navigation du panneau Dossiers sur son dossier parent — même logique que les
+// liens "Récents" du panneau, réutilisée ici pour "rejoindre" depuis l'accueil.
 function _homeGoToBingoFolder(folderId) {
   window._switchPage('bingo');
-  _expandFolderAncestors(folderId);
+  const ancestors = getFolderPath(state.folders, folderId).slice(0, -1);
+  _foldersNavFolderId = ancestors.length ? ancestors[ancestors.length - 1].id : null;
   if (_localActiveFolderId !== folderId) {
     switchFolder(folderId);
   } else {
@@ -10838,7 +11248,8 @@ function _homeGoToBingoFolder(folderId) {
 
 function _homeGoToBingoGrid(folder, grid) {
   window._switchPage('bingo');
-  _expandFolderAncestors(folder.id);
+  const ancestors = getFolderPath(state.folders, folder.id).slice(0, -1);
+  _foldersNavFolderId = ancestors.length ? ancestors[ancestors.length - 1].id : null;
   if (_localActiveFolderId !== folder.id) switchFolder(folder.id);
   _selectedGridIds = [grid.id];
   saveLocalSelectedGrids(_selectedGridIds);

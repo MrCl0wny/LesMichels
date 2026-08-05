@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=257" />
+  <link rel="stylesheet" href="style.css?v=260" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -121,10 +121,16 @@
                 <option value="updatedAt">Date de modification (récent→ancien)</option>
                 <option value="updatedAt-asc">Date de modification (ancien→récent)</option>
               </select>
+              <div class="fp-view-toggle" id="fp-view-toggle">
+                <button type="button" class="fp-view-toggle-btn active" id="fp-view-toggle-list" title="Vue liste"><i data-lucide="list"></i></button>
+                <button type="button" class="fp-view-toggle-btn" id="fp-view-toggle-icons" title="Vue icônes"><i data-lucide="layout-grid"></i></button>
+              </div>
             </div>
             <div class="fp-tree-frame">
-              <div class="fp-tree-frame-title">Dossiers</div>
+              <div class="fp-tree-frame-title" id="fp-tree-frame-title">Dossiers</div>
+              <div id="fp-icons-breadcrumb" class="fp-icons-breadcrumb"></div>
               <div id="folders-panel-tree" class="folders-panel-tree"></div>
+              <div id="folders-panel-icons" class="folders-panel-icons hidden"></div>
             </div>
           </div>
         </div>
@@ -146,10 +152,16 @@
                 <option value="updatedAt">Date de modification (récent→ancien)</option>
                 <option value="updatedAt-asc">Date de modification (ancien→récent)</option>
               </select>
+              <div class="fp-view-toggle" id="tl-fp-view-toggle">
+                <button type="button" class="fp-view-toggle-btn active" id="tl-fp-view-toggle-list" title="Vue liste"><i data-lucide="list"></i></button>
+                <button type="button" class="fp-view-toggle-btn" id="tl-fp-view-toggle-icons" title="Vue icônes"><i data-lucide="layout-grid"></i></button>
+              </div>
             </div>
             <div class="fp-tree-frame">
               <div class="fp-tree-frame-title">Dossiers</div>
+              <div id="tl-icons-breadcrumb" class="fp-icons-breadcrumb"></div>
               <div id="tl-list" class="tl-list folders-panel-tree"></div>
+              <div id="tl-folders-panel-icons" class="folders-panel-icons hidden"></div>
             </div>
           </div>
         </div>
@@ -1305,6 +1317,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=357"></script>
+  <script src="app.js?v=360"></script>
 </body>
 </html>
