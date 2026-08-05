@@ -134,6 +134,22 @@ body {
   opacity: 0.35;
   cursor: not-allowed;
 }
+/* Bouton marron : Dossiers (page dédiée) */
+.nav-btn-folders {
+  background: rgba(146,94,54,0.18);
+  color: #c9855a;
+  border-color: rgba(146,94,54,0.5);
+}
+.nav-btn-folders:hover:not(.disabled) {
+  color: #e0a374;
+  border-color: #c9855a;
+  background: rgba(146,94,54,0.3);
+}
+.nav-btn-folders.active {
+  color: #f0b688;
+  border-color: #c9855a;
+  background: rgba(146,94,54,0.35);
+}
 
 /* ── Layout principal ── */
 .main {
@@ -550,10 +566,90 @@ body {
   text-align: center;
 }
 
-/* ── Sidebars fixes Dossiers (gauche) & Cases (droite) dans le layout bingo ── */
-/* Remplacent le comportement "drawer flottant" pour ces deux panneaux précis :
-   ils poussent le contenu au lieu de flotter par-dessus, et se rétractent en largeur 0. */
-.folders-sidebar,
+/* ── Page dédiée Dossiers (remplace les 2 anciens drawers latéraux Bingo/Tier List) ── */
+.folders-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+  margin: 0 auto;
+  height: calc(100vh - 110px);
+}
+.folders-page-tabs {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+}
+.folders-page-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.folders-page-tab:hover { color: var(--text); border-color: var(--accent-dim); }
+.folders-page-tab.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+/* Archives (orange) / Corbeille (rouge) : à côté des onglets, taille fixe (pas flex:1 comme
+   les onglets), s'adaptent à l'onglet Bingo/Tier List actif (voir JS _foldersPageActiveTab). */
+.folders-page-btn-archives,
+.folders-page-btn-trash {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-lg);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.folders-page-btn-archives {
+  background: rgba(224,120,0,0.15);
+  color: #e07800;
+  border: 1px solid #e07800;
+}
+.folders-page-btn-archives:hover { background: rgba(224,120,0,0.28); color: #ff9518; border-color: #ff9518; }
+.folders-page-btn-trash {
+  background: rgba(239,68,68,0.15);
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+.folders-page-btn-trash:hover { background: rgba(239,68,68,0.28); color: #f87171; border-color: #f87171; }
+.folders-page-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.folders-page-panel.hidden { display: none; }
+.folders-page-panel .folders-panel-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Sidebar fixe Cases (droite) dans le layout bingo ── */
+/* Remplace le comportement "drawer flottant" pour ce panneau précis :
+   il pousse le contenu au lieu de flotter par-dessus, et se rétracte en largeur 0. */
 .cases-sidebar {
   position: sticky;
   top: 70px;
@@ -572,20 +668,14 @@ body {
   transition: width 0.22s ease, border-width 0.22s ease;
   align-self: flex-start;
 }
-.folders-sidebar.open,
 .cases-sidebar.open {
   height: auto;
-}
-.folders-sidebar.open,
-.cases-sidebar.open {
   width: 400px;
   border-width: 1px;
 }
-.folders-sidebar.open > *,
 .cases-sidebar.open > * {
   width: 400px;
 }
-.folders-sidebar .folders-panel-header,
 .cases-sidebar .folders-panel-header {
   cursor: default;
 }
@@ -823,6 +913,7 @@ body {
   background: none;
   color: var(--text-faint);
   font-size: 0.8rem;
+  font-weight: 900;
   cursor: pointer;
   transition: var(--transition);
   white-space: nowrap;
@@ -835,6 +926,26 @@ body {
   padding: 0 12px;
 }
 .btn-new-root-folder:hover { border-color: var(--accent); color: var(--accent); }
+
+/* "+ Bingo" (panneau Dossiers, onglet Bingo) : crée un dossier-bingo + sa première grille en une
+   action, même style que .btn-new-folder-in-grids/.btn-new-grid mais en vert. */
+.btn-new-bingo-folder {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+  background: none;
+  color: #3ecf6e;
+  font-size: 0.8rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-new-bingo-folder:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
 
 /* Bouton collapse du panneau */
 .btn-control-panel-collapse {
@@ -882,7 +993,6 @@ body {
   width: 100%;
   min-width: 0;
 }
-.bingo-layout > .folders-sidebar.open { margin-right: 12px; }
 .bingo-layout > .cases-sidebar.open { margin-left: 12px; }
 
 /* ── Mode "plein écran grille(s)" (overlay interne, plus de popup) ── */
@@ -1484,7 +1594,7 @@ textarea.element-edit-input {
   color: #3ecf6e;
   font-family: Arial, sans-serif;
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 900;
   height: 32px;
   padding: 0 10px;
   cursor: pointer;
@@ -1690,6 +1800,13 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   transition: var(--transition);
 }
 .btn-action:hover { opacity: 0.85; }
+/* Boutons "+ quelque chose" (créer un preset/tier) : même graisse extra-bold que les autres
+   boutons "+" de l'app (voir .btn-plus-green), plus marquée que le 700 hérité de .btn-action. */
+#tl-tiers-source-new-preset-btn,
+#tl-modal-preset-edit-add-tier,
+#btn-new-element-preset {
+  font-weight: 900;
+}
 .btn-action.btn-reset {
   background: #8b1a0f;
   color: #f5c0bb;
@@ -2122,7 +2239,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   margin: 0;
   padding: 18px 36px;
   font-size: 1.15rem;
-  font-weight: 700;
+  font-weight: 900;
   background: #22c55e;
   color: #fff;
   border: none;
@@ -2253,7 +2370,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .ctx-menu-item:hover { background: var(--surface-3); color: var(--accent); }
 .ctx-menu-item.ctx-danger:hover { color: var(--danger); background: rgba(232,91,71,0.1); }
-.ctx-menu-item.ctx-green { color: #3ecf6e; }
+.ctx-menu-item.ctx-green { color: #3ecf6e; font-weight: 900; }
 .ctx-menu-item.ctx-green:hover { color: #3ecf6e; background: rgba(62,207,110,0.1); }
 
 /* ── Ligne composite des dropdowns Template/Tier lists : nom cliquable (switch) +
@@ -2675,7 +2792,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   height: calc(100vh - 200px);
   overflow: hidden;
 }
-.tl-layout > .folders-sidebar.open { margin-right: 12px; }
 
 /* Mode plein écran : le header et la ligne 1 du panneau de contrôle sont masqués, libérant de
    l'espace — sans réajuster ici, .tl-layout gardait la même hauteur fixe et laissait un vide en
@@ -2685,29 +2801,23 @@ body.solo-tierlist-mode .tl-layout {
 }
 
 /* ── Sidebar tierlist (sidebar fixe qui pousse le contenu, comme le Bingo) ── */
-/* Ne PAS remettre max-height:none ici : ça écrase le calc(100vh - 82px) de .folders-sidebar
-   et supprime la seule contrainte de hauteur qui permet à .folders-panel-tree de scroller
-   en interne (flex:1 + min-height:0 ne bornent rien sans hauteur max sur l'ancêtre). */
-.tl-sidebar {
-  gap: 10px;
-}
-.tl-sidebar .folders-panel-header {
+.folders-page-panel .folders-panel-header {
   gap: 6px;
 }
-.tl-sidebar .tl-btn-new-folder,
-.tl-sidebar .tl-btn-new {
+.folders-page-panel .tl-btn-new-folder,
+.folders-page-panel .tl-btn-new {
   flex-shrink: 0;
 }
 
 .tl-btn-new {
   height: 32px;
   padding: 0 10px;
-  background: var(--success);
-  border: none;
+  background: none;
+  border: 1px dashed var(--border);
   border-radius: var(--radius);
-  color: #111;
+  color: #3ecf6e;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 900;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2718,7 +2828,7 @@ body.solo-tierlist-mode .tl-layout {
   flex-shrink: 0;
   white-space: nowrap;
 }
-.tl-btn-new:hover { background: #2fa96e; }
+.tl-btn-new:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
 
 .tl-list {
   display: flex;
@@ -2823,7 +2933,7 @@ body.solo-tierlist-mode .tl-layout {
 .tl-empty-btn {
   padding: 18px 32px;
   font-size: 1.15rem;
-  font-weight: 600;
+  font-weight: 900;
   border: none;
   border-radius: var(--radius-lg);
   cursor: pointer;
@@ -3637,7 +3747,7 @@ body.solo-tierlist-mode .tl-layout {
   color: #3ecf6e;
   font-family: Arial, sans-serif;
   font-size: 0.8rem;
-  font-weight: 700;
+  font-weight: 900;
   height: 32px;
   padding: 0 12px;
   cursor: pointer;
@@ -3787,12 +3897,12 @@ body.solo-tierlist-mode .tl-layout {
 }
 
 .tl-btn-new-folder {
-  background: #1e4fa3;
-  border: 1px solid #2d6ad4;
+  background: none;
+  border: 1px dashed var(--border);
   border-radius: var(--radius);
-  color: #c5dbff;
+  color: #60a5fa;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 900;
   height: 32px;
   padding: 0 10px;
   cursor: pointer;
@@ -3804,7 +3914,7 @@ body.solo-tierlist-mode .tl-layout {
   justify-content: center;
   line-height: 1;
 }
-.tl-btn-new-folder:hover { background: #2560c4; border-color: #4a8ae8; color: #e0eeff; }
+.tl-btn-new-folder:hover { border-color: #60a5fa; background: rgba(96,165,250,0.1); }
 
 
 /* ── Dossiers dans la sidebar ── */
@@ -4592,6 +4702,12 @@ body.solo-tierlist-mode .tl-layout {
   color: #c4b5fd;
 }
 .home-big-btn-purple:hover { border-color: #8b5cf6; background: rgba(139, 92, 246, 0.24); color: #ddd6fe; }
+.home-big-btn-folders {
+  border-color: rgba(146,94,54,0.5);
+  background: rgba(146,94,54,0.18);
+  color: #c9855a;
+}
+.home-big-btn-folders:hover { border-color: #c9855a; background: rgba(146,94,54,0.3); color: #e0a374; }
 
 /* ── Modals "Rejoindre Bingo/Template" — même arborescence pliable que le panneau Dossiers
    (.fp-folder-row/.fp-children), dans un modal centré au lieu d'un panneau flottant ancré au

@@ -1902,7 +1902,7 @@ function _sortFoldersList(list, mode) {
   return sorted;
 }
 
-// Remonte updatedAt = Date.now() sur folderId et tous ses ancêtres (pour le tri "Dernière modification").
+// Remonte updatedAt = Date.now() sur folderId et tous ses ancêtres (pour le tri "Date de modification").
 function touchFolderChain(folderId) {
   if (!folderId) return;
   const now = Date.now();
@@ -2068,14 +2068,23 @@ function renderFoldersPanelTree() {
     };
     arrow.addEventListener('click', toggleCollapse);
 
+    const openThisFolder = () => { switchFolder(f.id); _switchPage('bingo'); };
+
+    // Simple clic sur la ligne = même fonction que la flèche (plier/déplier) ; navigation
+    // réservée au double-clic et à l'item "Ouvrir" du menu ⋮.
     row.addEventListener('click', e => {
       if (e.target === arrow || e.target === ctxBtn) return;
-      switchFolder(f.id);
+      if (hasChildren) toggleCollapse(e);
+    });
+    row.addEventListener('dblclick', e => {
+      if (e.target === arrow || e.target === ctxBtn) return;
+      openThisFolder();
     });
 
     const openFolderMenu = (e, anchor) => {
       e.stopPropagation();
       const { addItem } = _tlMakeCtxMenu(anchor, e, { title: f.name });
+      addItem('folder-open', 'Ouvrir',              false, openThisFolder);
       addItem('folder-closed', 'Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
       addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
       addItem('copy-plus', 'Dupliquer',            false, () => openDuplicateFolderModal(f.id));
@@ -2136,16 +2145,61 @@ function _makePanelDraggable(panel) {
   document.addEventListener('mouseup', () => { dragging = false; });
 }
 
-function openFoldersPanel() {
-  renderFoldersPanelTree();
-  const panel = document.getElementById('folders-panel');
-  panel.classList.add('open');
-  _adjustSidebarMaxHeight(panel);
+// ── Page dédiée Dossiers (remplace les anciens drawers latéraux Bingo/Tier List) ──
+// _foldersPageActiveTab n'est pas persisté (juste en mémoire) : à chaque ouverture explicite d'un
+// onglet précis (ex. depuis un bouton "Dossiers" propre à Bingo ou Tier List), on force l'onglet
+// demandé plutôt que de garder le dernier visité, plus prévisible pour l'utilisateur.
+let _foldersPageActiveTab = 'bingo';
+
+function _switchFoldersPageTab(tab) {
+  _foldersPageActiveTab = tab;
+  document.getElementById('folders-page-tab-bingo').classList.toggle('active', tab === 'bingo');
+  document.getElementById('folders-page-tab-tierlist').classList.toggle('active', tab === 'tierlist');
+  document.getElementById('folders-page-panel-bingo').classList.toggle('hidden', tab !== 'bingo');
+  document.getElementById('folders-page-panel-tierlist').classList.toggle('hidden', tab !== 'tierlist');
+  _renderFoldersPage();
 }
 
-function closeFoldersPanel() {
-  document.getElementById('folders-panel').classList.remove('open');
+function _renderFoldersPage() {
+  if (_foldersPageActiveTab === 'bingo') renderFoldersPanelTree();
+  else tlRenderList();
+  if (window.lucide) lucide.createIcons();
 }
+
+// Ouvre la page Dossiers directement sur l'onglet demandé (ou l'onglet courant si non précisé).
+function openFoldersPage(tab) {
+  if (tab) _switchFoldersPageTab(tab);
+  _switchPage('folders');
+  saveUserPrefs({ activePage: 'folders' });
+}
+
+// Stubs de compat : anciens noms encore appelés depuis divers call sites historiques.
+function openFoldersPanel() { openFoldersPage('bingo'); }
+function closeFoldersPanel() {}
+function openTlSidebar() { openFoldersPage('tierlist'); }
+function closeTlSidebar() {}
+
+document.getElementById('folders-page-tab-bingo').addEventListener('click', () => _switchFoldersPageTab('bingo'));
+document.getElementById('folders-page-tab-tierlist').addEventListener('click', () => _switchFoldersPageTab('tierlist'));
+
+// "+ Bingo" : même mécanisme que "Nouveau Bingo" sur l'accueil (home-btn-bingo-new-grid) — la
+// modal "Nouveau dossier" affiche en plus sa section grille (_homeNewGridAfterFolder), dossier +
+// première grille créés en une seule action. Racine par défaut (null) ; l'utilisateur choisit
+// l'emplacement réel dans la modal.
+document.getElementById('btn-new-bingo-folder').addEventListener('click', () => {
+  _homeNewGridAfterFolder = true;
+  openNewFolderModal(null);
+});
+
+// Archives/Corbeille communes : ouvrent la modale correspondant à l'onglet actif.
+document.getElementById('folders-page-btn-archives').addEventListener('click', () => {
+  if (_foldersPageActiveTab === 'bingo') openArchivesUnified();
+  else tlOpenArchivesUnified();
+});
+document.getElementById('folders-page-btn-trash').addEventListener('click', () => {
+  if (_foldersPageActiveTab === 'bingo') openTrashUnified();
+  else tlOpenTrashUnified();
+});
 
 function renderThemesList() {
   renderAllFolders();
@@ -3179,7 +3233,7 @@ function renderGrid() {
 // alloué et se chevauchent. Il faut donc calculer le côté du carré (min de la largeur
 // et de la hauteur réellement disponibles) et fixer explicitement width ET height.
 function _adjustBingoGridSizes() {
-  document.querySelectorAll('.folders-sidebar.open, .cases-sidebar.open').forEach(_adjustSidebarMaxHeight);
+  document.querySelectorAll('.cases-sidebar.open').forEach(_adjustSidebarMaxHeight);
   const wrappers = gridWrapper.querySelectorAll('.grid-view-wrapper');
   if (!wrappers.length) return;
   // Réinitialiser AVANT de mesurer : .grid-view-wrapper est en flex:1 1 0 (min-width:0), donc
@@ -4065,11 +4119,11 @@ chkLockGenerate.addEventListener('click', () => {
 
 let _isDraggingElement = false;
 
-// Plafonne .folders-sidebar/.cases-sidebar à l'espace réellement visible sous leur
-// position actuelle (mesurée, pas un calc(100vh - Npx) déconnecté du control-panel
-// dont la hauteur varie avec le nombre de grilles affichées) — sinon le sidebar peut
-// dépasser le bas de l'écran quand son contenu (liste de cases) est plus haut que
-// l'espace dispo, et provoque un scroll de toute la page.
+// Plafonne .cases-sidebar à l'espace réellement visible sous sa position actuelle
+// (mesurée, pas un calc(100vh - Npx) déconnecté du control-panel dont la hauteur varie
+// avec le nombre de grilles affichées) — sinon le sidebar peut dépasser le bas de
+// l'écran quand son contenu (liste de cases) est plus haut que l'espace dispo, et
+// provoque un scroll de toute la page.
 function _adjustSidebarMaxHeight(sidebar) {
   if (!sidebar) return;
   const top = sidebar.getBoundingClientRect().top;
@@ -4077,7 +4131,7 @@ function _adjustSidebarMaxHeight(sidebar) {
   sidebar.style.maxHeight = maxH + 'px';
 }
 window.addEventListener('resize', () => {
-  document.querySelectorAll('.folders-sidebar.open, .cases-sidebar.open').forEach(_adjustSidebarMaxHeight);
+  document.querySelectorAll('.cases-sidebar.open').forEach(_adjustSidebarMaxHeight);
 });
 
 function openCasesPanel() {
@@ -4410,12 +4464,11 @@ document.getElementById('btn-open-grids-window').addEventListener('click', () =>
     if (fontScaleLabel) soloCenter.appendChild(fontScaleLabel);
     if (captureBtn) soloCenter.appendChild(captureBtn);
   }
-  // Fermer les panneaux Dossiers/Cases : affichage cassé si laissés ouverts en plein écran.
-  // Leur fermeture anime une transition CSS de largeur (0.22s, voir .folders-sidebar/.cases-sidebar) :
-  // recalculer seulement en requestAnimationFrame() mesurait encore l'ancienne largeur réduite (bug
-  // rapporté — la taille des grilles restait celle d'avant la fermeture des panneaux). Il faut
-  // attendre la fin de cette transition avant de mesurer la largeur réellement disponible.
-  closeFoldersPanel();
+  // Fermer le panneau Cases : affichage cassé s'il est laissé ouvert en plein écran.
+  // Sa fermeture anime une transition CSS de largeur (0.22s, voir .cases-sidebar) : recalculer
+  // seulement en requestAnimationFrame() mesurait encore l'ancienne largeur réduite (bug rapporté —
+  // la taille des grilles restait celle d'avant la fermeture du panneau). Il faut attendre la fin
+  // de cette transition avant de mesurer la largeur réellement disponible.
   closeCasesPanel();
   // Le layout plein écran change la taille disponible sans déclencher de 'resize' :
   // recalculer une fois que le nouveau layout est peint, sinon les grilles gardent
@@ -4979,13 +5032,8 @@ document.getElementById('btn-archives-unified').addEventListener('click', () => 
 });
 document.getElementById('btn-close-archives-unified').addEventListener('click', closeArchivesUnified);
 
-// ── Panneau dossiers ──
-document.getElementById('btn-folders-panel').addEventListener('click', () => {
-  const panel = document.getElementById('folders-panel');
-  if (panel.classList.contains('open')) closeFoldersPanel();
-  else openFoldersPanel();
-});
-document.getElementById('folders-panel-close').addEventListener('click', closeFoldersPanel);
+// ── Panneau dossiers (bouton legacy caché, garde sa fonction pour compat JS) ──
+document.getElementById('btn-folders-panel').addEventListener('click', () => openFoldersPage('bingo'));
 
 const _foldersSortSelect = document.getElementById('folders-sort-select');
 if (_foldersSortSelect) {
@@ -5186,6 +5234,7 @@ renameGridInput.addEventListener('keydown', e => {
       requestAnimationFrame(_adjustTlLayoutHeight);
     }
     if (target === 'home' && typeof renderHomePage === 'function') renderHomePage();
+    if (target === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
   };
 
   navBtns.forEach(btn => {
@@ -5620,7 +5669,7 @@ function tlDefaultFolder(name, parentId, numbering = null) {
   return { id: uid(), name, archived: false, open: true, parentId: parentId || null, createdAt: now, updatedAt: now, numbering: numbering || null };
 }
 
-// Remonte updatedAt = Date.now() sur folderId et tous ses ancêtres (pour le tri "Dernière modification").
+// Remonte updatedAt = Date.now() sur folderId et tous ses ancêtres (pour le tri "Date de modification").
 function tlTouchFolderChain(folderId) {
   if (!folderId) return;
   const now = Date.now();
@@ -6794,13 +6843,12 @@ function _tlBuildFolderEl(folder, depth) {
   arrow.className = 'tl-folder-arrow';
   arrow.innerHTML = '<i data-lucide="chevron-right"></i>';
   arrow.style.cursor = 'pointer';
-  arrow.addEventListener('click', e => {
-    e.stopPropagation();
-    const key = 'tl_folder_open_' + folder.id;
-    const isOpen = sessionStorage.getItem(key) === '1';
-    sessionStorage.setItem(key, isOpen ? '0' : '1');
+  const toggleOpen = () => {
+    const isOpen = sessionStorage.getItem(tlCollapseKey) === '1';
+    sessionStorage.setItem(tlCollapseKey, isOpen ? '0' : '1');
     folderEl.classList.toggle('open', !isOpen);
-  });
+  };
+  arrow.addEventListener('click', e => { e.stopPropagation(); toggleOpen(); });
 
   const icon = document.createElement('span');
   icon.className = 'tl-folder-icon';
@@ -6831,9 +6879,16 @@ function _tlBuildFolderEl(folder, depth) {
     tlOpenFolderManageModal(folder.id, header);
   });
 
+  // Simple clic sur le header = même fonction que la flèche (plier/déplier) ; navigation
+  // réservée au double-clic et à l'item "Ouvrir" du menu ⋮.
   header.addEventListener('click', e => {
     if (e.target.closest('.tl-folder-arrow, .tl-folder-ctx-btn')) return;
+    toggleOpen();
+  });
+  header.addEventListener('dblclick', e => {
+    if (e.target.closest('.tl-folder-arrow, .tl-folder-ctx-btn')) return;
     _tlGoToFolder(folder.id);
+    _switchPage('tierlist');
   });
 
   // Une tierlist peut toujours être glissée dans ce dossier (fonctionnalité distincte du
@@ -9553,6 +9608,7 @@ function tlOpenFolderManageModal(id, anchorEl) {
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
   const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null, { title: folder.name });
+  addItem('folder-open', 'Ouvrir', false, () => { _tlGoToFolder(id); _switchPage('tierlist'); });
   addItem('pencil', 'Renommer', false, () => tlOpenFolderModal('edit', id));
   addItem('copy-plus', 'Dupliquer', false, () => tlOpenFolderModal('duplicate', id));
   addItem('move', 'Déplacer dans un dossier', false, () => tlOpenMoveFolderModal(id));
@@ -9860,21 +9916,9 @@ function tlCapture() {
   });
 }
 
-// ── Sidebar drawer tierlist ───────────────────────────────────────────────────
-function openTlSidebar() {
-  document.getElementById('tl-sidebar').classList.add('open');
-}
-function closeTlSidebar() {
-  document.getElementById('tl-sidebar').classList.remove('open');
-}
-
-document.getElementById('tl-btn-folders').addEventListener('click', () => {
-  const panel = document.getElementById('tl-sidebar');
-  if (panel.classList.contains('open')) closeTlSidebar();
-  else openTlSidebar();
-});
-document.getElementById('tl-empty-btn-folders').addEventListener('click', openTlSidebar);
-document.getElementById('tl-sidebar-close').addEventListener('click', closeTlSidebar);
+// ── Ouverture de la page Dossiers (onglet Tier List) ──────────────────────────
+// openTlSidebar/closeTlSidebar définies plus haut (stubs de compat → openFoldersPage('tierlist')).
+document.getElementById('tl-empty-btn-folders').addEventListener('click', () => openFoldersPage('tierlist'));
 
 const _tlBtnFolderOptions = document.getElementById('tl-btn-folder-options');
 if (_tlBtnFolderOptions) {
@@ -10960,163 +11004,8 @@ document.getElementById('home-btn-bingo-new-grid')?.addEventListener('click', ()
 });
 document.getElementById('home-btn-tl-new-template')?.addEventListener('click', () => tlOpenNewTemplateModal(null, true));
 
-// ── "Rejoindre Bingo / Template" — modal centré avec arborescence pliable ─────────────────────
-// Même méthode de rétractation que le panneau Dossiers (renderFoldersPanelTree) : chevron par
-// dossier, état collapse persisté en sessionStorage. Rendu dans un modal classique plutôt qu'un
-// panneau flottant ancré au bouton.
-
-// leafBuilder(folder) → tableau de { icon, label, onClick } pour les feuilles (grilles/templates) d'un dossier
-// childrenOf(folder) → sous-dossiers d'un dossier (ou racines si folder === null)
-// onFolderClick(folder) optionnel → si fourni, cliquer sur le NOM d'un dossier (pas sur son chevron)
-// navigue directement dedans au lieu de se contenter de plier/déplier (utilisé côté Bingo, où un
-// dossier a une page à part entière ; côté Tier List un dossier n'a rien à "ouvrir" en soi).
-function _homeRenderJoinTree(container, closeModal, storageKey, childrenOf, leafBuilder, onFolderClick) {
-  container.innerHTML = '';
-
-  function renderFolder(folder, depth) {
-    const leaves = leafBuilder(folder);
-    const subFolders = childrenOf(folder);
-    const hasChildren = leaves.length > 0 || subFolders.length > 0;
-
-    const wrapper = document.createElement('div');
-    const row = document.createElement('div');
-    row.className = 'fp-folder-row home-join-folder-row';
-    row.style.paddingLeft = (8 + depth * 14) + 'px';
-
-    const collapseKey = storageKey + '_' + folder.id;
-    let collapsed = sessionStorage.getItem(collapseKey) !== '0';
-
-    const arrow = document.createElement('span');
-    arrow.className = 'fp-folder-arrow' + (collapsed ? ' collapsed' : '');
-    arrow.innerHTML = '<i data-lucide="chevron-down"></i>';
-    if (!hasChildren) arrow.style.visibility = 'hidden';
-
-    const icon = document.createElement('span');
-    icon.className = 'fp-folder-icon';
-    icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
-
-    const name = document.createElement('span');
-    name.className = 'fp-folder-name';
-    name.textContent = folder.name;
-
-    row.appendChild(arrow);
-    row.appendChild(icon);
-    row.appendChild(name);
-
-    const childrenEl = document.createElement('div');
-    childrenEl.className = 'fp-children' + (collapsed ? ' collapsed' : '');
-
-    leaves.forEach(leaf => {
-      const lRow = document.createElement('div');
-      lRow.className = 'fp-grid-row home-join-leaf-row';
-      lRow.style.paddingLeft = (8 + (depth + 1) * 14) + 'px';
-      const lIcon = document.createElement('span');
-      lIcon.className = 'fp-grid-icon';
-      lIcon.innerHTML = '<i data-lucide="' + leaf.icon + '"></i>';
-      const lName = document.createElement('span');
-      lName.className = 'fp-grid-name';
-      lName.textContent = leaf.label;
-      lRow.appendChild(lIcon);
-      lRow.appendChild(lName);
-      lRow.addEventListener('click', e => { e.stopPropagation(); closeModal(); leaf.onClick(); });
-      childrenEl.appendChild(lRow);
-    });
-
-    subFolders.forEach(sf => childrenEl.appendChild(renderFolder(sf, depth + 1)));
-
-    const toggleCollapse = e => {
-      e.stopPropagation();
-      collapsed = !collapsed;
-      sessionStorage.setItem(collapseKey, collapsed ? '1' : '0');
-      arrow.classList.toggle('collapsed', collapsed);
-      childrenEl.classList.toggle('collapsed', collapsed);
-      icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
-      if (window.lucide) lucide.createIcons();
-    };
-    arrow.addEventListener('click', toggleCollapse);
-    if (onFolderClick) {
-      row.addEventListener('click', e => { e.stopPropagation(); closeModal(); onFolderClick(folder); });
-    } else {
-      row.addEventListener('click', e => { if (hasChildren) toggleCollapse(e); });
-    }
-
-    wrapper.appendChild(row);
-    wrapper.appendChild(childrenEl);
-    return wrapper;
-  }
-
-  const roots = childrenOf(null);
-  const rootLeaves = leafBuilder(null);
-  if (roots.length === 0 && rootLeaves.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'ctx-menu-title';
-    empty.textContent = 'Vide.';
-    container.appendChild(empty);
-  } else {
-    rootLeaves.forEach(leaf => {
-      const lRow = document.createElement('div');
-      lRow.className = 'fp-grid-row home-join-leaf-row';
-      lRow.style.paddingLeft = '8px';
-      const lIcon = document.createElement('span');
-      lIcon.className = 'fp-grid-icon';
-      lIcon.innerHTML = '<i data-lucide="' + leaf.icon + '"></i>';
-      const lName = document.createElement('span');
-      lName.className = 'fp-grid-name';
-      lName.textContent = leaf.label;
-      lRow.appendChild(lIcon);
-      lRow.appendChild(lName);
-      lRow.addEventListener('click', e => { e.stopPropagation(); closeModal(); leaf.onClick(); });
-      container.appendChild(lRow);
-    });
-    roots.forEach(f => container.appendChild(renderFolder(f, 0)));
-  }
-
-  if (window.lucide) lucide.createIcons();
-}
-
-const modalHomeJoinBingo = document.getElementById('modal-home-join-bingo');
-const modalHomeJoinTl = document.getElementById('modal-home-join-tl');
-
-function _homeCloseJoinBingoModal() { modalHomeJoinBingo?.classList.add('hidden'); }
-function _homeCloseJoinTlModal() { modalHomeJoinTl?.classList.add('hidden'); }
-
-function _homeStartBingoJoin() {
-  if (!modalHomeJoinBingo) return;
-  _homeRenderJoinTree(
-    document.getElementById('home-join-bingo-tree'),
-    _homeCloseJoinBingoModal,
-    'fp_home_bingo_collapsed',
-    folder => ((folder ? folder.folders : state.folders) || []).filter(f => !f.archived),
-    folder => folder ? (folder.grids || []).filter(g => !g.archived).map(g => ({
-      icon: 'grid-3x3', label: g.name,
-      onClick: () => _homeGoToBingoGrid(folder, g),
-    })) : [],
-    folder => _homeGoToBingoFolder(folder.id)
-  );
-  modalHomeJoinBingo.classList.remove('hidden');
-}
-
-function _homeStartTlJoin() {
-  if (!modalHomeJoinTl) return;
-  _homeRenderJoinTree(
-    document.getElementById('home-join-tl-tree'),
-    _homeCloseJoinTlModal,
-    'fp_home_tl_collapsed',
-    folder => (tlState.folders || []).filter(f => !f.archived && (f.parentId || null) === (folder ? folder.id : null)),
-    folder => tlState.tierlists.filter(t => !t.archived && (t.folderId || null) === (folder ? folder.id : null) && t.isTemplate && !_tlHasLiveTemplate(t)).map(t => ({
-      icon: 'layout-template', label: t.name,
-      onClick: () => _homeGoToTlTierlist(t),
-    })),
-    folder => _homeGoToTlFolder(folder.id)
-  );
-  modalHomeJoinTl.classList.remove('hidden');
-}
-
-document.getElementById('btn-close-home-join-bingo')?.addEventListener('click', _homeCloseJoinBingoModal);
-document.getElementById('btn-close-home-join-tl')?.addEventListener('click', _homeCloseJoinTlModal);
-modalHomeJoinBingo?.addEventListener('click', e => { if (e.target === modalHomeJoinBingo) _homeCloseJoinBingoModal(); });
-modalHomeJoinTl?.addEventListener('click', e => { if (e.target === modalHomeJoinTl) _homeCloseJoinTlModal(); });
-
-document.getElementById('home-btn-bingo-join')?.addEventListener('click', () => _homeStartBingoJoin());
-document.getElementById('home-btn-tl-join')?.addEventListener('click', () => _homeStartTlJoin());
+// "Ouvrir Bingo/Template existant" : ouvre directement la page Dossiers sur l'onglet correspondant
+// (remplace l'ancienne modal arborescente dédiée, redondante avec cette page).
+document.getElementById('home-btn-bingo-join')?.addEventListener('click', () => openFoldersPage('bingo'));
+document.getElementById('home-btn-tl-join')?.addEventListener('click', () => openFoldersPage('tierlist'));
 

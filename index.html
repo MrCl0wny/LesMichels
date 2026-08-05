@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=253" />
+  <link rel="stylesheet" href="style.css?v=257" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -31,6 +31,7 @@
       <div class="nav-group">
         <nav class="nav">
           <button class="nav-btn active" data-page="home"><i data-lucide="house"></i> Accueil</button>
+          <button class="nav-btn nav-btn-folders" data-page="folders" title="Dossiers"><i data-lucide="folder"></i> Dossiers</button>
           <button class="nav-btn" data-page="bingo">Bingo</button>
           <button class="nav-btn" data-page="tierlist">Tier List</button>
         </nav>
@@ -73,7 +74,7 @@
             </div>
             <div class="home-big-buttons">
               <button class="home-big-btn home-big-btn-accent" id="home-btn-bingo-new-grid"><i data-lucide="plus"></i> Nouveau Bingo</button>
-              <button class="home-big-btn home-big-btn-purple" id="home-btn-bingo-join"><i data-lucide="log-in"></i> Rejoindre Bingo existant</button>
+              <button class="home-big-btn home-big-btn-folders" id="home-btn-bingo-join"><i data-lucide="folder"></i> Ouvrir Bingo existant</button>
             </div>
           </div>
 
@@ -83,11 +84,77 @@
             </div>
             <div class="home-big-buttons">
               <button class="home-big-btn home-big-btn-accent" id="home-btn-tl-new-template"><i data-lucide="plus"></i> Nouveau Template</button>
-              <button class="home-big-btn home-big-btn-purple" id="home-btn-tl-join"><i data-lucide="log-in"></i> Rejoindre Template existant</button>
+              <button class="home-big-btn home-big-btn-folders" id="home-btn-tl-join"><i data-lucide="folder"></i> Ouvrir Template existant</button>
             </div>
           </div>
 
         </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════ FOLDERS PAGE (page dédiée, remplace les 2 drawers latéraux) ═══════════════════ -->
+    <section id="page-folders" class="page">
+      <div class="folders-page">
+
+        <div class="folders-page-tabs">
+          <button class="folders-page-tab active" id="folders-page-tab-bingo" data-tab="bingo"><i data-lucide="grid-3x3"></i> Bingo</button>
+          <button class="folders-page-tab" id="folders-page-tab-tierlist" data-tab="tierlist"><i data-lucide="scroll"></i> Tier List</button>
+          <button class="folders-page-btn-archives" id="folders-page-btn-archives" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
+          <button class="folders-page-btn-trash" id="folders-page-btn-trash" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
+        </div>
+
+        <!-- ── Onglet Bingo ── -->
+        <div class="folders-page-panel" id="folders-page-panel-bingo">
+          <div class="folders-panel-header">
+            <span class="folders-panel-title"><i data-lucide="folder"></i> Dossiers Bingo</span>
+            <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
+            <button class="btn-new-bingo-folder" id="btn-new-bingo-folder" title="Nouveau Bingo">+ Bingo</button>
+            <button class="btn-new-grid hidden" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
+          </div>
+          <div class="folders-panel-scroll">
+            <div id="folders-panel-recent" class="fp-recent"></div>
+            <div class="folders-panel-sort">
+              <label for="folders-sort-select">Trier par</label>
+              <select id="folders-sort-select" class="folders-sort-select">
+                <option value="alpha">Alphabétique (A→Z)</option>
+                <option value="alpha-desc">Alphabétique (Z→A)</option>
+                <option value="updatedAt">Date de modification (récent→ancien)</option>
+                <option value="updatedAt-asc">Date de modification (ancien→récent)</option>
+              </select>
+            </div>
+            <div class="fp-tree-frame">
+              <div class="fp-tree-frame-title">Dossiers</div>
+              <div id="folders-panel-tree" class="folders-panel-tree"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Onglet Tier List ── -->
+        <div class="folders-page-panel hidden" id="folders-page-panel-tierlist">
+          <div class="folders-panel-header">
+            <span class="folders-panel-title"><i data-lucide="folder"></i> Dossiers Tier List</span>
+            <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
+            <button id="tl-btn-new-template" class="tl-btn-new" title="Créer un nouveau template">+ Template</button>
+          </div>
+          <div class="folders-panel-scroll">
+            <div id="tl-folders-panel-recent" class="fp-recent"></div>
+            <div class="folders-panel-sort">
+              <label for="tl-folders-sort-select">Trier par</label>
+              <select id="tl-folders-sort-select" class="folders-sort-select">
+                <option value="alpha">Alphabétique (A→Z)</option>
+                <option value="alpha-desc">Alphabétique (Z→A)</option>
+                <option value="updatedAt">Date de modification (récent→ancien)</option>
+                <option value="updatedAt-asc">Date de modification (ancien→récent)</option>
+              </select>
+            </div>
+            <div class="fp-tree-frame">
+              <div class="fp-tree-frame-title">Dossiers</div>
+              <div id="tl-list" class="tl-list folders-panel-tree"></div>
+            </div>
+          </div>
+        </div>
+
+
       </div>
     </section>
 
@@ -121,7 +188,7 @@
                rien au centre, Répartition + Non placés à droite. -->
           <div class="ctrl-row ctrl-row-line1">
             <div class="ctrl-row-grids-left tl-group-row">
-              <button class="tl-toolbar-btn tl-btn-neutral tl-btn-folders tl-shrink-0" id="tl-btn-folders" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
+              <button class="tl-toolbar-btn tl-btn-neutral tl-btn-folders tl-shrink-0 hidden" id="tl-btn-folders" title="Ouvrir la page Dossiers"><i data-lucide="folder"></i> Dossiers</button>
               <div id="tl-group-breadcrumb" class="grids-breadcrumb tl-group-breadcrumb-hidden"></div>
               <div class="tl-labeled-btn tl-group-elem hidden tl-shrink-0">
                 <span class="tl-labeled-btn-label">Chemin</span>
@@ -197,35 +264,10 @@
 
       <div class="tl-layout">
 
-        <!-- ── Drawer dossiers tierlist ── -->
-        <div class="folders-panel folders-sidebar tl-sidebar" id="tl-sidebar">
-          <div class="folders-panel-header">
-            <span class="folders-panel-title"><i data-lucide="folder"></i> Dossiers</span>
-            <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
-            <button id="tl-btn-new-template" class="tl-btn-new" title="Créer un nouveau template">+ Template</button>
-            <button class="modal-close tl-sidebar-close" id="tl-sidebar-close"><i data-lucide="x"></i></button>
-          </div>
-          <div class="folders-panel-scroll">
-            <div id="tl-folders-panel-recent" class="fp-recent"></div>
-            <div class="folders-panel-sort">
-              <label for="tl-folders-sort-select">Trier par</label>
-              <select id="tl-folders-sort-select" class="folders-sort-select">
-                <option value="alpha">Alphabétique (A→Z)</option>
-                <option value="alpha-desc">Alphabétique (Z→A)</option>
-                <option value="updatedAt">Dernière modification (récent→ancien)</option>
-                <option value="updatedAt-asc">Dernière modification (ancien→récent)</option>
-              </select>
-            </div>
-            <div class="fp-tree-frame">
-              <div class="fp-tree-frame-title">Dossiers</div>
-              <div id="tl-list" class="tl-list folders-panel-tree"></div>
-            </div>
-          </div>
-          <div class="folders-panel-footer">
-            <button class="btn-action tl-toolbar-btn tl-btn-archives-unified" id="tl-btn-archives-unified" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
-            <button class="btn-action tl-toolbar-btn tl-btn-trash-unified" id="tl-btn-trash-unified" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
-          </div>
-        </div>
+        <!-- Boutons legacy Archives/Corbeille tierlist : cachés (stubs de compat JS), remplacés
+             par #folders-page-btn-archives/#folders-page-btn-trash sur la page Dossiers. -->
+        <button class="hidden" id="tl-btn-archives-unified" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
+        <button class="hidden" id="tl-btn-trash-unified" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
 
         <!-- ── Zone principale ── -->
         <div class="tl-main" id="tl-main">
@@ -325,7 +367,7 @@
           <!-- Ligne 1 : Grilles (dans le dossier actif) -->
           <div class="ctrl-row ctrl-row-grids">
             <div class="ctrl-row-grids-left">
-              <button class="btn-action btn-folders-panel" id="btn-folders-panel" title="Ouvrir le panneau dossiers"><i data-lucide="folder"></i> Dossiers</button>
+              <button class="btn-action btn-folders-panel hidden" id="btn-folders-panel" title="Ouvrir la page Dossiers"><i data-lucide="folder"></i> Dossiers</button>
               <div id="grids-breadcrumb" class="grids-breadcrumb hidden"></div>
               <button class="btn-action btn-neutral-action btn-path" id="btn-path-dropdown" title="Aller à un dossier"><i data-lucide="chevron-down"></i> <span id="path-dropdown-label"></span></button>
               <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-grids-dropdown" title="Choisir les grilles à afficher"><i data-lucide="chevron-down"></i> Grilles</button>
@@ -383,35 +425,10 @@
 
       <div class="bingo-layout" id="bingo-layout">
 
-        <!-- Panneau dossiers (sidebar fixe, gauche) -->
-        <div id="folders-panel" class="folders-panel folders-sidebar">
-          <div class="folders-panel-header">
-            <span class="folders-panel-title"><i data-lucide="folder"></i> Dossiers</span>
-            <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
-            <button class="btn-new-grid hidden" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
-            <button class="modal-close folders-panel-close" id="folders-panel-close"><i data-lucide="x"></i></button>
-          </div>
-          <div class="folders-panel-scroll">
-            <div id="folders-panel-recent" class="fp-recent"></div>
-            <div class="folders-panel-sort">
-              <label for="folders-sort-select">Trier par</label>
-              <select id="folders-sort-select" class="folders-sort-select">
-                <option value="alpha">Alphabétique (A→Z)</option>
-                <option value="alpha-desc">Alphabétique (Z→A)</option>
-                <option value="updatedAt">Dernière modification (récent→ancien)</option>
-                <option value="updatedAt-asc">Dernière modification (ancien→récent)</option>
-              </select>
-            </div>
-            <div class="fp-tree-frame">
-              <div class="fp-tree-frame-title">Dossiers</div>
-              <div id="folders-panel-tree" class="folders-panel-tree"></div>
-            </div>
-          </div>
-          <div class="folders-panel-footer">
-            <button class="btn-action btn-archives-unified" id="btn-archives-unified" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
-            <button class="btn-action btn-trash-unified" id="btn-trash-unified" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
-          </div>
-        </div>
+        <!-- Boutons legacy Archives/Corbeille bingo : cachés (stubs de compat JS), remplacés
+             par #folders-page-btn-archives/#folders-page-btn-trash sur la page Dossiers. -->
+        <button class="hidden" id="btn-archives-unified" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
+        <button class="hidden" id="btn-trash-unified" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
 
         <!-- ── Panneau central : Grilles ── -->
         <div class="panel panel-grid">
@@ -843,32 +860,6 @@
           <button class="btn-action" id="btn-confirm-new-folder">Créer</button>
           <button class="btn-action btn-secondary" id="btn-cancel-new-folder">Annuler</button>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal "Rejoindre Bingo existant" — arborescence pliable des dossiers/grilles (accueil) -->
-  <div id="modal-home-join-bingo" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>REJOINDRE BINGO</h3>
-        <button class="modal-close" id="btn-close-home-join-bingo"><i data-lucide="x"></i></button>
-      </div>
-      <div class="modal-body">
-        <div id="home-join-bingo-tree" class="home-join-modal-tree"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal "Rejoindre Template existant" — arborescence pliable des dossiers/templates (accueil) -->
-  <div id="modal-home-join-tl" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>REJOINDRE TEMPLATE</h3>
-        <button class="modal-close" id="btn-close-home-join-tl"><i data-lucide="x"></i></button>
-      </div>
-      <div class="modal-body">
-        <div id="home-join-tl-tree" class="home-join-modal-tree"></div>
       </div>
     </div>
   </div>
@@ -1314,6 +1305,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=354"></script>
+  <script src="app.js?v=357"></script>
 </body>
 </html>
