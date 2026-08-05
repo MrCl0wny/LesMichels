@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=251" />
+  <link rel="stylesheet" href="style.css?v=253" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -210,8 +210,10 @@
             <div class="folders-panel-sort">
               <label for="tl-folders-sort-select">Trier par</label>
               <select id="tl-folders-sort-select" class="folders-sort-select">
-                <option value="alpha">Ordre alphabétique</option>
-                <option value="updatedAt">Dernière modification</option>
+                <option value="alpha">Alphabétique (A→Z)</option>
+                <option value="alpha-desc">Alphabétique (Z→A)</option>
+                <option value="updatedAt">Dernière modification (récent→ancien)</option>
+                <option value="updatedAt-asc">Dernière modification (ancien→récent)</option>
               </select>
             </div>
             <div class="fp-tree-frame">
@@ -394,8 +396,10 @@
             <div class="folders-panel-sort">
               <label for="folders-sort-select">Trier par</label>
               <select id="folders-sort-select" class="folders-sort-select">
-                <option value="alpha">Ordre alphabétique</option>
-                <option value="updatedAt">Dernière modification</option>
+                <option value="alpha">Alphabétique (A→Z)</option>
+                <option value="alpha-desc">Alphabétique (Z→A)</option>
+                <option value="updatedAt">Dernière modification (récent→ancien)</option>
+                <option value="updatedAt-asc">Dernière modification (ancien→récent)</option>
               </select>
             </div>
             <div class="fp-tree-frame">
@@ -692,6 +696,7 @@
   </div>
 
 
+  <div id="tl-modal-archived-overlay" class="archives-panel-overlay"></div>
   <!-- Panneau Archives tier list (drawer flottant, tierlists + dossiers) -->
   <div id="tl-modal-archived" class="folders-panel archives-panel">
     <div class="folders-panel-header">
@@ -703,6 +708,7 @@
     </div>
   </div>
 
+  <div id="tl-modal-trash-overlay" class="trash-panel-overlay"></div>
   <!-- Panneau Corbeille tier list (drawer flottant) -->
   <div id="tl-modal-trash" class="folders-panel trash-panel">
     <div class="folders-panel-header">
@@ -867,6 +873,7 @@
     </div>
   </div>
 
+  <div id="modal-archives-unified-overlay" class="archives-panel-overlay"></div>
   <!-- Panneau Archives (drawer flottant) -->
   <div id="modal-archives-unified" class="folders-panel archives-panel">
     <div class="folders-panel-header">
@@ -877,6 +884,7 @@
       <div id="archives-tree" class="archives-tree"></div>
     </div>
   </div>
+  <div id="modal-trash-unified-overlay" class="trash-panel-overlay"></div>
   <!-- Panneau Corbeille (drawer flottant) -->
   <div id="modal-trash-unified" class="folders-panel trash-panel">
     <div class="folders-panel-header">
@@ -1306,6 +1314,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=351"></script>
+  <script src="app.js?v=354"></script>
 </body>
 </html>

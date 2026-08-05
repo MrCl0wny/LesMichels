@@ -778,6 +778,14 @@ body {
   color: var(--accent);
   padding: 0 2px;
 }
+/* 3 lignes visibles, le reste scrolle — plus de limite au nombre d'entrées récentes. */
+.fp-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: calc(3 * 30px + 2 * 6px);
+  overflow-y: auto;
+}
 .fp-recent-row {
   display: flex;
   align-items: center;
@@ -789,6 +797,7 @@ body {
   cursor: pointer;
   user-select: none;
   transition: var(--transition);
+  flex-shrink: 0;
 }
 .fp-recent-row:hover { border-color: #60a5fa; background: var(--surface-3); }
 .fp-recent-row .fp-recent-icon { font-size: 0.8rem; flex-shrink: 0; color: var(--text-dim); }
@@ -4249,10 +4258,35 @@ body.solo-tierlist-mode .tl-layout {
 }
 .btn-trash-unified:hover { border-color: var(--danger) !important; color: var(--danger) !important; background: rgba(232,91,71,0.08) !important; opacity: 1; }
 
-/* ── Drawers Archives & Corbeille (même base que .folders-panel) ── */
+/* ── Archives & Corbeille : modaux fixes centrés (même base que .folders-panel pour le contenu
+   interne, mais comportement de modal classique — pas de drawer déplaçable, overlay derrière). ── */
 .archives-panel,
 .trash-panel {
   width: 360px;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%);
+}
+.archives-panel-overlay,
+.trash-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 200;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, visibility 0.18s ease;
+}
+.archives-panel-overlay.open,
+.trash-panel-overlay.open {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+.archives-panel .folders-panel-header,
+.trash-panel .folders-panel-header {
+  cursor: default;
 }
 
 .modal-archives-sections {
@@ -4447,7 +4481,14 @@ body.solo-tierlist-mode .tl-layout {
   padding: 0 2px;
 }
 .home-recent-title [data-lucide] { width: 13px; height: 13px; }
-.home-recent-list { display: flex; flex-direction: column; gap: 6px; }
+/* 3 lignes visibles, le reste scrolle — plus de limite au nombre d'entrées récentes. */
+.home-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: calc(3 * 34px + 2 * 6px);
+  overflow-y: auto;
+}
 .home-recent-row {
   display: flex;
   align-items: center;
@@ -4459,6 +4500,7 @@ body.solo-tierlist-mode .tl-layout {
   cursor: pointer;
   user-select: none;
   transition: var(--transition);
+  flex-shrink: 0;
 }
 .home-recent-row:hover { border-color: #60a5fa; background: var(--surface-3); }
 .home-recent-icon { font-size: 0.8rem; flex-shrink: 0; color: var(--text-muted); }

@@ -353,7 +353,7 @@ function _applySoloGridModeIfNeeded() {
     const grids = (firstFolder.grids || []).filter(gx => validIds.includes(gx.id));
     document.title = (grids.length === 1
       ? (grids[0].title || grids[0].name || 'Grille')
-      : `${grids.length} grilles`) + ' — LesMichels';
+      : `${grids.length} grilles`);
     document.body.classList.add('solo-grid-mode');
   }
 }
@@ -427,7 +427,7 @@ function _applySoloTierlistModeIfNeeded() {
   _tlLocalActiveTierlistId = tl.id;
   _tlLocalNoSelection = false;
   if (window._switchPage) window._switchPage('tierlist');
-  document.title = (_tlFullTitlePath(tl) || tl.name || 'Liste') + ' — LesMichels';
+  document.title = (_tlFullTitlePath(tl) || tl.name || 'Liste');
   document.body.classList.add('solo-tierlist-mode');
   _tlEnterSoloToolbarLayout();
   requestAnimationFrame(_adjustTlLayoutHeight);
@@ -458,7 +458,7 @@ function _applyCompareTierlistModeIfNeeded() {
       }
     }
   }
-  document.title = 'Comparaison : ' + _tlCommonTitlePath(tls) + ' — LesMichels';
+  document.title = 'Comparaison : ' + _tlCommonTitlePath(tls);
   _tlCompareGroupMembers = tls;
   _tlCompareSelectedIds = tls.map(t => t.id);
   if (typeof _tlRenderCompareListsMenu === 'function') _tlRenderCompareListsMenu();
@@ -1883,37 +1883,22 @@ if (_btnPathDropdown && _pathDropdownMenu) {
   document.addEventListener('click', () => _pathDropdownMenu.classList.add('hidden'));
 }
 
-function toggleGridSelection(gridId) {
-  const s = activeSubtheme();
-  if (!s) return;
-  const nowSelected = _selectedGridIds.includes(gridId);
-  if (nowSelected) {
-    _selectedGridIds = _selectedGridIds.filter(id => id !== gridId);
-    if (s.activeGridId === gridId) {
-      s.activeGridId = _selectedGridIds.length > 0 ? _selectedGridIds[0] : null;
-    }
-  } else {
-    _selectedGridIds.push(gridId);
-    s.activeGridId = gridId;
-  }
-  saveLocalSelectedGrids(_selectedGridIds);
-  saveState();
-  renderGridsList();
-  renderGrid();
-  renderFoldersPanelTree();
-}
-
 // Tri des dossiers dans les drawers Dossiers (bingo + tierlist) : toujours trié, pas de mode manuel
 // (pas de drag&drop de réordonnancement — "Déplacer" dans le menu contextuel reste le seul moyen de
 // changer un dossier de parent).
 function _folderSortMode(key) {
   const mode = localStorage.getItem(key);
-  return (mode === 'updatedAt') ? mode : 'alpha';
+  return ['alpha', 'alpha-desc', 'updatedAt', 'updatedAt-asc'].includes(mode) ? mode : 'alpha';
 }
 function _sortFoldersList(list, mode) {
   const sorted = list.slice();
-  if (mode === 'updatedAt') sorted.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  else sorted.sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
+  if (mode === 'updatedAt' || mode === 'updatedAt-asc') {
+    sorted.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    if (mode === 'updatedAt-asc') sorted.reverse();
+  } else {
+    sorted.sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
+    if (mode === 'alpha-desc') sorted.reverse();
+  }
   return sorted;
 }
 
@@ -1957,30 +1942,34 @@ function _dedupeAncestorFolders(sorted, getAncestorIds) {
   return kept;
 }
 
+// Même filtrage que _homeRenderRecentBingo (page d'accueil) : seuls les dossiers-bingo (au moins
+// une grille non archivée), même titre/icône.
 function _renderRecentFolderPaths() {
   const container = document.getElementById('folders-panel-recent');
   if (!container) return;
   container.innerHTML = '';
   const ancestorIdsOf = id => getFolderPath(state.folders, id).slice(0, -1).map(f => f.id);
   const sorted = _flattenFoldersForRecent(state.folders)
-    .filter(f => f.updatedAt)
+    .filter(f => f.updatedAt && (f.grids || []).some(g => !g.archived))
     // À updatedAt égal (même événement, propagé par touchFolderChain à toute la chaîne), le dossier
     // le plus profond doit être considéré en premier pour que la déduplication le retienne, lui.
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || ancestorIdsOf(b.id).length - ancestorIdsOf(a.id).length);
-  const recent = _dedupeAncestorFolders(sorted, ancestorIdsOf).slice(0, 5);
+  const recent = _dedupeAncestorFolders(sorted, ancestorIdsOf);
   if (recent.length === 0) return;
 
   const title = document.createElement('div');
   title.className = 'fp-recent-title';
-  title.textContent = 'Récents';
+  title.textContent = 'Bingos récents';
   container.appendChild(title);
 
+  const list = document.createElement('div');
+  list.className = 'fp-recent-list';
   recent.forEach(f => {
     const row = document.createElement('div');
     row.className = 'fp-recent-row';
     const icon = document.createElement('span');
     icon.className = 'fp-recent-icon';
-    icon.innerHTML = '<i data-lucide="folder-closed"></i>';
+    icon.innerHTML = '<i data-lucide="grid-3x3"></i>';
     const path = document.createElement('span');
     path.className = 'fp-recent-path';
     path.textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' \\ ');
@@ -1990,8 +1979,9 @@ function _renderRecentFolderPaths() {
       _expandFolderAncestors(f.id);
       if (_localActiveFolderId !== f.id) switchFolder(f.id);
     });
-    container.appendChild(row);
+    list.appendChild(row);
   });
+  container.appendChild(list);
 }
 
 function renderFoldersPanelTree() {
@@ -2022,8 +2012,7 @@ function renderFoldersPanelTree() {
     const isActive = f.id === _localActiveFolderId;
     const isAncestor = ancestorIds.has(f.id);
     const children = _sortFoldersList((f.folders || []).filter(sf => !sf.archived), sortMode);
-    const grids = (f.grids || []).filter(g => !g.archived);
-    const hasChildren = children.length > 0 || grids.length > 0;
+    const hasChildren = children.length > 0;
 
     // État collapse persisté dans l'élément DOM (non Firebase)
     const collapseKey = 'fp_collapsed_' + f.id;
@@ -2037,9 +2026,11 @@ function renderFoldersPanelTree() {
     arrow.innerHTML = '<i data-lucide="chevron-down"></i>';
     if (!hasChildren) arrow.style.visibility = 'hidden';
 
+    const isBingoFolder = (f.grids || []).length > 0;
     const icon = document.createElement('span');
     icon.className = 'fp-folder-icon';
-    icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
+    icon.innerHTML = isBingoFolder ? '<i data-lucide="grid-3x3"></i>'
+      : (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
 
     const name = document.createElement('span');
     name.className = 'fp-folder-name';
@@ -2061,61 +2052,6 @@ function renderFoldersPanelTree() {
     childrenEl.className = 'fp-children' + (collapsed ? ' collapsed' : '');
     childrenEl.style.paddingLeft = '14px';
 
-    // Grilles du dossier
-    grids.forEach(g => {
-      const gRow = document.createElement('div');
-      const gActive = f.id === _localActiveFolderId && _selectedGridIds.includes(g.id);
-      gRow.className = 'fp-grid-row' + (gActive ? ' active' : '');
-      gRow.style.paddingLeft = '14px';
-
-      const gIcon = document.createElement('span');
-      gIcon.className = 'fp-grid-icon';
-      gIcon.innerHTML = '<i data-lucide="grid-3x3"></i>';
-
-      const gName = document.createElement('span');
-      gName.className = 'fp-grid-name';
-      gName.textContent = g.name;
-
-      const gCtx = document.createElement('button');
-      gCtx.className = 'fp-grid-ctx-btn';
-      gCtx.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-      gCtx.title = 'Options';
-
-      gRow.appendChild(gIcon);
-      gRow.appendChild(gName);
-      gRow.appendChild(gCtx);
-
-      gRow.addEventListener('click', e => {
-        if (e.target === gCtx) return;
-        // Activer le dossier parent si pas déjà actif
-        if (_localActiveFolderId !== f.id) {
-          _localActiveFolderId = f.id;
-          _saveLocalActiveFolderId(f.id);
-          _selectedGridIds = [g.id];
-          saveLocalSelectedGrids(_selectedGridIds);
-          const folder = activeFolder();
-          if (folder) folder.activeGridId = g.id;
-          saveState();
-          renderAllFolders();
-          renderElements();
-          renderGridsList();
-          renderGrid();
-        } else {
-          toggleGridSelection(g.id);
-        }
-      });
-      const openGridMenu = (e, anchor) => {
-        e.stopPropagation();
-        const { addItem } = _tlMakeCtxMenu(anchor, e, { title: g.name });
-        addItem('pencil', 'Renommer',   false, () => openRenameGridModal(g.id));
-        addItem('trash-2', 'Supprimer', true,  () => deleteGrid(g.id));
-      };
-      gCtx.addEventListener('click', e => openGridMenu(e, gRow));
-      gRow.addEventListener('contextmenu', e => { e.preventDefault(); openGridMenu(e, null); });
-
-      childrenEl.appendChild(gRow);
-    });
-
     // Dossiers enfants (récursif)
     children.forEach(sf => _renderFolder(sf, childrenEl, depth + 1));
 
@@ -2126,7 +2062,8 @@ function renderFoldersPanelTree() {
       sessionStorage.setItem(collapseKey, collapsed ? '1' : '0');
       arrow.classList.toggle('collapsed', collapsed);
       childrenEl.classList.toggle('collapsed', collapsed);
-      icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
+      icon.innerHTML = isBingoFolder ? '<i data-lucide="grid-3x3"></i>'
+        : (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
       if (window.lucide) lucide.createIcons();
     };
     arrow.addEventListener('click', toggleCollapse);
@@ -4456,7 +4393,7 @@ window.addEventListener('scroll', () => {
 document.getElementById('btn-open-grids-window').addEventListener('click', () => {
   const grids = getVisibleGrids();
   if (grids.length === 0) return;
-  document.title = getFolderPath(state.folders, _localActiveFolderId).map(f => f.name).join(' \\ ') + ' — LesMichels';
+  document.title = getFolderPath(state.folders, _localActiveFolderId).map(f => f.name).join(' \\ ');
   document.body.classList.add('solo-grid-mode');
   // En plein écran, tout doit tenir sur une seule rangée : #btn-grids-dropdown (ligne 1, mode
   // normal), #font-scale-label et le bouton Capture (2e rangée, mode normal) sont déplacés en JS
@@ -5022,16 +4959,19 @@ function renderArchivesUnified() {
   if (window.lucide) lucide.createIcons();
 }
 
+const modalArchivesUnifiedOverlay = document.getElementById('modal-archives-unified-overlay');
+
 function openArchivesUnified() {
   renderArchivesUnified();
-  _initPanelPosition(modalArchivesUnified, 'right');
-  _makePanelDraggable(modalArchivesUnified);
   modalArchivesUnified.classList.add('open');
+  modalArchivesUnifiedOverlay.classList.add('open');
 }
 
 function closeArchivesUnified() {
   modalArchivesUnified.classList.remove('open');
+  modalArchivesUnifiedOverlay.classList.remove('open');
 }
+modalArchivesUnifiedOverlay.addEventListener('click', closeArchivesUnified);
 
 document.getElementById('btn-archives-unified').addEventListener('click', () => {
   if (modalArchivesUnified.classList.contains('open')) closeArchivesUnified();
@@ -5175,16 +5115,19 @@ function renderTrashList() {
   if (window.lucide) lucide.createIcons();
 }
 
+const modalTrashUnifiedOverlay = document.getElementById('modal-trash-unified-overlay');
+
 function openTrashUnified() {
   renderTrashList();
-  _initPanelPosition(modalTrashUnified, 'right');
-  _makePanelDraggable(modalTrashUnified);
   modalTrashUnified.classList.add('open');
+  modalTrashUnifiedOverlay.classList.add('open');
 }
 
 function closeTrashUnified() {
   modalTrashUnified.classList.remove('open');
+  modalTrashUnifiedOverlay.classList.remove('open');
 }
+modalTrashUnifiedOverlay.addEventListener('click', closeTrashUnified);
 
 document.getElementById('btn-trash-unified').addEventListener('click', () => {
   if (modalTrashUnified.classList.contains('open')) closeTrashUnified();
@@ -5643,17 +5586,27 @@ function tlDefaultTierlist(name, isTemplate = false) {
 }
 
 // Copie triée de tl.unplaced pour l'affichage — ne mute jamais tl.unplaced (le drag&drop manuel s'appuie dessus)
-// Modes : 'manual' (ordre réel de tl.unplaced) | 'alpha' (nom) | 'date' (ordre d'ajout = ordre réel, comme 'manual')
+// Modes : 'manual' (ordre réel de tl.unplaced) | 'alpha'/'alpha-desc' (nom) | 'updatedAt'/'updatedAt-asc' (date de modification, récent→ancien par défaut)
 function _tlGetSortedUnplaced(tl) {
   const ids = tl.unplaced.slice();
   const mode = tl.unplacedSort || 'manual';
-  if (mode === 'alpha') {
-    return ids.sort((a, b) => {
+  if (mode === 'alpha' || mode === 'alpha-desc') {
+    ids.sort((a, b) => {
       const ia = tlFindImage(tl, a), ib = tlFindImage(tl, b);
       return (ia ? ia.name : '').localeCompare(ib ? ib.name : '', 'fr', { sensitivity: 'base' });
     });
+    if (mode === 'alpha-desc') ids.reverse();
+    return ids;
   }
-  // 'manual' et 'date' : ordre réel de tl.unplaced (pas de timestamp stocké, l'ordre d'ajout se confond avec l'ordre actuel)
+  if (mode === 'updatedAt' || mode === 'updatedAt-asc') {
+    ids.sort((a, b) => {
+      const ia = tlFindImage(tl, a), ib = tlFindImage(tl, b);
+      return (ib?.updatedAt || 0) - (ia?.updatedAt || 0);
+    });
+    if (mode === 'updatedAt-asc') ids.reverse();
+    return ids;
+  }
+  // 'manual' : ordre réel de tl.unplaced
   return ids;
 }
 
@@ -6953,29 +6906,35 @@ function _tlDepthOf(folderId) {
   return _tlAncestorIdsOf(folderId).length;
 }
 
+// Même filtrage que _homeRenderRecentTl (page d'accueil) : seuls les dossiers contenant au moins
+// un template, même titre/icône/comportement de clic (ouvre directement le template s'il n'y en a
+// qu'un dans le dossier).
 function _tlRenderRecentFolderPaths() {
   const container = document.getElementById('tl-folders-panel-recent');
   if (!container) return;
   container.innerHTML = '';
+  const hasTemplate = f => tlState.tierlists.some(t => t.isTemplate && !t.archived && t.folderId === f.id);
   const sorted = (tlState.folders || [])
-    .filter(f => !f.archived && f.updatedAt)
+    .filter(f => !f.archived && f.updatedAt && hasTemplate(f))
     // À updatedAt égal (même événement, propagé par tlTouchFolderChain à toute la chaîne), le dossier
     // le plus profond doit être considéré en premier pour que la déduplication le retienne, lui.
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || _tlDepthOf(b.id) - _tlDepthOf(a.id));
-  const recent = _dedupeAncestorFolders(sorted, _tlAncestorIdsOf).slice(0, 5);
+  const recent = _dedupeAncestorFolders(sorted, _tlAncestorIdsOf);
   if (recent.length === 0) return;
 
   const title = document.createElement('div');
   title.className = 'fp-recent-title';
-  title.textContent = 'Récents';
+  title.textContent = 'Templates récents';
   container.appendChild(title);
 
+  const list = document.createElement('div');
+  list.className = 'fp-recent-list';
   recent.forEach(f => {
     const row = document.createElement('div');
     row.className = 'fp-recent-row';
     const icon = document.createElement('span');
     icon.className = 'fp-recent-icon';
-    icon.innerHTML = '<i data-lucide="folder-closed"></i>';
+    icon.innerHTML = '<i data-lucide="scroll"></i>';
     const path = document.createElement('span');
     path.className = 'fp-recent-path';
     let pathText = _tlFolderPath(f.id);
@@ -6984,9 +6943,13 @@ function _tlRenderRecentFolderPaths() {
     path.textContent = pathText;
     row.appendChild(icon);
     row.appendChild(path);
-    row.addEventListener('click', () => _tlGoToFolder(f.id));
-    container.appendChild(row);
+    row.addEventListener('click', () => {
+      if (templatesHere.length === 1) _homeGoToTlTierlist(templatesHere[0]);
+      else _tlGoToFolder(f.id);
+    });
+    list.appendChild(row);
   });
+  container.appendChild(list);
   if (window.lucide) lucide.createIcons();
 }
 
@@ -7707,7 +7670,7 @@ function _tlPasteFromClipboard(tl) {
         return _tlCompressToBase64(blob).then(src => {
           if (root.images.length >= maxImages) return;
           if (root.images.some(i => i.src === src)) return;
-          const img = { id: uid(), src, name };
+          const img = { id: uid(), src, name, updatedAt: Date.now() };
           _tlSrcCache[img.id] = src;
           _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'addImage', imgId: img.id });
           root.images.push(img);
@@ -7853,6 +7816,7 @@ function _tlInlineRenameImg(labelEl, tl, img, size, caretOffset) {
     if (newName && newName !== img.name) {
       _tlPushUndoOp({ tierlistId: tl.id, groupRootId: _tlGroupRoot(tl).id, type: 'renameImage', imgId: img.id, oldName: img.name });
       img.name = newName;
+      img.updatedAt = Date.now();
       tlSave();
     }
     tlRender();
@@ -8184,7 +8148,7 @@ function tlImportImages(files) {
     const name = file.name.replace(/\.[^.]+$/, '');
     return _tlCompressToBase64(file).then(src => {
       if (root.images.some(i => i.src === src)) { ignoredByDuplicate++; return; }
-      const img = { id: uid(), src, name };
+      const img = { id: uid(), src, name, updatedAt: Date.now() };
       _tlSrcCache[img.id] = src;
       _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'addImage', imgId: img.id });
       root.images.push(img);
@@ -8482,6 +8446,7 @@ function tlConfirmRenameImg() {
       const tl = tlState.tierlists.find(t => t.id === tlId);
       _tlPushUndoOp({ tierlistId: tlId, groupRootId: _tlGroupRoot(tl).id, type: 'renameImage', imgId: img.id, oldName: img.name });
       img.name = newName;
+      img.updatedAt = Date.now();
     }
   }
   tlModalImgName.classList.add('hidden');
@@ -9819,13 +9784,13 @@ function _tlOpenCompareInline() {
   _tlEnterCompareToolbarLayout();
   tlUpdateUndoBtn();
   if (tls.length === 0) {
-    document.title = 'Comparaison — LesMichels';
+    document.title = 'Comparaison';
     _tlCompareTierlists = [];
     const container = document.getElementById('tl-compare-view');
     if (container) container.innerHTML = '';
     return;
   }
-  document.title = 'Comparaison : ' + _tlCommonTitlePath(tls) + ' — LesMichels';
+  document.title = 'Comparaison : ' + _tlCommonTitlePath(tls);
   _tlRenderCompareView(tls);
 }
 
@@ -9931,7 +9896,7 @@ if (_tlFoldersSortSelect) {
 document.getElementById('tl-btn-open-window').addEventListener('click', () => {
   const tl = tlActiveTierlist();
   if (!tl) return;
-  document.title = (_tlFullTitlePath(tl) || tl.name || 'Liste') + ' — LesMichels';
+  document.title = (_tlFullTitlePath(tl) || tl.name || 'Liste');
   document.body.classList.add('solo-tierlist-mode');
   _tlEnterSoloToolbarLayout();
   requestAnimationFrame(_adjustTlLayoutHeight);
@@ -10207,7 +10172,7 @@ function _tlAddTextCard(tl, text) {
     alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
     return;
   }
-  const img = { id: uid(), type: 'text', name: text, color: TL_TEXT_CARD_COLOR };
+  const img = { id: uid(), type: 'text', name: text, color: TL_TEXT_CARD_COLOR, updatedAt: Date.now() };
   _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'addImage', imgId: img.id });
   root.images.push(img);
   _tlGetGroupMembers(tl).forEach(member => {
@@ -10481,35 +10446,41 @@ if (tlCompareImgSizeSlider) {
   });
 }
 
+const tlModalArchivedOverlay = document.getElementById('tl-modal-archived-overlay');
+
 function tlOpenArchivesUnified() {
   tlRenderArchivedModal();
-  _initPanelPosition(tlModalArchived, 'right');
-  _makePanelDraggable(tlModalArchived);
   tlModalArchived.classList.add('open');
+  tlModalArchivedOverlay.classList.add('open');
 }
 function tlCloseArchivesUnified() {
   tlModalArchived.classList.remove('open');
+  tlModalArchivedOverlay.classList.remove('open');
 }
 document.getElementById('tl-btn-archives-unified').addEventListener('click', () => {
   if (tlModalArchived.classList.contains('open')) tlCloseArchivesUnified();
   else tlOpenArchivesUnified();
 });
 tlModalArchivedClose.addEventListener('click', tlCloseArchivesUnified);
+tlModalArchivedOverlay.addEventListener('click', tlCloseArchivesUnified);
+
+const tlModalTrashOverlay = document.getElementById('tl-modal-trash-overlay');
 
 function tlOpenTrashUnified() {
   tlRenderTrashList();
-  _initPanelPosition(tlModalTrash, 'right');
-  _makePanelDraggable(tlModalTrash);
   tlModalTrash.classList.add('open');
+  tlModalTrashOverlay.classList.add('open');
 }
 function tlCloseTrashUnified() {
   tlModalTrash.classList.remove('open');
+  tlModalTrashOverlay.classList.remove('open');
 }
 document.getElementById('tl-btn-trash-unified').addEventListener('click', () => {
   if (tlModalTrash.classList.contains('open')) tlCloseTrashUnified();
   else tlOpenTrashUnified();
 });
 tlModalTrashClose.addEventListener('click', tlCloseTrashUnified);
+tlModalTrashOverlay.addEventListener('click', tlCloseTrashUnified);
 
 document.getElementById('tl-btn-trash-empty-all').addEventListener('click', () => {
   if ((tlState.trash || []).length === 0) return;
@@ -10582,8 +10553,10 @@ tlUnplacedSortBtn.addEventListener('click', () => {
     tlRender();
   };
   const { addItem } = _tlMakeCtxMenu(tlUnplacedSortBtn, null);
-  addItem('arrow-down-a-z', 'Alphabétique', false, () => applySort('alpha'));
-  addItem('arrow-down-0-1', 'Date d\'ajout', false, () => applySort('date'));
+  addItem('arrow-down-a-z', 'Alphabétique (A→Z)', false, () => applySort('alpha'));
+  addItem('arrow-up-a-z', 'Alphabétique (Z→A)', false, () => applySort('alpha-desc'));
+  addItem('arrow-down-0-1', 'Date de modification (récent→ancien)', false, () => applySort('updatedAt'));
+  addItem('arrow-up-0-1', 'Date de modification (ancien→récent)', false, () => applySort('updatedAt-asc'));
 });
 
 // ── Afficher/masquer le cadre "Éléments non placés" (tierlist normale uniquement) ──
@@ -10659,7 +10632,7 @@ document.addEventListener('paste', e => {
     return _tlCompressToBase64(file).then(src => {
       if (root.images.length >= maxImages) return;
       if (root.images.some(i => i.src === src)) return;
-      const img = { id: uid(), src, name };
+      const img = { id: uid(), src, name, updatedAt: Date.now() };
       _tlSrcCache[img.id] = src;
       _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'addImage', imgId: img.id });
       root.images.push(img);
@@ -10862,7 +10835,7 @@ function _homeRenderRecentBingo() {
   const sorted = _flattenFoldersForRecent(state.folders)
     .filter(f => f.updatedAt && (f.grids || []).some(g => !g.archived))
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || ancestorIdsOf(b.id).length - ancestorIdsOf(a.id).length);
-  const recent = _dedupeAncestorFolders(sorted, ancestorIdsOf).slice(0, 5);
+  const recent = _dedupeAncestorFolders(sorted, ancestorIdsOf);
   if (recent.length === 0) return;
 
   const title = document.createElement('div');
@@ -10875,7 +10848,7 @@ function _homeRenderRecentBingo() {
   recent.forEach(f => {
     const row = document.createElement('div');
     row.className = 'home-recent-row';
-    row.innerHTML = '<span class="home-recent-icon"><i data-lucide="folder-closed"></i></span><span class="home-recent-path"></span>';
+    row.innerHTML = '<span class="home-recent-icon"><i data-lucide="grid-3x3"></i></span><span class="home-recent-path"></span>';
     row.querySelector('.home-recent-path').textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' \\ ');
     row.addEventListener('click', () => _homeGoToBingoFolder(f.id));
     list.appendChild(row);
@@ -10893,12 +10866,12 @@ function _homeRenderRecentTl() {
   const sorted = (tlState.folders || [])
     .filter(f => !f.archived && f.updatedAt && hasTemplate(f))
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || _tlDepthOf(b.id) - _tlDepthOf(a.id));
-  const recent = _dedupeAncestorFolders(sorted, _tlAncestorIdsOf).slice(0, 5);
+  const recent = _dedupeAncestorFolders(sorted, _tlAncestorIdsOf);
   if (recent.length === 0) return;
 
   const title = document.createElement('div');
   title.className = 'home-recent-title';
-  title.innerHTML = '<i data-lucide="list-ordered"></i> Listes récentes';
+  title.innerHTML = '<i data-lucide="scroll"></i> Templates récents';
   container.appendChild(title);
 
   const list = document.createElement('div');
@@ -10906,7 +10879,7 @@ function _homeRenderRecentTl() {
   recent.forEach(f => {
     const row = document.createElement('div');
     row.className = 'home-recent-row';
-    row.innerHTML = '<span class="home-recent-icon"><i data-lucide="folder-closed"></i></span><span class="home-recent-path"></span>';
+    row.innerHTML = '<span class="home-recent-icon"><i data-lucide="scroll"></i></span><span class="home-recent-path"></span>';
     let pathText = _tlFolderPath(f.id);
     const templatesHere = tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === f.id);
     if (templatesHere.length === 1) pathText += ' \\ ' + templatesHere[0].name;
