@@ -2173,10 +2173,11 @@ function renderFoldersPanelTree() {
   container.classList.toggle('hidden', _foldersViewMode !== 'list');
   document.getElementById('folders-panel-icons').classList.toggle('hidden', _foldersViewMode !== 'icons');
 
+  _renderRecentFolderPaths();
+
   if (_foldersViewMode === 'icons') { _renderFoldersPanelIcons(); return; }
 
   container.innerHTML = '';
-  _renderRecentFolderPaths();
 
   const sortMode = _folderSortMode('bingoFoldersSortMode');
   const sortSelect = document.getElementById('folders-sort-select');
