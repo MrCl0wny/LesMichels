@@ -1854,17 +1854,30 @@ function renderGridsBreadcrumb() {
 // ── Bouton Chemin (mode normal) : arborescence pliable/dépliable des dossiers, même comportement
 // que le bouton Chemin de la partie Tier List (voir _tlRenderPathMenuRows/_tlGoToFolder). Les
 // dossiers bingo sont imbriqués (folder.folders), pas une liste plate avec parentId comme tlState.
-function _renderPathMenuRows(menu, rootFolders) {
+function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
   menu.querySelectorAll('.tl-path-menu-row').forEach(el => el.remove());
+
+  const currentPathIds = _localActiveFolderId
+    ? getFolderPath(rootFolders, _localActiveFolderId).map(f => f.id)
+    : [];
+
+  // À chaque (ré)ouverture du dropdown (pas lors des re-rendus internes causés par un clic sur une
+  // flèche), le chemin actif redémarre toujours déplié, même s'il avait été replié manuellement lors
+  // d'une ouverture précédente — le repli manuel ne "tient" que pendant que le menu reste ouvert.
+  if (resetPathExpansion) currentPathIds.forEach(id => sessionStorage.removeItem('bingo_folder_open_' + id));
 
   const buildRow = (folder, depth) => {
     const children = (folder.folders || []).filter(f => !f.archived);
     const hasChildren = children.length > 0;
     const key = 'bingo_folder_open_' + folder.id;
-    const isOpen = sessionStorage.getItem(key) === '1';
+    const isOnCurrentPath = currentPathIds.includes(folder.id);
+    // Déplié par défaut sur le chemin actif, mais seulement tant que l'utilisateur n'a pas explicitement
+    // replié/déplié ce dossier lui-même (sessionStorage prend le dessus dès qu'il existe).
+    const stored = sessionStorage.getItem(key);
+    const isOpen = stored !== null ? stored === '1' : isOnCurrentPath;
 
     const row = document.createElement('div');
-    row.className = 'tl-path-menu-row';
+    row.className = 'tl-path-menu-row' + (isOnCurrentPath ? ' active' : '');
     row.style.paddingLeft = (depth * 14) + 'px';
 
     const arrow = document.createElement('span');
@@ -1922,7 +1935,7 @@ if (_btnPathDropdown && _pathDropdownMenu) {
     } else {
       _pathDropdownMenu.classList.remove('hidden');
       positionCtxMenu(_pathDropdownMenu, null, _btnPathDropdown);
-      _renderPathMenuRows(_pathDropdownMenu, state.folders);
+      _renderPathMenuRows(_pathDropdownMenu, state.folders, true);
     }
   });
   _pathDropdownMenu.addEventListener('click', e => e.stopPropagation());
@@ -2136,7 +2149,7 @@ function _renderFoldersPanelIcons() {
     tile.appendChild(iconEl);
     tile.appendChild(nameEl);
 
-    const openThisFolder = () => { switchFolder(f.id); _switchPage('bingo'); };
+    const openThisFolder = () => { if (_localActiveFolderId !== f.id) switchFolder(f.id); _switchPage('bingo'); };
     const openMenu = e => _openBingoFolderCtxMenu(f, e, tile, openThisFolder);
 
     tile.addEventListener('click', e => {
@@ -2221,7 +2234,7 @@ function renderFoldersPanelTree() {
     row.appendChild(name);
     row.appendChild(ctxBtn);
 
-    const openThisFolder = () => { switchFolder(f.id); _switchPage('bingo'); };
+    const openThisFolder = () => { if (_localActiveFolderId !== f.id) switchFolder(f.id); _switchPage('bingo'); };
 
     row.addEventListener('click', e => {
       if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
@@ -4104,25 +4117,77 @@ function _renderElementPresetEditList() {
   _elementPresetEditTexts.forEach((text, idx) => {
     const li = document.createElement('li');
     li.className = 'element-item';
+    li.title = 'Clic gauche : renommer';
 
     const span = document.createElement('span');
     span.className = 'element-text';
     span.textContent = text;
+    span.style.cursor = 'text';
     li.appendChild(span);
 
     const del = document.createElement('button');
     del.className = 'elem-menu-btn';
     del.title = 'Supprimer cette case';
     del.innerHTML = '<i data-lucide="x"></i>';
-    del.addEventListener('click', () => {
+    del.addEventListener('click', e => {
+      e.stopPropagation();
       _elementPresetEditTexts.splice(idx, 1);
       _renderElementPresetEditList();
     });
     li.appendChild(del);
 
+    li.addEventListener('click', e => {
+      e.stopPropagation();
+      _startEditElementPresetEditText(idx, span, e);
+    });
+
     list.appendChild(li);
   });
   if (window.lucide) lucide.createIcons();
+}
+
+// Édition inline d'une case du preset en cours d'édition, même comportement que startEditElement()
+// pour le panneau Cases (textarea remplaçant le span, Enter valide, Escape annule).
+function _startEditElementPresetEditText(idx, span, clickEvent) {
+  const text = _elementPresetEditTexts[idx];
+  if (text === undefined) return;
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'element-edit-input';
+  textarea.textContent = text;
+  textarea.maxLength = 80;
+
+  const commit = () => {
+    const newText = textarea.value.trim();
+    if (newText) _elementPresetEditTexts[idx] = newText;
+    _renderElementPresetEditList();
+  };
+
+  textarea.addEventListener('blur', commit);
+  textarea.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); textarea.blur(); }
+    if (e.key === 'Escape') { textarea.value = text; textarea.blur(); }
+  });
+
+  const autoResize = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  };
+  textarea.addEventListener('input', autoResize);
+
+  const rect = span.getBoundingClientRect();
+  span.replaceWith(textarea);
+  textarea.focus();
+  autoResize();
+
+  if (clickEvent) {
+    const clickX = clickEvent.clientX - rect.left;
+    const charWidth = rect.width / text.length;
+    const position = Math.round(clickX / charWidth);
+    textarea.setSelectionRange(position, position);
+  } else {
+    textarea.select();
+  }
 }
 
 function openElementPresetEditModal(presetId) {
@@ -10401,16 +10466,33 @@ function _tlGoToFolder(folderId) {
 // meme sessionStorage tl_folder_open_<id> - un dossier ouvert dans l'un reste ouvert dans l'autre).
 // Lignes construites a la main (chevron separe du nom) plutot qu'avec addItem, qui ne gere qu'une
 // ligne plate sans sous-comportement cliquable.
-function _tlRenderPathMenuRows(menu, activeFolders, close) {
+function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
   menu.querySelectorAll('.tl-path-menu-row').forEach(el => el.remove());
+
+  // Le dossier réellement affiché (celui du breadcrumb en haut) : celui de la tierlist/template actif
+  // s'il y en a un, sinon _tlLocalActiveFolderId — même source que _tlActiveGroupContext(), utilisée
+  // par le dropdown Template. _tlLocalActiveFolderId seul serait souvent obsolète/null ici.
+  const effectiveFolderId = _tlActiveGroupContext().folderId;
+  const currentPathIds = [];
+  let _cur = effectiveFolderId ? activeFolders.find(f => f.id === effectiveFolderId) : null;
+  while (_cur) {
+    currentPathIds.unshift(_cur.id);
+    _cur = _cur.parentId ? activeFolders.find(f => f.id === _cur.parentId) : null;
+  }
+
+  if (resetPathExpansion) currentPathIds.forEach(id => sessionStorage.removeItem('tl_folder_open_' + id));
 
   const buildRow = (folder, depth) => {
     const hasChildren = activeFolders.some(f => (f.parentId || null) === folder.id);
     const key = 'tl_folder_open_' + folder.id;
-    const isOpen = sessionStorage.getItem(key) === '1';
+    const isOnCurrentPath = currentPathIds.includes(folder.id);
+    // Déplié par défaut sur le chemin actif, mais seulement tant que l'utilisateur n'a pas explicitement
+    // replié/déplié ce dossier lui-même (sessionStorage prend le dessus dès qu'il existe).
+    const stored = sessionStorage.getItem(key);
+    const isOpen = stored !== null ? stored === '1' : isOnCurrentPath;
 
     const row = document.createElement('div');
-    row.className = 'tl-path-menu-row';
+    row.className = 'tl-path-menu-row' + (isOnCurrentPath ? ' active' : '');
     row.style.paddingLeft = (depth * 14) + 'px';
 
     const arrow = document.createElement('span');
@@ -10444,7 +10526,9 @@ function _tlRenderPathMenuRows(menu, activeFolders, close) {
       .filter(f => (f.parentId || null) === (parentId || null))
       .forEach(f => {
         menu.appendChild(buildRow(f, depth));
-        if (sessionStorage.getItem('tl_folder_open_' + f.id) === '1') addFolderRows(f.id, depth + 1);
+        const stored = sessionStorage.getItem('tl_folder_open_' + f.id);
+        const isOpen = stored !== null ? stored === '1' : currentPathIds.includes(f.id);
+        if (isOpen) addFolderRows(f.id, depth + 1);
       });
   };
   addFolderRows(null, 0);
@@ -10465,7 +10549,7 @@ if (_tlBtnPathDropdown) {
     e.stopPropagation();
     const { menu, close } = _tlMakeCtxMenu(_tlBtnPathDropdown, null, { noCloseBtn: true, title: 'Aller à un dossier' });
     const activeFolders = (tlState.folders || []).filter(f => !f.archived);
-    _tlRenderPathMenuRows(menu, activeFolders, close);
+    _tlRenderPathMenuRows(menu, activeFolders, close, true);
   });
 }
 

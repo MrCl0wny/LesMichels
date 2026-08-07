@@ -2551,6 +2551,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   white-space: nowrap;
 }
 .tl-path-menu-row:hover { background: var(--surface-3); }
+.tl-path-menu-row.active { background: rgba(59,130,246,0.18); color: #93c5fd; }
 .tl-path-menu-arrow {
   font-size: 0.6rem;
   color: var(--text-dim);
