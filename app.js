@@ -294,6 +294,7 @@ function setupAuth() {
       _selectedGridsByFolder = {};
       _selectedGridIds = [];
       _localFontScale  = 1;
+      _localShowNewBadge = true;
       _tlLocalShowLabels       = null;
       _tlLocalImgSize          = null;
       _tlLocalUnplacedImgSize  = null;
@@ -337,6 +338,7 @@ function loadUserPrefs() {
   ref.once('value').then(snap => {
     const prefs = snap.val() || {};
     if (prefs.fontScale        != null) _localFontScale        = prefs.fontScale;
+    if (prefs.showNewBadge     != null) _localShowNewBadge     = !!prefs.showNewBadge;
     if (prefs.foldersViewMode  != null) _foldersViewMode       = prefs.foldersViewMode;
     if (prefs.tlFoldersViewMode != null) _tlFoldersViewMode    = prefs.tlFoldersViewMode;
     // Prefs dossiers (nouvelle structure)
@@ -602,12 +604,18 @@ function _applyPrefsAndRender() {
 
 // Préférences visuelles — stockées dans Firebase /users/{uid}/prefs
 let _localFontScale  = 1;
+let _localShowNewBadge = true;
 
 function _saveLocalActiveFolderId(id) { saveUserPrefs({ activeFolderId: id || null }); }
 
 function saveLocalFontScale(scale) {
   _localFontScale = Math.max(0.5, Math.min(3, scale));
   saveUserPrefs({ fontScale: _localFontScale });
+}
+
+function saveLocalShowNewBadge(shown) {
+  _localShowNewBadge = !!shown;
+  saveUserPrefs({ showNewBadge: _localShowNewBadge });
 }
 
 // IDs des grilles sélectionnées (affichées simultanément, nombre illimité)
@@ -1205,6 +1213,38 @@ function renameFolder(id, newName) {
   renderAllFolders();
 }
 
+// Dossier "épisode précédent" du dossier actif : parmi ses frères (même parent) de type 'episode',
+// celui dont le numbering.number est le plus grand tout en restant strictement inférieur au sien.
+// Retourne null si le dossier actif n'est pas lui-même un épisode numéroté, ou si aucun épisode
+// précédent n'existe parmi ses frères.
+function _previousEpisodeFolder(folder) {
+  if (!folder || !folder.numbering || folder.numbering.type !== 'episode') return null;
+  const parent = findParentFolder(state.folders, folder.id);
+  const siblings = parent ? (parent.folders || []) : (state.folders || []);
+  let best = null;
+  siblings.forEach(f => {
+    if (f.id === folder.id || !f.numbering || f.numbering.type !== 'episode') return;
+    if (f.numbering.number >= folder.numbering.number) return;
+    if (!best || f.numbering.number > best.numbering.number) best = f;
+  });
+  return best;
+}
+
+// Ensemble des textes de case (normalisés : trim + minuscule) actifs (non archivés) de l'épisode
+// précédent du dossier donné — utilisé pour repérer les cases "nouvelles" (badge NEW).
+// Retourne null si le dossier n'a pas d'épisode précédent (fonctionnalité inapplicable).
+function _previousEpisodeActiveTextSet(folder) {
+  const prev = _previousEpisodeFolder(folder);
+  if (!prev) return null;
+  const prevArchivedIds = prev.archivedElementIds || [];
+  const set = new Set();
+  (prev.elements || []).forEach(el => {
+    if (prevArchivedIds.includes(el.id)) return;
+    set.add((el.text || '').trim().toLowerCase());
+  });
+  return set;
+}
+
 // Numéro suivant pour un dossier numéroté du même type (saison/épisode) parmi ses frères (même parent)
 function _nextFolderNumber(siblings, type) {
   const nums = siblings.filter(f => f.numbering && f.numbering.type === type).map(f => f.numbering.number);
@@ -1536,6 +1576,23 @@ function _setLockGenerateChecked(locked) {
 function _isLockGenerateChecked() {
   return chkLockGenerate.getAttribute('aria-pressed') === 'true';
 }
+// Bouton "New" (visible seulement quand le dossier actif est un épisode ayant un épisode
+// précédent parmi ses frères) : bascule l'affichage du badge NEW sur les cases nouvelles.
+const btnToggleNewBadge = document.getElementById('btn-toggle-new-badge');
+function _updateNewBadgeButton() {
+  if (!btnToggleNewBadge) return;
+  const s = activeSubtheme();
+  const applicable = !!(s && _previousEpisodeFolder(s));
+  btnToggleNewBadge.classList.toggle('hidden', !applicable);
+  btnToggleNewBadge.setAttribute('aria-pressed', _localShowNewBadge ? 'true' : 'false');
+  btnToggleNewBadge.innerHTML = `<i data-lucide="${_localShowNewBadge ? 'eye' : 'eye-off'}"></i> New`;
+  if (window.lucide) lucide.createIcons();
+}
+btnToggleNewBadge?.addEventListener('click', () => {
+  saveLocalShowNewBadge(!_localShowNewBadge);
+  _updateNewBadgeButton();
+  renderGrid();
+});
 const panelElementsBody        = document.getElementById('panel-elements-body');
 const bingoLayout              = document.getElementById('bingo-layout');
 const bingoControlPanel        = document.getElementById('bingo-control-panel');
@@ -2898,6 +2955,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const scale = _localFontScale;
   const s = activeSubtheme();
   const { indices: bingoIndices, lines: bingoLines } = getBingoResult(n, g.grid.slice(0, n * n));
+  const prevEpisodeTexts = _localShowNewBadge ? _previousEpisodeActiveTextSet(s) : null;
 
   const wrapper = document.createElement('div');
   wrapper.className = 'grid-view-wrapper';
@@ -3115,6 +3173,12 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
       if (cell.checked)        div.classList.add('checked');
       if (cell.color === 'red') div.classList.add('cell-red');
       if (bingoIndices.has(i)) div.classList.add('bingo-line');
+      if (prevEpisodeTexts && el && !prevEpisodeTexts.has((el.text || '').trim().toLowerCase())) {
+        const newBadge = document.createElement('span');
+        newBadge.className = 'bingo-cell-new-badge';
+        newBadge.textContent = 'NEW';
+        div.appendChild(newBadge);
+      }
 
       div.title = cell.checked ? 'Désactiver cette case' : 'Valider cette case' + (!gridLocked ? ' · Clic droit : vider' : '');
       div.addEventListener('click', () => {
@@ -3201,6 +3265,7 @@ function renderGrid() {
   updateClearGridsButton();
   updateOpenGridsWindowButton();
   updateResetButton();
+  _updateNewBadgeButton();
   document.getElementById('btn-cases-panel')?.classList.remove('btn-attention');
   gridWrapper.innerHTML = '';
   gridWrapper.style.justifyContent = '';
@@ -4653,18 +4718,20 @@ document.getElementById('btn-open-grids-window').addEventListener('click', () =>
   document.title = getFolderPath(state.folders, _localActiveFolderId).map(f => f.name).join(' \\ ');
   document.body.classList.add('solo-grid-mode');
   // En plein écran, tout doit tenir sur une seule rangée : #btn-grids-dropdown (ligne 1, mode
-  // normal), #font-scale-label et le bouton Capture (2e rangée, mode normal) sont déplacés en JS
-  // dans #bingo-solo-toolbar-center, dans cet ordre (Grilles/Taille/Capture) — mêmes éléments
-  // physiques, jamais deux jeux de contrôles désynchronisés. Le chemin (#bingo-fullscreen-breadcrumb)
-  // reste un frère indépendant de ce groupe, centré par position absolue (voir CSS), pas dans ce
-  // conteneur — sinon un groupe trop large le pousse hors de son centrage.
+  // normal), #font-scale-label, #btn-toggle-new-badge et le bouton Capture (2e rangée, mode normal)
+  // sont déplacés en JS dans #bingo-solo-toolbar-center, dans cet ordre (Grilles/Taille/New/Capture)
+  // — mêmes éléments physiques, jamais deux jeux de contrôles désynchronisés. Le chemin
+  // (#bingo-fullscreen-breadcrumb) reste un frère indépendant de ce groupe, centré par position
+  // absolue (voir CSS), pas dans ce conteneur — sinon un groupe trop large le pousse hors de son centrage.
   const soloCenter = document.getElementById('bingo-solo-toolbar-center');
   const gridsDropdown = document.getElementById('btn-grids-dropdown');
   const fontScaleLabel = document.getElementById('font-scale-label');
+  const newBadgeBtn = document.getElementById('btn-toggle-new-badge');
   const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
   if (soloCenter) {
     if (gridsDropdown) soloCenter.appendChild(gridsDropdown);
     if (fontScaleLabel) soloCenter.appendChild(fontScaleLabel);
+    if (newBadgeBtn) soloCenter.appendChild(newBadgeBtn);
     if (captureBtn) soloCenter.appendChild(captureBtn);
   }
   // Fermer le panneau Cases : affichage cassé s'il est laissé ouvert en plein écran.
@@ -4683,8 +4750,8 @@ document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
   document.body.classList.remove('solo-grid-mode');
   document.title = 'LesMichels';
   requestAnimationFrame(_adjustBingoGridSizes);
-  // Rendre #btn-grids-dropdown à la ligne 1 (après le bouton Chemin), #font-scale-label (entre le
-  // cadre .lock-group et Capture) et Capture à la 2e rangée (mode normal).
+  // Rendre #btn-grids-dropdown à la ligne 1 (après le bouton Chemin), #font-scale-label puis
+  // #btn-toggle-new-badge (entre le cadre .lock-group et Capture) et Capture à la 2e rangée (mode normal).
   const gridsDropdown = document.getElementById('btn-grids-dropdown');
   const pathBtn = document.getElementById('btn-path-dropdown');
   if (gridsDropdown && pathBtn) pathBtn.insertAdjacentElement('afterend', gridsDropdown);
@@ -4692,6 +4759,8 @@ document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
   const lockGroup = optionsRow ? optionsRow.querySelector('.lock-group') : null;
   const fontScaleLabel = document.getElementById('font-scale-label');
   if (fontScaleLabel && lockGroup) lockGroup.insertAdjacentElement('afterend', fontScaleLabel);
+  const newBadgeBtn = document.getElementById('btn-toggle-new-badge');
+  if (newBadgeBtn && fontScaleLabel) fontScaleLabel.insertAdjacentElement('afterend', newBadgeBtn);
   const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
   if (captureBtn && optionsRow) optionsRow.appendChild(captureBtn);
 });

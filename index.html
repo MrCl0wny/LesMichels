@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=262" />
+  <link rel="stylesheet" href="style.css?v=264" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -408,6 +408,7 @@
                 <button class="btn-action btn-clear-grids tl-shrink-0" id="btn-clear-grids" title="Vider toutes les grilles affichées"><i data-lucide="eraser"></i> Vider</button>
                 <button class="btn-action btn-reset tl-shrink-0" id="btn-reset" title="Réinitialise toutes les cases du sous-thème"><i data-lucide="undo-dot"></i> Reset</button>
               </div>
+              <button class="btn-action btn-neutral-action tl-shrink-0 hidden" id="btn-toggle-new-badge" title="Afficher/masquer le badge NEW des cases nouvelles"><i data-lucide="eye"></i> New</button>
               <label class="tl-toggle-label tl-shrink-0" id="font-scale-label" title="Régler la taille du texte (50–200 %)">
                 <span class="tl-toggle-label-head">Taille <input type="number" id="font-scale-value-input" min="50" max="200" step="10" value="100" class="tl-split-value-input" /></span>
                 <div class="tl-toggle-label-slider-row">
@@ -1317,6 +1318,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=364"></script>
+  <script src="app.js?v=366"></script>
 </body>
 </html>
