@@ -1834,6 +1834,20 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   align-items: center;
   justify-content: center;
 }
+/* Bouton Chemin côté Bingo : même plafond que Tier List (25% de la largeur d'écran), mais sans
+   la logique JS de réduction de police (_tlFitPathBtnLabel n'existe que côté Tier List) — simple
+   troncature avec ellipsis au-delà. */
+.btn-path {
+  max-width: 25vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.btn-path #path-dropdown-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tl-btn-path #tl-path-dropdown-label {
   display: inline-block;
   vertical-align: middle;
@@ -2768,6 +2782,25 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 .modal-box-sm {
   min-width: 300px;
   max-width: 380px;
+}
+
+.modal-box-stats {
+  min-width: 420px;
+  max-width: 640px;
+}
+
+.bingo-stats-list .modal-item-row {
+  justify-content: space-between;
+  gap: 16px;
+}
+.bingo-stats-list .modal-item-row > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bingo-stats-list .modal-item-row > span:last-child {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .modal-body {

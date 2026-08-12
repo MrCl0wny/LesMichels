@@ -429,18 +429,14 @@ function _tlExitSoloToolbarLayout() {
   const toggleUnplacedBtn = document.getElementById('tl-btn-toggle-unplaced');
   const listWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
   const line1Right = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-right');
-  const line1Center = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-center');
   const line1Left = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-left');
   const toolbarLeft = document.querySelector('.ctrl-row-toolbar-left');
   const toolbarCenter = document.querySelector('.tl-ctrl-row-toolbar .ctrl-row-toolbar-center');
   if (toggleUnplacedBtn && line1Right) line1Right.appendChild(toggleUnplacedBtn);
-  // Répartition retourne dans .ctrl-row-grids-center (centrée sur la ligne 1 en mode normal),
-  // pas dans .ctrl-row-grids-right avec Non placés — sinon elle se retrouve collée à droite au
-  // retour du plein écran.
-  if (splitLabel && line1Center) line1Center.appendChild(splitLabel);
   if (optionsFrame && toolbarLeft) toolbarLeft.appendChild(optionsFrame);
-  // Annuler retourne centré sur la ligne 2 (.ctrl-row-toolbar-center), pas à gauche avec le cadre
-  // Options Liste — même position qu'en mode normal avant l'entrée en plein écran.
+  // Répartition + Annuler retournent centrés sur la ligne 2 (.ctrl-row-toolbar-center), Répartition
+  // avant Annuler — même position qu'en mode normal avant l'entrée en plein écran.
+  if (splitLabel && toolbarCenter) toolbarCenter.appendChild(splitLabel);
   if (undoBtn && toolbarCenter) toolbarCenter.appendChild(undoBtn);
   if (listWrap && line1Left) line1Left.appendChild(listWrap);
 }
@@ -992,17 +988,38 @@ function renderCurrentEventButton() {
   _updateCeSetHeaderBtn();
 }
 
-// Un seul bouton "Définir soirée en cours" dans le header, dont l'état (grisé si la page
-// active est déjà la soirée en cours) dépend de la page affichée — appelé à chaque
-// renderCurrentEventButton(), indépendamment de la branche bingo/tierlist qui a matché.
+// Un seul bouton physique "Définir soirée en cours" (#btn-ce-set-header), déplacé en JS selon
+// la page active — même pattern que #font-scale-label (Bingo) / #tl-split-slider-label (Tier
+// List) : jamais deux jeux de contrôles désynchronisés. Sur Bingo, il vit juste après le bouton
+// Grilles (#btn-grids-dropdown) en ligne 1 du panneau bingo ; sur Tier List, juste après le
+// bouton Liste (#tl-btn-tierlist-dropdown) en ligne 1 du panneau tierlist. Masqué sur Accueil/
+// Dossiers (retombe dans le header, sa position d'origine dans le HTML).
+function _placeCeSetHeaderBtn() {
+  const ceSet = document.getElementById('btn-ce-set-header');
+  if (!ceSet) return;
+  const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
+  const onBingoPage = document.getElementById('page-bingo')?.classList.contains('active');
+  if (onBingoPage) {
+    const gridsBtn = document.getElementById('btn-grids-dropdown');
+    if (gridsBtn && gridsBtn.nextSibling !== ceSet) gridsBtn.insertAdjacentElement('afterend', ceSet);
+  } else if (onTlPage) {
+    const listWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
+    if (listWrap && listWrap.nextSibling !== ceSet) listWrap.insertAdjacentElement('afterend', ceSet);
+  }
+}
+
+// État (grisé si la page active est déjà la soirée en cours) dépend de la page affichée —
+// appelé à chaque renderCurrentEventButton(), indépendamment de la branche bingo/tierlist qui a matché.
 function _updateCeSetHeaderBtn() {
   const ceSet = document.getElementById('btn-ce-set-header');
   if (!ceSet) return;
   const onHomePage = document.getElementById('page-home')?.classList.contains('active');
-  if (onHomePage) {
+  const onFoldersPage = document.getElementById('page-folders')?.classList.contains('active');
+  if (onHomePage || onFoldersPage) {
     ceSet.style.display = 'none';
     return;
   }
+  _placeCeSetHeaderBtn();
   ceSet.style.display = '';
   const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
   let isCurrentEvent;
@@ -2102,6 +2119,7 @@ function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder) {
   addItem('folder-closed', 'Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
   addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
   addItem('copy-plus', 'Dupliquer',            false, () => openDuplicateFolderModal(f.id));
+  addItem('bar-chart-2', 'Statistiques',       false, () => openBingoStatsModal(f));
   addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
   const ceIsActive = state.currentEventFolderId === f.id;
   const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
@@ -2209,16 +2227,13 @@ function _renderFoldersPanelIcons() {
     const openThisFolder = () => { if (_localActiveFolderId !== f.id) switchFolder(f.id); _switchPage('bingo'); };
     const openMenu = e => _openBingoFolderCtxMenu(f, e, tile, openThisFolder);
 
+    // Simple clic : un dossier contenant des grilles (is-bingo) s'ouvre directement, même s'il a
+    // aussi des sous-dossiers — sinon (dossier "conteneur" pur) on descend dedans façon Explorateur.
     tile.addEventListener('click', e => {
       if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
       e.stopPropagation();
       treeContainer.querySelectorAll('.fp-icon-tile.selected').forEach(t => t.classList.remove('selected'));
       tile.classList.add('selected');
-    });
-    // Double-clic : un dossier contenant des grilles (is-bingo) s'ouvre directement, même s'il a
-    // aussi des sous-dossiers — sinon (dossier "conteneur" pur) on descend dedans façon Explorateur.
-    tile.addEventListener('dblclick', e => {
-      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
       if (isBingoFolder) openThisFolder();
       else { _foldersNavFolderId = f.id; _renderFoldersPanelIcons(); }
     });
@@ -2293,15 +2308,12 @@ function renderFoldersPanelTree() {
 
     const openThisFolder = () => { if (_localActiveFolderId !== f.id) switchFolder(f.id); _switchPage('bingo'); };
 
+    // Simple clic : même règle que la vue icônes — un dossier-bingo s'ouvre directement, un dossier
+    // conteneur pur descend d'un niveau.
     row.addEventListener('click', e => {
       if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
       container.querySelectorAll('.fp-folder-row.selected').forEach(r => r.classList.remove('selected'));
       row.classList.add('selected');
-    });
-    // Double-clic : même règle que la vue icônes — un dossier-bingo s'ouvre directement, un dossier
-    // conteneur pur descend d'un niveau.
-    row.addEventListener('dblclick', e => {
-      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
       if (isBingoFolder) openThisFolder();
       else { _foldersNavFolderId = f.id; renderFoldersPanelTree(); }
     });
@@ -4420,6 +4432,170 @@ document.getElementById('cases-panel-close').addEventListener('click', () => {
   _isDraggingElement = false;
   document.getElementById('cases-panel').classList.remove('open');
 });
+
+// ── Statistiques des cases (winrate sur la saison) ──
+// Un "épisode" = tout dossier non archivé possédant au moins une grille non archivée.
+// Pour chaque case (regroupée par texte normalisé) : n = nb d'épisodes où elle est active
+// (présente et non archivée dans cet épisode), m = nb d'épisodes où elle est cochée dans
+// au moins une grille non archivée de cet épisode.
+function _collectEpisodeFolders(folder) {
+  const episodes = [];
+  (folder.folders || []).forEach(sub => {
+    if (sub.archived) return;
+    if ((sub.grids || []).some(g => !g.archived)) episodes.push(sub);
+    episodes.push(..._collectEpisodeFolders(sub));
+  });
+  return episodes;
+}
+
+function computeBingoStats(episodes) {
+  const stats = new Map(); // key texte normalisé → { text, n, m }
+
+  episodes.forEach(ep => {
+    const archivedIds = new Set(ep.archivedElementIds || []);
+    const checkedIds = new Set();
+    (ep.grids || []).forEach(g => {
+      if (g.archived) return;
+      (g.grid || []).forEach(c => {
+        if (c && c.checked && c.elementId) checkedIds.add(c.elementId);
+      });
+    });
+    (ep.elements || []).forEach(el => {
+      if (archivedIds.has(el.id)) return;
+      const key = el.text.trim().toLowerCase();
+      if (!stats.has(key)) stats.set(key, { text: el.text, n: 0, m: 0 });
+      const entry = stats.get(key);
+      entry.n++;
+      if (checkedIds.has(el.id)) entry.m++;
+    });
+  });
+
+  return Array.from(stats.values())
+    .map(e => ({ ...e, pct: e.n > 0 ? Math.round((e.m / e.n) * 100) : 0 }))
+    .sort((a, b) => b.pct - a.pct || b.n - a.n || a.text.localeCompare(b.text));
+}
+
+// Un dossier est un "bingo" s'il a au moins une grille (archivée ou non — le dossier
+// lui-même est bien un bingo même si toutes ses grilles sont archivées).
+function _isFolderBingo(folder) {
+  return !!(folder && folder.grids && folder.grids.length > 0);
+}
+
+// Périmètre des stats pour un dossier donné : si c'est un bingo (a des grilles), le
+// périmètre est son parent direct (la "saison" la plus proche) — ex: KL > S1 > E4 → S1.
+// Sinon (dossier conteneur, ex: S1 lui-même), le périmètre est le dossier lui-même,
+// ses enfants servant d'épisodes. Si un bingo est déjà à la racine (pas de parent),
+// il sert lui-même de périmètre.
+function _findStatsScopeFolder(folder) {
+  if (!folder) return null;
+  if (!_isFolderBingo(folder)) return folder;
+  return findParentFolder(state.folders, folder.id) || folder;
+}
+
+let _bingoStatsScope = null;       // dossier périmètre courant (la "saison")
+let _bingoStatsAllEpisodes = [];   // tous les épisodes de ce périmètre
+let _bingoStatsSelectedIds = null; // Set des épisodes inclus (null = pas encore initialisé)
+
+function renderBingoStatsModal(folder) {
+  const root = _findStatsScopeFolder(folder || activeFolder());
+  const list = document.getElementById('bingo-stats-list');
+  const nameEl = document.getElementById('bingo-stats-folder-name');
+  if (!root || !list) return;
+  nameEl.textContent = root.name;
+
+  _bingoStatsScope = root;
+  _bingoStatsAllEpisodes = _collectEpisodeFolders(root);
+  // Par défaut, tous les épisodes sont inclus
+  _bingoStatsSelectedIds = new Set(_bingoStatsAllEpisodes.map(ep => ep.id));
+
+  _renderBingoStatsRows();
+}
+
+function _renderBingoStatsRows() {
+  const list = document.getElementById('bingo-stats-list');
+  if (!list) return;
+  const included = _bingoStatsAllEpisodes.filter(ep => _bingoStatsSelectedIds.has(ep.id));
+  const rows = computeBingoStats(included);
+  list.innerHTML = '';
+  if (rows.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'color:var(--text-muted);font-size:0.85rem;';
+    empty.textContent = 'Aucune case trouvée pour les épisodes sélectionnés.';
+    list.appendChild(empty);
+    return;
+  }
+  rows.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'modal-item-row';
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = r.text;
+    const statSpan = document.createElement('span');
+    statSpan.className = 'tl-shrink-0';
+    statSpan.textContent = `${r.m}/${r.n} (${r.pct}%)`;
+    row.appendChild(nameSpan);
+    row.appendChild(statSpan);
+    list.appendChild(row);
+  });
+}
+
+function openBingoStatsModal(folder) {
+  renderBingoStatsModal(folder);
+  document.getElementById('modal-bingo-stats').classList.remove('hidden');
+}
+function closeBingoStatsModal() {
+  document.getElementById('modal-bingo-stats').classList.add('hidden');
+}
+document.getElementById('btn-bingo-stats').addEventListener('click', () => openBingoStatsModal());
+document.getElementById('btn-close-bingo-stats-modal').addEventListener('click', closeBingoStatsModal);
+
+// ── Menu déroulant "Épisodes" de la modale Stats : cocher/décocher les épisodes inclus. ──
+const _btnBingoStatsEpisodes = document.getElementById('btn-bingo-stats-episodes');
+if (_btnBingoStatsEpisodes) {
+  _btnBingoStatsEpisodes.addEventListener('click', e => {
+    e.stopPropagation();
+    _renderBingoStatsEpisodesMenu();
+  });
+}
+
+function _renderBingoStatsEpisodesMenu() {
+  const menu = document.getElementById('bingo-stats-episodes-menu');
+  if (!menu) return;
+  menu.innerHTML = '';
+  menu.classList.remove('hidden');
+  positionCtxMenu(menu, null, _btnBingoStatsEpisodes);
+
+  const closeMenu = () => menu.classList.add('hidden');
+  setTimeout(() => document.addEventListener('click', closeMenu, { once: true }), 0);
+  menu.addEventListener('click', e => e.stopPropagation());
+
+  _bingoStatsAllEpisodes.forEach(ep => {
+    const isSelected = _bingoStatsSelectedIds.has(ep.id);
+    const item = document.createElement('div');
+    item.className = 'grid-tab tl-dropdown-item' + (isSelected ? ' active' : '');
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = isSelected;
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      if (cb.checked) _bingoStatsSelectedIds.add(ep.id);
+      else _bingoStatsSelectedIds.delete(ep.id);
+      item.classList.toggle('active', cb.checked);
+      _renderBingoStatsRows();
+    });
+    item.appendChild(cb);
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'grid-tab-name';
+    nameSpan.textContent = ep.name;
+    nameSpan.addEventListener('click', () => cb.click());
+    item.appendChild(nameSpan);
+
+    menu.appendChild(item);
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
 
 // ── Menu déroulant "Grilles" (mode normal) : cocher/décocher pour afficher, + Grille,
 // et bouton ⋮ par grille (Renommer/Archiver/Supprimer, pas de Dupliquer). ──
@@ -6632,11 +6808,11 @@ function _tlActiveGroupContext() {
 // extrêmement long), on tronque avec ellipsis en dernier recours plutôt que de laisser déborder
 // (bug initial : le calcul visait "≤2 lignes" sans jamais vérifier que 2 lignes à cette taille de
 // police tenaient réellement dans 32px, d'où débordement visuel du texte hors du bouton).
-const TL_PATH_BTN_MAX_WIDTH = 160;
 const TL_PATH_BTN_HEIGHT = 32;
 function _tlFitPathBtnLabel(labelEl) {
   const btn = labelEl.closest('.tl-btn-path');
   if (!btn) return;
+  const maxWidth = window.innerWidth * 0.25;
   btn.style.width = '';
   labelEl.style.whiteSpace = '';
   labelEl.style.wordBreak = '';
@@ -6647,8 +6823,8 @@ function _tlFitPathBtnLabel(labelEl) {
   labelEl.style.webkitLineClamp = '';
   labelEl.style.webkitBoxOrient = '';
   const naturalWidth = btn.scrollWidth;
-  if (naturalWidth <= TL_PATH_BTN_MAX_WIDTH) return;
-  btn.style.width = TL_PATH_BTN_MAX_WIDTH + 'px';
+  if (naturalWidth <= maxWidth) return;
+  btn.style.width = maxWidth + 'px';
   labelEl.style.whiteSpace = 'normal';
   labelEl.style.wordBreak = 'break-word';
   const baseFontSize = parseFloat(getComputedStyle(labelEl).fontSize);
@@ -7392,17 +7568,14 @@ function _renderTlFoldersPanelIcons() {
     tile.appendChild(nameEl);
 
     const openMenu = e => { e.stopPropagation(); tlOpenFolderManageModal(f.id, tile); };
+    // Simple clic = entrer dans le dossier (façon Explorateur), jamais l'ouvrir comme dossier actif
+    // — cette action-là reste réservée au menu ⋮ ("Ouvrir"), pour ne pas changer le contexte actif
+    // juste en naviguant dans la vue icônes.
     tile.addEventListener('click', e => {
       if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
       e.stopPropagation();
       treeContainer.querySelectorAll('.fp-icon-tile.selected').forEach(t => t.classList.remove('selected'));
       tile.classList.add('selected');
-    });
-    // Double-clic = entrer dans le dossier (façon Explorateur), jamais l'ouvrir comme dossier actif
-    // — cette action-là reste réservée au menu ⋮ ("Ouvrir"), pour ne pas changer le contexte actif
-    // juste en naviguant dans la vue icônes.
-    tile.addEventListener('dblclick', e => {
-      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
       _tlFoldersNavFolderId = f.id; _renderTlFoldersPanelIcons();
     });
     ctxBtn.addEventListener('click', openMenu);
@@ -7438,16 +7611,12 @@ function _renderTlFoldersPanelIcons() {
 
     const openThisTierlist = () => { tlSwitch(tl.id, false); _switchPage('tierlist'); };
     const openMenu = e => { e.stopPropagation(); tlOpenManageModal(tl.id, tile, 'folders'); };
-    // Même logique que les tuiles dossier : simple clic = juste sélectionner visuellement,
-    // double-clic = ouvrir (façon Explorateur, cohérent avec les tuiles dossier de cette même vue).
+    // Même logique que les tuiles dossier : simple clic = sélectionner visuellement puis ouvrir.
     tile.addEventListener('click', e => {
       if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
       e.stopPropagation();
       treeContainer.querySelectorAll('.fp-icon-tile.selected').forEach(t => t.classList.remove('selected'));
       tile.classList.add('selected');
-    });
-    tile.addEventListener('dblclick', e => {
-      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
       openThisTierlist();
     });
     ctxBtn.addEventListener('click', openMenu);
@@ -7489,9 +7658,6 @@ function _tlBuildFolderListRow(f, container, rerender) {
     if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
     container.querySelectorAll('.fp-folder-row.selected, .fp-list-item.selected').forEach(r => r.classList.remove('selected'));
     row.classList.add('selected');
-  });
-  row.addEventListener('dblclick', e => {
-    if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
     _tlFoldersNavFolderId = f.id; rerender();
   });
 
@@ -7532,9 +7698,6 @@ function _tlBuildTierlistListRow(tl, container) {
     if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
     container.querySelectorAll('.fp-folder-row.selected, .fp-list-item.selected').forEach(r => r.classList.remove('selected'));
     row.classList.add('selected');
-  });
-  row.addEventListener('dblclick', e => {
-    if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
     openThisTierlist();
   });
 

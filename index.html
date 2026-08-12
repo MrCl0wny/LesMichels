@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=264" />
+  <link rel="stylesheet" href="style.css?v=266" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -197,7 +197,7 @@
         <div class="tl-control-panel-body" id="tl-control-panel-body">
 
           <!-- Ligne 1 : Dossiers + Chemin/Template/Listes (avec mini-titres centrés) à gauche,
-               rien au centre, Répartition + Non placés à droite. -->
+               rien au centre, Non placés à droite. -->
           <div class="ctrl-row ctrl-row-line1">
             <div class="ctrl-row-grids-left tl-group-row">
               <button class="tl-toolbar-btn tl-btn-neutral tl-btn-folders tl-shrink-0 hidden" id="tl-btn-folders" title="Ouvrir la page Dossiers"><i data-lucide="folder"></i> Dossiers</button>
@@ -216,23 +216,14 @@
               </div>
               <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
             </div>
-            <div class="ctrl-row-grids-center">
-              <label class="tl-toggle-label tl-shrink-0" id="tl-split-slider-label" title="Régler la répartition largeur entre les tiers et les éléments non placés">
-                <span>Répartition</span>
-                <div class="tl-toggle-label-row">
-                  <input type="number" id="tl-split-value-input" min="30" max="70" value="60" class="tl-split-value-input" />
-                  <input type="range" id="tl-split-slider" min="30" max="70" value="60" class="tl-slider" />
-                  <input type="number" id="tl-split-value-input-right" min="30" max="70" value="40" class="tl-split-value-input" />
-                </div>
-              </label>
-            </div>
+            <div class="ctrl-row-grids-center"></div>
             <div class="ctrl-row-grids-right">
               <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Non placés</button>
             </div>
           </div>
 
           <!-- Ligne 2 : cadre Options Liste à gauche (masqué sur un template ou sans liste
-               active), Annuler centré, Comparaison + Plein écran à droite. -->
+               active), Répartition + Annuler centrés, Comparaison + Plein écran à droite. -->
           <div class="ctrl-row ctrl-row-toolbar tl-ctrl-row-toolbar">
             <div class="ctrl-row-toolbar-left">
               <div class="tl-list-options-frame" id="tl-list-options-frame">
@@ -249,6 +240,14 @@
               </div>
             </div>
             <div class="ctrl-row-toolbar-center">
+              <label class="tl-toggle-label tl-shrink-0" id="tl-split-slider-label" title="Régler la répartition largeur entre les tiers et les éléments non placés">
+                <span>Répartition</span>
+                <div class="tl-toggle-label-row">
+                  <input type="number" id="tl-split-value-input" min="30" max="70" value="60" class="tl-split-value-input" />
+                  <input type="range" id="tl-split-slider" min="30" max="70" value="60" class="tl-slider" />
+                  <input type="number" id="tl-split-value-input-right" min="30" max="70" value="40" class="tl-split-value-input" />
+                </div>
+              </label>
               <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
             </div>
             <div class="ctrl-row-toolbar-right">
@@ -385,6 +384,7 @@
               <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-grids-dropdown" title="Choisir les grilles à afficher"><i data-lucide="chevron-down"></i> Grilles</button>
             </div>
             <div class="ctrl-row-grids-right">
+              <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-bingo-stats" title="Statistiques des cases sur la saison"><i data-lucide="bar-chart-2"></i> Stats</button>
               <button class="btn-action btn-cases-panel" id="btn-cases-panel" title="Ouvrir/fermer le panneau cases"><i data-lucide="square-mouse-pointer"></i> Cases</button>
             </div>
           </div>
@@ -997,6 +997,25 @@
     </div>
   </div>
 
+  <!-- Modal Statistiques des cases (winrate sur la saison) -->
+  <div id="modal-bingo-stats" class="modal-overlay hidden">
+    <div class="modal-box modal-box-stats">
+      <div class="modal-header">
+        <h3>Statistiques — <span id="bingo-stats-folder-name"></span></h3>
+        <button class="modal-close" id="btn-close-bingo-stats-modal"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:4px;">
+          <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-bingo-stats-episodes" title="Choisir les épisodes à inclure"><i data-lucide="chevron-down"></i> Épisodes</button>
+        </div>
+        <div id="bingo-stats-list" class="modal-items-list bingo-stats-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Menu déroulant "Épisodes" de la modale Stats : cocher/décocher les épisodes à inclure. -->
+  <div id="bingo-stats-episodes-menu" class="ctx-menu hidden"></div>
+
   <!-- Modal édition d'un preset de cases (nom + liste de cases individuelles, comme le panneau Cases) -->
   <div id="modal-element-preset-edit" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -1318,6 +1337,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=366"></script>
+  <script src="app.js?v=370"></script>
 </body>
 </html>
