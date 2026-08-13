@@ -2358,7 +2358,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   border-color: var(--bingo-green) !important;
   color: var(--bingo-green) !important;
   box-shadow: 0 0 14px rgba(80, 220, 140, 0.3);
-  animation: pulse-bingo 1.2s ease infinite alternate;
 }
 .bingo-cell.empty {
   color: var(--text-faint);
@@ -2442,11 +2441,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 
 .bingo-layout.no-theme-layout {
   grid-template-columns: minmax(0, 1fr);
-}
-
-@keyframes pulse-bingo {
-  from { box-shadow: 0 0 10px rgba(80, 220, 140, 0.2); }
-  to   { box-shadow: 0 0 24px rgba(80, 220, 140, 0.5), 0 0 48px rgba(80, 220, 140, 0.15); }
 }
 
 /* ── Message bingo ── */
