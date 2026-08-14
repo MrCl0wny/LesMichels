@@ -378,7 +378,11 @@ function loadUserPrefs() {
   }).catch(e => console.warn('Prefs load error:', e));
 }
 
-function _applySoloGridModeIfNeeded() {
+// async : le lien direct "grille en plein écran" peut cibler un dossier-bingo jamais activé cette
+// session (donc encore léger, sans le tableau grid[] de cellules) — findParentFolder/le titre
+// fonctionnent déjà sur l'index seul (id/name/title), mais le RENDU de la grille (renderGrid, appelé
+// juste après par l'appelant) a besoin du contenu lourd chargé en mémoire avant de s'exécuter.
+async function _applySoloGridModeIfNeeded() {
   if (_soloGridIds.length === 0) return;
   const firstFolder = findParentFolder(state.folders, _soloGridIds[0]);
   if (!firstFolder) return;
@@ -387,10 +391,13 @@ function _applySoloGridModeIfNeeded() {
   if (validIds.length === 0) return;
   _localActiveFolderId = firstFolder.id;
   _selectedGridIds = validIds;
-  firstFolder.activeGridId = validIds[0];
+  await _bingoEnsureSeasonLoaded(firstFolder.id);
+  _bingoUpdateActiveSeasonSubscription();
+  const firstFolderNow = findFolderById(state.folders, firstFolder.id) || firstFolder;
+  firstFolderNow.activeGridId = validIds[0];
   if (!_soloGridApplied) {
     _soloGridApplied = true;
-    const grids = (firstFolder.grids || []).filter(gx => validIds.includes(gx.id));
+    const grids = (firstFolderNow.grids || []).filter(gx => validIds.includes(gx.id));
     document.title = (grids.length === 1
       ? (grids[0].title || grids[0].name || 'Grille')
       : `${grids.length} grilles`);
@@ -538,7 +545,13 @@ function _exitCompareTierlistMode() {
   tlRender();
 }
 
-function _applyPrefsAndRender() {
+// async : appelée depuis plusieurs points (chargement des prefs, snapshot d'index, souscription
+// active) sans garantie que le dossier actif résolu ICI (après validation/prefs) ait déjà son
+// contenu lourd en mémoire — notamment le cas où loadUserPrefs() se termine APRÈS le premier
+// snapshot d'index (activeFolder() valait alors null, donc _bingoEnsureSeasonLoaded n'avait rien
+// à charger) : _applyPrefsAndRender s'assure elle-même du chargement plutôt que d'en dépendre
+// implicitement, quel que soit l'appelant. _bingoEnsureSeasonLoaded est un no-op si déjà chargé.
+async function _applyPrefsAndRender() {
   // Valider que le dossier actif existe toujours
   if (_localActiveFolderId) {
     const exists = findFolderById(state.folders, _localActiveFolderId);
@@ -555,6 +568,8 @@ function _applyPrefsAndRender() {
       _localActiveFolderId = nonArchived.length > 0 ? nonArchived[0].id : (state.folders[0]?.id || null);
     }
   }
+  if (_localActiveFolderId) await _bingoEnsureSeasonLoaded(_localActiveFolderId);
+  _bingoUpdateActiveSeasonSubscription();
   // Charger les grilles sélectionnées pour le dossier actif
   const folder = activeFolder();
   if (folder) {
@@ -565,7 +580,7 @@ function _applyPrefsAndRender() {
       _selectedGridIds = (folder.grids || []).filter(g => !g.archived).map(g => g.id);
     }
   }
-  _applySoloGridModeIfNeeded();
+  await _applySoloGridModeIfNeeded();
   renderAllFolders();
   renderElements();
   renderGridsList();
@@ -973,7 +988,7 @@ function renderCurrentEventButton() {
     }
     // TL introuvable ou archivée — nettoyer
     state.currentEventTierlistId = null;
-    saveState();
+    _bingoSaveIndex();
   }
 
   const cef = state.currentEventFolderId;
@@ -1045,7 +1060,7 @@ function setCurrentEventFolder(id) {
     state.currentEventFolderId = id;
     state.currentEventTierlistId = null; // exclusif
   }
-  saveState();
+  _bingoSaveIndex();
   renderCurrentEventButton();
   renderFoldersPanelTree();
 }
@@ -1072,7 +1087,7 @@ function setCurrentEventTierlist(id) {
     state.currentEventTierlistId = id;
     state.currentEventFolderId = null; // exclusif
   }
-  saveState();
+  _bingoSaveIndex();
   renderCurrentEventButton();
   if (typeof renderFoldersPanelTree === 'function') renderFoldersPanelTree();
 }
@@ -1145,18 +1160,24 @@ function createFolder(name, parentId = null, numbering = null) {
   const newActive = activeFolder();
   _selectedGridIds = newActive?.grids?.[0] ? [newActive.grids[0].id] : [];
   saveLocalSelectedGrids(_selectedGridIds);
-  saveState();
+  // Un dossier tout juste créé n'a jamais de grilles (defaultFolder(name, false, ...)) : jamais
+  // bingo à la création, donc rien à écrire dans bingo/data — l'index seul suffit (Pattern 2/3a).
+  _bingoSaveIndex();
   renderAllFolders();
   renderElements();
   renderGridsList();
   renderGrid();
 }
 
-function switchFolder(id) {
+// async : activer un dossier-bingo doit charger son contenu lourd (et celui de ses frères-épisodes
+// pour NEW/Stats) AVANT de rendre l'UI qui en dépend — cf plan §2 "Déclenchement". Ne fait jamais
+// d'écriture (aucun saveState/_bingoSave* dans cette chaîne), uniquement lecture + fusion mémoire.
+async function switchFolder(id) {
   if (_localActiveFolderId === id) {
     _localActiveFolderId = null;
     _saveLocalActiveFolderId(null);
     _selectedGridIds = [];
+    _bingoUpdateActiveSeasonSubscription();
     renderAllFolders();
     renderElements();
     renderGridsList();
@@ -1165,6 +1186,8 @@ function switchFolder(id) {
   }
   _localActiveFolderId = id;
   _saveLocalActiveFolderId(id);
+  await _bingoEnsureSeasonLoaded(id);
+  _bingoUpdateActiveSeasonSubscription();
   const hasSavedSelection = id in _selectedGridsByFolder;
   _selectedGridIds = loadLocalSelectedGridsForFolder(id);
   if (_selectedGridIds.length === 0 && !hasSavedSelection) {
@@ -1179,9 +1202,14 @@ function switchFolder(id) {
   renderGrid();
 }
 
-function deleteFolder(id) {
+// async : le snapshot poussé en corbeille (trashPush) doit contenir le contenu lourd complet du
+// dossier ET de tous ses descendants bingo — sans ça une restauration ultérieure perdrait
+// elements/grids si le dossier n'était pas déjà chargé en mémoire (plan §3, pattern 3d).
+async function deleteFolder(id) {
   const folder = findFolderById(state.folders, id);
-  if (folder) trashPush({ type: 'folder', data: JSON.parse(JSON.stringify(folder)) });
+  if (folder) await _bingoEnsureFoldersLoaded(_collectBingoFolderIds(folder));
+  const folderForSnapshot = findFolderById(state.folders, id); // re-résoudre après l'await
+  if (folderForSnapshot) trashPush({ type: 'folder', data: JSON.parse(JSON.stringify(folderForSnapshot)) });
   const parent = findParentFolder(state.folders, id);
   if (parent) {
     parent.folders = (parent.folders || []).filter(f => f.id !== id);
@@ -1197,8 +1225,19 @@ function deleteFolder(id) {
     _localActiveFolderId = all[0]?.id || null;
     _saveLocalActiveFolderId(_localActiveFolderId);
     _selectedGridIds = [];
+    // Contrairement à switchFolder, on vient de changer le dossier actif sans passer par lui —
+    // sans ce chargement explicite, le nouveau dossier actif resterait allégé (métadonnées
+    // d'index seules) et sa grille s'afficherait vide tant qu'aucune autre action ne le charge.
+    if (_localActiveFolderId) {
+      await _bingoEnsureSeasonLoaded(_localActiveFolderId);
+      _bingoUpdateActiveSeasonSubscription();
+    }
   }
-  saveState();
+  // Ordre important (cf plan §3d) : la corbeille D'ABORD, l'index ENSUITE — pour ne jamais perdre la
+  // trace du dossier supprimé si la 2e écriture échouait entre les deux. Les noeuds bingo/data/<id>
+  // des dossiers-bingo supprimés ne sont pas explicitement effacés (coût faible, laissés en place).
+  _bingoSaveTrash();
+  _bingoSaveIndex();
   renderAllFolders();
   renderElements();
   renderGridsList();
@@ -1221,7 +1260,11 @@ function archiveFolder(id) {
       _selectedGridIds = [];
     }
   }
-  saveState();
+  // Flag "archived" propagé récursivement sur f.archived (dossiers) et g.archived (grilles) : les deux
+  // sont des champs d'index (grids allégées dans l'index gardent leur propre archived). Aucun noeud
+  // bingo/data/<id> n'a besoin d'être chargé/réécrit ici — _bingoMergeDataIntoState resynchronise
+  // g.archived depuis l'index à la prochaine fusion (plan §3, pattern 3b).
+  _bingoSaveIndex();
   renderAllFolders();
   renderElements();
   renderGridsList();
@@ -1231,7 +1274,7 @@ function archiveFolder(id) {
 function renameFolder(id, newName) {
   const folder = findFolderById(state.folders, id);
   if (folder && newName.trim()) { folder.name = newName.trim(); touchFolderChain(id); }
-  saveState();
+  _bingoSaveIndex();
   renderAllFolders();
 }
 
@@ -1275,8 +1318,11 @@ function _nextFolderNumber(siblings, type) {
 
 // explicitNumbering : objet {type, number, subtitle} déjà choisi par l'utilisateur dans la modal
 // (prioritaire) — si absent, on retombe sur l'auto-incrément à partir de la numérotation source.
-function duplicateFolder(id, name, explicitNumbering) {
-  const src = findFolderById(state.folders, id);
+// async : le dossier source doit être chargé en lourd (elements/grids complets) avant duplication,
+// sinon la copie hériterait de tableaux vides pour tout dossier-bingo jamais ouvert cette session.
+async function duplicateFolder(id, name, explicitNumbering) {
+  await _bingoEnsureFoldersLoaded(_collectBingoFolderIds(findFolderById(state.folders, id)));
+  const src = findFolderById(state.folders, id); // re-résoudre après l'await
   if (!src) return;
   const copy = JSON.parse(JSON.stringify(src));
   function remapIds(f) {
@@ -1318,7 +1364,10 @@ function duplicateFolder(id, name, explicitNumbering) {
   _localActiveFolderId = copy.folders[0]?.id || copy.id;
   _saveLocalActiveFolderId(_localActiveFolderId);
   _selectedGridIds = [];
-  saveState();
+  // Chaque nouveau dossier-bingo de la copie a son propre noeud bingo/data/<id> à créer, en plus de
+  // l'index (structure + métadonnées légères) — cf plan §3, pattern 3c.
+  _collectBingoFolderIds(copy).forEach(_bingoSaveFolder);
+  _bingoSaveIndex();
   renderAllFolders();
   renderElements();
   renderGridsList();
@@ -1350,7 +1399,9 @@ function moveFolder(id, targetParentId) {
     if (!state.folders) state.folders = [];
     state.folders.push(folder);
   }
-  saveState();
+  // Seule la structure (parent/position) change — le contenu lourd du dossier déplacé ne bouge pas,
+  // même si c'est un dossier-bingo (son id ne change pas) : index seul (plan §3, pattern 3a).
+  _bingoSaveIndex();
   renderAllFolders();
   renderElements();
   renderGridsList();
@@ -1405,14 +1456,22 @@ function reorderFolder(srcId, refId, position) {
       }
     }
   }
-  saveState();
+  // Réordonnancement pur (même parent ou changement de parent) : structure seule, index suffit.
+  _bingoSaveIndex();
   renderAllFolders();
   renderElements();
   renderGridsList();
   renderGrid();
 }
 
-function importElements(sourceId, targetId, replace = false) {
+// async : source ET cible peuvent être des dossiers-bingo hors contexte actif (ex. import depuis un
+// dossier jamais ouvert cette session) — les deux doivent être chargés en lourd avant de lire
+// src.elements / dst.grids (plan §3, pattern 3f). Note : en pratique le point d'entrée de cette
+// fonction (confirmImportElements, via la modale ouverte par openElementPresetsModal) a déjà chargé
+// TOUS les dossiers-bingo de l'arbre (Pattern 4) — cet await reste une garde défensive peu coûteuse
+// (no-op si déjà chargé).
+async function importElements(sourceId, targetId, replace = false) {
+  await _bingoEnsureFoldersLoaded([sourceId, targetId]);
   const src = findFolderById(state.folders, sourceId);
   const dst = findFolderById(state.folders, targetId);
   if (!src || !dst) return;
@@ -1435,7 +1494,8 @@ function importElements(sourceId, targetId, replace = false) {
       added++;
     }
   });
-  saveState();
+  // La source n'est pas modifiée : seul le dossier cible a besoin d'être réécrit.
+  _bingoSaveFolder(targetId);
   renderElements();
   renderGrid();
   return added;
@@ -1464,7 +1524,7 @@ function importElementTexts(texts, targetId, replace = false) {
       added++;
     }
   });
-  saveState();
+  _bingoSaveFolder(targetId);
   renderElements();
   renderGrid();
   return added;
@@ -1480,7 +1540,7 @@ function getElementPresets() {
 
 function saveElementPreset(name, texts) {
   getElementPresets().push({ id: uid(), name: name.trim(), elements: texts.map(t => t.trim()).filter(Boolean) });
-  saveState();
+  _bingoSaveIndex();
 }
 
 function updateElementPreset(id, name, texts) {
@@ -1488,12 +1548,12 @@ function updateElementPreset(id, name, texts) {
   if (!preset) return;
   preset.name = name.trim();
   preset.elements = texts.map(t => t.trim()).filter(Boolean);
-  saveState();
+  _bingoSaveIndex();
 }
 
 function deleteElementPreset(id) {
   state.elementPresets = getElementPresets().filter(p => p.id !== id);
-  saveState();
+  _bingoSaveIndex();
 }
 
 // ──────────────────────────────────────────────
@@ -1515,9 +1575,10 @@ function shuffle(arr) {
 // Sérialise l'état pour Firebase (supprime les undefined, convertit les tableaux).
 // Équivalent à JSON.parse(JSON.stringify(obj)) mais sans passer par une chaîne de texte
 // intermédiaire (state peut peser plusieurs centaines de Ko) — un clone récursif direct
-// est nettement plus rapide, notable sur machine lente puisque saveState() l'appelle à
-// chaque action (cocher une case, etc). Mêmes règles que JSON : clé → undefined omise
-// dans un objet, undefined → null dans un tableau ; pas de Date/Map/Set dans state.
+// est nettement plus rapide, notable sur machine lente puisque _bingoSaveFolder()/
+// _bingoSaveIndex() l'appellent à chaque action (cocher une case, etc). Mêmes règles que
+// JSON : clé → undefined omise dans un objet, undefined → null dans un tableau ; pas de
+// Date/Map/Set dans state.
 function sanitizeForFirebase(obj) {
   if (Array.isArray(obj)) {
     return obj.map(v => (v === undefined ? null : sanitizeForFirebase(v)));
@@ -1533,12 +1594,195 @@ function sanitizeForFirebase(obj) {
   return obj;
 }
 
-function saveState() {
+// ──────────────────────────────────────────────
+// Firebase — scission index (léger, toujours chargé) / data (lourd, par dossier-bingo) / trash
+// ──────────────────────────────────────────────
+// Contexte : state.folders est un arbre récursif (pas un "groupe" plat comme Tier List). Un dossier
+// est un "dossier-bingo" (a une entrée bingo/data/<id>) ssi _isFolderBingo(folder) est vrai (a des
+// grilles). Un dossier conteneur (ex. "Saison 1" qui n'a que des sous-dossiers) n'a pas d'entrée data,
+// tout son contenu (même un éventuel elements[] hérité d'un vieux thème, cf migrateState v3→v4) reste
+// dans l'index. L'index garde par dossier un tableau folder.grids ALLÉGÉ (id/archived/hidden/title/
+// locked/name, sans le tableau grid[] de 25 cellules) plutôt qu'un "gridsMeta" séparé : toutes les
+// lectures cross-arbre existantes (_isFolderBingo, _collectEpisodeFolders, _flattenFoldersForRecent,
+// _homeRenderRecentBingo, renderArchivesUnified) ne lisent jamais folder.grids[].grid, seulement
+// archived/hidden/name/length — donc réutilisables telles quelles sans aucune modification.
+const _dbBingoIndex = window._db.ref('bingo/index');
+const _dbBingoData  = window._db.ref('bingo/data');
+const _dbBingoTrash = window._db.ref('bingo/trash');
+
+// Parcourt récursivement un noeud dossier (et ses sous-dossiers) et retourne les ids de tous les
+// dossiers-bingo rencontrés (grilles.length > 0) — utilisé par duplicateFolder/deleteFolder/
+// trashRestore pour savoir quelles entrées bingo/data/<id> écrire ou charger.
+function _collectBingoFolderIds(folderNode) {
+  const ids = [];
+  if (!folderNode) return ids;
+  if (_isFolderBingo(folderNode)) ids.push(folderNode.id);
+  (folderNode.folders || []).forEach(f => ids.push(..._collectBingoFolderIds(f)));
+  return ids;
+}
+
+// Variante sur toute la forêt de dossiers (racine state.folders) — utilisée par le point d'entrée
+// "importer les cases d'un autre dossier" qui doit pouvoir lire elements[] de n'importe quel dossier.
+function _collectAllBingoFolderIds(foldersArray) {
+  const ids = [];
+  (foldersArray || []).forEach(f => ids.push(..._collectBingoFolderIds(f)));
+  return ids;
+}
+
+// Version allégée d'un dossier pour l'index : conserve la structure (folders/children récursifs)
+// mais retire les champs lourds (elements/archivedElementIds/persistentCheckedIds) sauf pour un
+// dossier non-bingo qui les garde (vieux thème racine avec elements mais grids:[], cf plan §1) —
+// et allège chaque grille (retire g.grid, le tableau de cellules).
+function _bingoIndexFolder(f) {
+  const bingo = _isFolderBingo(f);
+  const out = {
+    id: f.id, name: f.name, archived: !!f.archived, locked: !!f.locked,
+    numbering: f.numbering || null, createdAt: f.createdAt, updatedAt: f.updatedAt,
+    children: f.children || [],
+    grids: (f.grids || []).map(g => ({ id: g.id, name: g.name, archived: !!g.archived, hidden: !!g.hidden, title: g.title || '', locked: !!g.locked })),
+    folders: (f.folders || []).map(_bingoIndexFolder),
+  };
+  if (!bingo) {
+    // Dossier conteneur (jamais d'entrée data) : ses champs "lourds" restent la seule copie qui existe.
+    out.elements = f.elements || [];
+    out.archivedElementIds = f.archivedElementIds || [];
+    out.persistentCheckedIds = f.persistentCheckedIds || [];
+  }
+  return out;
+}
+
+function _bingoBuildIndexPayload() {
+  return {
+    folders: (state.folders || []).map(_bingoIndexFolder),
+    currentEventFolderId: state.currentEventFolderId || null,
+    currentEventTierlistId: state.currentEventTierlistId || null,
+    elementPresets: state.elementPresets || [],
+  };
+}
+
+// Contenu lourd d'UN dossier-bingo précis (autonome : grids[] complet avec cellules, redondant avec
+// l'index sur id/archived/hidden/title/locked — voulu, cf plan §1). activeGridId n'a jamais été un
+// champ d'UI affiché (la vraie sélection visible est _selectedGridIds, local uniquement) mais était
+// inclus dans l'ancien saveState() complet — conservé ici pour ne rien perdre silencieusement.
+function _bingoBuildFolderPayload(folderId) {
+  const f = findFolderById(state.folders, folderId);
+  if (!f) return null;
+  return {
+    elements: f.elements || [],
+    archivedElementIds: f.archivedElementIds || [],
+    persistentCheckedIds: f.persistentCheckedIds || [],
+    grids: f.grids || [],
+    activeGridId: f.activeGridId || null,
+  };
+}
+
+function _bingoSaveIndex() {
   if (_bingoRemoteUpdate || !_firebaseReady) return;
-  // activeThemeId et activeSubthemeId sont locaux → ne pas les écrire dans Firebase
-  const toSave = sanitizeForFirebase(state);
-  delete toSave.activeThemeId;
-  _dbBingo.set(toSave).catch(e => console.warn('Bingo save error:', e));
+  _dbBingoIndex.set(sanitizeForFirebase(_bingoBuildIndexPayload())).catch(e => console.warn('Bingo index save error:', e));
+}
+
+function _bingoSaveFolder(folderId) {
+  if (_bingoRemoteUpdate || !_firebaseReady || !folderId) return;
+  const payload = _bingoBuildFolderPayload(folderId);
+  if (!payload) return;
+  // Marquer le dossier "chargé" AVANT le .set() : sur le shim de test (et potentiellement en conditions
+  // réelles avec écho local Firebase), .set() peut redéclencher SYNCHRONEMENT le listener d'index (le
+  // .set() sur bingo/data ne le déclenche pas lui-même, mais un _bingoSaveIndex() qui suit immédiatement
+  // dans le même appelant, si — cf plan §3, presque tous les patterns 1 enchaînent _bingoSaveFolder PUIS
+  // _bingoSaveIndex). Sans ce marquage, _mergeLight verrait ce dossier comme "jamais chargé" et
+  // écraserait son contenu lourd tout juste écrit avec les grilles allégées de l'index (perte du
+  // tableau grid[] de cellules en pleine écriture).
+  _bingoLoadedFolders.add(folderId);
+  _dbBingoData.child(folderId).set(sanitizeForFirebase(payload)).catch(e => console.warn('Bingo folder save error:', e));
+}
+
+// Faîtière (équivalent tlSave côté Tier List, cf ligne ~6182) : écrit toujours le dossier PUIS
+// l'index, dans cet ordre (cf commentaire de _bingoSaveFolder ci-dessus) — remplace la paire
+// _bingoSaveFolder(id); _bingoSaveIndex(); répétée telle quelle sur la plupart des actions qui
+// touchent une grille/dossier (créer/renommer/dupliquer/verrouiller/désarchiver une grille…).
+// NE PAS utiliser pour cocher/décocher une case : cette action, la plus fréquente de l'app, ne
+// doit écrire QUE le dossier (appeler _bingoSaveFolder seul) — jamais l'index à chaque case.
+function _bingoSave(folderId) {
+  _bingoSaveFolder(folderId);
+  _bingoSaveIndex();
+}
+
+function _bingoSaveTrash() {
+  if (_bingoRemoteUpdate || !_firebaseReady) return;
+  _dbBingoTrash.set(sanitizeForFirebase(state.trash || [])).catch(e => console.warn('Bingo trash save error:', e));
+}
+
+// Fusionne le contenu lourd reçu de bingo/data/<folderId> dans le dossier correspondant en mémoire.
+// Écrase grids[].archived avec la valeur de l'index (source de vérité pour ce flag, cf archiveFolder
+// qui ne réécrit que l'index) — sinon rouvrir un dossier archivé-puis-désarchivé pourrait réafficher
+// un état obsolète si son noeud data n'a pas été resauvegardé depuis l'archivage (plan §3, pattern 3b).
+function _bingoMergeDataIntoState(folderId, rawData) {
+  const f = findFolderById(state.folders, folderId);
+  if (!f) return;
+  const data = rawData || {};
+  const indexArchivedById = new Map((f.grids || []).map(g => [g.id, g.archived]));
+  f.elements = data.elements || [];
+  f.archivedElementIds = data.archivedElementIds || [];
+  f.persistentCheckedIds = data.persistentCheckedIds || [];
+  f.activeGridId = data.activeGridId || null;
+  f.grids = (data.grids || []).map(g => {
+    if (indexArchivedById.has(g.id)) g.archived = indexArchivedById.get(g.id);
+    if (g.hidden === undefined) g.hidden = false;
+    if (g.title === undefined) g.title = '';
+    if (g.locked === undefined) g.locked = false;
+    return g;
+  });
+  // Complète chaque grille avec un tableau grid[] de taille MAX_SIZE² (restauration des cases lors
+  // d'un ré-agrandissement) — même logique que l'ancien listener unique, appliquée ici pour que
+  // TOUT chemin de chargement lourd (chargement à la demande, souscription active, migration) en
+  // bénéficie uniformément, sans dépendre de l'appelant pour y penser.
+  f.grids.forEach(g => {
+    if (!g.grid || g.grid.length === 0) {
+      g.grid = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false, color: null }));
+    } else {
+      while (g.grid.length < MAX_SIZE * MAX_SIZE) g.grid.push({ elementId: null, checked: false, color: null });
+    }
+  });
+}
+
+// ── Chargement à la demande (par dossier-bingo précis, lecture seule — jamais d'écriture) ──
+const _bingoLoadedFolders = new Set();        // folderId -> chargé (jamais déchargé pendant la session)
+const _bingoLoadPromises  = new Map();        // folderId -> Promise en cours (dédup des appels concurrents)
+
+async function _bingoEnsureFolderLoaded(folderId) {
+  if (!folderId) return null;
+  if (_bingoLoadedFolders.has(folderId)) return findFolderById(state.folders, folderId);
+  if (_bingoLoadPromises.has(folderId)) return _bingoLoadPromises.get(folderId);
+  const promise = _dbBingoData.child(folderId).once('value').then(snapshot => {
+    _bingoMergeDataIntoState(folderId, snapshot.val());
+    _bingoLoadedFolders.add(folderId);
+    _bingoLoadPromises.delete(folderId);
+    return findFolderById(state.folders, folderId);
+  }).catch(e => { console.warn('Bingo folder load error:', e); _bingoLoadPromises.delete(folderId); throw e; });
+  _bingoLoadPromises.set(folderId, promise);
+  return promise;
+}
+
+function _bingoEnsureFoldersLoaded(folderIds) {
+  return Promise.all([...new Set((folderIds || []).filter(Boolean))].map(_bingoEnsureFolderLoaded));
+}
+
+// Périmètre de chargement pour NEW/Stats à partir d'un dossier-bingo donné : sa "saison" (dossier
+// parent le plus proche, ou lui-même s'il est déjà à la racine) et tous les épisodes de cette saison.
+// Réutilise _findStatsScopeFolder/_collectEpisodeFolders telles quelles (déjà lisibles depuis l'index
+// seul, aucune des deux ne touche folder.grids[].grid) — ne fait AUCUNE écriture, uniquement des
+// .once('value') en lecture + fusion mémoire, jamais _bingoSaveFolder/_bingoSaveIndex (cf plan §2,
+// point central validé : lecture et écriture restent strictement découplées).
+async function _bingoEnsureSeasonLoaded(folderId) {
+  const folder = findFolderById(state.folders, folderId);
+  if (!folder) return;
+  const scope = _findStatsScopeFolder(folder);
+  if (!scope) return;
+  const episodeFolders = _collectEpisodeFolders(scope);
+  const ids = new Set(episodeFolders.map(f => f.id));
+  if (_isFolderBingo(folder)) ids.add(folder.id); // le dossier lui-même, même si scope = son parent
+  if (_isFolderBingo(scope)) ids.add(scope.id);   // scope peut être bingo (bingo racine, pas de parent)
+  await _bingoEnsureFoldersLoaded([...ids]);
 }
 
 // ──────────────────────────────────────────────
@@ -1546,42 +1790,73 @@ function saveState() {
 // ──────────────────────────────────────────────
 function trashPush(entry) {
   if (!state.trash) state.trash = [];
-  state.trash.push({ ...entry, deletedAt: Date.now() });
+  // id stable : trashRestore le réutilise pour retrouver l'entrée après un await sans dépendre de
+  // sa position dans le tableau (le listener bingo/trash peut remplacer state.trash en entier entre-
+  // temps si un autre client modifie la corbeille pendant l'attente).
+  state.trash.push({ id: uid(), ...entry, deletedAt: Date.now() });
 }
 
-function trashRestore(idx) {
+// async : le snapshot restauré (entry.data) contient déjà tout le contenu lourd (capturé au moment
+// de la suppression), donc pas d'attente pour LUI — mais restaurer une grille seule (entry.type ===
+// 'grid') l'insère dans folder.grids, qui doit être le VRAI tableau du dossier cible (chargé), sinon
+// la grille restaurée serait perdue à la prochaine fusion d'un snapshot data sur ce dossier.
+async function trashRestore(idx) {
   if (!state.trash) return;
   const entry = state.trash[idx];
   if (!entry) return;
-  state.trash.splice(idx, 1);
+  const entryId = entry.id; // capturé avant l'await — sert à retrouver l'entrée sans dépendre de idx
 
-  if (entry.type === 'folder' || entry.type === 'theme') {
+  if (entry.type === 'grid') {
+    await _bingoEnsureFolderLoaded(entry.folderId || entry.themeId);
+  }
+
+  // Re-résoudre l'entrée par id (pas par idx) après l'éventuel await : le listener bingo/trash peut
+  // avoir remplacé state.trash en entier pendant l'attente (autre client qui vide/modifie la
+  // corbeille) — réindexer par position risquerait de restaurer/supprimer la mauvaise entrée.
+  const entryNowIdx = state.trash.findIndex(e => e.id === entryId);
+  if (entryNowIdx === -1) return;
+  const entryNow = state.trash[entryNowIdx];
+  state.trash.splice(entryNowIdx, 1);
+
+  const restoredBingoFolderIds = [];
+  if (entryNow.type === 'folder' || entryNow.type === 'theme') {
     if (!state.folders) state.folders = [];
-    state.folders.push(entry.data);
-  } else if (entry.type === 'subtheme') {
-    const parent = findFolderById(state.folders, entry.themeId);
+    state.folders.push(entryNow.data);
+    restoredBingoFolderIds.push(..._collectBingoFolderIds(entryNow.data));
+  } else if (entryNow.type === 'subtheme') {
+    const parent = findFolderById(state.folders, entryNow.themeId);
     if (parent) {
       if (!parent.folders) parent.folders = [];
-      parent.folders.push(entry.data);
+      parent.folders.push(entryNow.data);
+      restoredBingoFolderIds.push(..._collectBingoFolderIds(entryNow.data));
     }
-  } else if (entry.type === 'grid') {
-    const folder = findFolderById(state.folders, entry.folderId || entry.themeId);
+  } else if (entryNow.type === 'grid') {
+    const folder = findFolderById(state.folders, entryNow.folderId || entryNow.themeId);
     if (folder) {
       if (!folder.grids) folder.grids = [];
-      folder.grids.push(entry.data);
+      folder.grids.push(entryNow.data);
+      if (_isFolderBingo(folder)) restoredBingoFolderIds.push(folder.id);
     }
   }
 
-  saveState();
+  // DATA avant INDEX (même règle que Tier List, cf plan §3 pattern 3e) : si la 2e écriture échouait,
+  // le contenu restauré resterait au moins présent dans son propre noeud data.
+  restoredBingoFolderIds.forEach(_bingoSaveFolder);
+  _bingoSaveTrash();
+  _bingoSaveIndex();
   renderAllFolders();
   renderGridsList();
   renderGrid();
   renderElements();
+  // Rendu de la liste de corbeille intégré ici (plutôt que laissé à la charge de chaque appelant) :
+  // devenue async (chargement d'un dossier cible pour restaurer une grille), un appelant qui enchaînait
+  // trashRestore(idx); renderTrashList(); de façon synchrone afficherait sinon un état pas encore à jour.
+  if (typeof renderTrashList === 'function') renderTrashList();
 }
 
 function trashEmpty() {
   state.trash = [];
-  saveState();
+  _bingoSaveTrash();
 }
 
 // ──────────────────────────────────────────────
@@ -1796,7 +2071,7 @@ function startEditElement(id, span, clickEvent) {
   const commit = () => {
     const newText = textarea.value.trim();
     if (newText) el.text = newText;
-    saveState();
+    _bingoSaveFolder(s.id);
     renderElements();
     renderGrid();
   };
@@ -1840,7 +2115,7 @@ function addElement() {
   if (!s.elements) s.elements = [];
   s.elements.push({ id: uid(), text });
   inputEl.value = '';
-  saveState();
+  _bingoSaveFolder(s.id);
   renderElements();
   renderGrid();
 }
@@ -1855,7 +2130,7 @@ function deleteElement(id) {
       cell.elementId === id ? { elementId: null, checked: false, color: null } : cell
     );
   });
-  saveState();
+  _bingoSaveFolder(s.id);
   renderElements();
   renderGrid();
 }
@@ -1868,7 +2143,7 @@ function clearAllElements() {
   (s.grids || []).forEach(g => {
     g.grid = g.grid.map(cell => ({ elementId: null, checked: false, color: null }));
   });
-  saveState();
+  _bingoSaveFolder(s.id);
   renderElements();
   renderGrid();
 }
@@ -1885,7 +2160,7 @@ function clearArchivedElements() {
       archivedIds.includes(cell.elementId) ? { elementId: null, checked: false, color: null } : cell
     );
   });
-  saveState();
+  _bingoSaveFolder(s.id);
   renderElements();
   renderGrid();
 }
@@ -1903,7 +2178,7 @@ function archiveElement(id) {
       cell.elementId === id ? { elementId: null, checked: false, color: null } : cell
     );
   });
-  saveState();
+  _bingoSaveFolder(s.id);
   renderElements();
   renderGrid();
 }
@@ -1913,7 +2188,7 @@ function restoreElement(id) {
   if (!s) return;
   if (!s.archivedElementIds) s.archivedElementIds = [];
   s.archivedElementIds = s.archivedElementIds.filter(eid => eid !== id);
-  saveState();
+  _bingoSaveFolder(s.id);
   renderElements();
   renderGrid();
 }
@@ -2749,7 +3024,11 @@ function createGrid(name) {
     saveLocalSelectedGrids(_selectedGridIds);
   }
   touchFolderChain(s.id);
-  saveState();
+  // touchFolderChain propage updatedAt (champ d'index) à toute la chaîne d'ancêtres — en plus du
+  // contenu lourd du dossier (nouvelle grille), l'index doit donc être réécrit aussi, sinon "Récents"
+  // n'y verrait jamais cette modification (même règle que Tier List, tlSave() appelle toujours
+  // tlSaveIndex() en plus de tlSaveGroup()).
+  _bingoSave(s.id);
   renderGridsList();
   renderGrid();
 }
@@ -2786,7 +3065,7 @@ function deleteGrid(id) {
     s.activeGridId = remaining.length > 0 ? remaining[0].id : null;
   }
   touchFolderChain(s.id);
-  saveState();
+  _bingoSave(s.id); // touchFolderChain touche updatedAt (index) — cf commentaire dans createGrid
   renderGridsList();
   renderGrid();
 }
@@ -2795,7 +3074,9 @@ function renameGrid(id, newName) {
   const s = activeSubtheme();
   const g = s?.grids.find(g => g.id === id);
   if (g && newName.trim()) { g.name = newName.trim(); g.title = newName.trim(); if (s) touchFolderChain(s.id); }
-  saveState();
+  if (s) {
+    _bingoSave(s.id); // renameGrid touche aussi g.name/g.title dans l'index (allégé mais présent)
+  }
   renderGridsList();
   renderGrid();
 }
@@ -2813,7 +3094,7 @@ function duplicateGrid(id) {
   s.grids.push(copy);
   s.activeGridId = copy.id;
   touchFolderChain(s.id);
-  saveState();
+  _bingoSave(s.id); // touchFolderChain touche updatedAt (index) — cf commentaire dans createGrid
   renderGridsList();
   renderGrid();
 }
@@ -2937,13 +3218,20 @@ function changeSize(delta) {
 
   grids.forEach(g => {
     g.gridSize = newSize;
+    // Garde défensive : g.grid peut être absent/tronqué si le dossier actif vient tout juste
+    // d'être activé et que le chargement à la demande (_bingoEnsureSeasonLoaded) n'a pas encore
+    // fini — la grille n'a alors que ses métadonnées allégées venues de l'index (pas de grid[]).
+    // Chemin normalement jamais atteint (les boutons +/- restent utilisables pendant ce court
+    // round-trip), mais un TypeError ici casserait le redimensionnement sans rien afficher.
+    // Même pattern que migrateState() pour l'ancien format (ligne ~765).
+    if (!g.grid) g.grid = [];
     // S'assurer que le tableau est toujours de taille MAX_SIZE² — on ne tronque jamais
     while (g.grid.length < MAX_SIZE * MAX_SIZE) {
       g.grid.push({ elementId: null, checked: false, color: null });
     }
   });
 
-  saveState();
+  _bingoSaveFolder(activeSubtheme().id);
   renderGrid();
 }
 
@@ -3035,7 +3323,9 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     if (!gNow) return;
     const val = titleInput.value.trim();
     if (val) { gNow.title = val; gNow.name = val; }
-    saveState();
+    // g.title/g.name sont dupliqués dans les métadonnées allégées de l'index (liste "Grilles",
+    // breadcrumb) — les deux noeuds doivent être réécrits.
+    _bingoSave(sNow.id);
     renderGridsList();
   });
   titleRow.appendChild(titleInput);
@@ -3069,7 +3359,12 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     const sNow = activeSubtheme();
     if (!tNow || tNow.locked || !sNow) return;
     const gNow = sNow.grids.find(x => x.id === g.id);
-    if (gNow) { gNow.locked = !gNow.locked; saveState(); renderGrid(); }
+    if (gNow) {
+      gNow.locked = !gNow.locked;
+      // g.locked dupliqué dans l'index (métadonnées allégées) — même raison que le titre ci-dessus.
+      _bingoSave(sNow.id);
+      renderGrid();
+    }
   });
 
   // Vérifier si assez d'éléments pour cette grille
@@ -3122,7 +3417,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
       }
     });
     gNow.grid = gNow.grid.map(() => ({ elementId: null, checked: false }));
-    saveState();
+    _bingoSaveFolder(sNow.id);
     renderGrid();
     renderElements();
   });
@@ -3187,7 +3482,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
           const gNow = sNow.grids.find(x => x.id === g.id);
           if (!gNow || gNow.locked) return;
           [gNow.grid[srcIdx], gNow.grid[targetIdx]] = [gNow.grid[targetIdx], gNow.grid[srcIdx]];
-          saveState();
+          _bingoSaveFolder(sNow.id);
           renderGrid();
           renderElements();
         } else {
@@ -3198,7 +3493,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
           if (alreadyInGrid) return;
           const prevChecked = g.grid[targetIdx]?.checked || false;
           g.grid[targetIdx] = { elementId: elId, checked: prevChecked };
-          saveState();
+          _bingoSaveFolder(s.id);
           renderGrid();
           renderElements();
         }
@@ -3251,7 +3546,14 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
           }
           touchFolderChain(sNow.id);
         }
-        saveState();
+        // Cocher une case : contenu lourd du dossier actif seul (_bingoSaveFolder), JAMAIS l'index —
+        // action la plus fréquente de l'app, une écriture index par case doublerait le trafic Firebase
+        // sur ce chemin (même philosophie que les sliders qui n'écrivent qu'au relâchement, pas à
+        // chaque input). touchFolderChain ci-dessus met à jour updatedAt seulement en mémoire ; "Récents"
+        // se resynchronise dès la prochaine action qui écrit réellement l'index (créer/renommer/etc).
+        // AUCUN autre dossier-bingo (ex. un épisode frère chargé pour NEW/Stats) n'est jamais transmis
+        // à un .set(), même si plusieurs sont en mémoire en même temps (cf plan §2, point central).
+        if (sNow) { _bingoSaveFolder(sNow.id); }
         const visibleGridsAfter = getVisibleGrids();
         const lineCountsAfter = visibleGridsAfter.map(gx => getBingoResult(gx.gridSize, gx.grid.slice(0, gx.gridSize * gx.gridSize)).lines.length);
         const sameBingoState = visibleGridsBefore.length === visibleGridsAfter.length
@@ -3276,7 +3578,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
               if (!sNow.persistentCheckedIds.includes(cell.elementId)) sNow.persistentCheckedIds.push(cell.elementId);
             }
             gNow.grid[i] = { elementId: null, checked: false };
-            saveState();
+            _bingoSaveFolder(sNow.id);
             renderGrid();
             renderElements();
           });
@@ -3956,7 +4258,7 @@ function confirmNewTheme() {
       folder.name = name;
       folder.numbering = numbering;
       touchFolderChain(folder.id);
-      saveState();
+      _bingoSaveIndex();
       renderAllFolders();
     }
     return;
@@ -4121,14 +4423,14 @@ function openImportElementsModal(targetId) {
   if (replaceCb) replaceCb.checked = false;
 }
 
-function confirmImportElements() {
+async function confirmImportElements() {
   if (!_elementPresetsTargetId) return;
   const sel = document.getElementById('import-elements-source-select');
   const sourceRootId = sel ? sel.value : '';
   if (!sourceRootId) return;
   const replaceCb = document.getElementById('element-preset-replace-checkbox');
   const replace = replaceCb ? replaceCb.checked : false;
-  const added = importElements(sourceRootId, _elementPresetsTargetId, replace);
+  const added = await importElements(sourceRootId, _elementPresetsTargetId, replace);
   closeElementPresetsModal();
   if (added === 0 && !replace) {
     alert('Toutes les cases existent déjà dans ce dossier.');
@@ -4389,9 +4691,13 @@ tabBtns.forEach(btn => {
 btnAdd.addEventListener('click', addElement);
 inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') addElement(); });
 
-document.getElementById('btn-presets-elements-panel').addEventListener('click', () => {
+document.getElementById('btn-presets-elements-panel').addEventListener('click', async () => {
   const s = activeSubtheme();
   if (!s) return;
+  // La modale "Presets cases" permet d'importer les cases de N'IMPORTE QUEL dossier de l'arbre
+  // (_buildImportElementsSourceTree lit elements[] de tous les dossiers) — charger tous les
+  // dossiers-bingo avant de l'ouvrir (plan §3, pattern 4). Action volontaire et rare, coût acceptable.
+  await _bingoEnsureFoldersLoaded(_collectAllBingoFolderIds(state.folders));
   openElementPresetsModal(s.id);
 });
 
@@ -4443,7 +4749,7 @@ chkLockGenerate.addEventListener('click', () => {
   const t = activeTheme();
   if (t) {
     t.locked = !_isLockGenerateChecked();
-    saveState();
+    _bingoSaveIndex(); // folder.locked est un champ d'index (dossier racine)
   }
   renderGrid();
 });
@@ -4590,8 +4896,17 @@ function _renderBingoStatsRows() {
   });
 }
 
-function openBingoStatsModal(folder) {
-  renderBingoStatsModal(folder);
+// async : accessible depuis le menu contextuel d'un dossier hors contexte actif (pas seulement le
+// bouton de la page Bingo, toujours sur le dossier actif déjà chargé) — computeBingoStats a besoin
+// de elements[]/grids[].grid (lourd) de tout le périmètre stats, pas seulement de l'index.
+async function openBingoStatsModal(folder) {
+  const target = folder || activeFolder();
+  if (target) await _bingoEnsureSeasonLoaded(target.id);
+  // Re-résoudre après l'await : un snapshot bingo/index distant reçu pendant l'attente peut avoir
+  // fait remplacer les objets dossier de state.folders par _mergeLight (Object.assign sur de
+  // nouvelles instances) — target serait alors une référence détachée (nom/archived périmés).
+  const targetNow = target ? (findFolderById(state.folders, target.id) || target) : target;
+  renderBingoStatsModal(targetNow);
   document.getElementById('modal-bingo-stats').classList.remove('hidden');
 }
 function closeBingoStatsModal() {
@@ -4699,7 +5014,7 @@ function _renderGridsDropdownMenu() {
         }
       }
       saveLocalSelectedGrids(_selectedGridIds);
-      saveState();
+      _bingoSaveFolder(sNow.id);
       renderGridsList();
       renderGrid();
     });
@@ -5043,7 +5358,7 @@ function generateAllVisibleGrids() {
   }
   gridError.classList.add('hidden');
   grids.forEach(gx => generateOneGrid(t, gx, false));
-  saveState();
+  _bingoSaveFolder(s.id);
   renderGrid();
 }
 
@@ -5057,7 +5372,7 @@ function generateEmptyCellsVisibleGrids() {
 
   gridError.classList.add('hidden');
   grids.forEach(gx => generateOneGrid(t, gx, true));
-  saveState();
+  _bingoSaveFolder(s.id);
   renderGrid();
 }
 
@@ -5098,7 +5413,7 @@ function generateSingleGrid(gridId, emptyOnly) {
     return;
   }
   gridError.classList.add('hidden');
-  saveState();
+  _bingoSaveFolder(sNow.id);
   renderGrid();
 }
 
@@ -5189,7 +5504,7 @@ document.getElementById('btn-confirm-reset').addEventListener('click', () => {
   });
   (s.elements || []).forEach(el => { el.checked = false; });
   s.persistentCheckedIds = [];
-  saveState();
+  _bingoSaveFolder(s.id);
   renderGrid();
   renderElements();
 });
@@ -5271,7 +5586,7 @@ document.getElementById('btn-confirm-clear').addEventListener('click', () => {
     });
   }
   grids.forEach(gx => { gx.grid = gx.grid.map(() => ({ elementId: null, checked: false })); });
-  saveState();
+  if (sNow) _bingoSaveFolder(sNow.id);
   renderGrid();
   renderElements();
 });
@@ -5478,7 +5793,10 @@ function renderArchivesUnified() {
         { text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore', disabled: parentArchived,
           onClick: () => { archiveFolder(f.id); renderArchivesUnified(); } },
         { text: '<i data-lucide="trash-2"></i> Supprimer', cls: 'del',
-          onClick: () => { deleteFolder(f.id); renderArchivesUnified(); } }
+          // deleteFolder est async (charge le contenu lourd avant trashPush) — attendre avant de
+          // re-render, sinon renderArchivesUnified() s'exécute sur un état pas encore à jour
+          // (liste obsolète/scintillante).
+          onClick: async () => { await deleteFolder(f.id); renderArchivesUnified(); } }
       ]));
     }
     dest.appendChild(folderRow);
@@ -5486,8 +5804,19 @@ function renderArchivesUnified() {
 
     archivedGrids.forEach(g => {
       const leafRow = _makeLeafRow(g.name, depth + 1, [
+        // g peut provenir d'un dossier-bingo pas encore chargé en lourd (les grilles allégées de
+        // l'index ont aussi leur propre "archived") — charger le dossier avant de désarchiver pour
+        // muter le VRAI tableau grids[] (celui qui sera réécrit), jamais la copie légère de l'index.
         { text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore', disabled: fArchived || parentArchived,
-          onClick: () => { g.archived = false; saveState(); renderGridsList(); renderArchivesUnified(); } },
+          onClick: async () => {
+            await _bingoEnsureFolderLoaded(f.id);
+            const fNow = findFolderById(state.folders, f.id);
+            const gNow = fNow && (fNow.grids || []).find(x => x.id === g.id);
+            if (gNow) gNow.archived = false;
+            _bingoSave(f.id); // archived est dupliqué dans les métadonnées allégées de l'index
+            renderGridsList();
+            renderArchivesUnified();
+          } },
         { text: '<i data-lucide="trash-2"></i> Supprimer', cls: 'del',
           onClick: () => {
             const savedId = _localActiveFolderId;
@@ -5624,7 +5953,7 @@ function renderTrashList() {
     if (tNode.themeEntry) {
       themeRow.appendChild(_makeArchiveButtons([{
         text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore',
-        onClick: () => { trashRestore(tNode.themeEntry.origIdx); renderTrashList(); }
+        onClick: () => { trashRestore(tNode.themeEntry.origIdx); }
       }]));
     }
     container.appendChild(themeRow);
@@ -5644,7 +5973,7 @@ function renderTrashList() {
         subRow.appendChild(_makeArchiveButtons([{
           text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore',
           disabled: !parentExists,
-          onClick: () => { trashRestore(sNode.subEntry.origIdx); renderTrashList(); }
+          onClick: () => { trashRestore(sNode.subEntry.origIdx); }
         }]));
       }
       themeChildren.appendChild(subRow);
@@ -5654,7 +5983,7 @@ function renderTrashList() {
         const actions = g.fromParent ? [] : [{
           text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore',
           disabled: !g.canRestore,
-          onClick: () => { trashRestore(g.origIdx); renderTrashList(); }
+          onClick: () => { trashRestore(g.origIdx); }
         }];
         subChildren.appendChild(_makeLeafRow(g.name, 2, actions));
       });
@@ -6758,7 +7087,7 @@ async function tlDeleteFolder(id) {
     }
     if (cascadedIds.has(state.currentEventTierlistId)) {
       state.currentEventTierlistId = null;
-      saveState();
+      _bingoSaveIndex(); // currentEventTierlistId vit dans state (bingo), champ d'index pur
     }
   }
   // Détacher les tierlists des sous-dossiers supprimés (non capturés dans l'entrée de corbeille du dossier racine)
@@ -9112,7 +9441,7 @@ async function tlDelete(id) {
   }
   if (removedIds.has(state.currentEventTierlistId)) {
     state.currentEventTierlistId = null;
-    saveState();
+    _bingoSaveIndex(); // currentEventTierlistId vit dans state (bingo), champ d'index pur
   }
   // Ne PAS toucher à tierlist/data/<groupRootId> : la corbeille porte déjà tout le contenu nécessaire
   // en snapshot JS (entry.data) — le noeud data devient orphelin/inutilisé jusqu'à restauration ou
@@ -11983,72 +12312,207 @@ function _tlNameNewImgsSequentially(tl, imgs) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── Bingo ─────────────────────────────────────────────────────────────────────
-_dbBingo.on('value', snapshot => {
-  _bingoRemoteUpdate = true;
-  // Capturer les IDs de grilles connues avant la mise à jour, pour détecter les vraiment nouvelles
-  const _knownGridIdsBefore = new Set(
-    (state.folders || []).flatMap(function collectGridIds(f) {
-      return [...(f.grids || []).map(g => g.id), ...(f.folders || []).flatMap(collectGridIds)];
-    })
-  );
-  _firebaseReady = true;
-  const raw = snapshot.val();
-  const migrated = migrateState(raw);
-  state = migrated || initState();
+// Normalise un dossier "léger" (valeurs par défaut) reçu de l'index — jamais g.grid (le tableau de
+// cellules), qui n'existe que dans le contenu lourd fusionné par _bingoMergeDataIntoState.
+function _bingoNormalizeFolderShallow(f) {
+  if (!f.elements)           f.elements           = [];
+  if (!f.archivedElementIds) f.archivedElementIds = [];
+  if (!f.persistentCheckedIds) f.persistentCheckedIds = [];
+  if (!f.folders)            f.folders            = [];
+  if (!f.grids)              f.grids              = [];
+  if (f.locked === undefined) f.locked            = false;
+  f.grids.forEach(g => {
+    if (g.archived === undefined) g.archived = false;
+    if (g.hidden   === undefined) g.hidden   = false;
+    if (g.title    === undefined) g.title    = '';
+    if (g.locked   === undefined) g.locked   = false;
+  });
+  f.folders.forEach(_bingoNormalizeFolderShallow);
+}
 
-  // Normaliser l'état (nouvelle structure dossiers)
-  if (!state.folders) state.folders = [];
-  if (state.currentEventFolderId  === undefined) state.currentEventFolderId  = null;
-  if (state.currentEventTierlistId === undefined) state.currentEventTierlistId = null;
-  function _normalizeFolder(f) {
-    if (!f.elements)          f.elements          = [];
-    if (!f.archivedElementIds) f.archivedElementIds = [];
-    if (!f.folders)           f.folders            = [];
-    if (!f.grids)             f.grids              = [];
-    if (f.locked === undefined) f.locked            = false;
-    f.grids.forEach(g => {
-      if (g.archived === undefined) g.archived = false;
-      if (g.hidden   === undefined) g.hidden   = false;
-      if (g.title    === undefined) g.title    = '';
-      if (g.locked   === undefined) g.locked   = false;
-      if (!g.grid || g.grid.length === 0) {
-        g.grid = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false, color: null }));
-      } else {
-        while (g.grid.length < MAX_SIZE * MAX_SIZE) g.grid.push({ elementId: null, checked: false, color: null });
-      }
-    });
-    f.folders.forEach(_normalizeFolder);
-  }
-  state.folders.forEach(_normalizeFolder);
+// Résout et souscrit en .on('value') PERMANENT à chaque bingo/data/<id> du périmètre actif (édition
+// collaborative temps réel) — plusieurs dossiers à la fois possible (contrairement à Tier List, un seul
+// groupe actif), d'où un Set plutôt qu'un simple id. Désabonne tout dossier sorti du périmètre précédent.
+let _bingoActiveSeasonSub = new Set();
+const _bingoActiveSeasonHandlers = new Map(); // folderId -> handler (pour .off())
 
-  if (_prefsReady) {
-    // Ajouter les nouvelles grilles apparues dans le dossier actif à la sélection de l'utilisateur
-    const activeF = activeFolder();
-    // Ajouter uniquement les grilles qui n'existaient pas avant cette mise à jour Firebase (créées par un autre utilisateur)
-    if (activeF) {
-      const brandNewGrids = (activeF.grids || []).filter(g => !g.archived && !_knownGridIdsBefore.has(g.id));
-      if (brandNewGrids.length > 0) {
-        const combined = [..._selectedGridIds, ...brandNewGrids.map(g => g.id)];
-        if (combined.length !== _selectedGridIds.length) {
-          _selectedGridIds = combined;
-          saveLocalSelectedGrids(_selectedGridIds);
+function _bingoSetActiveSeasonSubscription(folderIds) {
+  const nextIds = new Set((folderIds || []).filter(Boolean));
+  // Désabonner les dossiers sortis du périmètre
+  _bingoActiveSeasonSub.forEach(id => {
+    if (!nextIds.has(id)) {
+      const handler = _bingoActiveSeasonHandlers.get(id);
+      if (handler) _dbBingoData.child(id).off('value', handler);
+      _bingoActiveSeasonHandlers.delete(id);
+    }
+  });
+  // Abonner les nouveaux dossiers du périmètre
+  nextIds.forEach(id => {
+    if (_bingoActiveSeasonSub.has(id)) return; // déjà abonné
+    const handler = snapshot => {
+      _bingoRemoteUpdate = true;
+      const before = new Set((findFolderById(state.folders, id)?.grids || []).filter(g => !g.archived).map(g => g.id));
+      _bingoMergeDataIntoState(id, snapshot.val());
+      const f = findFolderById(state.folders, id);
+      _bingoLoadedFolders.add(id);
+      // Nouvelles grilles apparues (créées par un autre utilisateur) dans le dossier actif : les
+      // ajouter à la sélection locale — même comportement que l'ancien listener unique.
+      if (f && _localActiveFolderId === id) {
+        const brandNew = (f.grids || []).filter(g => !g.archived && !before.has(g.id));
+        if (brandNew.length > 0) {
+          const combined = [..._selectedGridIds, ...brandNew.map(g => g.id)];
+          if (combined.length !== _selectedGridIds.length) {
+            _selectedGridIds = combined;
+            saveLocalSelectedGrids(_selectedGridIds);
+          }
         }
       }
-    }
-    _applyPrefsAndRender();
-  } else if (!currentUser) {
-    // Pas encore connecté : render par défaut sans prefs
-    renderThemesList();
-    renderSubthemesList();
-    renderElements();
-    renderGridsList();
-    renderGrid();
-    setTimeout(setBingoReadyForEffect, 0);
+      _bingoRemoteUpdate = false;
+      if (_prefsReady) _applyPrefsAndRender();
+      if (typeof renderHomePage === 'function') renderHomePage();
+    };
+    _dbBingoData.child(id).on('value', handler);
+    _bingoActiveSeasonHandlers.set(id, handler);
+  });
+  _bingoActiveSeasonSub = nextIds;
+}
+
+// Calcule et applique le périmètre de souscription active : la "saison" du dossier bingo actuellement
+// actif (même périmètre que _bingoEnsureSeasonLoaded, cf plan §4).
+function _bingoUpdateActiveSeasonSubscription() {
+  const folder = activeFolder();
+  if (!folder) { _bingoSetActiveSeasonSubscription([]); return; }
+  const scope = _findStatsScopeFolder(folder);
+  const ids = scope ? _collectEpisodeFolders(scope).map(f => f.id) : [];
+  if (_isFolderBingo(folder)) ids.push(folder.id);
+  if (scope && _isFolderBingo(scope)) ids.push(scope.id);
+  _bingoSetActiveSeasonSubscription(ids);
+}
+
+// Séquence au démarrage : .once('value') sur la racine `bingo` → si le nœud `bingo/index` n'existe
+// PAS ENCORE (signal fiable : "pas encore scindé", quel que soit le format sous-jacent — v1
+// elements+grids, v2/v3 themes, ou même déjà v4 folders pas encore scindé), migrer (migrateState
+// v1→v4, INTACT — gère tous ces formats et est idempotent sur un format déjà v4) puis scinder en
+// index/data/<id>/trash et écrire les trois → puis EFFACER les anciennes clés racine (folders/themes/
+// elements/grids/elementPresets/trash au niveau de `bingo` lui-même) pour qu'un rechargement ultérieur
+// ne les revoie plus jamais → puis basculer sur les listeners définitifs. Jamais de .on() permanent sur
+// la racine elle-même après cette séquence (cf plan §5, point de vigilance : plus personne ne doit lire
+// _dbBingo ensuite).
+// ATTENTION : ne PAS gater cet appel derrière `raw.folders` — un vrai vieux format v1/v2/v3 n'a jamais
+// cette clé (v1 = elements+grids, v2/v3 = themes) ; un tel gate laisserait ces utilisateurs bloqués
+// sans migration (bug corrigé : la condition ne testait par erreur que le cas "déjà v4, pas scindé").
+// ATTENTION #2 : sans le nettoyage des anciennes clés racine après écriture, `raw` contiendrait pour
+// toujours l'ancien format en plus du nouveau (bingo/index coexistant avec bingo/folders ou
+// bingo/themes) — un rechargement relirait cet ancien snapshot et écraserait silencieusement toute
+// modification faite depuis (bug constaté en test : un renommage disparaissait au reload suivant).
+_dbBingo.once('value').then(snapshot => {
+  const raw = snapshot.val();
+  if (raw && !raw.index) {
+    const migrated = migrateState(raw); // v1→v4 inchangé
+    const oldState = migrated || initState();
+    if (!oldState.folders) oldState.folders = [];
+    const index = { folders: oldState.folders.map(_bingoIndexFolder), currentEventFolderId: oldState.currentEventFolderId || null, currentEventTierlistId: oldState.currentEventTierlistId || null, elementPresets: oldState.elementPresets || [] };
+    const data = {};
+    _collectAllBingoFolderIds(oldState.folders).forEach(id => {
+      const f = findFolderById(oldState.folders, id);
+      data[id] = { elements: f.elements || [], archivedElementIds: f.archivedElementIds || [], persistentCheckedIds: f.persistentCheckedIds || [], grids: f.grids || [], activeGridId: f.activeGridId || null };
+    });
+    const writes = [
+      ...Object.keys(data).map(folderId => _dbBingoData.child(folderId).set(sanitizeForFirebase(data[folderId]))),
+      _dbBingoIndex.set(sanitizeForFirebase(index)),   // DATA AVANT INDEX (cf plan §5)
+      _dbBingoTrash.set(sanitizeForFirebase(oldState.trash || [])),
+      // Effacer les anciennes clés racine (jamais data/index/trash, déjà réécrits ci-dessus avec le
+      // bon contenu) : sinon elles polluent `raw` indéfiniment et redéclenchent cette migration à
+      // chaque démarrage, écrasant toute modification faite depuis avec le vieux snapshot figé.
+      ...Object.keys(raw).filter(k => k !== 'index' && k !== 'data' && k !== 'trash').map(k => _dbBingo.child(k).set(null)),
+    ];
+    return Promise.all(writes).catch(e => console.warn('Bingo migration write error:', e));
   }
-  if (typeof renderHomePage === 'function') renderHomePage();
-  // Si _prefsReady est false mais currentUser existe : loadUserPrefs() appellera _applyPrefsAndRender() lui-même
-  _bingoRemoteUpdate = false;
-});
+  return Promise.resolve(); // raw===null (base vide) OU déjà scindé (bingo/index présent)
+}).catch(e => console.warn('Bingo migration read error:', e)).then(_bingoStartListeners);
+
+function _bingoStartListeners() {
+  _dbBingoIndex.on('value', snapshot => {
+    _bingoRemoteUpdate = true;
+    _firebaseReady = true;
+    const rawIndex = snapshot.val() || {};
+    // Préserve le contenu lourd déjà fusionné (elements/grids complets) des dossiers déjà chargés —
+    // un nouveau snapshot d'index ne réinitialise que les métas légères (même principe que Tier List).
+    const heavyById = new Map();
+    (function collect(folders) { (folders || []).forEach(f => { heavyById.set(f.id, f); collect(f.folders); }); })(state.folders);
+    function _mergeLight(meta) {
+      const prev = heavyById.get(meta.id);
+      const merged = prev ? Object.assign({}, prev, {
+        name: meta.name, archived: meta.archived, locked: meta.locked, numbering: meta.numbering,
+        createdAt: meta.createdAt, updatedAt: meta.updatedAt, children: meta.children,
+      }) : Object.assign({}, meta);
+      // grids : si le dossier est déjà chargé en lourd, ne pas écraser son grid[] complet — seulement
+      // resynchroniser archived/hidden/title/locked par grille depuis l'index (source de vérité pour
+      // ces flags, cf archiveFolder qui n'écrit que l'index). Sinon, prendre les grilles allégées telles quelles.
+      if (prev && _bingoLoadedFolders.has(meta.id)) {
+        const metaById = new Map((meta.grids || []).map(g => [g.id, g]));
+        merged.grids = (prev.grids || []).map(g => {
+          const m = metaById.get(g.id);
+          return m ? Object.assign({}, g, { archived: m.archived, hidden: m.hidden, title: m.title, locked: m.locked, name: m.name }) : g;
+        });
+      } else {
+        merged.grids = meta.grids || [];
+      }
+      merged.folders = (meta.folders || []).map(_mergeLight);
+      if (!prev || !_bingoLoadedFolders.has(meta.id)) {
+        // Pas encore chargé en lourd : elements/archivedElementIds/persistentCheckedIds restent ceux de
+        // l'index (vides pour un dossier-bingo tant que non chargé ; réels pour un vieux dossier conteneur).
+        merged.elements = meta.elements || (prev ? prev.elements : []) || [];
+        merged.archivedElementIds = meta.archivedElementIds || (prev ? prev.archivedElementIds : []) || [];
+        merged.persistentCheckedIds = meta.persistentCheckedIds || (prev ? prev.persistentCheckedIds : []) || [];
+      }
+      return merged;
+    }
+    state.folders = (rawIndex.folders || []).map(_mergeLight);
+    state.currentEventFolderId = rawIndex.currentEventFolderId !== undefined ? rawIndex.currentEventFolderId : null;
+    state.currentEventTierlistId = rawIndex.currentEventTierlistId !== undefined ? rawIndex.currentEventTierlistId : null;
+    state.elementPresets = Array.isArray(rawIndex.elementPresets) ? rawIndex.elementPresets : [];
+    if (!state.trash) state.trash = [];
+    state.folders.forEach(_bingoNormalizeFolderShallow);
+
+    _bingoUpdateActiveSeasonSubscription();
+    const activeF = activeFolder();
+    const pending = activeF ? [_bingoEnsureSeasonLoaded(activeF.id)] : [];
+    // _bingoRemoteUpdate protège seulement la section SYNCHRONE ci-dessus (celle qui pourrait, via
+    // _mergeLight, redéclencher un _bingoSave*() de façon synchrone dans certains environnements —
+    // ex. shim de test où .set() ré-invoque le listener avant de rendre la main) — il est remis à
+    // false AVANT le chargement async de la saison (_bingoEnsureSeasonLoaded), exactement comme
+    // l'équivalent Tier List (_dbTierlistIndex.on, cf commentaire sur _tlRemoteUpdate juste avant son
+    // propre Promise.all). Testé et confirmé indispensable : le garder levé pendant toute la chaîne
+    // async bloque à tort les _bingoSave()/_bingoSaveIndex() d'un appelant qui enchaînerait une autre
+    // action juste après (ex. createFolder() appelle _bingoSaveIndex() en fin de fonction — si ce
+    // .set() ré-entre ce listener synchrone puis qu'une action suivante tente d'écrire pendant que
+    // pending est encore en vol, l'écriture serait silencieusement avalée).
+    // _bingoEnsureSeasonLoaded reste néanmoins strictement en lecture seule (cf plan §2) : la fenêtre
+    // async restante n'autorise aucune écriture erronée de CE listener lui-même, seulement celles
+    // d'appelants extérieurs, qui doivent rester possibles.
+    _bingoRemoteUpdate = false;
+    Promise.all(pending).catch(() => {}).then(() => {
+      if (_prefsReady) {
+        _applyPrefsAndRender();
+      } else if (!currentUser) {
+        // Pas encore connecté : render par défaut sans prefs
+        renderThemesList();
+        renderSubthemesList();
+        renderElements();
+        renderGridsList();
+        renderGrid();
+        setTimeout(setBingoReadyForEffect, 0);
+      }
+      if (typeof renderHomePage === 'function') renderHomePage();
+    });
+  });
+
+  _dbBingoTrash.on('value', snapshot => {
+    const val = snapshot.val();
+    state.trash = Array.isArray(val) ? val : (val ? Object.values(val) : []);
+  });
+}
 
 // ── Tier List ─────────────────────────────────────────────────────────────────
 // Groupe actif (édition en cours, ou mode comparaison — les deux partagent la même souscription
@@ -12175,12 +12639,14 @@ function _tlStartTierlistListeners() {
 // Va sur la page Bingo/Tier List et active un dossier donné (racine ou sous-dossier), en
 // positionnant la navigation du panneau Dossiers sur son dossier parent — même logique que les
 // liens "Récents" du panneau, réutilisée ici pour "rejoindre" depuis l'accueil.
-function _homeGoToBingoFolder(folderId) {
+async function _homeGoToBingoFolder(folderId) {
   window._switchPage('bingo');
   const ancestors = getFolderPath(state.folders, folderId).slice(0, -1);
   _foldersNavFolderId = ancestors.length ? ancestors[ancestors.length - 1].id : null;
   if (_localActiveFolderId !== folderId) {
-    switchFolder(folderId);
+    // await comme _homeGoToBingoGrid (sa fonction sœur) : sans lui, un dossier jamais ouvert cette
+    // session resterait allégé (métadonnées d'index seules) au moment du rendu qui suit.
+    await switchFolder(folderId);
   } else {
     // Dossier déjà actif localement (ex. déjà ouvert avant de "rejoindre" depuis l'accueil) :
     // switchFolder() ne serait pas appelée, donc la sélection de grilles resterait bloquée sur
@@ -12196,15 +12662,20 @@ function _homeGoToBingoFolder(folderId) {
   saveUserPrefs({ activePage: 'bingo' });
 }
 
-function _homeGoToBingoGrid(folder, grid) {
+// async : folder peut provenir d'une liste "légère" (Récents/Accueil, index seul) — s'assurer qu'il
+// est chargé en lourd avant de fixer folder.activeGridId et d'écrire son noeud data, sinon on
+// écrirait par-dessus un contenu jamais fusionné (grids[] vides).
+async function _homeGoToBingoGrid(folder, grid) {
   window._switchPage('bingo');
   const ancestors = getFolderPath(state.folders, folder.id).slice(0, -1);
   _foldersNavFolderId = ancestors.length ? ancestors[ancestors.length - 1].id : null;
-  if (_localActiveFolderId !== folder.id) switchFolder(folder.id);
+  if (_localActiveFolderId !== folder.id) await switchFolder(folder.id);
+  else await _bingoEnsureSeasonLoaded(folder.id);
+  const folderNow = findFolderById(state.folders, folder.id) || folder;
   _selectedGridIds = [grid.id];
   saveLocalSelectedGrids(_selectedGridIds);
-  folder.activeGridId = grid.id;
-  saveState();
+  folderNow.activeGridId = grid.id;
+  _bingoSaveFolder(folderNow.id);
   renderAllFolders();
   renderElements();
   renderGridsList();
