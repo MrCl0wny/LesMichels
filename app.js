@@ -1631,7 +1631,17 @@ let _renameGridId  = null;
 // ──────────────────────────────────────────────
 // Rendu : liste d'éléments
 // ──────────────────────────────────────────────
+// Reconstruire la liste des cases est coûteux (tri + scan de toutes les grilles
+// par case) : inutile de le faire pendant que le panneau est fermé et invisible.
+// On le rattrape via openCasesPanel() qui force un render à l'ouverture.
+let _casesPanelDirty = false;
 function renderElements() {
+  const panelEl = document.getElementById('cases-panel');
+  if (panelEl && !panelEl.classList.contains('open')) {
+    _casesPanelDirty = true;
+    return;
+  }
+  _casesPanelDirty = false;
   const t = activeTheme();
   const s = activeSubtheme();
   const folderNameEl = document.getElementById('cases-panel-folder-name');
@@ -4417,6 +4427,7 @@ window.addEventListener('resize', () => {
 function openCasesPanel() {
   const panel = document.getElementById('cases-panel');
   panel.classList.add('open');
+  if (_casesPanelDirty) renderElements();
   _adjustSidebarMaxHeight(panel);
 }
 function closeCasesPanel() {
