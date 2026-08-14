@@ -1507,9 +1507,25 @@ function shuffle(arr) {
   return a;
 }
 
-// Sérialise l'état pour Firebase (supprime les undefined, convertit les tableaux)
+// Sérialise l'état pour Firebase (supprime les undefined, convertit les tableaux).
+// Équivalent à JSON.parse(JSON.stringify(obj)) mais sans passer par une chaîne de texte
+// intermédiaire (state peut peser plusieurs centaines de Ko) — un clone récursif direct
+// est nettement plus rapide, notable sur machine lente puisque saveState() l'appelle à
+// chaque action (cocher une case, etc). Mêmes règles que JSON : clé → undefined omise
+// dans un objet, undefined → null dans un tableau ; pas de Date/Map/Set dans state.
 function sanitizeForFirebase(obj) {
-  return JSON.parse(JSON.stringify(obj));
+  if (Array.isArray(obj)) {
+    return obj.map(v => (v === undefined ? null : sanitizeForFirebase(v)));
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const out = {};
+    for (const key in obj) {
+      const v = obj[key];
+      if (v !== undefined) out[key] = sanitizeForFirebase(v);
+    }
+    return out;
+  }
+  return obj;
 }
 
 function saveState() {
