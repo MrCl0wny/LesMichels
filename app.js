@@ -3208,6 +3208,12 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
         const newChecked = !cell.checked;
         const tNow = activeTheme();
         const sNow = activeSubtheme();
+        // Cocher une case ne change la taille des grilles affichées QUE si ça complète ou casse
+        // une ligne de bingo (le badge "BINGO !" modifie la hauteur de l'en-tête). On compare le
+        // nombre de lignes de bingo de chaque grille visible avant/après pour le détecter, et
+        // sauter le reflow coûteux de _adjustBingoGridSizes() dans le cas courant (aucun bingo).
+        const visibleGridsBefore = getVisibleGrids();
+        const lineCountsBefore = visibleGridsBefore.map(gx => getBingoResult(gx.gridSize, gx.grid.slice(0, gx.gridSize * gx.gridSize)).lines.length);
         if (tNow && sNow) {
           (sNow.grids || []).filter(gx => !gx.archived).forEach(gx => {
             const matchCell = gx.grid.find(c => c.elementId === cell.elementId);
@@ -3225,7 +3231,11 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
           touchFolderChain(sNow.id);
         }
         saveState();
-        renderGrid();
+        const visibleGridsAfter = getVisibleGrids();
+        const lineCountsAfter = visibleGridsAfter.map(gx => getBingoResult(gx.gridSize, gx.grid.slice(0, gx.gridSize * gx.gridSize)).lines.length);
+        const sameBingoState = visibleGridsBefore.length === visibleGridsAfter.length
+          && lineCountsBefore.every((n, idx) => n === lineCountsAfter[idx]);
+        renderGrid(sameBingoState);
         renderElements();
       });
 
@@ -3279,7 +3289,12 @@ function updateResetButton() {
   btnReset.classList.toggle('btn-disabled', nothingToReset);
 }
 
-function renderGrid() {
+// skipSizeRecalc : true seulement quand l'appelant sait avec certitude que rien de
+// dimensionnel n'a changé (ex : cocher une case) — évite le reflow synchrone coûteux
+// de _adjustBingoGridSizes(). Par défaut false (comportement historique, toujours sûr) :
+// ne jamais passer true pour un appelant qui pourrait tourner alors que la grille n'a
+// pas encore été dimensionnée au moins une fois (page masquée, changement de dossier...).
+function renderGrid(skipSizeRecalc = false) {
   const t = activeTheme();
   const s = activeSubtheme();
   const g = activeGrid();
@@ -3444,14 +3459,19 @@ function renderGrid() {
 
   applyFontScale();
   if (window.lucide) lucide.createIcons();
-  _adjustBingoGridSizes();
-  // Re-mesurer après le premier paint réel : au chargement initial (ou juste après le
-  // changement de page), le navigateur peut ne pas avoir fini la mise en page au moment de
-  // l'appel synchrone ci-dessus (polices pas encore chargées, extensions qui retardent le
-  // rendu...) — la mesure donne alors une grille minuscule tant qu'aucune interaction ne
-  // redéclenche renderGrid(). requestAnimationFrame garantit un recalcul après paint.
-  requestAnimationFrame(_adjustBingoGridSizes);
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(_adjustBingoGridSizes);
+  // _adjustBingoGridSizes() force un reflow synchrone (getBoundingClientRect/getComputedStyle) :
+  // coûteux sur machine lente, à sauter uniquement quand l'appelant garantit qu'aucune dimension
+  // n'a changé (voir skipSizeRecalc en tête de fonction).
+  if (!skipSizeRecalc) {
+    _adjustBingoGridSizes();
+    // Re-mesurer après le premier paint réel : au chargement initial (ou juste après le
+    // changement de page), le navigateur peut ne pas avoir fini la mise en page au moment de
+    // l'appel synchrone ci-dessus (polices pas encore chargées, extensions qui retardent le
+    // rendu...) — la mesure donne alors une grille minuscule tant qu'aucune interaction ne
+    // redéclenche renderGrid(). requestAnimationFrame garantit un recalcul après paint.
+    requestAnimationFrame(_adjustBingoGridSizes);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(_adjustBingoGridSizes);
+  }
 
   // Déclencher après que les wrappers sont dans le DOM et que le layout est calculé
   setTimeout(() => {
