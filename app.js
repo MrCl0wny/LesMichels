@@ -6756,9 +6756,16 @@ window.addEventListener('resize', () => {
 });
 
 // ── Rendu principal ───────────────────────────────────────────────────────────
-function tlRender() {
-  _adjustTlLayoutHeight();
-  requestAnimationFrame(_adjustTlLayoutHeight);
+// skipHeightRecalc : true seulement quand l'appelant sait que la position/hauteur de .tl-layout
+// n'a pas changé (ex : déplacer une image entre tiers) — évite le reflow synchrone coûteux de
+// _adjustTlLayoutHeight() (getBoundingClientRect/getComputedStyle). Par défaut false (comportement
+// historique, toujours sûr) : ne jamais passer true si le control-panel au-dessus a pu changer de
+// hauteur (changement de dossier/tierlist, ouverture d'options...).
+function tlRender(skipHeightRecalc = false) {
+  if (!skipHeightRecalc) {
+    _adjustTlLayoutHeight();
+    requestAnimationFrame(_adjustTlLayoutHeight);
+  }
   tlUpdateUndoBtn();
   tlRenderList();
   renderCurrentEventButton();
@@ -7818,6 +7825,26 @@ function _tlClearTierDropPlaceholder() {
   if (placeholder) placeholder.remove();
 }
 
+// Peuple la zone images d'UN tier (vide-la d'abord). Factorisé hors de tlRenderTiers pour être
+// réutilisé par le patch ciblé de tlDrop (_tlPatchImageMove), qui ne doit reconstruire QUE les
+// deux zones (source/destination) concernées par un déplacement d'image plutôt que tous les tiers.
+function _tlFillTierImagesDiv(tl, tier, imgsDiv, imgSize) {
+  imgsDiv.innerHTML = '';
+  if (tier.items.length === 0) {
+    if (!tl.isTemplate) {
+      const hint = document.createElement('span');
+      hint.className = 'tl-tier-images-empty';
+      hint.textContent = 'Dépose des images ici';
+      imgsDiv.appendChild(hint);
+    }
+  } else {
+    tier.items.forEach(itemId => {
+      const img = tlFindImage(tl, itemId);
+      if (img) imgsDiv.appendChild(tlBuildImgCard(tl, img, imgSize));
+    });
+  }
+}
+
 function tlRenderTiers(tl) {
   tlTiersZone.innerHTML = '';
   const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : _tlClampImgSize(tl.imgSize);
@@ -7958,19 +7985,7 @@ function tlRenderTiers(tl) {
       tlDragLeave(e);
     });
 
-    if (tier.items.length === 0) {
-      if (!tl.isTemplate) {
-        const hint = document.createElement('span');
-        hint.className = 'tl-tier-images-empty';
-        hint.textContent = 'Dépose des images ici';
-        imgsDiv.appendChild(hint);
-      }
-    } else {
-      tier.items.forEach(itemId => {
-        const img = tlFindImage(tl, itemId);
-        if (img) imgsDiv.appendChild(tlBuildImgCard(tl, img, imgSize));
-      });
-    }
+    _tlFillTierImagesDiv(tl, tier, imgsDiv, imgSize);
 
     row.appendChild(imgsDiv);
     wrap.appendChild(row);
@@ -8425,10 +8440,10 @@ function tlCompareCapture() {
 document.getElementById('tl-compare-btn-capture')?.addEventListener('click', () => openTlCaptureChoiceModal(tlCompareCapture, tlCompareExport));
 document.getElementById('tl-compare-btn-exit')?.addEventListener('click', _exitCompareTierlistMode);
 
-function tlRenderUnplaced(tl) {
+// Peuple la zone "non placées" (vide-la d'abord). Factorisé pour être réutilisé par le patch
+// ciblé de tlDrop (_tlPatchImageMove), voir _tlFillTierImagesDiv pour le même principe côté tiers.
+function _tlFillUnplacedZone(tl, imgSize) {
   tlUnplacedZone.innerHTML = '';
-  const imgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : _tlClampImgSize(tl.imgSize);
-
   if (tl.unplaced.length === 0) {
     const hint = document.createElement('div');
     hint.className = 'tl-unplaced-hint';
@@ -8440,6 +8455,10 @@ function tlRenderUnplaced(tl) {
       if (img) tlUnplacedZone.appendChild(tlBuildImgCard(tl, img, imgSize, false, true));
     });
   }
+}
+
+// Recalcule uniquement le texte du compteur "X / Y" — factorisé pour le patch ciblé.
+function _tlUpdateUnplacedCount(tl) {
   // L'élément désigné "à placer" non encore résolu pour CE membre a été retiré de tl.unplaced
   // (il est affiché à part, dans la zone à placer) mais doit continuer à compter comme un
   // élément "non placé" dans l'affichage — sinon le compteur baisse à tort (ex. 30/31 → 29/30)
@@ -8449,6 +8468,12 @@ function tlRenderUnplaced(tl) {
   const tlOwnUnplacedCount = tl.unplaced.length + toPlaceCountsAsUnplaced;
   const tlOwnTotal = tlOwnUnplacedCount + tl.tiers.reduce((sum, t) => sum + t.items.length, 0);
   tlUnplacedCount.textContent = tlOwnUnplacedCount + ' / ' + tlOwnTotal;
+}
+
+function tlRenderUnplaced(tl) {
+  const imgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : _tlClampImgSize(tl.imgSize);
+  _tlFillUnplacedZone(tl, imgSize);
+  _tlUpdateUnplacedCount(tl);
   if (window.lucide) lucide.createIcons();
   tlMaxImagesInput.textContent = _tlGetGroupMaxImages(tl);
 }
@@ -9143,6 +9168,7 @@ function tlDrop(e, targetZoneId) {
   // _tlToPlaceIsEmptyFor recalcule dynamiquement, à chaque rendu, si leur zone doit encore l'afficher.
   const _rootForDrop = _tlGroupRoot(tl);
   const isFromToPlaceZone = _rootForDrop.toPlaceImgId === imgId && !_tlLocateImage(tl, imgId);
+  let _toPlaceWasResolvedNow = false;
   if (isFromToPlaceZone && targetZoneId === '__unplaced__') return;
   if (isFromToPlaceZone) tl.unplaced.push(imgId); // entrée temporaire, retirée juste après par le flux normal
 
@@ -9186,13 +9212,58 @@ function tlDrop(e, targetZoneId) {
       if (_rootForDrop.toPlaceImgId === imgId) {
         _tlMarkToPlaceResolved(tl, imgId);
         _tlClearToPlaceIfAllResolved(tl);
+        _toPlaceWasResolvedNow = true;
       }
     }
   }
 
   tlTouchFolderChain(_tlEffectiveFolderId(tl));
   tlSave();
-  tlRender();
+  // Déplacer une image entre tiers/non-placés ne change jamais la hauteur du control-panel
+  // au-dessus de .tl-layout (la zone "à placer" garde une taille fixe qu'elle soit vide ou
+  // non, voir _tlRenderToPlaceZone/.tl-toplace-zone en CSS) : on peut sauter le reflow.
+  // Cas simple (déplacement classique tier↔tier ou tier↔non-placés, pas depuis/vers la zone "à
+  // placer" qui a son propre DOM séparé) : ne reconstruire QUE les deux zones concernées au
+  // lieu de tous les tiers + toute la liste non-placée + toutes leurs images. Sur une grosse
+  // tierlist (beaucoup d'images), c'est la partie la plus coûteuse de tlRender().
+  if (from && !isFromToPlaceZone && !_toPlaceWasResolvedNow && _tlPatchImageMove(tl, from.zone, targetZoneId)) {
+    return;
+  }
+  tlRender(true);
+}
+
+// Met à jour uniquement les zones DOM affectées par un déplacement d'image (source et
+// destination), sans reconstruire tous les tiers ni toute la liste "non placées" — voir
+// _tlFillTierImagesDiv/_tlFillUnplacedZone. Retourne false si le cas n'est pas géré (l'appelant
+// doit alors retomber sur tlRender() complet) : ne gère pas la résolution de la zone "à placer"
+// (_tlMarkToPlaceResolved/_tlClearToPlaceIfAllResolved), qui a son propre DOM séparé et peut,
+// en théorie, affecter d'autres écrans — trop rare pour justifier le risque d'un patch ciblé.
+function _tlPatchImageMove(tl, fromZoneId, toZoneId) {
+  if (tl.isTemplate) return false; // structure/visibilité spécifique aux templates, non couverte ici
+
+  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : _tlClampImgSize(tl.imgSize);
+  const unplacedImgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : _tlClampImgSize(tl.imgSize);
+
+  const patchZone = (zoneId) => {
+    if (zoneId === '__unplaced__') {
+      _tlFillUnplacedZone(tl, unplacedImgSize);
+      _tlUpdateUnplacedCount(tl);
+    } else {
+      const tier = tl.tiers.find(t => t.id === zoneId);
+      const imgsDiv = tlTiersZone.querySelector(`.tl-tier-images[data-dropzone="${zoneId}"]`);
+      if (!tier || !imgsDiv) return false;
+      _tlFillTierImagesDiv(tl, tier, imgsDiv, imgSize);
+    }
+    return true;
+  };
+
+  if (!patchZone(fromZoneId)) return false;
+  if (toZoneId !== fromZoneId && !patchZone(toZoneId)) return false;
+  // tlMaxImagesInput ne dépend que de maxImagesOverride/TL_MAX_IMAGES (fixe pour le groupe), jamais
+  // du contenu déplacé — inutile de le rafraîchir ici (tlRenderUnplaced le fait à chaque rendu
+  // complet "gratuitement", mais sa valeur ne varie jamais suite à un simple déplacement d'image).
+  if (window.lucide) lucide.createIcons();
+  return true;
 }
 
 // Survol/sortie de la zone "à placer" : pas de placeholder réordonnable (un seul élément
