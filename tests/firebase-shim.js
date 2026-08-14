@@ -19,7 +19,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 (function () {
+  // Le vrai SDK Firebase renvoie la MÊME ref (donc les mêmes listeners) pour un chemin donné,
+  // que ce soit via ref(path) ou .child(sousChemin) — indispensable pour que .off() retrouve le
+  // listener enregistré par un .on() antérieur sur le même chemin (ex. _tlSetActiveGroupSubscription
+  // qui fait .child(oldId).off(...) après avoir fait .child(oldId).on(...) ailleurs).
+  const _refCache = new Map();
   function makeRef(pathParts, root) {
+    const cacheKey = pathParts.join('/');
+    if (_refCache.has(cacheKey)) return _refCache.get(cacheKey);
     const get = () => {
       let obj = root;
       for (const p of pathParts) { if (obj == null) return null; obj = obj[p]; }
@@ -41,14 +48,21 @@
       const val = get();
       listeners.forEach(cb => cb({ val: () => val }));
     };
-    return {
+    const ref = {
       on(event, cb) { if (event === 'value') { listeners.push(cb); setTimeout(fireValue, 0); } },
+      off(event, cb) {
+        if (!cb) { listeners.length = 0; return; }
+        const idx = listeners.indexOf(cb);
+        if (idx !== -1) listeners.splice(idx, 1);
+      },
       once() { return Promise.resolve({ val: () => get() }); },
       set,
       update(patch) { const t = get() || {}; Object.assign(t, patch); return set(t); },
       child(p) { return makeRef([...pathParts, p], root); },
       push() { const id = 'k' + Math.random().toString(36).slice(2); return makeRef([...pathParts, id], root); },
     };
+    _refCache.set(cacheKey, ref);
+    return ref;
   }
 
   // Un des 3 UID autorisés dans app.js (ALLOWED_UIDS) — sans ça l'appli refuse l'accès.

@@ -478,6 +478,10 @@ function _applyCompareTierlistModeIfNeeded() {
     // Une tierlist comparée a été supprimée/archivée entre-temps : on garde le dernier rendu affiché.
     return;
   }
+  // Le mode comparaison ne compare que des tierlists d'un même groupe (confirmé) — même souscription
+  // que le cas "groupe actif" (_tlUpdateActiveGroupSubscription la privilégie déjà quand ≥2 ids
+  // comparés). Ici on s'assure seulement que le chargement a eu le temps de fusionner avant rendu.
+  _tlUpdateActiveGroupSubscription();
   if (!_compareModeApplied) {
     _compareModeApplied = true;
     _tlLocalActiveTierlistId = null;
@@ -521,7 +525,7 @@ function _exitCompareTierlistMode() {
   document.body.classList.remove('compare-tierlist-mode');
   document.title = 'LesMichels';
   _tlExitCompareToolbarLayout();
-  // Empêche le listener Firebase (_dbTierlist.on('value')) de rouvrir le mode au prochain snapshot
+  // Empêche le listener Firebase (tierlist/index) de rouvrir le mode au prochain snapshot
   _compareTierlistIds = [];
   _compareModeApplied = false;
   _tlCompareGroupMembers = null;
@@ -530,6 +534,7 @@ function _exitCompareTierlistMode() {
   // ils restent visibles même après la sortie du mode.
   document.getElementById('tl-compare-toolbar')?.classList.add('hidden');
   document.getElementById('tl-compare-view')?.classList.add('hidden');
+  if (typeof _tlUpdateActiveGroupSubscription === 'function') _tlUpdateActiveGroupSubscription();
   tlRender();
 }
 
@@ -5790,7 +5795,14 @@ function tlGetAllPresets() {
 // ── État ──────────────────────────────────────────────────────────────────────
 let tlState = { tierlists: [], folders: [] };
 let _tlRemoteUpdate = false; // anti-boucle Firebase
-const _dbTierlist = firebase.database().ref('tierlist');
+// _dbTierlist (racine) conservé UNIQUEMENT pour le .once() de migration au démarrage (§3 du plan de
+// restructuration) — plus jamais lu/écrit ensuite. Le trio ci-dessous est la structure définitive :
+// index (léger, toujours chargé) / data (un noeud par groupe, chargé à la demande) / trash (toujours
+// chargé en entier, inchangé).
+const _dbTierlist      = firebase.database().ref('tierlist');
+const _dbTierlistIndex = firebase.database().ref('tierlist/index');
+const _dbTierlistData  = firebase.database().ref('tierlist/data');
+const _dbTierlistTrash = firebase.database().ref('tierlist/trash');
 
 // Borne une taille d'image tierlist dans la plage valide (100–200), y compris une valeur
 // stockée avant l'introduction de cette borne (ex: anciennes tierlists à 50/60/80).
@@ -5816,14 +5828,65 @@ let _tlFoldersViewMode = 'list';
 // le dossier/tierlist actifs tant qu'on n'a pas explicitement "ouvert" quelque chose.
 let _tlFoldersNavFolderId = null;
 
-function tlSave() {
+// Reconstruit le noeud léger tierlist/index depuis tlState (métas seulement, jamais tiers/unplaced/images).
+function _tlBuildIndexPayload() {
+  return {
+    folders: tlState.folders || [],
+    tierlists: (tlState.tierlists || []).map(tl => ({
+      id: tl.id, name: tl.name, archived: !!tl.archived, isTemplate: !!tl.isTemplate,
+      templateId: tl.templateId, folderId: tl.folderId, groupRootId: _tlGroupRoot(tl).id,
+      showLabels: tl.showLabels, imgSize: tl.imgSize, unplacedSort: tl.unplacedSort, maxImagesOverride: tl.maxImagesOverride,
+    })),
+    tierPresets: tlState.tierPresets || [],
+    tierPresetsSeeded: !!tlState.tierPresetsSeeded,
+  };
+}
+
+// Reconstruit le noeud tierlist/data/<groupRootId> depuis tlState pour CE groupe précis (root +
+// toutes ses tierlists générées).
+function _tlBuildGroupPayload(groupRootId) {
+  const root = tlState.tierlists.find(t => t.id === groupRootId);
+  const members = tlState.tierlists.filter(t => t.id === groupRootId || t.templateId === groupRootId);
+  const data = { images: (root && root.images) || [], toPlaceImgId: (root && root.toPlaceImgId) || null, members: {} };
+  members.forEach(m => {
+    data.members[m.id] = { tiers: m.tiers || [], unplaced: m.unplaced || [], resolvedToPlaceIds: m.resolvedToPlaceIds || [] };
+  });
+  return data;
+}
+
+// sanitizeForFirebase (JSON.parse/stringify) élimine les éventuels `undefined` — Firebase refuse
+// toute écriture contenant `undefined` avec une exception SYNCHRONE (non catchable par .catch()),
+// ce qui plantait tout le script en cours (ex. tlDelete) et laissait l'UI bloquée jusqu'au F5.
+function tlSaveIndex() {
   if (_tlRemoteUpdate) return;
-  // Ne pas sauvegarder activeTierlistId/noSelection dans les données partagées
-  const { activeTierlistId, noSelection, ...shared } = tlState;
-  // sanitizeForFirebase (JSON.parse/stringify) élimine les éventuels `undefined` — Firebase refuse
-  // toute écriture contenant `undefined` avec une exception SYNCHRONE (non catchable par .catch()),
-  // ce qui plantait tout le script en cours (ex. tlDelete) et laissait l'UI bloquée jusqu'au F5.
-  _dbTierlist.set(sanitizeForFirebase(shared)).catch(e => console.warn('TL save error:', e));
+  _dbTierlistIndex.set(sanitizeForFirebase(_tlBuildIndexPayload())).catch(e => console.warn('TL index save error:', e));
+}
+
+function tlSaveGroup(groupRootId) {
+  if (_tlRemoteUpdate || !groupRootId) return;
+  _dbTierlistData.child(groupRootId).set(sanitizeForFirebase(_tlBuildGroupPayload(groupRootId))).catch(e => console.warn('TL group save error:', e));
+}
+
+// Corbeille : nœud séparé, toujours chargé/écrit en entier (contient déjà des snapshots complets —
+// pas de chargement à la demande pour elle, cf. plan de restructuration).
+function tlSaveTrash() {
+  if (_tlRemoteUpdate) return;
+  _dbTierlistTrash.set(sanitizeForFirebase(tlState.trash || [])).catch(e => console.warn('TL trash save error:', e));
+}
+
+// Faîtière (nom conservé — des dizaines de call sites existants). Écrit toujours l'index (léger), et
+// le groupe SEULEMENT si un groupRootId a été explicitement modifié par l'appelant.
+//
+// Ordre important : le groupe est écrit AVANT l'index. Réagir à un nouveau snapshot d'index peut, en
+// chaîne, déclencher un _tlEnsureGroupLoaded sur le groupe actif (ex. une tierlist tout juste créée
+// devient active dans la même fonction qui appelle tlSave) — si l'index partait en premier, ce
+// chargement lirait tierlist/data/<groupRootId> avant que tlSaveGroup n'ait eu la chance d'y écrire
+// quoi que ce soit, et fusionnerait un groupe vide par-dessus les données qu'on vient de construire en
+// mémoire (observé : tlCopy produisait une copie avec `images: []` malgré des données correctes,
+// écrasées par ce chargement prématuré déclenché depuis le listener d'index lui-même).
+function tlSave(groupRootId) {
+  if (groupRootId) tlSaveGroup(groupRootId);
+  tlSaveIndex();
 }
 
 function _tlNormalizeState(parsed) {
@@ -5981,6 +6044,233 @@ function _tlNormalizeState(parsed) {
   return parsed;
 }
 
+// ── Split index / data par groupe (restructuration Firebase) ─────────────────────────────────
+// _tlNormalizeState ci-dessus reste utilisée UNE SEULE FOIS par _tlMigrateOldFormat (réparation du
+// legacy avant conversion). Pour le fonctionnement normal (après migration), l'état est scindé :
+// - _tlNormalizeIndex   : légère, appliquée à CHAQUE snapshot de tierlist/index.
+// - _tlNormalizeGroupData / _tlMergeGroupDataIntoState : appliquées à CHAQUE chargement/snapshot
+//   d'un groupe précis (tierlist/data/<groupRootId>) — contiennent les 4 passes de
+//   migration/dédup/réparation ci-dessus, à l'IDENTIQUE dans leur logique interne, seul leur
+//   périmètre change (un seul groupe reçu en paramètre au lieu d'une boucle sur toute la base).
+
+function _tlNormalizeIndex(rawIndex) {
+  const parsed = (rawIndex && typeof rawIndex === 'object') ? rawIndex : {};
+  if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
+  if (!Array.isArray(parsed.folders)) parsed.folders = [];
+  if (!Array.isArray(parsed.tierPresets)) parsed.tierPresets = [];
+  // Injecter les presets par défaut une seule fois (première utilisation) — ensuite l'utilisateur
+  // peut les renommer/recolorer/supprimer librement, comme n'importe quel preset personnalisé.
+  if (!parsed.tierPresetsSeeded) {
+    parsed.tierPresets = [
+      ...TL_SEED_PRESETS.map(p => ({ id: uid(), name: p.name, tiers: p.tiers.map(t => ({ ...t })) })),
+      ...parsed.tierPresets,
+    ];
+    parsed.tierPresetsSeeded = true;
+  }
+  return parsed;
+}
+
+// Reçoit rawGroupData = { images, toPlaceImgId, members: { <tierlistId>: {tiers, unplaced, resolvedToPlaceIds} } }
+// tel que stocké sous tierlist/data/<groupRootId>. `rootId`/`memberMetas` viennent de l'index déjà en
+// mémoire (tlState.tierlists) — nécessaires pour reconstituer, le temps de cette fonction, les objets
+// tierlist complets qu'attendent les 4 passes historiques (id/isTemplate/templateId + champs lourds).
+function _tlNormalizeGroupData(groupRootId, rawGroupData) {
+  const data = (rawGroupData && typeof rawGroupData === 'object') ? rawGroupData : {};
+  if (!Array.isArray(data.images)) data.images = [];
+  if (!data.members || typeof data.members !== 'object') data.members = {};
+
+  // Les métas légères (id/isTemplate/templateId/folderId...) de tous les membres du groupe sont déjà
+  // dans l'index (tlState.tierlists) — on les combine ici avec les champs lourds reçus pour
+  // reconstituer temporairement des objets tierlist complets, format attendu par les 4 passes
+  // ci-dessous (reprises telles quelles de _tlNormalizeState, cf. commentaires d'origine plus haut).
+  const memberMetas = tlState.tierlists.filter(t => t.id === groupRootId || t.templateId === groupRootId);
+  // Garantir une entrée `members` pour chaque membre connu de l'index (Firebase supprime les objets
+  // vides) et restaurer les tableaux vides par membre.
+  memberMetas.forEach(meta => {
+    if (!data.members[meta.id]) data.members[meta.id] = {};
+    const m = data.members[meta.id];
+    if (!Array.isArray(m.tiers)) m.tiers = [];
+    if (!Array.isArray(m.unplaced)) m.unplaced = [];
+    m.tiers.forEach(tier => { if (!Array.isArray(tier.items)) tier.items = []; });
+  });
+
+  // Vue synthétique : un tableau d'objets "tierlist complets" (méta index + champs lourds data),
+  // ainsi qu'un objet root synthétique portant images/toPlaceImgId — même forme que ce que lisaient
+  // les 4 passes historiques sur `parsed.tierlists`, mais restreinte à ce seul groupe.
+  // Le ROOT du groupe porte les images/toPlaceImgId — que ce soit un template (cas normal, groupe
+  // avec tierlists générées) ou une tierlist libre (vestige, groupRootId = son propre id, cf. plan
+  // §1) : c'est `meta.id === groupRootId` qui identifie le root, PAS `meta.isTemplate` (une tierlist
+  // libre n'est jamais un template mais est quand même root de son propre groupe à elle seule).
+  const synthList = memberMetas.map(meta => {
+    const heavy = data.members[meta.id];
+    const isRoot = meta.id === groupRootId;
+    return Object.assign({}, meta, {
+      images: isRoot ? data.images : [],
+      toPlaceImgId: isRoot ? (data.toPlaceImgId || null) : undefined,
+      tiers: heavy.tiers,
+      unplaced: heavy.unplaced,
+      resolvedToPlaceIds: heavy.resolvedToPlaceIds || [],
+    });
+  });
+
+  let _tlMigrated = false;
+
+  // Migration : images encore locales à une tierlist générée (ancien format, avant fusion dans le
+  // template) — cf. commentaire d'origine dans _tlNormalizeState.
+  synthList.forEach(tl => {
+    if (tl.isTemplate || !tl.templateId || tl.images.length === 0) return;
+    const template = synthList.find(t => t.id === tl.templateId && t.isTemplate);
+    if (!template) return;
+    const existingIds = new Set(template.images.map(i => i.id));
+    tl.images.forEach(img => { if (!existingIds.has(img.id)) { template.images.push(img); existingIds.add(img.id); } });
+    tl.images = [];
+    _tlMigrated = true;
+  });
+
+  // Nettoyage : dédup des images par contenu réel + remap des références — cf. commentaire d'origine.
+  synthList.forEach(template => {
+    if (!template.isTemplate || !Array.isArray(template.images) || template.images.length === 0) return;
+    const keyOf = img => img.type === 'text' ? 'text:' + img.name + ':' + img.color : 'img:' + img.src;
+    const seen = new Map();
+    const idRemap = new Map();
+    const dedupedImages = [];
+    template.images.forEach(img => {
+      const key = keyOf(img);
+      if (seen.has(key)) {
+        idRemap.set(img.id, seen.get(key));
+      } else {
+        seen.set(key, img.id);
+        dedupedImages.push(img);
+      }
+    });
+    if (idRemap.size === 0) return;
+    template.images = dedupedImages;
+    const validIds = new Set(dedupedImages.map(i => i.id));
+    const members = synthList.filter(t => t.id === template.id || t.templateId === template.id);
+    members.forEach(member => {
+      const remapAndDedupe = ids => {
+        const out = [];
+        const outSeen = new Set();
+        ids.forEach(id => {
+          const realId = idRemap.get(id) || id;
+          if (validIds.has(realId) && !outSeen.has(realId)) { out.push(realId); outSeen.add(realId); }
+        });
+        return out;
+      };
+      member.unplaced = remapAndDedupe(member.unplaced || []);
+      (member.tiers || []).forEach(tier => { tier.items = remapAndDedupe(tier.items || []); });
+    });
+    _tlMigrated = true;
+  });
+
+  // Réparation : id fantôme dans unplaced/tiers sans image correspondante dans root.images — cf.
+  // commentaire d'origine.
+  synthList.forEach(template => {
+    if (!template.isTemplate) return;
+    const validIds = new Set((template.images || []).map(i => i.id));
+    const members = synthList.filter(t => t.id === template.id || t.templateId === template.id);
+    members.forEach(member => {
+      const beforeUnplaced = member.unplaced.length;
+      member.unplaced = member.unplaced.filter(id => validIds.has(id));
+      if (member.unplaced.length !== beforeUnplaced) _tlMigrated = true;
+      (member.tiers || []).forEach(tier => {
+        const beforeItems = tier.items.length;
+        tier.items = tier.items.filter(id => validIds.has(id));
+        if (tier.items.length !== beforeItems) _tlMigrated = true;
+      });
+    });
+    if (template.toPlaceImgId && !validIds.has(template.toPlaceImgId)) {
+      template.toPlaceImgId = null;
+      _tlMigrated = true;
+    }
+  });
+
+  // Réparation : images de root.images non référencées par certains participants — cf. commentaire d'origine.
+  synthList.forEach(template => {
+    if (!template.isTemplate || !Array.isArray(template.images) || template.images.length === 0) return;
+    const members = synthList.filter(t => t.id === template.id || t.templateId === template.id);
+    if (members.length === 0) return;
+    const allImgIds = template.images.map(i => i.id);
+    members.forEach(member => {
+      const referenced = new Set(member.unplaced || []);
+      (member.tiers || []).forEach(tier => tier.items.forEach(id => referenced.add(id)));
+      allImgIds.forEach(id => {
+        if (!referenced.has(id)) { member.unplaced.push(id); referenced.add(id); _tlMigrated = true; }
+      });
+    });
+  });
+
+  // Nettoyage défensif : toPlaceImgId déjà résolu par tous les participants existants — cf. commentaire d'origine.
+  synthList.forEach(template => {
+    if (!template.isTemplate || !template.toPlaceImgId) return;
+    const participants = synthList.filter(t => t.templateId === template.id && !t.isTemplate);
+    const imgId = template.toPlaceImgId;
+    const isResolved = m => (m.resolvedToPlaceIds || []).includes(imgId) || (m.tiers || []).some(t => t.items.includes(imgId));
+    if (participants.length > 0 && participants.every(isResolved)) {
+      template.toPlaceImgId = null;
+    }
+  });
+
+  // Reporter les résultats (potentiellement modifiés par les passes ci-dessus) dans `data`.
+  const rootSynth = synthList.find(t => t.id === groupRootId);
+  data.images = rootSynth ? rootSynth.images : (data.images || []);
+  data.toPlaceImgId = rootSynth ? (rootSynth.toPlaceImgId || null) : (data.toPlaceImgId || null);
+  synthList.forEach(tl => {
+    data.members[tl.id] = { tiers: tl.tiers, unplaced: tl.unplaced, resolvedToPlaceIds: tl.resolvedToPlaceIds || [] };
+  });
+
+  data._tlMigrated = _tlMigrated;
+  return data;
+}
+
+// Fusionne les champs lourds d'un groupe (déjà normalisés par _tlNormalizeGroupData) dans les objets
+// légers déjà présents dans tlState.tierlists (Object.assign ciblé, jamais de remplacement complet
+// d'objet — préserve toute référence déjà tenue ailleurs, ex. tlActiveTierlist() capturée localement).
+function _tlMergeGroupDataIntoState(groupRootId, rawGroupData) {
+  const data = _tlNormalizeGroupData(groupRootId, rawGroupData);
+  const needsSave = data._tlMigrated;
+  delete data._tlMigrated;
+  tlState.tierlists.forEach(tl => {
+    if (tl.id !== groupRootId && tl.templateId !== groupRootId) return;
+    const heavy = data.members[tl.id];
+    if (heavy) Object.assign(tl, { tiers: heavy.tiers, unplaced: heavy.unplaced, resolvedToPlaceIds: heavy.resolvedToPlaceIds || [] });
+    if (tl.id === groupRootId) Object.assign(tl, { images: data.images, toPlaceImgId: data.toPlaceImgId || null });
+  });
+  const root = tlState.tierlists.find(t => t.id === groupRootId);
+  if (root) _tlCacheSrcs(root);
+  return needsSave;
+}
+
+// Migration ancien format (racine `tierlist` = {tierlists, folders, trash, tierPresets...}) vers le
+// nouveau format index/data. Retourne null si déjà au nouveau format (ou base vide) — dans ce cas
+// rien à écrire, le trio de listeners définitifs prend le relais directement.
+function _tlMigrateOldFormat(raw) {
+  if (!raw || !Array.isArray(raw.tierlists)) return null; // déjà nouveau format (ou vide)
+  const normalized = _tlNormalizeState(raw); // réutilise l'ancienne fonction une dernière fois pour réparer le legacy
+  const localGroupRoot = tl => {
+    if (!tl) return null;
+    if (tl.isTemplate) return tl;
+    if (tl.templateId) {
+      const t = normalized.tierlists.find(x => x.id === tl.templateId && x.isTemplate);
+      if (t) return t;
+    }
+    return tl;
+  };
+  const index = { folders: normalized.folders, tierlists: [], tierPresets: normalized.tierPresets, tierPresetsSeeded: normalized.tierPresetsSeeded };
+  const data = {};
+  normalized.tierlists.forEach(tl => {
+    const root = localGroupRoot(tl);
+    index.tierlists.push({
+      id: tl.id, name: tl.name, archived: tl.archived, isTemplate: tl.isTemplate,
+      templateId: tl.templateId, folderId: tl.folderId, groupRootId: root.id,
+      showLabels: tl.showLabels, imgSize: tl.imgSize, unplacedSort: tl.unplacedSort, maxImagesOverride: tl.maxImagesOverride,
+    });
+    if (!data[root.id]) data[root.id] = { images: root.images || [], toPlaceImgId: root.toPlaceImgId || null, members: {} };
+    data[root.id].members[tl.id] = { tiers: tl.tiers, unplaced: tl.unplaced, resolvedToPlaceIds: tl.resolvedToPlaceIds || [] };
+  });
+  return { index, data, trash: normalized.trash || [] };
+}
+
 // ── Stack Undo ─────────────────────────────────────────────────────────────────
 // Historique local à CET utilisateur (jamais synchronisé) : chaque entrée décrit une opération
 // inverse ciblée (déplacer/ajouter/supprimer/renommer une image, ajouter/modifier/supprimer/réordonner
@@ -6087,7 +6377,7 @@ function tlUndo() {
       break;
     }
   }
-  tlSave();
+  tlSave(_tlGroupRoot(tl).id);
   tlRender();
   // tlRender() ne touche jamais .tl-compare-view (masqué dans le mode comparaison, seule
   // l'éditeur normal en dépend) — sans ce re-render dédié, l'undo modifiait bien les données mais
@@ -6246,14 +6536,14 @@ function tlCreateFolder(name, parentId, numbering = null) {
   const folder = tlDefaultFolder(name, parentId || null, numbering);
   tlState.folders.push(folder);
   if (parentId) tlTouchFolderChain(parentId);
-  tlSave();
+  tlSave(); // dossier seul : index-only
   tlRender();
 }
 
 function tlRenameFolder(id, newName) {
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (folder && newName.trim()) { folder.name = newName.trim(); tlTouchFolderChain(id); }
-  tlSave();
+  tlSave(); // dossier seul : index-only
   tlRender();
 }
 
@@ -6263,7 +6553,7 @@ function tlMoveFolderToParent(id, newParentId) {
   // Interdire de mettre un dossier dans lui-même ou dans un de ses descendants
   if (newParentId && (newParentId === id || _tlGetDescendantIds(id).includes(newParentId))) return;
   folder.parentId = newParentId || null;
-  tlSave();
+  tlSave(); // dossier seul : index-only
   tlRender();
 }
 
@@ -6298,11 +6588,21 @@ function _tlDuplicateTierlistDeep(src, folderId, templateIdOverride) {
 // explicitNumbering : numérotation déjà choisie par l'utilisateur pour le dossier racine dupliqué
 // (prioritaire sur l'auto-incrément) — ne s'applique qu'au dossier racine, pas aux sous-dossiers
 // récursifs qui gardent leur propre auto-incrément.
-function tlDuplicateFolder(id, newParentId, explicitNumbering) {
-  const folder = (tlState.folders || []).find(f => f.id === id);
-  if (!folder) return;
+// async : résout TOUS les groupes source touchés (récursif, dossier + sous-dossiers — même règle
+// multi-groupes que tlDeleteFolder) et les charge une seule fois en tête de fonction, avant
+// cloneRecursive — pas à chaque récursion (cf. plan §5 point 3).
+async function tlDuplicateFolder(id, newParentId, explicitNumbering) {
+  if (!(tlState.folders || []).some(f => f.id === id)) return;
   if (!tlState.folders) tlState.folders = [];
 
+  const allSrcFolderIds = [id, ..._tlGetDescendantIds(id)];
+  const srcTierlists = tlState.tierlists.filter(t => !t.archived && (allSrcFolderIds.includes(t.folderId) || (t.templateId && allSrcFolderIds.includes(_tlEffectiveFolderId(t)))));
+  await _tlEnsureGroupsLoaded(srcTierlists.map(t => _tlGroupRoot(t).id));
+  // Re-résoudre après l'await (cf. commentaire équivalent dans tlCopy/tlDelete).
+  const folder = (tlState.folders || []).find(f => f.id === id);
+  if (!folder) return;
+
+  const newGroupRootIds = [];
   const cloneRecursive = (srcFolder, targetParentId, forcedNumbering) => {
     let newName = srcFolder.name;
     let newNumbering = null;
@@ -6321,13 +6621,14 @@ function tlDuplicateFolder(id, newParentId, explicitNumbering) {
     const templates = tlState.tierlists.filter(t => !t.archived && t.folderId === srcFolder.id && t.isTemplate);
     templates.forEach(tpl => {
       const tplCopy = _tlDuplicateTierlistDeep(tpl, newFolder.id);
+      newGroupRootIds.push(tplCopy.id); // le template copié est la nouvelle root de ce groupe
       const generated = tlState.tierlists.filter(t => !t.archived && t.templateId === tpl.id);
       generated.forEach(gen => _tlDuplicateTierlistDeep(gen, newFolder.id, tplCopy.id));
     });
 
     // Tierlists normales (ni template, ni générées depuis un template déjà traité ci-dessus)
     const plain = tlState.tierlists.filter(t => !t.archived && t.folderId === srcFolder.id && !t.isTemplate && !t.templateId);
-    plain.forEach(tl => _tlDuplicateTierlistDeep(tl, newFolder.id));
+    plain.forEach(tl => { const copy = _tlDuplicateTierlistDeep(tl, newFolder.id); newGroupRootIds.push(copy.id); });
 
     // Sous-dossiers
     (tlState.folders || []).filter(f => !f.archived && f.parentId === srcFolder.id && f.id !== newFolder.id)
@@ -6337,6 +6638,9 @@ function tlDuplicateFolder(id, newParentId, explicitNumbering) {
   };
 
   const result = cloneRecursive(folder, newParentId !== undefined ? newParentId : (folder.parentId || null), explicitNumbering);
+  // Groupes AVANT index (cf. commentaire tlSave) : sinon l'index republié référence des
+  // groupRootId dont tierlist/data/<id> n'existe pas encore, risquant un chargement à vide.
+  newGroupRootIds.forEach(id => { _tlLoadedGroups.set(id, 'loaded'); tlSaveGroup(id); });
   tlSave();
   tlRender();
   return result;
@@ -6351,7 +6655,7 @@ function tlArchiveFolder(id) {
     const f = (tlState.folders || []).find(x => x.id === fid);
     if (f) f.archived = true;
   });
-  tlSave();
+  tlSave(); // dossiers seuls : index-only
   tlRender();
 }
 
@@ -6364,7 +6668,7 @@ function tlUnarchiveFolder(id) {
     const f = (tlState.folders || []).find(x => x.id === fid);
     if (f) f.archived = false;
   });
-  tlSave();
+  tlSave(); // dossiers seuls : index-only
   tlRender();
   tlRenderArchivedModal();
 }
@@ -6375,10 +6679,29 @@ function tlTrashPush(entry) {
   tlState.trash.push({ ...entry, deletedAt: Date.now() });
 }
 
-function tlTrashRestore(idx) {
+// async : pas besoin de charger pour LIRE (entry.data est déjà un snapshot complet, capturé à la
+// suppression), mais le(s) groupRootId restauré(s) (un dossier en corbeille peut cascader sur
+// plusieurs groupes) doivent être chargés avant d'écrire — pour fusionner proprement si le groupe
+// existe déjà partiellement en mémoire (ex. un template restauré séparément avant ses tierlists
+// générées) plutôt que d'écraser silencieusement (cf. plan §5 point 2).
+async function tlTrashRestore(idx) {
   if (!tlState.trash) return;
   const entry = tlState.trash[idx];
   if (!entry) return;
+  const restoredTierlists = entry.type === 'folder' ? (entry.data._tierlists || []) : (entry.type === 'tierlist' ? [entry.data] : []);
+  // Résolution du groupRootId de chaque tierlist restaurée à partir de ses propres champs (isTemplate/
+  // templateId) — mêmes règles que _tlGroupRoot, mais sur le lot restauré (pas encore dans tlState).
+  const localGroupRoot = tl => {
+    if (tl.isTemplate) return tl;
+    if (tl.templateId) {
+      const t = restoredTierlists.find(x => x.id === tl.templateId && x.isTemplate) || tlState.tierlists.find(x => x.id === tl.templateId && x.isTemplate);
+      if (t) return t;
+    }
+    return tl;
+  };
+  const groupRootIds = [...new Set(restoredTierlists.map(tl => localGroupRoot(tl).id))];
+  await _tlEnsureGroupsLoaded(groupRootIds);
+
   tlState.trash.splice(idx, 1);
   if (entry.type === 'folder') {
     if (!tlState.folders) tlState.folders = [];
@@ -6388,18 +6711,31 @@ function tlTrashRestore(idx) {
   } else if (entry.type === 'tierlist') {
     tlState.tierlists.push(entry.data);
   }
+  // Groupes AVANT index (cf. commentaire tlSave) : sinon l'index republié référence des
+  // groupRootId dont tierlist/data/<id> ne porte pas encore les données restaurées.
+  groupRootIds.forEach(id => { _tlLoadedGroups.set(id, 'loaded'); tlSaveGroup(id); });
   tlSave();
+  tlSaveTrash();
   tlRender();
   tlRenderTrashList();
 }
 
 function tlTrashEmpty() {
   tlState.trash = [];
-  tlSave();
+  tlSaveTrash();
 }
 
-function tlDeleteFolder(id) {
+// async : un dossier peut contenir plusieurs groupes distincts (confirmé) — tous les groupRootId
+// concernés (templates + tierlists libres du dossier et sous-dossiers) sont résolus depuis l'index
+// seul (déjà en mémoire), puis chargés d'un coup avant la construction de cascaded/directTierlists,
+// pour que les entrées de corbeille capturent les vraies données (cf. plan §5 point 1).
+async function tlDeleteFolder(id) {
   const allIds = [id, ..._tlGetDescendantIds(id)];
+  const concernedTierlists = tlState.tierlists.filter(tl => allIds.includes(tl.folderId) || (tl.templateId && allIds.includes(_tlEffectiveFolderId(tl))));
+  const groupRootIds = concernedTierlists.map(tl => _tlGroupRoot(tl).id);
+  await _tlEnsureGroupsLoaded(groupRootIds);
+  // Re-résoudre après l'await (cf. commentaire équivalent dans tlCopy/tlDelete) : tlState.folders/
+  // tierlists peuvent avoir été remplacés par de nouvelles instances entre-temps.
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (folder && folder.parentId) tlTouchFolderChain(folder.parentId);
   if (folder) {
@@ -6428,7 +6764,10 @@ function tlDeleteFolder(id) {
   // Détacher les tierlists des sous-dossiers supprimés (non capturés dans l'entrée de corbeille du dossier racine)
   (tlState.tierlists || []).forEach(tl => { if (allIds.includes(tl.folderId)) tl.folderId = null; });
   tlState.folders = (tlState.folders || []).filter(f => !allIds.includes(f.id));
+  // Ne PAS toucher à tierlist/data/<groupRootId> des groupes supprimés — la corbeille porte déjà tout
+  // le contenu nécessaire en snapshot JS (cf. tlDelete, même principe, plan §6).
   tlSave();
+  tlSaveTrash();
   tlRender();
   tlRenderArchivedModal();
   tlRenderTrashList();
@@ -6449,7 +6788,7 @@ function tlMoveTierlistToFolder(tlId, folderId) {
   // Force l'ouverture du dossier cible pour que l'élément déplacé (notamment un groupe template) reste visible
   if (folderId) sessionStorage.setItem('tl_folder_open_' + folderId, '1');
   if (tl.isTemplate) sessionStorage.setItem('tl_tplgroup_open_' + tl.id, '1');
-  tlSave();
+  tlSave(); // déplacement dossier : champ folderId (index) seul, groupe inchangé
   tlRender();
 }
 
@@ -6733,7 +7072,7 @@ function _tlSidebarDropOnItem(e, targetId, targetType, targetEl) {
     }
   }
 
-  tlSave();
+  tlSave(); // drag&drop sidebar : réordonne/déplace dossiers/folderId — index-only
   tlRender();
 }
 
@@ -7054,6 +7393,34 @@ function _tlGetGroupParticipants(tl) {
   return _tlGetGroupMembers(tl).filter(m => !m.isTemplate);
 }
 
+// ── Chargement à la demande d'un groupe (tierlist/data/<groupRootId>) ────────────────────────
+// Décision : une fois chargé, un groupe reste en mémoire pour toute la session (jamais déchargé
+// explicitement) — cohérent avec _tlSrcCache qui a déjà cette politique.
+const _tlLoadedGroups = new Map();       // groupRootId -> 'loaded'
+const _tlGroupLoadPromises = new Map();  // groupRootId -> Promise en cours (dédup des appels concurrents)
+
+async function _tlEnsureGroupLoaded(groupRootId) {
+  if (!groupRootId) return null;
+  if (_tlLoadedGroups.get(groupRootId) === 'loaded') return tlState.tierlists.find(t => t.id === groupRootId) || null;
+  if (_tlGroupLoadPromises.has(groupRootId)) return _tlGroupLoadPromises.get(groupRootId);
+  const promise = _dbTierlistData.child(groupRootId).once('value').then(snapshot => {
+    const needsSave = _tlMergeGroupDataIntoState(groupRootId, snapshot.val());
+    _tlLoadedGroups.set(groupRootId, 'loaded');
+    _tlGroupLoadPromises.delete(groupRootId);
+    // Persiste les réparations auto (dédup images, purge d'ids fantômes...) faites par
+    // _tlNormalizeGroupData — sinon elles ne vivent qu'en mémoire pour cette session et sont
+    // refaites (et jetées) à chaque chargement, la corruption restant permanente côté Firebase.
+    if (needsSave) tlSaveGroup(groupRootId);
+    return tlState.tierlists.find(t => t.id === groupRootId) || null;
+  }).catch(e => { console.warn('TL group load error:', e); _tlGroupLoadPromises.delete(groupRootId); throw e; });
+  _tlGroupLoadPromises.set(groupRootId, promise);
+  return promise;
+}
+
+function _tlEnsureGroupsLoaded(groupRootIds) {
+  return Promise.all([...new Set(groupRootIds.filter(Boolean))].map(_tlEnsureGroupLoaded));
+}
+
 function _tlIsPlacedInTiers(member, imgId) {
   return member.tiers.some(t => t.items.includes(imgId));
 }
@@ -7141,7 +7508,7 @@ function _tlSetImageToPlace(tl, imgId) {
     }
     root.toPlaceImgId = imgId;
     tlTouchFolderChain(_tlEffectiveFolderId(tl));
-    tlSave();
+    tlSave(root.id);
     tlRender();
   };
 
@@ -7663,7 +8030,7 @@ function _renderTlFoldersPanelIcons() {
     tile.appendChild(iconEl);
     tile.appendChild(nameEl);
 
-    const openThisTierlist = () => { tlSwitch(tl.id, false); _switchPage('tierlist'); };
+    const openThisTierlist = async () => { await tlSwitch(tl.id, false); _switchPage('tierlist'); };
     const openMenu = e => { e.stopPropagation(); tlOpenManageModal(tl.id, tile, 'folders'); };
     // Même logique que les tuiles dossier : simple clic = sélectionner visuellement puis ouvrir.
     tile.addEventListener('click', e => {
@@ -7747,7 +8114,7 @@ function _tlBuildTierlistListRow(tl, container) {
   row.appendChild(name);
   row.appendChild(ctxBtn);
 
-  const openThisTierlist = () => { tlSwitch(tl.id, false); _switchPage('tierlist'); };
+  const openThisTierlist = async () => { await tlSwitch(tl.id, false); _switchPage('tierlist'); };
   row.addEventListener('click', e => {
     if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
     container.querySelectorAll('.fp-folder-row.selected, .fp-list-item.selected').forEach(r => r.classList.remove('selected'));
@@ -7955,7 +8322,7 @@ function tlRenderTiers(tl) {
       let insertIdx = tl.tiers.findIndex(t => t.id === tier.id);
       if (!before) insertIdx += 1;
       tl.tiers.splice(insertIdx, 0, moved);
-      tlSave();
+      tlSave(_tlGroupRoot(tl).id);
       tlRender();
     });
 
@@ -8029,7 +8396,7 @@ function _tlInlineRenameTier(spanEl, tl, tier, caretOffset) {
     if (newLabel && newLabel !== tier.label) {
       _tlPushUndoOp({ tierlistId: tl.id, type: 'editTier', tierId: tier.id, oldLabel: tier.label, oldColor: tier.color });
       tier.label = newLabel;
-      tlSave();
+      tlSave(_tlGroupRoot(tl).id);
     }
     tlRender();
   };
@@ -8137,14 +8504,14 @@ function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
     const newTier = { id: uid(), label: '?', color: '#888888', items: [] };
     _tlPushUndoOp({ tierlistId: tl.id, type: 'addTier', tierId: newTier.id });
     tl.tiers.splice(tierIdx, 0, newTier);
-    tlSave(); tlRender();
+    tlSave(_tlGroupRoot(tl).id); tlRender();
     tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx]);
   });
   addItem('chevron-down', 'Ajouter un tier en-dessous', false, () => {
     const newTier = { id: uid(), label: '?', color: '#888888', items: [] };
     _tlPushUndoOp({ tierlistId: tl.id, type: 'addTier', tierId: newTier.id });
     tl.tiers.splice(tierIdx + 1, 0, newTier);
-    tlSave(); tlRender();
+    tlSave(_tlGroupRoot(tl).id); tlRender();
     tlEditTier(tlActiveTierlist(), tlActiveTierlist().tiers[tierIdx + 1]);
   });
   addSep();
@@ -8375,7 +8742,7 @@ function _tlCompareDrop(e, tl, targetTierId) {
   tier.items.splice(insertIdx, 0, imgId);
 
   tlTouchFolderChain(_tlEffectiveFolderId(tl));
-  tlSave();
+  tlSave(_tlGroupRoot(tl).id);
   _tlRenderCompareView(null);
 }
 
@@ -8516,7 +8883,7 @@ function _tlPasteFromClipboard(tl) {
       });
     });
     Promise.all(promises).then(() => {
-      tlSave(); tlRender();
+      tlSave(root.id); tlRender();
       _tlNameNewImgsSequentially(tl, addedImgs);
     }).catch(e => {
       console.warn('TL clipboard paste error:', e);
@@ -8651,7 +9018,7 @@ function _tlInlineRenameImg(labelEl, tl, img, size, caretOffset) {
       _tlPushUndoOp({ tierlistId: tl.id, groupRootId: _tlGroupRoot(tl).id, type: 'renameImage', imgId: img.id, oldName: img.name });
       img.name = newName;
       img.updatedAt = Date.now();
-      tlSave();
+      tlSave(_tlGroupRoot(tl).id);
     }
     tlRender();
   };
@@ -8690,29 +9057,40 @@ function tlCreate(name, folderId, isTemplate = false, presetId = null) {
   _tlLocalNoSelection = false;
   saveUserPrefs({ tlActiveTierlistId: tl.id, tlNoSelection: false });
   tlTouchFolderChain(tl.folderId);
-  tlSave();
+  tlSave(tl.id); // nouvelle tierlist = nouveau groupe (sa propre root)
   tlRender();
   return tl;
 }
 
-function tlSwitch(id, allowDeselect = true) {
+async function tlSwitch(id, allowDeselect = true) {
   if (_tlLocalActiveTierlistId === id) {
     if (!allowDeselect) return; // groupe : une bulle reste toujours sélectionnée
     _tlLocalActiveTierlistId = null;
     _tlLocalNoSelection = true;
     saveUserPrefs({ tlActiveTierlistId: null, tlNoSelection: true });
+    _tlUpdateActiveGroupSubscription();
   } else {
     _tlLocalActiveTierlistId = id;
     _tlLocalNoSelection = false;
     saveUserPrefs({ tlActiveTierlistId: id, tlNoSelection: false });
+    const tl = tlState.tierlists.find(t => t.id === id);
+    if (tl) await _tlEnsureGroupLoaded(_tlGroupRoot(tl).id);
+    _tlUpdateActiveGroupSubscription();
   }
   tlSave();
   tlRender();
 }
 
-function tlDelete(id) {
-  const tl = tlState.tierlists.find(t => t.id === id);
+// async : un seul groupe concerné (_tlGroupRoot(tl).id) — le charger d'abord garantit que le snapshot
+// envoyé à la corbeille (entry.data) contient les vraies données (tiers/unplaced), pas des tableaux
+// vides, même si la tierlist n'a jamais été ouverte cette session (cf. plan §5 point 4).
+async function tlDelete(id) {
+  let tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
+  await _tlEnsureGroupLoaded(_tlGroupRoot(tl).id);
+  // Re-résoudre après l'await : un snapshot peut avoir remplacé l'objet (jamais de mutation in-place,
+  // cf. _tlStartTierlistListeners) — cf. commentaire équivalent dans tlCopy.
+  tl = tlState.tierlists.find(t => t.id === id) || tl;
   const effectiveFolderId = _tlEffectiveFolderId(tl);
   tlTouchFolderChain(effectiveFolderId);
   // Suppression d'un template : cascade sur toutes ses tierlists générées, chacune sa propre entrée de corbeille
@@ -8736,7 +9114,12 @@ function tlDelete(id) {
     state.currentEventTierlistId = null;
     saveState();
   }
+  // Ne PAS toucher à tierlist/data/<groupRootId> : la corbeille porte déjà tout le contenu nécessaire
+  // en snapshot JS (entry.data) — le noeud data devient orphelin/inutilisé jusqu'à restauration ou
+  // vidage définitif de la corbeille (cf. plan §6). Sauf si la tierlist supprimée était sa propre root
+  // (groupe entier supprimé) : dans ce cas seul l'index change, le groupe restant est orphelin exprès.
   tlSave();
+  tlSaveTrash();
   tlRender();
   tlRenderTrashList();
 }
@@ -8751,15 +9134,21 @@ function tlArchive(id) {
     _tlLocalNoSelection = false;
     saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: false });
   }
-  tlSave();
+  tlSave(); // archivage : champ archived (index) seul, groupe inchangé
   tlRender();
 }
 
 // Convertit une tierlist normale en template : un template n'a jamais d'image classée dans un tier,
 // donc toute image déjà placée est renvoyée en zone non placée.
-function tlConvertToTemplate(id) {
-  const tl = tlState.tierlists.find(t => t.id === id);
+// async : `tl` est presque toujours déjà son propre root (garde !tl.templateId côté menu), mais pas
+// garanti déjà chargé si jamais ouverte dans l'éditeur (ex. action lancée depuis un menu contextuel
+// sur une tierlist jamais visitée cette session) — cf. plan §5 point 6.
+async function tlConvertToTemplate(id) {
+  let tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
+  await _tlEnsureGroupLoaded(tl.id);
+  // Re-résoudre après l'await (cf. commentaire équivalent dans tlCopy/tlDelete).
+  tl = tlState.tierlists.find(t => t.id === id) || tl;
   const placedCount = tl.tiers.reduce((n, t) => n + t.items.length, 0);
   if (placedCount > 0) {
     const ok = confirm(`Convertir "${tl.name}" en template va renvoyer ses ${placedCount} image(s) classée(s) en zone non placée (un template n'a jamais d'image dans un tier). Continuer ?`);
@@ -8770,7 +9159,7 @@ function tlConvertToTemplate(id) {
     t.items = [];
   });
   tl.isTemplate = true;
-  tlSave();
+  tlSave(tl.id);
   tlRender();
 }
 
@@ -8789,20 +9178,52 @@ function _tlDoReset() {
     tier.items.forEach(imgId => { if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId); });
     tier.items = [];
   });
-  tlSave();
+  tlSave(_tlGroupRoot(tl).id);
   tlRender();
 }
 
-function tlCopy(id) {
-  const src = tlState.tierlists.find(t => t.id === id);
+// async : un seul groupe source (_tlGroupRoot(src).id), à charger avant de lire ses images/tiers.
+//
+// Correction d'un bug latent (audit de la restructuration Firebase) : copier une tierlist GÉNÉRÉE
+// (src.templateId renseigné) clonait jusqu'ici son templateId ET ses images locales (vides, puisque
+// seul le root porte réellement `images` — invariant jamais respecté après ce clone : la copie
+// restait rattachée au groupe source via templateId, mais avec un tableau `images` orphelin jamais
+// nettoyé). Comportement choisi : dupliquer un membre d'un groupe produit désormais une tierlist
+// LIBRE indépendante, propriétaire de ses propres images (celles réellement utilisées par src,
+// résolues via le pool du groupe) — plus intuitif qu'une entité fantôme partageant le pool source,
+// et cohérent avec le fait qu'une copie doit pouvoir être éditée librement sans affecter le groupe
+// d'origine.
+async function tlCopy(id) {
+  let src = tlState.tierlists.find(t => t.id === id);
   if (!src) return;
+  await _tlEnsureGroupLoaded(_tlGroupRoot(src).id);
+  // Re-résoudre après l'await : un snapshot d'index/groupe peut être arrivé entre-temps et avoir
+  // remplacé l'objet dans tlState.tierlists par une nouvelle instance (jamais de mutation in-place,
+  // cf. _tlStartTierlistListeners/_tlMergeGroupDataIntoState) — retenir la référence capturée avant
+  // l'await risquerait de cloner un objet obsolète, notamment sur les champs lourds (tiers/unplaced).
+  src = tlState.tierlists.find(t => t.id === id) || src;
   const copy = JSON.parse(JSON.stringify(src));
   copy.id = uid();
   copy.name = src.name + ' (copie)';
   copy.archived = false;
-  // Remap image ids
+  const wasGenerated = !copy.isTemplate && !!copy.templateId;
+  if (wasGenerated) {
+    // Devient une tierlist libre, indépendante du groupe source (cf. commentaire ci-dessus).
+    delete copy.templateId;
+    copy.isTemplate = false;
+    // copy.images (héritage du clone JSON de `src`, qui n'en porte normalement pas) est vide/absent
+    // pour un membre généré — on la peuple avec les images réellement référencées par src (pool du
+    // groupe), pour qu'elle devienne sa propre source d'images complète et autonome.
+    const groupImages = _tlGetGroupImages(src);
+    const usedIds = new Set([...(src.unplaced || []), ...(src.tiers || []).flatMap(t => t.items || [])]);
+    copy.images = groupImages.filter(img => usedIds.has(img.id)).map(img => ({ ...img }));
+  } else {
+    copy.images = (copy.images || []).map(img => ({ ...img }));
+  }
+  // Remap image ids (ids indépendants du groupe source, qu'il s'agisse d'un clone de root ou de la
+  // reconstitution ci-dessus pour un membre généré).
   const idMap = {};
-  copy.images = (copy.images || []).map(img => {
+  copy.images = copy.images.map(img => {
     const newId = uid();
     idMap[img.id] = newId;
     return { ...img, id: newId };
@@ -8819,14 +9240,14 @@ function tlCopy(id) {
   _tlLocalNoSelection = false;
   saveUserPrefs({ tlActiveTierlistId: copy.id, tlNoSelection: false });
   tlTouchFolderChain(_tlEffectiveFolderId(copy));
-  tlSave();
+  tlSave(copy.id); // copy est toujours sa propre root désormais (libre, ou clone direct d'un root)
   tlRender();
 }
 
 function tlRename(id, newName) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (tl && newName.trim()) { tl.name = newName.trim(); tlTouchFolderChain(_tlEffectiveFolderId(tl)); }
-  tlSave();
+  tlSave(); // renommage : champ name (index) seul, groupe inchangé
   tlRender();
 }
 
@@ -8837,7 +9258,7 @@ function tlAddTier(label, color) {
   const newTier = { id: uid(), label, color, items: [] };
   _tlPushUndoOp({ tierlistId: tl.id, type: 'addTier', tierId: newTier.id });
   tl.tiers.push(newTier);
-  tlSave();
+  tlSave(_tlGroupRoot(tl).id);
   tlRender();
 }
 
@@ -8855,7 +9276,7 @@ function tlDeleteTier(tl, tierId) {
     });
   }
   tl.tiers = tl.tiers.filter(t => t.id !== tierId);
-  tlSave();
+  tlSave(_tlGroupRoot(tl).id);
   tlRender();
 }
 
@@ -8881,7 +9302,7 @@ function _tlReplaceTiers(tl, newTiersSpec, confirmMessage) {
     if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId);
   }));
   tl.tiers = newTiersSpec.map(t => ({ id: uid(), label: t.label, color: t.color, items: [] }));
-  tlSave();
+  tlSave(_tlGroupRoot(tl).id);
   tlRender();
   return true;
 }
@@ -8902,18 +9323,26 @@ function tlSaveCurrentAsPreset(tl, name) {
   };
   if (!Array.isArray(tlState.tierPresets)) tlState.tierPresets = [];
   tlState.tierPresets.push(preset);
-  tlSave();
+  tlSave(); // presets : global, index-only
 }
 
 function tlDeletePreset(id) {
   if (String(id).startsWith('__builtin_')) return;
   tlState.tierPresets = (tlState.tierPresets || []).filter(p => p.id !== id);
-  tlSave();
+  tlSave(); // presets : global, index-only
 }
 
-function tlImportTiersFrom(tl, sourceTlId) {
-  const source = tlState.tierlists.find(t => t.id === sourceTlId);
+// async : lit source.tiers (dans data de la source) et écrit dans tl.tiers/unplaced (dans data de la
+// cible) — potentiellement deux groupes différents (cf. plan §5 point 7). _tlReplaceTiers reste
+// synchrone (données déjà chargées à ce stade).
+async function tlImportTiersFrom(tl, sourceTlId) {
+  let source = tlState.tierlists.find(t => t.id === sourceTlId);
   if (!source) return false;
+  await _tlEnsureGroupsLoaded([_tlGroupRoot(source).id, _tlGroupRoot(tl).id]);
+  // Re-résoudre après l'await (cf. commentaire équivalent dans tlCopy/tlDelete) : tl (paramètre) et
+  // source peuvent avoir été remplacés par de nouvelles instances entre-temps.
+  source = tlState.tierlists.find(t => t.id === sourceTlId) || source;
+  tl = tlState.tierlists.find(t => t.id === tl.id) || tl;
   return _tlReplaceTiers(tl, source.tiers.map(t => ({ label: t.label, color: t.color })));
 }
 
@@ -8957,7 +9386,7 @@ function tlSetMaxImages(tl, value) {
   if (isNaN(n) || n < 1) n = TL_MAX_IMAGES;
   n = Math.min(n, TL_MAX_IMAGES_CAP);
   _tlGroupRoot(tl).maxImagesOverride = n;
-  tlSave();
+  tlSave(); // maxImagesOverride est une méta légère stockée dans l'index (cf. plan §1)
   return n;
 }
 
@@ -8994,7 +9423,7 @@ function tlImportImages(files) {
 
   Promise.all(fileArray.map(processFile)).then(() => {
     tlTouchFolderChain(_tlEffectiveFolderId(tl));
-    tlSave();
+    tlSave(root.id);
     tlRender();
     const msgs = [];
     if (ignoredByLimit > 0) msgs.push(`${ignoredByLimit} élément${ignoredByLimit > 1 ? 's ignorés' : ' ignoré'} — limite de ${maxImages} éléments atteinte.`);
@@ -9015,7 +9444,7 @@ function tlDeleteImage(tl, imgId) {
     member.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
   });
   if (root.images) root.images = root.images.filter(i => i.id !== imgId);
-  tlSave();
+  tlSave(root.id);
   tlRender();
 }
 
@@ -9218,7 +9647,7 @@ function tlDrop(e, targetZoneId) {
   }
 
   tlTouchFolderChain(_tlEffectiveFolderId(tl));
-  tlSave();
+  tlSave(_rootForDrop.id);
   // Déplacer une image entre tiers/non-placés ne change jamais la hauteur du control-panel
   // au-dessus de .tl-layout (la zone "à placer" garde une taille fixe qu'elle soit vide ou
   // non, voir _tlRenderToPlaceZone/.tl-toplace-zone en CSS) : on peut sauter le reflow.
@@ -9332,7 +9761,8 @@ function tlConfirmRenameImg() {
   tlModalImgName.classList.add('hidden');
   tlModalImgNameInput.placeholder = "Nom de l'image...";
   tlRenameImgContext = null;
-  tlSave();
+  const _tlForSave = tlState.tierlists.find(t => t.id === tlId);
+  tlSave(_tlForSave ? _tlGroupRoot(_tlForSave).id : undefined);
   tlRender();
   if (isNew && afterConfirm) afterConfirm();
 }
@@ -9550,14 +9980,14 @@ function tlBuildArchivedTierlistItem(tl) {
       _tlLocalNoSelection = false;
       saveUserPrefs({ tlActiveTierlistId: tl.id, tlNoSelection: false });
     }
-    tlSave(); tlRender(); tlRenderArchivedModal();
+    tlSave(); tlRender(); tlRenderArchivedModal(); // désarchivage : champs archived/folderId (index) seuls
   });
   item.appendChild(btnRestore);
 
   const btnDel = document.createElement('button');
   btnDel.className = 'archived-theme-btn del';
   btnDel.innerHTML = '<i data-lucide="x"></i> Supprimer';
-  btnDel.addEventListener('click', () => { tlDelete(tl.id); tlRenderArchivedModal(); });
+  btnDel.addEventListener('click', async () => { await tlDelete(tl.id); tlRenderArchivedModal(); });
   item.appendChild(btnDel);
 
   return item;
@@ -9631,7 +10061,7 @@ function tlRenderArchivedModal() {
       const btnDel = document.createElement('button');
       btnDel.className = 'archived-theme-btn del';
       btnDel.innerHTML = '<i data-lucide="x"></i> Supprimer';
-      btnDel.addEventListener('click', () => { tlDeleteFolder(folder.id); tlRenderArchivedModal(); });
+      btnDel.addEventListener('click', async () => { await tlDeleteFolder(folder.id); tlRenderArchivedModal(); });
       topRow.appendChild(btnDel);
 
       item.appendChild(topRow);
@@ -9663,7 +10093,7 @@ function tlRenderArchivedModal() {
           const sfDel = document.createElement('button');
           sfDel.className = 'archived-theme-btn del';
           sfDel.innerHTML = '<i data-lucide="x"></i> Supprimer';
-          sfDel.addEventListener('click', () => { tlDeleteFolder(sf.id); tlRenderArchivedModal(); });
+          sfDel.addEventListener('click', async () => { await tlDeleteFolder(sf.id); tlRenderArchivedModal(); });
           sfRow.appendChild(sfDel);
           sfWrap.appendChild(sfRow);
           childrenDiv.appendChild(sfWrap);
@@ -9902,7 +10332,7 @@ function tlOpenImportTiersModal(targetId, onPick) {
   document.getElementById('tl-modal-import-tiers').classList.remove('hidden');
 }
 
-document.getElementById('tl-modal-import-tiers-confirm').addEventListener('click', () => {
+document.getElementById('tl-modal-import-tiers-confirm').addEventListener('click', async () => {
   const sourceId = document.getElementById('tl-modal-import-tiers-select').value;
   if (!sourceId) return;
   if (_tlImportTiersOnPick) {
@@ -9913,7 +10343,7 @@ document.getElementById('tl-modal-import-tiers-confirm').addEventListener('click
   if (!_tlImportTiersTargetId) return;
   const tl = tlState.tierlists.find(t => t.id === _tlImportTiersTargetId);
   if (!tl) return;
-  if (tlImportTiersFrom(tl, sourceId) !== false) {
+  if (await tlImportTiersFrom(tl, sourceId) !== false) {
     document.getElementById('tl-modal-import-tiers').classList.add('hidden');
   }
 });
@@ -10111,7 +10541,7 @@ document.getElementById('tl-modal-preset-edit-confirm').addEventListener('click'
   } else {
     tlState.tierPresets.push({ id: uid(), name, tiers: _tlPresetEditTiers.map(t => ({ ...t })) });
   }
-  tlSave();
+  tlSave(); // presets : global, index-only
   document.getElementById('tl-modal-preset-edit').classList.add('hidden');
   if (_tlPresetEditReturnToId) tlOpenTiersSourceModal(_tlPresetEditReturnToId);
 });
@@ -10292,7 +10722,7 @@ function tlOpenRenameModal(id) {
   setTimeout(() => { tlModalNewInput.focus(); tlModalNewInput.select(); }, 50);
 }
 
-function tlConfirmNewModal() {
+async function tlConfirmNewModal() {
   const val = tlModalNewInput.value.trim();
   if (!val) return;
   // "Nouveau Template" depuis l'accueil : lire la section génération fusionnée AVANT de fermer
@@ -10317,7 +10747,9 @@ function tlConfirmNewModal() {
       // Re-résoudre depuis tlState : tlSave() dans tlCreate() peut avoir déclenché une
       // resynchronisation qui remplace les objets tierlists par de nouvelles instances.
       const createdFresh = tlState.tierlists.find(t => t.id === created.id) || created;
-      tlImportTiersFrom(createdFresh, _tlNewModalImportSourceId);
+      // Le chargement de la source (non préchargée) est géré en interne par tlImportTiersFrom — la
+      // cible n'a rien à précharger (elle vient d'être créée, propre root fraîche).
+      await tlImportTiersFrom(createdFresh, _tlNewModalImportSourceId);
     } else {
       const presetSelect = document.getElementById('tl-modal-new-preset-select');
       created = tlCreate(val, folderId, isTemplate, presetSelect ? presetSelect.value || null : null);
@@ -10327,7 +10759,7 @@ function tlConfirmNewModal() {
       _homeGenerateAfterTemplate = false;
       let lastGenerated = null;
       generateNames.forEach(gname => { lastGenerated = _tlCreateFromTemplate(created.id, gname); });
-      tlSave();
+      tlSave(created.id);
       // Rejoindre directement la liste générée (comme "Rejoindre Template").
       if (lastGenerated) {
         _tlLocalActiveTierlistId = lastGenerated.id;
@@ -10407,7 +10839,7 @@ function tlConfirmTierModal() {
     const { tl, tier } = tlTierModalCtx;
     _tlPushUndoOp({ tierlistId: tl.id, type: 'editTier', tierId: tier.id, oldLabel: tier.label, oldColor: tier.color });
     tier.color = color;
-    tlSave();
+    tlSave(_tlGroupRoot(tl).id);
     tlRender();
     tlTierModalCtx = null;
     return;
@@ -10419,7 +10851,7 @@ function tlConfirmTierModal() {
     _tlPushUndoOp({ tierlistId: tl.id, type: 'editTier', tierId: tier.id, oldLabel: tier.label, oldColor: tier.color });
     tier.label = label;
     tier.color = color;
-    tlSave();
+    tlSave(_tlGroupRoot(tl).id);
     tlRender();
   } else {
     tlAddTier(label, color);
@@ -10562,7 +10994,7 @@ function tlConfirmFolderModal() {
         folder.name = name;
         folder.numbering = numbering;
         tlTouchFolderChain(folder.id);
-        tlSave();
+        tlSave(); // dossier seul : index-only
         tlRender();
       }
       return;
@@ -11067,7 +11499,7 @@ function _tlAddTextCard(tl, text) {
     if (!member.unplaced.includes(img.id)) member.unplaced.push(img.id);
   });
   tlTouchFolderChain(_tlEffectiveFolderId(tl));
-  tlSave();
+  tlSave(root.id);
   tlRender();
   tlAddTextInput.value = '';
   tlAddTextInput.focus();
@@ -11113,13 +11545,14 @@ function tlConfirmGenerateFromTemplate() {
   if (!_tlGenerateTemplateId) return;
   const checked = [...document.querySelectorAll('#tl-modal-generate-from-template .grid-name-preset-check input:checked')].map(cb => cb.value);
   tlModalGenerate.classList.add('hidden');
+  const templateId = _tlGenerateTemplateId;
   let lastCreated = null;
   if (checked.length > 0) {
-    checked.forEach(name => { lastCreated = _tlCreateFromTemplate(_tlGenerateTemplateId, name); });
+    checked.forEach(name => { lastCreated = _tlCreateFromTemplate(templateId, name); });
   } else {
     const name = tlGenerateNameInput.value.trim();
     if (!name) return;
-    lastCreated = _tlCreateFromTemplate(_tlGenerateTemplateId, name);
+    lastCreated = _tlCreateFromTemplate(templateId, name);
   }
   if (lastCreated) {
     _tlLocalActiveTierlistId = lastCreated.id;
@@ -11127,7 +11560,7 @@ function tlConfirmGenerateFromTemplate() {
     saveUserPrefs({ tlActiveTierlistId: lastCreated.id, tlNoSelection: false });
   }
   _tlGenerateTemplateId = null;
-  tlSave();
+  tlSave(templateId); // le template est la root du groupe : les tierlists générées y sont rattachées
   tlRender();
 }
 
@@ -11437,7 +11870,7 @@ tlUnplacedSortBtn.addEventListener('click', () => {
     tl.unplacedSort = mode;
     tl.unplaced = _tlGetSortedUnplaced(tl);
     tl.unplacedSort = 'manual';
-    tlSave();
+    tlSave(_tlGroupRoot(tl).id);
     tlRender();
   };
   const { addItem } = _tlMakeCtxMenu(tlUnplacedSortBtn, null);
@@ -11533,7 +11966,7 @@ document.addEventListener('paste', e => {
 
   Promise.all(promises).then(() => {
     tlTouchFolderChain(_tlEffectiveFolderId(tl));
-    tlSave(); tlRender(); tlUpdateUndoBtn();
+    tlSave(root.id); tlRender(); tlUpdateUndoBtn();
     _tlNameNewImgsSequentially(tl, addedImgs);
   }).catch(e => console.warn('TL paste error:', e));
 });
@@ -11618,40 +12051,122 @@ _dbBingo.on('value', snapshot => {
 });
 
 // ── Tier List ─────────────────────────────────────────────────────────────────
-_dbTierlist.on('value', snapshot => {
-  _tlRemoteUpdate = true;
-  const raw = snapshot.val();
-  tlState = _tlNormalizeState(raw);
-  const _needsMigrationSave = tlState._tlMigrated;
-  delete tlState._tlMigrated;
-  // Alimenter le cache src depuis les données Firebase
-  tlState.tierlists.forEach(_tlCacheSrcs);
-  // Valider que la tierlist active de cet utilisateur existe encore
-  // Attendre que les prefs soient chargées avant toute sélection automatique
-  if (_prefsReady) {
-    if (!_tlLocalNoSelection && _tlLocalActiveTierlistId) {
-      const still = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId && !t.archived);
-      if (!still) {
-        const first = tlState.tierlists.find(t => !t.archived);
-        _tlLocalActiveTierlistId = first ? first.id : null;
-        if (_tlLocalActiveTierlistId) saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId });
-      }
-    } else if (!_tlLocalNoSelection && !_tlLocalActiveTierlistId) {
-      // Première connexion / première fois : sélectionner la première tierlist dispo
+// Groupe actif (édition en cours, ou mode comparaison — les deux partagent la même souscription
+// puisqu'un mode comparaison ne compare que des tierlists d'un même groupe) : seul noeud
+// tierlist/data/<groupRootId> maintenu en `.on('value', ...)` permanent, pour l'édition
+// collaborative en temps réel. Tout autre groupe chargé (points chauds) l'est via `.once()`
+// (_tlEnsureGroupLoaded), sans souscription permanente.
+let _tlActiveGroupSub = null;
+let _tlActiveGroupSubHandler = null;
+function _tlSetActiveGroupSubscription(groupRootId) {
+  if (_tlActiveGroupSub && _tlActiveGroupSub !== groupRootId) {
+    _dbTierlistData.child(_tlActiveGroupSub).off('value', _tlActiveGroupSubHandler);
+  }
+  if (!groupRootId || _tlActiveGroupSub === groupRootId) { _tlActiveGroupSub = groupRootId; return; }
+  _tlActiveGroupSub = groupRootId;
+  _tlActiveGroupSubHandler = snapshot => {
+    _tlRemoteUpdate = true;
+    const needsSave = _tlMergeGroupDataIntoState(groupRootId, snapshot.val());
+    _tlLoadedGroups.set(groupRootId, 'loaded');
+    tlRender();
+    _tlRemoteUpdate = false;
+    // cf. commentaire équivalent dans _tlEnsureGroupLoaded : persiste les réparations auto.
+    if (needsSave) tlSaveGroup(groupRootId);
+  };
+  _dbTierlistData.child(groupRootId).on('value', _tlActiveGroupSubHandler);
+}
+
+// Résout et souscrit au(x) groupe(s) qui doivent rester "actifs" à cet instant : la tierlist
+// sélectionnée par l'utilisateur, ou — en mode comparaison — le groupe commun des tierlists comparées.
+function _tlUpdateActiveGroupSubscription() {
+  if (_compareTierlistIds.length >= 2) {
+    const first = tlState.tierlists.find(t => t.id === _compareTierlistIds[0]);
+    if (first) { _tlSetActiveGroupSubscription(_tlGroupRoot(first).id); return; }
+  }
+  const tl = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId);
+  _tlSetActiveGroupSubscription(tl ? _tlGroupRoot(tl).id : null);
+}
+
+function _tlSelectInitialTierlistIfNeeded() {
+  // Valider que la tierlist active de cet utilisateur existe encore.
+  // Attendre que les prefs soient chargées avant toute sélection automatique.
+  if (!_prefsReady) return;
+  if (!_tlLocalNoSelection && _tlLocalActiveTierlistId) {
+    const still = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId && !t.archived);
+    if (!still) {
       const first = tlState.tierlists.find(t => !t.archived);
-      if (first) {
-        _tlLocalActiveTierlistId = first.id;
-        saveUserPrefs({ tlActiveTierlistId: first.id, tlNoSelection: false });
-      }
+      _tlLocalActiveTierlistId = first ? first.id : null;
+      if (_tlLocalActiveTierlistId) saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId });
+    }
+  } else if (!_tlLocalNoSelection && !_tlLocalActiveTierlistId) {
+    // Première connexion / première fois : sélectionner la première tierlist dispo
+    const first = tlState.tierlists.find(t => !t.archived);
+    if (first) {
+      _tlLocalActiveTierlistId = first.id;
+      saveUserPrefs({ tlActiveTierlistId: first.id, tlNoSelection: false });
     }
   }
-  _applySoloTierlistModeIfNeeded();
-  _applyCompareTierlistModeIfNeeded();
-  tlRender();
-  if (typeof renderHomePage === 'function') renderHomePage();
-  _tlRemoteUpdate = false;
-  if (_needsMigrationSave) tlSave();
-});
+}
+
+// Séquence au démarrage : .once('value') sur la racine `tierlist` → si ancien format détecté,
+// écrire index/data/<id> (trash laissée telle quelle, déjà au bon endroit) → puis basculer sur les
+// listeners définitifs (index/trash permanents + groupe actif à la demande). Jamais de .on()
+// permanent sur la racine elle-même.
+_dbTierlist.once('value').then(snapshot => {
+  const migrated = _tlMigrateOldFormat(snapshot.val());
+  if (!migrated) return Promise.resolve();
+  const writes = [_dbTierlistIndex.set(sanitizeForFirebase(migrated.index))];
+  Object.keys(migrated.data).forEach(groupRootId => {
+    writes.push(_dbTierlistData.child(groupRootId).set(sanitizeForFirebase(migrated.data[groupRootId])));
+  });
+  return Promise.all(writes).catch(e => console.warn('TL migration write error:', e));
+}).catch(e => console.warn('TL migration read error:', e)).then(_tlStartTierlistListeners);
+
+function _tlStartTierlistListeners() {
+  _dbTierlistIndex.on('value', snapshot => {
+    // _tlRemoteUpdate protège seulement la section SYNCHRONE ci-dessous (celle qui pourrait, via
+    // tlRender()/sélection auto, redéclencher un tlSave()) — elle est remise à false avant tout
+    // travail asynchrone (chargement de groupe) : un .set() local redéclenche ce listener de façon
+    // synchrone dans certains environnements (ex. shim de test), et laisser le flag levé pendant
+    // toute une chaîne de Promises bloquerait à tort les tlSaveGroup()/tlSaveTrash() de l'appelant
+    // d'origine (ex. tlDelete) qui s'exécutent juste après dans la même fonction.
+    _tlRemoteUpdate = true;
+    const rawIndex = _tlNormalizeIndex(snapshot.val());
+    // Préserve les champs lourds déjà fusionnés (tiers/unplaced/images) des groupes déjà chargés —
+    // un nouveau snapshot d'index ne réinitialise que les métas légères, jamais le contenu lourd.
+    const heavyById = new Map(tlState.tierlists.map(t => [t.id, t]));
+    tlState.tierlists = rawIndex.tierlists.map(meta => {
+      const prev = heavyById.get(meta.id);
+      return prev ? Object.assign({}, prev, meta) : Object.assign({ tiers: [], unplaced: [], images: [] }, meta);
+    });
+    tlState.folders = rawIndex.folders;
+    tlState.tierPresets = rawIndex.tierPresets;
+    tlState.tierPresetsSeeded = rawIndex.tierPresetsSeeded;
+    if (!tlState.trash) tlState.trash = [];
+
+    _tlSelectInitialTierlistIfNeeded();
+    _tlUpdateActiveGroupSubscription();
+    const activeTl = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId);
+    const pending = [];
+    if (activeTl) pending.push(_tlEnsureGroupLoaded(_tlGroupRoot(activeTl).id));
+    if (_compareTierlistIds.length >= 2) pending.push(_tlEnsureGroupsLoaded(_compareTierlistIds.map(id => {
+      const t = tlState.tierlists.find(x => x.id === id);
+      return t ? _tlGroupRoot(t).id : null;
+    })));
+    _tlRemoteUpdate = false;
+    Promise.all(pending).catch(() => {}).then(() => {
+      _applySoloTierlistModeIfNeeded();
+      _applyCompareTierlistModeIfNeeded();
+      tlRender();
+      if (typeof renderHomePage === 'function') renderHomePage();
+    });
+  });
+
+  _dbTierlistTrash.on('value', snapshot => {
+    tlState.trash = Array.isArray(snapshot.val()) ? snapshot.val() : (snapshot.val() ? Object.values(snapshot.val()) : []);
+    tlRenderTrashList();
+  });
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PAGE D'ACCUEIL
