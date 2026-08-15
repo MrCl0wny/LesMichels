@@ -1266,7 +1266,7 @@ async function deleteFolder(id) {
   const folder = findFolderById(state.folders, id);
   if (folder) await _bingoEnsureFoldersLoaded(_collectBingoFolderIds(folder));
   const folderForSnapshot = findFolderById(state.folders, id); // re-résoudre après l'await
-  if (folderForSnapshot) trashPush({ type: 'folder', data: JSON.parse(JSON.stringify(folderForSnapshot)) });
+  if (folderForSnapshot) await trashPush({ type: 'folder', data: JSON.parse(JSON.stringify(folderForSnapshot)) });
   const parent = findParentFolder(state.folders, id);
   if (parent) {
     parent.folders = (parent.folders || []).filter(f => f.id !== id);
@@ -1843,9 +1843,29 @@ async function _bingoEnsureSeasonLoaded(folderId) {
 }
 
 // ──────────────────────────────────────────────
-// Corbeille
+// Corbeille (chargée à la demande, jamais de listener permanent — cf _dbBingoTrash.once ci-dessous)
 // ──────────────────────────────────────────────
-function trashPush(entry) {
+// _bingoSaveTrash() fait un .set() qui REMPLACE tout le noeud bingo/trash : sans garantie que
+// state.trash reflète l'état distant le plus récent, une suppression effectuée sans avoir jamais
+// chargé la corbeille dans cette session écraserait silencieusement le contenu déjà présent sur
+// Firebase. _bingoEnsureTrashLoaded() est donc appelée avant TOUTE écriture (push/restore/empty),
+// pas seulement à l'ouverture de la modale — .once() no-op si déjà chargée cette session.
+let _bingoTrashLoaded = false;
+let _bingoTrashLoadPromise = null;
+function _bingoEnsureTrashLoaded() {
+  if (_bingoTrashLoaded) return Promise.resolve();
+  if (_bingoTrashLoadPromise) return _bingoTrashLoadPromise;
+  _bingoTrashLoadPromise = _dbBingoTrash.once('value').then(snapshot => {
+    const val = snapshot.val();
+    state.trash = Array.isArray(val) ? val : (val ? Object.values(val) : []);
+    _bingoTrashLoaded = true;
+    _bingoTrashLoadPromise = null;
+  }).catch(e => { console.warn('Bingo trash load error:', e); _bingoTrashLoadPromise = null; });
+  return _bingoTrashLoadPromise;
+}
+
+async function trashPush(entry) {
+  await _bingoEnsureTrashLoaded();
   if (!state.trash) state.trash = [];
   // id stable : trashRestore le réutilise pour retrouver l'entrée après un await sans dépendre de
   // sa position dans le tableau (le listener bingo/trash peut remplacer state.trash en entier entre-
@@ -1858,6 +1878,7 @@ function trashPush(entry) {
 // 'grid') l'insère dans folder.grids, qui doit être le VRAI tableau du dossier cible (chargé), sinon
 // la grille restaurée serait perdue à la prochaine fusion d'un snapshot data sur ce dossier.
 async function trashRestore(idx) {
+  await _bingoEnsureTrashLoaded();
   if (!state.trash) return;
   const entry = state.trash[idx];
   if (!entry) return;
@@ -3110,12 +3131,12 @@ function getGlobalCheckedElementIds(t) {
   return checked;
 }
 
-function deleteGrid(id) {
+async function deleteGrid(id) {
   const s = activeSubtheme();
   if (!s) return;
   const t = activeTheme();
   const g = s.grids.find(g => g.id === id);
-  if (g) trashPush({ type: 'grid', folderId: s.id, themeId: t?.id, subthemeId: s.id, data: JSON.parse(JSON.stringify(g)) });
+  if (g) await trashPush({ type: 'grid', folderId: s.id, themeId: t?.id, subthemeId: s.id, data: JSON.parse(JSON.stringify(g)) });
   s.grids = s.grids.filter(g => g.id !== id);
   if (s.activeGridId === id) {
     const remaining = s.grids.filter(g => !g.archived);
@@ -6051,10 +6072,11 @@ function renderTrashList() {
 
 const modalTrashUnifiedOverlay = document.getElementById('modal-trash-unified-overlay');
 
-function openTrashUnified() {
-  renderTrashList();
+async function openTrashUnified() {
   modalTrashUnified.classList.add('open');
   modalTrashUnifiedOverlay.classList.add('open');
+  await _bingoEnsureTrashLoaded();
+  renderTrashList();
 }
 
 function closeTrashUnified() {
@@ -7066,8 +7088,28 @@ function tlUnarchiveFolder(id) {
   tlRenderArchivedModal();
 }
 
-// ── Corbeille ─────────────────────────────────────────────────────────────────
-function tlTrashPush(entry) {
+// ── Corbeille (chargée à la demande, jamais de listener permanent — cf _dbTierlistTrash.once) ──
+// tlSaveTrash() fait un .set() qui REMPLACE tout le noeud tierlist/trash : sans garantie que
+// tlState.trash reflète l'état distant le plus récent, une suppression effectuée sans avoir jamais
+// chargé la corbeille dans cette session écraserait silencieusement le contenu déjà présent sur
+// Firebase. _tlEnsureTrashLoaded() est donc appelée avant TOUTE écriture (push/restore/empty), pas
+// seulement à l'ouverture de la modale — .once() no-op si déjà chargée cette session.
+let _tlTrashLoaded = false;
+let _tlTrashLoadPromise = null;
+function _tlEnsureTrashLoaded() {
+  if (_tlTrashLoaded) return Promise.resolve();
+  if (_tlTrashLoadPromise) return _tlTrashLoadPromise;
+  _tlTrashLoadPromise = _dbTierlistTrash.once('value').then(snapshot => {
+    const val = snapshot.val();
+    tlState.trash = Array.isArray(val) ? val : (val ? Object.values(val) : []);
+    _tlTrashLoaded = true;
+    _tlTrashLoadPromise = null;
+  }).catch(e => { console.warn('TL trash load error:', e); _tlTrashLoadPromise = null; });
+  return _tlTrashLoadPromise;
+}
+
+async function tlTrashPush(entry) {
+  await _tlEnsureTrashLoaded();
   if (!tlState.trash) tlState.trash = [];
   tlState.trash.push({ ...entry, deletedAt: Date.now() });
 }
@@ -7078,6 +7120,7 @@ function tlTrashPush(entry) {
 // existe déjà partiellement en mémoire (ex. un template restauré séparément avant ses tierlists
 // générées) plutôt que d'écraser silencieusement (cf. plan §5 point 2).
 async function tlTrashRestore(idx) {
+  await _tlEnsureTrashLoaded();
   if (!tlState.trash) return;
   const entry = tlState.trash[idx];
   if (!entry) return;
@@ -7142,7 +7185,7 @@ async function tlDeleteFolder(id) {
     });
     const cascadedIds = new Set(cascaded.map(t => t.id));
     tlState.tierlists = tlState.tierlists.filter(t => !cascadedIds.has(t.id));
-    tlTrashPush({ type: 'folder', data: { ...folder, _tierlists: cascaded } });
+    await tlTrashPush({ type: 'folder', data: { ...folder, _tierlists: cascaded } });
     if (cascadedIds.has(_tlLocalActiveTierlistId)) {
       const remaining = tlState.tierlists.filter(t => !t.archived);
       _tlLocalActiveTierlistId = remaining.length > 0 ? remaining[0].id : null;
@@ -9492,8 +9535,8 @@ async function tlDelete(id) {
   tlTouchFolderChain(effectiveFolderId);
   // Suppression d'un template : cascade sur toutes ses tierlists générées, chacune sa propre entrée de corbeille
   const cascaded = tl.isTemplate ? tlState.tierlists.filter(t => t.templateId === id) : [];
-  tlTrashPush({ type: 'tierlist', data: tl, folderId: effectiveFolderId });
-  cascaded.forEach(t => tlTrashPush({ type: 'tierlist', data: t, folderId: _tlEffectiveFolderId(t) }));
+  await tlTrashPush({ type: 'tierlist', data: tl, folderId: effectiveFolderId });
+  for (const t of cascaded) await tlTrashPush({ type: 'tierlist', data: t, folderId: _tlEffectiveFolderId(t) });
   const removedIds = new Set([id, ...cascaded.map(t => t.id)]);
   tlState.tierlists = tlState.tierlists.filter(t => !removedIds.has(t.id));
   if (removedIds.has(_tlLocalActiveTierlistId)) {
@@ -12184,10 +12227,11 @@ tlModalArchivedOverlay.addEventListener('click', tlCloseArchivesUnified);
 
 const tlModalTrashOverlay = document.getElementById('tl-modal-trash-overlay');
 
-function tlOpenTrashUnified() {
-  tlRenderTrashList();
+async function tlOpenTrashUnified() {
   tlModalTrash.classList.add('open');
   tlModalTrashOverlay.classList.add('open');
+  await _tlEnsureTrashLoaded();
+  tlRenderTrashList();
 }
 function tlCloseTrashUnified() {
   tlModalTrash.classList.remove('open');
@@ -12593,10 +12637,8 @@ function _bingoStartListeners() {
     });
   });
 
-  _dbBingoTrash.on('value', snapshot => {
-    const val = snapshot.val();
-    state.trash = Array.isArray(val) ? val : (val ? Object.values(val) : []);
-  });
+  // Corbeille chargée à la demande uniquement (cf _bingoEnsureTrashLoaded) — plus de listener
+  // permanent ici, pour ne pas tirer bingo/trash au démarrage si la corbeille reste vide/inutilisée.
 }
 
 // ── Tier List ─────────────────────────────────────────────────────────────────
@@ -12728,10 +12770,8 @@ function _tlStartTierlistListeners() {
     });
   });
 
-  _dbTierlistTrash.on('value', snapshot => {
-    tlState.trash = Array.isArray(snapshot.val()) ? snapshot.val() : (snapshot.val() ? Object.values(snapshot.val()) : []);
-    tlRenderTrashList();
-  });
+  // Corbeille chargée à la demande uniquement (cf _tlEnsureTrashLoaded) — plus de listener permanent
+  // ici, pour ne pas tirer tierlist/trash au démarrage si la corbeille reste vide/inutilisée.
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
