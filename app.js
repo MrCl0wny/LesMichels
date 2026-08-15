@@ -1738,6 +1738,19 @@ function _bingoSaveIndex() {
   _dbBingoIndex.set(sanitizeForFirebase(_bingoBuildIndexPayload())).catch(e => console.warn('Bingo index save error:', e));
 }
 
+// folderId -> Set des empreintes JSON encore "en vol" (envoyées par CE client, écho pas encore
+// reçu) — permet à l'écho de confirmation du serveur (souscription active, cf
+// _bingoSetActiveSeasonSubscription) de reconnaître "c'est une de mes propres écritures qui
+// revient, rien de nouveau" et sauter le re-render complet dans ce cas.
+// Un Set (pas juste la dernière valeur) est nécessaire car Firebase répond de façon asynchrone :
+// si on coche 2 cases avant que l'écho de la 1ère écriture revienne, une simple variable
+// "dernier envoi" serait déjà écrasée par la 2e écriture quand l'écho de la 1ère arrive, et la
+// comparaison échouerait à tort — déclenchant un renderGrid() complet (badge recréé, animation
+// qui rejoue) à chaque case cochée dès qu'on joue à un rythme normal, plus rapide que l'aller-
+// retour réseau. Chaque empreinte est retirée du Set dès que son écho correspondant est reçu
+// (cf le handler dans _bingoSetActiveSeasonSubscription).
+const _bingoInFlightPayloadJSON = new Map();
+
 function _bingoSaveFolder(folderId) {
   if (_bingoRemoteUpdate || !_firebaseReady || !folderId) return;
   const payload = _bingoBuildFolderPayload(folderId);
@@ -1750,7 +1763,17 @@ function _bingoSaveFolder(folderId) {
   // écraserait son contenu lourd tout juste écrit avec les grilles allégées de l'index (perte du
   // tableau grid[] de cellules en pleine écriture).
   _bingoLoadedFolders.add(folderId);
-  _dbBingoData.child(folderId).set(sanitizeForFirebase(payload)).catch(e => console.warn('Bingo folder save error:', e));
+  const sanitized = sanitizeForFirebase(payload);
+  // Empreinte AVANT sanitizeForFirebase (le JSON envoyé et celui reçu en écho passent tous deux
+  // par le même aller-retour JSON, donc identiques bit à bit s'il s'agit bien du même contenu).
+  if (!_bingoInFlightPayloadJSON.has(folderId)) _bingoInFlightPayloadJSON.set(folderId, new Set());
+  const inFlight = _bingoInFlightPayloadJSON.get(folderId);
+  // Garde-fou anti-fuite mémoire : un écho qui ne reviendrait jamais (perte réseau, erreur .set()
+  // silencieuse) laisserait sinon une empreinte orpheline indéfiniment. 20 est très large par
+  // rapport au rythme réel de clics × latence réseau (quelques écritures en vol tout au plus).
+  if (inFlight.size >= 20) inFlight.delete(inFlight.values().next().value);
+  inFlight.add(JSON.stringify(sanitized));
+  _dbBingoData.child(folderId).set(sanitized).catch(e => console.warn('Bingo folder save error:', e));
 }
 
 // Faîtière (équivalent tlSave côté Tier List, cf ligne ~6182) : écrit toujours le dossier PUIS
@@ -2058,6 +2081,27 @@ function renderElements() {
     listArchived.appendChild(buildElementItem(el, true, nonArchivedGrids, visGrids));
   });
   if (window.lucide) lucide.createIcons();
+}
+
+// Équivalent de _patchCellsAfterCheck() (cf buildSingleGrid) mais pour le panneau latéral "Cases" :
+// cocher/décocher une case depuis la grille ne change JAMAIS son texte, son statut archivé, ni ses
+// poignées de drag&drop (l'élément était déjà présent dans la grille avant le clic) — seule sa classe
+// 'elem-checked' peut changer. Pas de reconstruction de <li> nécessaire, juste un toggle de classe.
+// Panneau fermé : rien à patcher visuellement, mais il faut lever _casesPanelDirty comme le
+// ferait renderElements() — sinon openCasesPanel() ne sait pas qu'un re-render est dû à la
+// réouverture et affiche un état coché périmé (case cochée pendant que le panneau était fermé).
+function _patchElementsListAfterCheck(elementId) {
+  const panelEl = document.getElementById('cases-panel');
+  if (panelEl && !panelEl.classList.contains('open')) { _casesPanelDirty = true; return; }
+  const s = activeSubtheme();
+  if (!s) return;
+  const li = listActive.querySelector(`.element-item[data-id="${elementId}"]`);
+  if (!li) return;
+  const nonArchivedGrids = (s.grids || []).filter(gx => !gx.archived);
+  const isCheckedInGrid = nonArchivedGrids.some(gx => gx.grid.some(c => c.elementId === elementId && c.checked));
+  const el = (s.elements || []).find(e => e.id === elementId);
+  const isChecked = isCheckedInGrid || !!(el && el.checked);
+  li.classList.toggle('elem-checked', isChecked);
 }
 
 function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
@@ -3359,6 +3403,36 @@ function openClearCellConfirm(label, callback) {
   document.getElementById('modal-confirm-clear').classList.remove('hidden');
 }
 
+// Mise à jour ciblée du DOM après avoir coché/décoché une case, SANS reconstruire toute la grille
+// (renderGrid() recrée normalement chaque cellule de chaque grille visible à chaque clic — coûteux
+// sur machine lente). N'est utilisée que dans le cas courant (sameBingoState : le nombre de lignes
+// de bingo ne change pas), sinon on retombe sur renderGrid() classique (badge à faire apparaître/
+// disparaître, cas plus rare et plus simple à laisser au rendu complet).
+// Doit rester strictement équivalente à ce que buildSingleGrid() aurait produit pour les classes
+// 'checked'/'bingo-line'/title sur les cellules concernées, dans TOUTES les grilles visibles (cocher
+// une case coche le même elementId dans toutes les grilles du dossier, cf le click handler).
+function _patchCellsAfterCheck(elementId) {
+  const visibleGrids = getVisibleGrids();
+  visibleGrids.forEach(gx => {
+    const wrapperEl = gridWrapper.querySelector(`.grid-view-wrapper[data-grid-id="${gx.id}"]`);
+    if (!wrapperEl) return;
+    const n = gx.gridSize;
+    const cells = gx.grid.slice(0, n * n);
+    const { indices: bingoIndices } = getBingoResult(n, cells);
+    cells.forEach((cell, i) => {
+      if (!cell.elementId) return;
+      const div = wrapperEl.querySelector(`.bingo-cell[data-index="${i}"]`);
+      if (!div) return;
+      div.classList.toggle('checked', !!cell.checked);
+      div.classList.toggle('bingo-line', bingoIndices.has(i));
+      if (cell.elementId === elementId) {
+        const gridLocked = gx.locked || (!!activeTheme() && activeTheme().locked);
+        div.title = cell.checked ? 'Désactiver cette case' : 'Valider cette case' + (!gridLocked ? ' · Clic droit : vider' : '');
+      }
+    });
+  });
+}
+
 function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const n = g.gridSize;
   const scale = _localFontScale;
@@ -3408,16 +3482,21 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   });
   titleRow.appendChild(titleInput);
 
-  // Message bingo individuel, sur la même rangée que le titre, à droite
-  if (bingoLines.length > 0) {
-    const msg = document.createElement('div');
-    msg.className = 'bingo-message-inline';
-    const count = bingoLines.length;
-    msg.innerHTML = count === 1
-      ? `<i data-lucide="party-popper"></i> BINGO !`
-      : `<i data-lucide="party-popper"></i> BINGO x${count} !`;
-    titleRow.appendChild(msg);
-  }
+  // Message bingo individuel ("BINGO !"), sur la même rangée que le titre, à droite
+  // DÉSACTIVÉ : le message se recréait/rechargeait de façon incontrôlée à cause d'un ou plusieurs
+  // mécanismes de rendu Firebase non entièrement résolus (échos multiples, rendus redondants au
+  // chargement et au clic — cf conversations précédentes). À reprendre plus tard. Uniquement CE
+  // texte est coupé — le surlignage vert des cases (bingo-line), le son et les confettis restent
+  // actifs normalement (cf plus bas dans buildSingleGrid/_patchCellsAfterCheck/renderGrid).
+  // if (bingoLines.length > 0) {
+  //   const msg = document.createElement('div');
+  //   msg.className = 'bingo-message-inline';
+  //   const count = bingoLines.length;
+  //   msg.innerHTML = count === 1
+  //     ? `<i data-lucide="party-popper"></i> BINGO !`
+  //     : `<i data-lucide="party-popper"></i> BINGO x${count} !`;
+  //   titleRow.appendChild(msg);
+  // }
 
   // Contrôles par grille (ordre : Bloquer | Générer | Vider | Capture), à côté du nom
   const globalLocked = !!t.locked;
@@ -3635,8 +3714,17 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
         const lineCountsAfter = visibleGridsAfter.map(gx => getBingoResult(gx.gridSize, gx.grid.slice(0, gx.gridSize * gx.gridSize)).lines.length);
         const sameBingoState = visibleGridsBefore.length === visibleGridsAfter.length
           && lineCountsBefore.every((n, idx) => n === lineCountsAfter[idx]);
-        renderGrid(sameBingoState);
-        renderElements();
+        // Cas courant (aucun badge BINGO à faire apparaître/disparaître) : mise à jour ciblée des
+        // seules cellules affectées au lieu de reconstruire toute la grille (cf _patchCellsAfterCheck).
+        // Sinon (bingo qui apparaît/disparaît, plus rare) : rendu complet classique, plus simple et
+        // déjà correct pour ce cas (badge, hauteur, icônes à réinsérer).
+        if (sameBingoState && sNow) {
+          _patchCellsAfterCheck(cell.elementId);
+          _patchElementsListAfterCheck(cell.elementId);
+        } else {
+          renderGrid(sameBingoState);
+          renderElements();
+        }
       });
 
       if (!gridLocked) {
@@ -12470,9 +12558,36 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
   nextIds.forEach(id => {
     if (_bingoActiveSeasonSub.has(id)) return; // déjà abonné
     const handler = snapshot => {
+      const rawVal = snapshot.val();
+      // Écho de l'une de NOS propres écritures encore en vol (cas courant, un seul appareil sur le
+      // dossier) : le serveur renvoie exactement ce qu'on a envoyé via _bingoSaveFolder (cf
+      // _bingoInFlightPayloadJSON). Dans ce cas, l'état local est déjà strictement identique à ce
+      // que confirme le serveur — inutile de re-fusionner et re-rendre toute la grille (renderGrid()
+      // complet dans _applyPrefsAndRender()), ce qui annulait le gain du patch DOM ciblé posé sur le
+      // clic d'une case (cf _patchCellsAfterCheck). On retire l'empreinte consommée du Set : plusieurs
+      // échos peuvent arriver dans le désordre pour plusieurs écritures en vol (cocher 2 cases avant
+      // que le premier aller-retour réseau revienne), chacun doit pouvoir matcher son propre envoi.
+      // Si un AUTRE appareil a modifié le dossier entre-temps, le JSON reçu ne correspond à AUCUN de
+      // nos envois en vol, donc on passe bien par le chemin normal (fusion + rendu complet) ci-dessous.
+      const inFlight = _bingoInFlightPayloadJSON.get(id);
+      const rawValJSON = JSON.stringify(rawVal);
+      if (inFlight && inFlight.has(rawValJSON)) {
+        inFlight.delete(rawValJSON);
+        return;
+      }
+      // Écho qui confirme ce qu'on a DÉJÀ en mémoire pour ce dossier (pas une de nos écritures : cf
+      // ci-dessus, plutôt une lecture qui arrive par un second chemin — ex. au chargement initial de
+      // la page, _bingoEnsureSeasonLoaded() fait un .once() sur ce même dossier EN PLUS de ce .on()
+      // permanent ici, les deux pouvant recevoir le même contenu et redéclencher chacun un rendu
+      // complet coup sur coup : le badge "BINGO !" se recréait deux fois au chargement). Comparer au
+      // payload déjà en mémoire (même forme que ce qui est stocké côté Firebase, cf
+      // _bingoBuildFolderPayload) : si rigoureusement identique, rien de neuf à fusionner ni à rendre.
+      if (_bingoLoadedFolders.has(id) && rawValJSON === JSON.stringify(sanitizeForFirebase(_bingoBuildFolderPayload(id)))) {
+        return;
+      }
       _bingoRemoteUpdate = true;
       const before = new Set((findFolderById(state.folders, id)?.grids || []).filter(g => !g.archived).map(g => g.id));
-      _bingoMergeDataIntoState(id, snapshot.val());
+      _bingoMergeDataIntoState(id, rawVal);
       const f = findFolderById(state.folders, id);
       _bingoLoadedFolders.add(id);
       // Nouvelles grilles apparues (créées par un autre utilisateur) dans le dossier actif : les
@@ -12488,7 +12603,18 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
         }
       }
       _bingoRemoteUpdate = false;
-      if (_prefsReady) _applyPrefsAndRender();
+      // _applyPrefsAndRender() se termine par un renderGrid() COMPLET inconditionnel (cf sa propre
+      // définition) dès qu'on est sur la page Bingo — peu importe quel dossier a déclenché l'appel.
+      // Cette souscription couvre TOUS les dossiers-épisodes d'une saison (pour la fonctionnalité
+      // NEW/Stats, cf _bingoUpdateActiveSeasonSubscription), pas seulement le dossier affiché : au
+      // chargement d'une saison de 9 épisodes, les 9 premiers snapshots Firebase (un par dossier,
+      // parfaitement normaux) déclenchaient chacun un renderGrid() complet de la grille AFFICHÉE,
+      // même pour les 8 épisodes qui ne sont pas celui à l'écran — le badge "BINGO !" du dossier
+      // affiché était donc recréé (et son animation rejouée) jusqu'à 9 fois sans aucun rapport avec
+      // une action de l'utilisateur. Ne re-rendre que si ce snapshot concerne le dossier actif :
+      // les autres dossiers restent fusionnés en mémoire (ligne _bingoMergeDataIntoState ci-dessus,
+      // toujours faite) pour que NEW/Stats reste à jour, sans jamais toucher l'affichage courant.
+      if (_prefsReady && id === _localActiveFolderId) _applyPrefsAndRender();
       if (typeof renderHomePage === 'function') renderHomePage();
     };
     _dbBingoData.child(id).on('value', handler);
