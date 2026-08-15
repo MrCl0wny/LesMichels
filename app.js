@@ -2041,41 +2041,41 @@ function renderElements() {
   if (tabActive)   tabActive.textContent   = `Actives (${active.length})`;
   if (tabArchived) tabArchived.textContent = `Archivées (${archived.length})`;
 
+  // Calculés une seule fois pour toute la liste (pas par élément) : sur un dossier avec beaucoup
+  // de cases, refaire ces filter/getVisibleGrids() dans buildElementItem() à chaque élément de la
+  // liste multipliait le travail par le nombre de cases à chaque case cochée (renderElements()
+  // est rappelée à chaque clic quand le panneau est ouvert).
+  const nonArchivedGrids = (s.grids || []).filter(gx => !gx.archived);
+  const visGrids = getVisibleGrids ? getVisibleGrids() : [];
+
   listActive.innerHTML = '';
   active.forEach(el => {
-    listActive.appendChild(buildElementItem(el, false));
+    listActive.appendChild(buildElementItem(el, false, nonArchivedGrids, visGrids));
   });
 
   listArchived.innerHTML = '';
   archived.forEach(el => {
-    listArchived.appendChild(buildElementItem(el, true));
+    listArchived.appendChild(buildElementItem(el, true, nonArchivedGrids, visGrids));
   });
   if (window.lucide) lucide.createIcons();
 }
 
-function buildElementItem(el, isArchived) {
+function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
   const li = document.createElement('li');
 
   // Vérifier si cet élément est coché : dans une grille OU directement sur l'élément
-  const s = activeSubtheme();
-  const isCheckedInGrid = s && (s.grids || []).filter(gx => !gx.archived).some(
+  const isCheckedInGrid = nonArchivedGrids.some(
     gx => gx.grid.some(c => c.elementId === el.id && c.checked)
   );
   const isChecked = isCheckedInGrid || (!!el.checked && !isArchived);
 
-  // Vérifier si la case a une couleur rouge
-  const hasRedColor = s && (s.grids || []).filter(gx => !gx.archived).some(
-    gx => gx.grid.some(c => c.elementId === el.id && c.color === 'red')
-  );
-
-  li.className = 'element-item' + (isArchived ? ' archived' : '') + (isChecked ? ' elem-checked' : '') + (hasRedColor ? ' elem-red' : '');
+  li.className = 'element-item' + (isArchived ? ' archived' : '') + (isChecked ? ' elem-checked' : '');
   li.dataset.id = el.id;
   li.title = 'Clic gauche : renommer · Clic droit : ' + (isArchived ? 'restaurer, supprimer' : 'archiver, supprimer');
 
   // Poignée drag & drop si l'élément est absent d'au moins une grille visible non bloquée
-  const _visGrids = getVisibleGrids ? getVisibleGrids() : [];
   const _t = activeTheme();
-  const canDragToAny = !isArchived && _visGrids.some(gx => {
+  const canDragToAny = !isArchived && visGrids.some(gx => {
     const gLocked = gx.locked || (!!_t && _t.locked);
     return !gLocked && !gx.grid.some(c => c.elementId === el.id);
   });
@@ -3587,7 +3587,6 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
       div.textContent = cellText;
       div.style.fontSize = getCellFontSize(cellText, scale);
       if (cell.checked)        div.classList.add('checked');
-      if (cell.color === 'red') div.classList.add('cell-red');
       if (bingoIndices.has(i)) div.classList.add('bingo-line');
       if (prevEpisodeTexts && el && !prevEpisodeTexts.has((el.text || '').trim().toLowerCase())) {
         const newBadge = document.createElement('span');
@@ -3858,8 +3857,13 @@ function renderGrid(skipSizeRecalc = false) {
     _pendingBingoEffects.push({ gridId: gridItem.id, lineCount: bingoLines.length });
   });
 
-  applyFontScale();
-  if (window.lucide) lucide.createIcons();
+  // applyFontScale() n'est PAS rappelé ici : buildSingleGrid() applique déjà getCellFontSize()
+  // à la construction de chaque cellule (avec le même _localFontScale) — un second passage sur
+  // tout le gridWrapper juste après serait un travail redondant à chaque case cochée.
+  // lucide.createIcons() re-scanne TOUT le document (pas seulement le DOM neuf) : coûteux sur
+  // machine lente, donc sauté quand skipSizeRecalc est vrai (aucune icône ne peut avoir changé
+  // dans ce cas — cf commentaire sur skipSizeRecalc plus bas).
+  if (!skipSizeRecalc && window.lucide) lucide.createIcons();
   // _adjustBingoGridSizes() force un reflow synchrone (getBoundingClientRect/getComputedStyle) :
   // coûteux sur machine lente, à sauter uniquement quand l'appelant garantit qu'aucune dimension
   // n'a changé (voir skipSizeRecalc en tête de fonction).
