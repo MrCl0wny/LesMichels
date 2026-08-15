@@ -7394,6 +7394,8 @@ function _tlAutoScrollStep() {
     const amount = _tlAutoScrollDir * TL_AUTOSCROLL_MAX_SPEED * _tlAutoScrollStrength;
     if (_tlAutoScrollTarget === window) window.scrollBy(0, amount);
     else _tlAutoScrollTarget.scrollTop += amount;
+    // Le scroll décale la position écran de toutes les cartes : le cache de rects devient obsolète.
+    _tlInvalidateDropRectsCache();
     _tlAutoScrollRafId = requestAnimationFrame(_tlAutoScrollStep);
   } else {
     _tlAutoScrollRafId = null;
@@ -7435,8 +7437,8 @@ document.addEventListener('dragover', e => {
   if (distBottom < TL_AUTOSCROLL_EDGE) { _tlSetAutoScroll(window, 1, 1 - Math.max(distBottom, 0) / TL_AUTOSCROLL_EDGE); return; }
   _tlSetAutoScroll(null, 0, 0);
 }, true);
-document.addEventListener('dragend', () => _tlSetAutoScroll(null, 0, 0));
-document.addEventListener('drop', () => _tlSetAutoScroll(null, 0, 0));
+document.addEventListener('dragend', () => { _tlSetAutoScroll(null, 0, 0); _tlInvalidateDropRectsCache(); });
+document.addEventListener('drop', () => { _tlSetAutoScroll(null, 0, 0); _tlInvalidateDropRectsCache(); });
 
 
 // Modals
@@ -7474,6 +7476,13 @@ const tlModalImgNameClose   = document.getElementById('tl-modal-imgname-close');
 
 // ── Drag state ────────────────────────────────────────────────────────────────
 let tlDragImgId = null;
+
+// Cache des rects de cartes pendant un drag : getBoundingClientRect() sur chaque carte à CHAQUE
+// dragover (déclenché des dizaines de fois/seconde) cause un lag visible sur PC faible (reflow forcé
+// répété). Le layout d'une zone ne change que quand le placeholder y est réellement (ré)inséré à une
+// position différente — donc on ne recalcule les rects qu'à ce moment-là, pas à chaque pixel de survol.
+let _tlDropRectsCache = null; // { zone, cards, rects: WeakMap<card, rect> }
+function _tlInvalidateDropRectsCache() { _tlDropRectsCache = null; }
 
 // ── Sélection image (pour suppression au clavier) ──────────────────────────────
 let _tlSelectedImgId = null;
@@ -10007,6 +10016,15 @@ function _tlClearDragSourceHidden() {
 // Exclut systématiquement le placeholder ET la carte source (identifiée par imgId) — jamais la
 // géométrie post-insertion du placeholder, qui serait perturbée par notre propre insertion précédente.
 function _tlComputeDropIndex(zone, imgId, clientX, clientY) {
+  // Cache : tant que la zone et le jeu de cartes n'ont pas changé depuis le dernier calcul, le
+  // placeholder n'a pas bougé dans le DOM (cf. tlDragOver) donc la géométrie des cartes est identique
+  // — inutile de refaire un cycle remove/measure/reinsert coûteux à chaque pixel de survol.
+  const cached = _tlDropRectsCache;
+  if (cached && cached.zone === zone && cached.imgId === imgId) {
+    const idx = _tlNearestRowIndex(cached.cards, cached.rects, clientX, clientY);
+    return { idx, cards: cached.cards };
+  }
+
   // Le placeholder, une fois inséré dans le DOM par un dragover précédent, pousse physiquement les
   // cartes qui le suivent dans le flux flex-wrap — même en l'excluant de la liste `cards`, leurs
   // getBoundingClientRect() restent décalés par sa présence. Pour mesurer la géométrie EXACTEMENT
@@ -10019,10 +10037,12 @@ function _tlComputeDropIndex(zone, imgId, clientX, clientY) {
 
   const cards = Array.from(zone.querySelectorAll('.tl-img-card'))
     .filter(c => c.dataset.imgId !== imgId);
-  const idx = tlDropInsertIndex(zone, clientX, clientY, cards);
+  const rects = new Map(cards.map(c => [c, c.getBoundingClientRect()]));
+  const idx = tlDropInsertIndex(zone, clientX, clientY, cards, rects);
 
   if (placeholder) zone.insertBefore(placeholder, placeholderNext);
 
+  _tlDropRectsCache = { zone, imgId, cards, rects };
   return { idx, cards };
 }
 
@@ -10061,27 +10081,39 @@ function tlDragOver(e) {
   // chaque frame de dragover perturbe inutilement le flux flex-wrap et alimente l'oscillation.
   if (placeholder.nextSibling !== refNode || placeholder.parentElement !== zone) {
     zone.insertBefore(placeholder, refNode);
+    // Le déplacement du placeholder décale les cartes suivantes dans le flux flex-wrap : le cache
+    // de rects n'est plus valide, il sera recalculé au prochain dragover.
+    _tlInvalidateDropRectsCache();
   }
 }
 
 function tlDragLeave(e) {
   e.currentTarget.classList.remove('drag-over');
   // Ne retirer le placeholder que si on quitte vraiment la zone (pas un survol d'enfant)
-  if (!e.currentTarget.contains(e.relatedTarget)) tlClearDropBefore();
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    tlClearDropBefore();
+    _tlInvalidateDropRectsCache();
+  }
 }
 
 // Calcule l'index d'insertion dans une zone flex-wrap à partir de la position du curseur.
 // `cardsOverride` permet de fournir une liste de cartes déjà filtrée (ex: sans le placeholder
 // d'aperçu ni la carte source en cours de drag) pour ne pas fausser le calcul de position.
-function tlDropInsertIndex(zone, clientX, clientY, cardsOverride) {
+function tlDropInsertIndex(zone, clientX, clientY, cardsOverride, rectsOverride) {
   const cards = cardsOverride || Array.from(zone.querySelectorAll('.tl-img-card'));
   if (cards.length === 0) return 0;
-  // Grouper les cartes par ligne (zone en flex-wrap = plusieurs lignes) avant de comparer en X,
-  // sinon un dépôt à droite de la dernière carte d'une ligne peut être mal interprété comme
-  // "avant la première carte de la ligne suivante" (bug historique).
+  const rects = rectsOverride || new Map(cards.map(c => [c, c.getBoundingClientRect()]));
+  return _tlNearestRowIndex(cards, rects, clientX, clientY);
+}
+
+// Grouper les cartes par ligne (zone en flex-wrap = plusieurs lignes) avant de comparer en X, sinon
+// un dépôt à droite de la dernière carte d'une ligne peut être mal interprété comme "avant la
+// première carte de la ligne suivante" (bug historique). `rects` : Map<card, DOMRect> précalculée.
+function _tlNearestRowIndex(cards, rects, clientX, clientY) {
+  if (cards.length === 0) return 0;
   const rows = [];
   cards.forEach((card, i) => {
-    const rect = card.getBoundingClientRect();
+    const rect = rects.get(card);
     let row = rows.find(r => Math.abs(r.top - rect.top) < rect.height * 0.5);
     if (!row) { row = { top: rect.top, bottom: rect.bottom, cards: [] }; rows.push(row); }
     row.cards.push({ i, rect });
@@ -12236,13 +12268,27 @@ if (tlUnplacedShowLabelsToggle) {
 }
 
 // Synchronise un curseur de taille d'images avec son input number associé (deux sens).
-function _tlWireImgSizeControls(slider, valueInput, onChange) {
+// `onChange` (aperçu local, throttlé) s'exécute pendant le glissement ; `onCommit` (sauvegarde
+// Firebase) seulement au relâchement — même principe que les autres sliders du projet : ne pas
+// écrire dans Firebase à chaque pixel de déplacement, seulement au `change`.
+function _tlWireImgSizeControls(slider, valueInput, onChange, onCommit) {
   const clamp = v => Math.max(100, Math.min(200, v));
+  // L'event 'input' peut se déclencher bien plus vite que 60fps pendant un glissement de curseur ;
+  // onChange() appelle tlRender() (reconstruction complète des tiers) donc on le limite à une fois
+  // par frame via requestAnimationFrame, sinon chaque micro-mouvement de souris relance un rendu
+  // complet — lag important sur PC faible en particulier.
+  let rafPending = false;
   slider.addEventListener('input', () => {
     const v = clamp(parseInt(slider.value));
     if (valueInput) valueInput.value = v;
-    onChange(v);
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      onChange(clamp(parseInt(slider.value)));
+    });
   });
+  slider.addEventListener('change', () => onCommit(clamp(parseInt(slider.value))));
   if (valueInput) {
     valueInput.addEventListener('change', () => {
       const n = parseInt(valueInput.value);
@@ -12250,24 +12296,23 @@ function _tlWireImgSizeControls(slider, valueInput, onChange) {
       slider.value = v;
       valueInput.value = v;
       onChange(v);
+      onCommit(v);
     });
   }
 }
 
 const tlImgSizeValueInput = document.getElementById('tl-img-size-value-input');
-_tlWireImgSizeControls(tlImgSizeSlider, tlImgSizeValueInput, v => {
-  _tlLocalImgSize = v;
-  saveUserPrefs({ tlImgSize: _tlLocalImgSize });
-  tlRender();
-});
+_tlWireImgSizeControls(tlImgSizeSlider, tlImgSizeValueInput,
+  v => { _tlLocalImgSize = v; tlRender(); },
+  v => saveUserPrefs({ tlImgSize: v })
+);
 
 if (tlUnplacedImgSizeSlider) {
   const tlUnplacedImgSizeValueInput = document.getElementById('tl-unplaced-img-size-value-input');
-  _tlWireImgSizeControls(tlUnplacedImgSizeSlider, tlUnplacedImgSizeValueInput, v => {
-    _tlLocalUnplacedImgSize = v;
-    saveUserPrefs({ tlUnplacedImgSize: _tlLocalUnplacedImgSize });
-    tlRender();
-  });
+  _tlWireImgSizeControls(tlUnplacedImgSizeSlider, tlUnplacedImgSizeValueInput,
+    v => { _tlLocalUnplacedImgSize = v; tlRender(); },
+    v => saveUserPrefs({ tlUnplacedImgSize: v })
+  );
 }
 
 function _tlApplySplit(value) {
@@ -12300,7 +12345,7 @@ if (tlCompareImgSizeSlider) {
   _tlWireImgSizeControls(tlCompareImgSizeSlider, tlCompareImgSizeValueInput, v => {
     _tlCompareImgSize = v;
     _tlRenderCompareView(null);
-  });
+  }, () => {});
 }
 
 const tlModalArchivedOverlay = document.getElementById('tl-modal-archived-overlay');
