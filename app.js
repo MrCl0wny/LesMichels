@@ -9168,7 +9168,11 @@ function _tlRenderCompareView(tls) {
 
     container.appendChild(col);
   });
-  if (window.lucide) lucide.createIcons();
+  // root: container (pas document) — sans ça, createIcons() re-scanne TOUTE la page à chaque appel ;
+  // ici c'est particulièrement coûteux car le slider de taille (_tlWireImgSizeControls) rappelle
+  // cette fonction jusqu'à 60x/seconde pendant le glissement (même piège déjà corrigé sur
+  // _tlPatchImageMove, cf commentaire là-bas — container suffit, aucune icône hors de lui ne change ici).
+  if (window.lucide) lucide.createIcons({ root: container });
 }
 
 // Carte en mode comparaison : pas de renommage/suppression (contrairement à l'éditeur normal),
@@ -9265,6 +9269,33 @@ function _tlCompareDragLeave(e) {
   if (!e.currentTarget.contains(e.relatedTarget)) tlClearDropBefore();
 }
 
+// Reconstruit uniquement les 2 zones (source + destination) de la colonne comparaison concernée
+// par un déplacement d'image, au lieu de tout _tlRenderCompareView (toutes les tierlists comparées
+// × tous leurs tiers) — même principe que _tlPatchImageMove côté éditeur normal. Retourne false si
+// une des deux zones n'est pas trouvée dans le DOM (l'appelant retombe alors sur le rendu complet).
+function _tlPatchCompareImageMove(tl, fromTierId, toTierId) {
+  const col = document.querySelector(`.tl-compare-column[data-tl-id="${tl.id}"]`);
+  if (!col) return false;
+  const imgSize = _tlCompareImgSize;
+
+  const patchZone = (tierId) => {
+    const tier = tl.tiers.find(t => t.id === tierId);
+    const imgsDiv = col.querySelector(`.tl-tier-images[data-tier-id="${tierId}"]`);
+    if (!tier || !imgsDiv) return false;
+    imgsDiv.innerHTML = '';
+    tier.items.forEach(imgId => {
+      const img = tlFindImage(tl, imgId);
+      if (img) imgsDiv.appendChild(_tlBuildCompareImgCard(tl, img, imgSize));
+    });
+    return true;
+  };
+
+  if (!patchZone(fromTierId)) return false;
+  if (toTierId !== fromTierId && !patchZone(toTierId)) return false;
+  if (window.lucide) lucide.createIcons({ root: col });
+  return true;
+}
+
 function _tlCompareDrop(e, tl, targetTierId) {
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
@@ -9284,6 +9315,10 @@ function _tlCompareDrop(e, tl, targetTierId) {
 
   tlTouchFolderChain(_tlEffectiveFolderId(tl));
   tlSave(_tlGroupRoot(tl).id);
+  // Patch ciblé (2 zones de la colonne concernée) au lieu de reconstruire toutes les colonnes
+  // comparées — from peut être '__unplaced__' (image jamais placée avant le drag), zone absente
+  // du DOM en mode comparaison : _tlPatchCompareImageMove retombe alors sur le rendu complet.
+  if (from && _tlPatchCompareImageMove(tl, from.zone, targetTierId)) return;
   _tlRenderCompareView(null);
 }
 
