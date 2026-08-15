@@ -10255,7 +10255,11 @@ function _tlPatchImageMove(tl, fromZoneId, toZoneId) {
   // tlMaxImagesInput ne dépend que de maxImagesOverride/TL_MAX_IMAGES (fixe pour le groupe), jamais
   // du contenu déplacé — inutile de le rafraîchir ici (tlRenderUnplaced le fait à chaque rendu
   // complet "gratuitement", mais sa valeur ne varie jamais suite à un simple déplacement d'image).
-  if (window.lucide) lucide.createIcons();
+  // root: tlEditor (pas document) — createIcons() sans scope re-scanne TOUTE la page (148+ icônes
+  // statiques + celles générées en JS) à chaque déplacement d'image, alors que seules les 1-2 cartes
+  // patchées ici peuvent contenir une icône neuve (bouton zoom). tlEditor englobe tlTiersZone ET
+  // tlUnplacedZone (les deux seules zones jamais touchées par patchZone), donc rien n'est manqué.
+  if (window.lucide) lucide.createIcons({ root: tlEditor });
   return true;
 }
 
