@@ -7719,7 +7719,7 @@ function tlRenderGroupPanel(tl) {
   const members = tlState.tierlists.filter(t => !t.archived && (t.id === root.id || t.templateId === root.id));
 
   if (tlTemplateDropdownLabel) tlTemplateDropdownLabel.textContent = root.name;
-  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate && tl.templateId === root.id) ? tl.name : '';
+  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate && tl.templateId === root.id) ? tl.name : (tl && tl.isTemplate ? '(template)' : '');
 
   // Plein écran/Comparaison/Annuler n'ont de sens que si une tierlist de CE groupe est réellement
   // affichée dans l'éditeur (pas seulement un dossier sélectionné sans tierlist active). Annuler
@@ -11672,7 +11672,10 @@ function _tlAddDropdownSwitchItem(menu, member, isActive, closeMenu, displayName
 // Navigue vers un dossier de l'arborescence tierlist. S'il contient au moins un template, ouvre
 // directement le plus récent (dernier créé = dernier du tableau, push en fin dans tlCreate) plutôt
 // que de désélectionner — sinon reste sur l'écran "gros boutons" du dossier vide.
-function _tlGoToFolder(folderId) {
+// async : le template ciblé n'a peut-être encore que son entrée d'index légère (sans tiers/unplaced/
+// images) tant que _tlEnsureGroupLoaded n'a pas chargé son groupe — sans cet await, tlRender() pouvait
+// tomber sur un objet incomplet et afficher un écran vide (cf. tlSwitch, même garde).
+async function _tlGoToFolder(folderId) {
   _tlExpandFolderAncestors(folderId);
   _tlLocalActiveFolderId = folderId;
   const templatesHere = tlState.tierlists.filter(t => t.isTemplate && !t.archived && (t.folderId || null) === (folderId || null));
@@ -11680,6 +11683,7 @@ function _tlGoToFolder(folderId) {
   _tlLocalActiveTierlistId = mostRecent ? mostRecent.id : null;
   _tlLocalNoSelection = !mostRecent;
   saveUserPrefs({ tlActiveFolderId: folderId, tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: _tlLocalNoSelection });
+  if (mostRecent) await _tlEnsureGroupLoaded(_tlGroupRoot(mostRecent).id);
   tlRender();
 }
 
