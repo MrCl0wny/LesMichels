@@ -24,6 +24,16 @@ let _compareModeApplied = false;
 // window.open() depuis le modal "Comparer" — donc fermable par le script qui l'a ouverte).
 const _compareModeIsDedicatedWindow = _compareTierlistIds.length >= 2;
 
+// Page actuellement affichée (mise à jour par window._switchPage) — sert à ne charger le contenu
+// lourd (grilles/images) d'un bingo ou d'une tierlist que si sa page est réellement affichée, plutôt
+// que de tout précharger dès l'arrivée sur l'accueil (cf _bingoLoadActivePageContent/_tlLoadActivePageContent).
+let _currentPage = 'home';
+// true dès que l'utilisateur a cliqué sur un onglet de nav (via window._switchPage) — loadUserPrefs()
+// s'en sert pour ne forcer l'accueil qu'au tout premier chargement (avant toute navigation manuelle),
+// jamais après : sinon un chargement de prefs qui répond en retard renverrait l'utilisateur sur
+// l'accueil en pleine navigation vers Dossiers/Bingo/Tier List, écrasant son geste sans prévenir.
+let _userNavigated = false;
+
 // ──────────────────────────────────────────────
 // Désactivation des bulles d'aide (tooltips title="...")
 // Pour les réactiver : mettre DISABLE_TITLE_TOOLTIPS à false
@@ -364,8 +374,12 @@ function loadUserPrefs() {
     if (prefs.tlActiveFolderId    != null) _tlLocalActiveFolderId   = prefs.tlActiveFolderId;
     if (prefs.tlNoSelection       != null) _tlLocalNoSelection      = !!prefs.tlNoSelection;
     // Page active — l'app démarre toujours sur l'accueil (sauf lien direct vers une grille/tierlist
-    // en plein écran solo) ; prefs.activePage n'est utilisée que pour les changements d'onglet en cours de session.
-    if (window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId) _switchPage('home');
+    // en plein écran solo) ; prefs.activePage n'est utilisée que pour les changements d'onglet en cours
+    // de session. _userNavigated protège contre le cas où ce .once('value') répond APRÈS que
+    // l'utilisateur ait déjà cliqué sur un autre onglet (Dossiers, Bingo…) : sans cette garde, la page
+    // était renvoyée de force vers l'accueil en pleine navigation, écrasant le geste de l'utilisateur
+    // sans prévenir (bug constaté : "Dossiers > Tier List" cliqué tôt ne s'affichait jamais).
+    if (window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId && !_userNavigated) _switchPage('home');
     _prefsReady = true;
     // Appliquer les prefs visuelles
     fontScaleInput.value = Math.round(_localFontScale * 100);
@@ -568,8 +582,13 @@ async function _applyPrefsAndRender() {
       _localActiveFolderId = nonArchived.length > 0 ? nonArchived[0].id : (state.folders[0]?.id || null);
     }
   }
-  if (_localActiveFolderId) await _bingoEnsureSeasonLoaded(_localActiveFolderId);
-  _bingoUpdateActiveSeasonSubscription();
+  // Contenu lourd (grilles/éléments) chargé seulement si la page Bingo est affichée, ou si un lien
+  // direct la nécessite hors page (grille plein écran ?openGrids=) — sinon laissé à la charge de
+  // _bingoLoadActivePageContent(), déclenché quand l'utilisateur navigue vers Bingo (cf _switchPage).
+  if (_currentPage === 'bingo' || _soloGridIds.length > 0) {
+    if (_localActiveFolderId) await _bingoEnsureSeasonLoaded(_localActiveFolderId);
+    _bingoUpdateActiveSeasonSubscription();
+  }
   // Charger les grilles sélectionnées pour le dossier actif
   const folder = activeFolder();
   if (folder) {
@@ -581,10 +600,16 @@ async function _applyPrefsAndRender() {
     }
   }
   await _applySoloGridModeIfNeeded();
-  renderAllFolders();
-  renderElements();
-  renderGridsList();
-  renderGrid();
+  // renderGrid()/updateClearGridsButton()/updateResetButton() lisent gx.grid (tableau de cellules) —
+  // absent tant que le dossier n'est pas chargé en lourd (index seul, cf _bingoIndexFolder). Ne
+  // rendre ici que si ce contenu a bien été chargé ci-dessus ; sinon _bingoLoadActivePageContent()
+  // s'en charge au moment où l'utilisateur navigue réellement vers Bingo (cf _switchPage).
+  if (_currentPage === 'bingo' || _soloGridIds.length > 0) {
+    renderAllFolders();
+    renderElements();
+    renderGridsList();
+    renderGrid();
+  }
   setTimeout(setBingoReadyForEffect, 0);
   renderCurrentEventButton();
   // Appliquer les prefs tierlist aux controls UI
@@ -612,6 +637,26 @@ async function _applyPrefsAndRender() {
   // Re-render la Tier List avec la bonne tierlist active
   if (typeof tlRender === 'function') tlRender();
   if (typeof renderHomePage === 'function') renderHomePage();
+}
+
+// Rattrape le chargement du contenu lourd Bingo (saison du dossier actif) quand l'utilisateur
+// navigue vers la page Bingo après être arrivé ailleurs (accueil…) sans qu'il ait été chargé —
+// _bingoEnsureSeasonLoaded/_bingoUpdateActiveSeasonSubscription sont des no-op si déjà fait.
+async function _bingoLoadActivePageContent() {
+  if (_localActiveFolderId) await _bingoEnsureSeasonLoaded(_localActiveFolderId);
+  _bingoUpdateActiveSeasonSubscription();
+  renderAllFolders();
+  renderElements();
+  renderGridsList();
+  renderGrid();
+}
+
+// Équivalent tierlist de _bingoLoadActivePageContent ci-dessus.
+async function _tlLoadActivePageContent() {
+  _tlUpdateActiveGroupSubscription();
+  const activeTl = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId);
+  if (activeTl) await _tlEnsureGroupLoaded(_tlGroupRoot(activeTl).id);
+  if (typeof tlRender === 'function') tlRender();
 }
 
 // ──────────────────────────────────────────────
@@ -855,6 +900,11 @@ function migrateState(raw) {
 let state = initState();
 let _bingoRemoteUpdate = false;
 let _firebaseReady = false;
+// true dès que le premier snapshot de tierlist/index est arrivé — avant ça, tlState.tierlists est
+// encore vide par absence de données (pas par absence réelle), donc un id introuvable ne veut pas
+// dire "supprimé" (cf renderCurrentEventButton/_homeRenderHero, qui ne doivent pas nettoyer
+// currentEventTierlistId sur un faux négatif dû à cette course entre les deux index Firebase).
+let _tlIndexReady = false;
 let _prefsReady    = false;
 // activeFolderId est chargé depuis Firebase /users/{uid}/prefs
 let _localActiveFolderId   = null;
@@ -986,7 +1036,14 @@ function renderCurrentEventButton() {
       _updateCeSetHeaderBtn();
       return;
     }
-    // TL introuvable ou archivée — nettoyer
+    if (!_tlIndexReady) {
+      // L'index tierlist n'est pas encore arrivé (course avec l'index bingo, qui déclenche aussi ce
+      // rendu) : tl introuvable ne veut PAS dire "supprimée" ici — ne rien nettoyer, réessayer au
+      // prochain rendu (déclenché par l'arrivée de l'index tierlist, cf _tlStartTierlistListeners).
+      btn.style.display = 'none';
+      return;
+    }
+    // TL introuvable ou archivée (index tierlist bien chargé) — nettoyer
     state.currentEventTierlistId = null;
     _bingoSaveIndex();
   }
@@ -2705,8 +2762,8 @@ function closeFoldersPanel() {}
 function openTlSidebar() { openFoldersPage('tierlist'); }
 function closeTlSidebar() {}
 
-document.getElementById('folders-page-tab-bingo').addEventListener('click', () => _switchFoldersPageTab('bingo'));
-document.getElementById('folders-page-tab-tierlist').addEventListener('click', () => _switchFoldersPageTab('tierlist'));
+document.getElementById('folders-page-tab-bingo').addEventListener('click', () => { _userNavigated = true; _switchFoldersPageTab('bingo'); });
+document.getElementById('folders-page-tab-tierlist').addEventListener('click', () => { _userNavigated = true; _switchFoldersPageTab('tierlist'); });
 
 // "+ Bingo" : même mécanisme que "Nouveau Bingo" sur l'accueil (home-btn-bingo-new-grid) — la
 // modal "Nouveau dossier" affiche en plus sa section grille (_homeNewGridAfterFolder), dossier +
@@ -6046,6 +6103,12 @@ renameGridInput.addEventListener('keydown', e => {
     if (!document.getElementById(`page-${target}`)) return;
     navBtns.forEach(b => b.classList.toggle('active', b.dataset.page === target));
     pages.forEach(p => p.classList.toggle('active', p.id === `page-${target}`));
+    _currentPage = target;
+    // Contenu lourd (grilles/images) chargé "à la demande" (cf _applyPrefsAndRender/listener d'index
+    // tierlist, qui ne préchargent plus qu'en arrivant directement sur ces pages) : rattraper le
+    // chargement ici si l'utilisateur navigue vers Bingo/Tier List après être arrivé sur l'accueil.
+    if (target === 'bingo' && _firebaseReady) _bingoLoadActivePageContent();
+    if (target === 'tierlist' && _firebaseReady) _tlLoadActivePageContent();
     if (typeof renderCurrentEventButton === 'function') renderCurrentEventButton();
     // La page Bingo peut avoir été rendue pendant qu'elle était masquée (display:none sur
     // un ancêtre) — les mesures de _adjustBingoGridSizes() étaient alors nulles/fausses et
@@ -6069,6 +6132,7 @@ renameGridInput.addEventListener('keydown', e => {
   navBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.classList.contains('disabled')) return;
+      _userNavigated = true;
       const target = btn.dataset.page;
       _switchPage(target);
       saveUserPrefs({ activePage: target });
@@ -8466,10 +8530,14 @@ function tlRenderList() {
   tlList.classList.toggle('hidden', _tlFoldersViewMode !== 'list');
   document.getElementById('tl-folders-panel-icons').classList.toggle('hidden', _tlFoldersViewMode !== 'icons');
 
+  // #tl-folders-panel-recent ("Templates récents") est commun aux deux vues (hors du cadre
+  // liste/icônes, cf HTML) — doit se rendre avant le early-return du mode icônes, sinon il reste
+  // vide indéfiniment dans ce mode (bug constaté : jamais affiché en vue icônes).
+  _tlRenderRecentFolderPaths();
+
   if (_tlFoldersViewMode === 'icons') { _renderTlFoldersPanelIcons(); if (window.lucide) lucide.createIcons(); return; }
 
   tlList.innerHTML = '';
-  _tlRenderRecentFolderPaths();
   const tlSortMode = _folderSortMode('tlFoldersSortMode');
   const tlSortSelect = document.getElementById('tl-folders-sort-select');
   if (tlSortSelect) tlSortSelect.value = tlSortMode;
@@ -12389,46 +12457,53 @@ function _bingoUpdateActiveSeasonSubscription() {
   _bingoSetActiveSeasonSubscription(ids);
 }
 
-// Séquence au démarrage : .once('value') sur la racine `bingo` → si le nœud `bingo/index` n'existe
-// PAS ENCORE (signal fiable : "pas encore scindé", quel que soit le format sous-jacent — v1
-// elements+grids, v2/v3 themes, ou même déjà v4 folders pas encore scindé), migrer (migrateState
-// v1→v4, INTACT — gère tous ces formats et est idempotent sur un format déjà v4) puis scinder en
-// index/data/<id>/trash et écrire les trois → puis EFFACER les anciennes clés racine (folders/themes/
-// elements/grids/elementPresets/trash au niveau de `bingo` lui-même) pour qu'un rechargement ultérieur
-// ne les revoie plus jamais → puis basculer sur les listeners définitifs. Jamais de .on() permanent sur
-// la racine elle-même après cette séquence (cf plan §5, point de vigilance : plus personne ne doit lire
-// _dbBingo ensuite).
-// ATTENTION : ne PAS gater cet appel derrière `raw.folders` — un vrai vieux format v1/v2/v3 n'a jamais
-// cette clé (v1 = elements+grids, v2/v3 = themes) ; un tel gate laisserait ces utilisateurs bloqués
-// sans migration (bug corrigé : la condition ne testait par erreur que le cas "déjà v4, pas scindé").
+// Séquence au démarrage : .once('value') sur `bingo/index` SEUL (léger, jamais bingo/data) → s'il
+// existe déjà, déjà migré/scindé, on saute direct aux listeners définitifs (cas normal à CHAQUE
+// démarrage une fois la restructuration faite — pas besoin de retélécharger tout bingo/data rien que
+// pour vérifier une migration qui n'aura pas lieu). S'il n'existe PAS (signal fiable : "pas encore
+// scindé", quel que soit le format sous-jacent — v1 elements+grids, v2/v3 themes, ou même déjà v4
+// folders pas encore scindé), alors seulement lire la racine `bingo` en entier pour migrer
+// (migrateState v1→v4, INTACT — gère tous ces formats et est idempotent sur un format déjà v4) puis
+// scinder en index/data/<id>/trash et écrire les trois → puis EFFACER les anciennes clés racine
+// (folders/themes/elements/grids/elementPresets/trash au niveau de `bingo` lui-même) pour qu'un
+// rechargement ultérieur ne les revoie plus jamais → puis basculer sur les listeners définitifs.
+// Jamais de .on() permanent sur la racine elle-même après cette séquence (cf plan §5, point de
+// vigilance : plus personne ne doit lire _dbBingo ensuite, sauf ce cas de migration ponctuel).
+// ATTENTION : ne PAS gater l'appel de migration derrière `raw.folders` — un vrai vieux format
+// v1/v2/v3 n'a jamais cette clé (v1 = elements+grids, v2/v3 = themes) ; un tel gate laisserait ces
+// utilisateurs bloqués sans migration (bug corrigé : la condition ne testait par erreur que le cas
+// "déjà v4, pas scindé").
 // ATTENTION #2 : sans le nettoyage des anciennes clés racine après écriture, `raw` contiendrait pour
 // toujours l'ancien format en plus du nouveau (bingo/index coexistant avec bingo/folders ou
 // bingo/themes) — un rechargement relirait cet ancien snapshot et écraserait silencieusement toute
 // modification faite depuis (bug constaté en test : un renommage disparaissait au reload suivant).
-_dbBingo.once('value').then(snapshot => {
-  const raw = snapshot.val();
-  if (raw && !raw.index) {
-    const migrated = migrateState(raw); // v1→v4 inchangé
-    const oldState = migrated || initState();
-    if (!oldState.folders) oldState.folders = [];
-    const index = { folders: oldState.folders.map(_bingoIndexFolder), currentEventFolderId: oldState.currentEventFolderId || null, currentEventTierlistId: oldState.currentEventTierlistId || null, elementPresets: oldState.elementPresets || [] };
-    const data = {};
-    _collectAllBingoFolderIds(oldState.folders).forEach(id => {
-      const f = findFolderById(oldState.folders, id);
-      data[id] = { elements: f.elements || [], archivedElementIds: f.archivedElementIds || [], persistentCheckedIds: f.persistentCheckedIds || [], grids: f.grids || [], activeGridId: f.activeGridId || null };
-    });
-    const writes = [
-      ...Object.keys(data).map(folderId => _dbBingoData.child(folderId).set(sanitizeForFirebase(data[folderId]))),
-      _dbBingoIndex.set(sanitizeForFirebase(index)),   // DATA AVANT INDEX (cf plan §5)
-      _dbBingoTrash.set(sanitizeForFirebase(oldState.trash || [])),
-      // Effacer les anciennes clés racine (jamais data/index/trash, déjà réécrits ci-dessus avec le
-      // bon contenu) : sinon elles polluent `raw` indéfiniment et redéclenchent cette migration à
-      // chaque démarrage, écrasant toute modification faite depuis avec le vieux snapshot figé.
-      ...Object.keys(raw).filter(k => k !== 'index' && k !== 'data' && k !== 'trash').map(k => _dbBingo.child(k).set(null)),
-    ];
-    return Promise.all(writes).catch(e => console.warn('Bingo migration write error:', e));
-  }
-  return Promise.resolve(); // raw===null (base vide) OU déjà scindé (bingo/index présent)
+_dbBingoIndex.once('value').then(indexSnapshot => {
+  if (indexSnapshot.val()) return Promise.resolve(); // déjà scindé — rien à migrer, lecture légère suffit
+  return _dbBingo.once('value').then(snapshot => {
+    const raw = snapshot.val();
+    if (raw && !raw.index) {
+      const migrated = migrateState(raw); // v1→v4 inchangé
+      const oldState = migrated || initState();
+      if (!oldState.folders) oldState.folders = [];
+      const index = { folders: oldState.folders.map(_bingoIndexFolder), currentEventFolderId: oldState.currentEventFolderId || null, currentEventTierlistId: oldState.currentEventTierlistId || null, elementPresets: oldState.elementPresets || [] };
+      const data = {};
+      _collectAllBingoFolderIds(oldState.folders).forEach(id => {
+        const f = findFolderById(oldState.folders, id);
+        data[id] = { elements: f.elements || [], archivedElementIds: f.archivedElementIds || [], persistentCheckedIds: f.persistentCheckedIds || [], grids: f.grids || [], activeGridId: f.activeGridId || null };
+      });
+      const writes = [
+        ...Object.keys(data).map(folderId => _dbBingoData.child(folderId).set(sanitizeForFirebase(data[folderId]))),
+        _dbBingoIndex.set(sanitizeForFirebase(index)),   // DATA AVANT INDEX (cf plan §5)
+        _dbBingoTrash.set(sanitizeForFirebase(oldState.trash || [])),
+        // Effacer les anciennes clés racine (jamais data/index/trash, déjà réécrits ci-dessus avec le
+        // bon contenu) : sinon elles polluent `raw` indéfiniment et redéclenchent cette migration à
+        // chaque démarrage, écrasant toute modification faite depuis avec le vieux snapshot figé.
+        ...Object.keys(raw).filter(k => k !== 'index' && k !== 'data' && k !== 'trash').map(k => _dbBingo.child(k).set(null)),
+      ];
+      return Promise.all(writes).catch(e => console.warn('Bingo migration write error:', e));
+    }
+    return Promise.resolve(); // raw===null (base vide)
+  });
 }).catch(e => console.warn('Bingo migration read error:', e)).then(_bingoStartListeners);
 
 function _bingoStartListeners() {
@@ -12475,9 +12550,15 @@ function _bingoStartListeners() {
     if (!state.trash) state.trash = [];
     state.folders.forEach(_bingoNormalizeFolderShallow);
 
-    _bingoUpdateActiveSeasonSubscription();
-    const activeF = activeFolder();
-    const pending = activeF ? [_bingoEnsureSeasonLoaded(activeF.id)] : [];
+    // Contenu lourd (grilles/éléments) chargé seulement si la page Bingo est affichée, ou si un lien
+    // direct la nécessite hors page (grille plein écran ?openGrids=) — sinon laissé à la charge de
+    // _bingoLoadActivePageContent(), déclenché quand l'utilisateur navigue vers Bingo (cf _switchPage).
+    const pending = [];
+    if (_currentPage === 'bingo' || _soloGridIds.length > 0) {
+      _bingoUpdateActiveSeasonSubscription();
+      const activeF = activeFolder();
+      if (activeF) pending.push(_bingoEnsureSeasonLoaded(activeF.id));
+    }
     // _bingoRemoteUpdate protège seulement la section SYNCHRONE ci-dessus (celle qui pourrait, via
     // _mergeLight, redéclencher un _bingoSave*() de façon synchrone dans certains environnements —
     // ex. shim de test où .set() ré-invoque le listener avant de rendre la main) — il est remis à
@@ -12505,6 +12586,10 @@ function _bingoStartListeners() {
         setTimeout(setBingoReadyForEffect, 0);
       }
       if (typeof renderHomePage === 'function') renderHomePage();
+      // Page Dossiers déjà affichée avant l'arrivée de cet index (ex. clic sur "Dossiers" pendant que
+      // l'index bingo était encore en vol) : re-rendre pour ne pas laisser le panneau figé sur son
+      // premier rendu incomplet.
+      if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
     });
   });
 
@@ -12572,18 +12657,25 @@ function _tlSelectInitialTierlistIfNeeded() {
   }
 }
 
-// Séquence au démarrage : .once('value') sur la racine `tierlist` → si ancien format détecté,
-// écrire index/data/<id> (trash laissée telle quelle, déjà au bon endroit) → puis basculer sur les
-// listeners définitifs (index/trash permanents + groupe actif à la demande). Jamais de .on()
-// permanent sur la racine elle-même.
-_dbTierlist.once('value').then(snapshot => {
-  const migrated = _tlMigrateOldFormat(snapshot.val());
-  if (!migrated) return Promise.resolve();
-  const writes = [_dbTierlistIndex.set(sanitizeForFirebase(migrated.index))];
-  Object.keys(migrated.data).forEach(groupRootId => {
-    writes.push(_dbTierlistData.child(groupRootId).set(sanitizeForFirebase(migrated.data[groupRootId])));
+// Séquence au démarrage : .once('value') sur `tierlist/index` SEUL (léger, jamais tierlist/data qui
+// porte les images) → s'il existe déjà, déjà scindé, on saute direct aux listeners définitifs (cas
+// normal à CHAQUE démarrage une fois la restructuration faite — pas besoin de retélécharger toutes
+// les images rien que pour vérifier une migration qui n'aura pas lieu). S'il n'existe pas, lire la
+// racine `tierlist` en entier pour détecter l'ancien format et migrer : écrire index/data/<id>
+// (trash laissée telle quelle, déjà au bon endroit) → puis basculer sur les listeners définitifs
+// (index/trash permanents + groupe actif à la demande). Jamais de .on() permanent sur la racine
+// elle-même après cette séquence.
+_dbTierlistIndex.once('value').then(indexSnapshot => {
+  if (indexSnapshot.val()) return Promise.resolve(); // déjà scindé — rien à migrer, lecture légère suffit
+  return _dbTierlist.once('value').then(snapshot => {
+    const migrated = _tlMigrateOldFormat(snapshot.val());
+    if (!migrated) return Promise.resolve();
+    const writes = [_dbTierlistIndex.set(sanitizeForFirebase(migrated.index))];
+    Object.keys(migrated.data).forEach(groupRootId => {
+      writes.push(_dbTierlistData.child(groupRootId).set(sanitizeForFirebase(migrated.data[groupRootId])));
+    });
+    return Promise.all(writes).catch(e => console.warn('TL migration write error:', e));
   });
-  return Promise.all(writes).catch(e => console.warn('TL migration write error:', e));
 }).catch(e => console.warn('TL migration read error:', e)).then(_tlStartTierlistListeners);
 
 function _tlStartTierlistListeners() {
@@ -12595,6 +12687,7 @@ function _tlStartTierlistListeners() {
     // toute une chaîne de Promises bloquerait à tort les tlSaveGroup()/tlSaveTrash() de l'appelant
     // d'origine (ex. tlDelete) qui s'exécutent juste après dans la même fonction.
     _tlRemoteUpdate = true;
+    _tlIndexReady = true;
     const rawIndex = _tlNormalizeIndex(snapshot.val());
     // Préserve les champs lourds déjà fusionnés (tiers/unplaced/images) des groupes déjà chargés —
     // un nouveau snapshot d'index ne réinitialise que les métas légères, jamais le contenu lourd.
@@ -12609,20 +12702,29 @@ function _tlStartTierlistListeners() {
     if (!tlState.trash) tlState.trash = [];
 
     _tlSelectInitialTierlistIfNeeded();
-    _tlUpdateActiveGroupSubscription();
-    const activeTl = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId);
     const pending = [];
-    if (activeTl) pending.push(_tlEnsureGroupLoaded(_tlGroupRoot(activeTl).id));
-    if (_compareTierlistIds.length >= 2) pending.push(_tlEnsureGroupsLoaded(_compareTierlistIds.map(id => {
-      const t = tlState.tierlists.find(x => x.id === id);
-      return t ? _tlGroupRoot(t).id : null;
-    })));
+    // Contenu lourd (images/tiers) chargé seulement si la page Tier List est affichée, ou si un lien
+    // direct la nécessite hors page (solo/comparaison) — sinon laissé à la charge de
+    // _tlLoadActivePageContent(), déclenché quand l'utilisateur navigue vers Tier List (cf _switchPage).
+    if (_currentPage === 'tierlist' || _soloTierlistId || _compareTierlistIds.length >= 2) {
+      _tlUpdateActiveGroupSubscription();
+      const activeTl = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId);
+      if (activeTl) pending.push(_tlEnsureGroupLoaded(_tlGroupRoot(activeTl).id));
+      if (_compareTierlistIds.length >= 2) pending.push(_tlEnsureGroupsLoaded(_compareTierlistIds.map(id => {
+        const t = tlState.tierlists.find(x => x.id === id);
+        return t ? _tlGroupRoot(t).id : null;
+      })));
+    }
     _tlRemoteUpdate = false;
     Promise.all(pending).catch(() => {}).then(() => {
       _applySoloTierlistModeIfNeeded();
       _applyCompareTierlistModeIfNeeded();
       tlRender();
       if (typeof renderHomePage === 'function') renderHomePage();
+      // Page Dossiers déjà affichée avant l'arrivée de cet index (ex. clic sur "Dossiers" pendant que
+      // l'index tierlist était encore en vol) : re-rendre pour ne pas laisser "Templates récents" figé
+      // sur son premier rendu incomplet (cf _tlRenderRecentFolderPaths).
+      if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
     });
   });
 
@@ -12797,6 +12899,12 @@ function _homeRenderHero() {
         parts.push(tl.name);
         lbl.textContent = 'Rejoindre la soirée en cours : ' + parts.join(' \\ ');
       }
+      return;
+    }
+    if (!_tlIndexReady) {
+      // Index tierlist pas encore arrivé (course avec l'index bingo, qui déclenche aussi ce rendu) :
+      // ne pas retomber sur le fallback bingo prématurément — réessayer au rendu suivant.
+      btn.style.display = 'none';
       return;
     }
   }
