@@ -1985,7 +1985,7 @@ function _setLockGenerateChecked(locked) {
   chkLockGenerate.setAttribute('aria-pressed', locked ? 'true' : 'false');
   const icon = chkLockGenerate.querySelector('[data-lucide]');
   if (icon) icon.setAttribute('data-lucide', locked ? 'lock-keyhole' : 'lock-keyhole-open');
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: chkLockGenerate });
 }
 function _isLockGenerateChecked() {
   return chkLockGenerate.getAttribute('aria-pressed') === 'true';
@@ -2000,7 +2000,7 @@ function _updateNewBadgeButton() {
   btnToggleNewBadge.classList.toggle('hidden', !applicable);
   btnToggleNewBadge.setAttribute('aria-pressed', _localShowNewBadge ? 'true' : 'false');
   btnToggleNewBadge.innerHTML = `<i data-lucide="${_localShowNewBadge ? 'eye' : 'eye-off'}"></i> New`;
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: btnToggleNewBadge });
 }
 btnToggleNewBadge?.addEventListener('click', () => {
   saveLocalShowNewBadge(!_localShowNewBadge);
@@ -2677,7 +2677,17 @@ function _renderFoldersPanelIcons() {
 // Vue liste du panneau Dossiers Bingo, façon Explorateur de fichiers en mode "Liste" : lignes
 // plates du seul niveau courant (même navigation que la vue icônes, _foldersNavFolderId), plus
 // d'arborescence dépliable — double-clic descend d'un niveau, le fil d'Ariane remonte.
+// Reconstruire le panneau Dossiers Bingo est coûteux sur beaucoup de dossiers (tri par
+// getFolderPath/ancestorIdsOf, cf _renderRecentFolderPaths) : inutile de le faire quand la page
+// Dossiers/onglet Bingo n'est pas affiché(e). Rattrapé par _renderFoldersPage() à la navigation
+// (même principe que _casesPanelDirty pour le panneau Cases).
+let _foldersPanelTreeDirty = false;
 function renderFoldersPanelTree() {
+  if (_currentPage !== 'folders' || _foldersPageActiveTab !== 'bingo') {
+    _foldersPanelTreeDirty = true;
+    return;
+  }
+  _foldersPanelTreeDirty = false;
   const container = document.getElementById('folders-panel-tree');
   if (!container) return;
 
@@ -2811,7 +2821,8 @@ function _switchFoldersPageTab(tab) {
 function _renderFoldersPage() {
   if (_foldersPageActiveTab === 'bingo') renderFoldersPanelTree();
   else tlRenderList();
-  if (window.lucide) lucide.createIcons();
+  const pageFolders = document.getElementById('page-folders');
+  if (window.lucide) lucide.createIcons(pageFolders ? { root: pageFolders } : undefined);
 }
 
 // Ouvre la page Dossiers directement sur l'onglet demandé (ou l'onglet courant si non précisé).
@@ -3368,15 +3379,20 @@ function applyFontScale() {
   const t = activeTheme();
   const s = activeSubtheme();
   if (!t || !s) return;
+  // Map(gridId → grille) et Map(elementId → élément) construites une fois, au lieu d'un .find()
+  // par case affichée (O(cases) par cellule → O(1) ici) — significatif avec plusieurs grilles.
+  const gridsById = new Map(s.grids.map(g => [g.id, g]));
+  const elementsById = new Map((s.elements || []).map(e => [e.id, e]));
+  const fallbackGrid = activeGrid();
   gridWrapper.querySelectorAll('.bingo-cell:not(.empty)').forEach(div => {
     const idx = parseInt(div.dataset.index);
     if (isNaN(idx)) return;
     const gridId = div.closest('[data-grid-id]')?.dataset.gridId;
-    const g = gridId ? s.grids.find(x => x.id === gridId) : activeGrid();
+    const g = gridId ? gridsById.get(gridId) : fallbackGrid;
     if (!g) return;
     const cell = g.grid[idx];
     if (!cell || !cell.elementId) return;
-    const el = (s && s.elements ? s.elements : []).find(e => e.id === cell.elementId);
+    const el = elementsById.get(cell.elementId);
     if (el) div.style.fontSize = getCellFontSize(el.text, scale);
   });
 }
@@ -4896,10 +4912,20 @@ document.getElementById('btn-clear-elements-panel').addEventListener('click', ()
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
 btnSizePlus.addEventListener('click',  () => changeSize(+1));
 
+// L'event 'input' peut se déclencher plus vite que 60fps pendant un glissement de curseur ;
+// applyFontScale() reparcourt toutes les cases affichées, donc throttlé à 1x/frame via
+// requestAnimationFrame — même principe que _tlWireImgSizeControls (Tier List) pour éviter des
+// dizaines d'appels inutiles par seconde pendant le drag.
+let _fontScaleRafPending = false;
 fontScaleInput.addEventListener('input', () => {
   const pct = Math.max(50, Math.min(200, parseInt(fontScaleInput.value) || 100));
   _localFontScale = pct / 100;
-  applyFontScale();
+  if (_fontScaleRafPending) return;
+  _fontScaleRafPending = true;
+  requestAnimationFrame(() => {
+    _fontScaleRafPending = false;
+    applyFontScale();
+  });
 });
 fontScaleInput.addEventListener('change', () => {
   const pct = Math.max(50, Math.min(200, parseInt(fontScaleInput.value) || 100));
@@ -7336,18 +7362,19 @@ function _tlEyeToggleHtml(shown) {
 function _tlUpdateShowLabelsBtn(showLabels) {
   tlShowLabelsToggle.innerHTML = _tlEyeToggleHtml(showLabels);
   tlShowLabelsToggle.classList.toggle('active', !!showLabels);
+  if (window.lucide) lucide.createIcons({ root: tlShowLabelsToggle });
   const compareToggle = document.getElementById('tl-compare-show-labels-toggle');
   if (compareToggle) {
     compareToggle.innerHTML = _tlEyeToggleHtml(showLabels);
     compareToggle.classList.toggle('active', !!showLabels);
+    if (window.lucide) lucide.createIcons({ root: compareToggle });
   }
-  if (window.lucide) lucide.createIcons();
 }
 function _tlUpdateUnplacedShowLabelsBtn(showLabels) {
   if (!tlUnplacedShowLabelsToggle) return;
   tlUnplacedShowLabelsToggle.innerHTML = _tlEyeToggleHtml(showLabels);
   tlUnplacedShowLabelsToggle.classList.toggle('active', !!showLabels);
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: tlUnplacedShowLabelsToggle });
 }
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
 const tlUnplacedImgSizeSlider = document.getElementById('tl-unplaced-img-size-slider');
@@ -8753,6 +8780,35 @@ function _tlFillTierImagesDiv(tl, tier, imgsDiv, imgSize) {
   }
 }
 
+// Patch ciblé : met à jour uniquement la taille (largeur/hauteur inline) des cartes-images déjà
+// dans le DOM d'une zone, sans reconstruire aucun élément ni ré-attacher aucun listener. Utilisé
+// pendant le glissement du slider "Taille" (jusqu'à 60x/seconde) à la place d'un tlRender() complet
+// — seuls width/height (image ou carte texte) et la largeur du label dépendent de `size`, rien
+// d'autre ne change structurellement pour un simple changement de taille.
+function _tlPatchImgSizes(zoneEl, size) {
+  if (!zoneEl) return;
+  zoneEl.querySelectorAll(':scope > .tl-img-card').forEach(card => {
+    const media = card.querySelector(':scope > img, :scope > .tl-text-card-content');
+    if (media) { media.style.width = size + 'px'; media.style.height = size + 'px'; }
+    const label = card.querySelector(':scope > .tl-img-label');
+    if (label) label.style.width = size + 'px';
+  });
+}
+
+// Aperçu local du slider "Taille" (tiers) : patch ciblé au lieu d'un tlRender() complet.
+function _tlPreviewImgSize(v) {
+  _tlLocalImgSize = v;
+  tlTiersZone.querySelectorAll('.tl-tier-images').forEach(imgsDiv => {
+    _tlPatchImgSizes(imgsDiv, v);
+  });
+}
+
+// Aperçu local du slider "Taille" (non placées) : idem pour la zone "à placer".
+function _tlPreviewUnplacedImgSize(v) {
+  _tlLocalUnplacedImgSize = v;
+  _tlPatchImgSizes(tlUnplacedZone, v);
+}
+
 function tlRenderTiers(tl) {
   tlTiersZone.innerHTML = '';
   const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : _tlClampImgSize(tl.imgSize);
@@ -8984,7 +9040,12 @@ function _tlMakeCtxMenu(anchorEl, e, opts) {
     menu.appendChild(closeBtn);
     closeBtn.addEventListener('click', e => { e.stopPropagation(); close(); });
   }
-  if (window.lucide) lucide.createIcons();
+
+  // Tous les appelants ajoutent leurs items via addItem()/addSep() de façon synchrone juste après
+  // l'appel à _tlMakeCtxMenu() (jamais après un await), donc un seul scan Lucide scopé au menu,
+  // différé en microtâche (avant le prochain paint, donc sans flash d'icônes manquantes), remplace
+  // les scans individuels par item — un menu de 10 items faisait 11 scans de tout `document`.
+  queueMicrotask(() => { if (window.lucide) lucide.createIcons({ root: menu }); });
 
   const close = () => {
     menu.remove();
@@ -9005,7 +9066,6 @@ function _tlMakeCtxMenu(anchorEl, e, opts) {
     btn.appendChild(document.createTextNode(text));
     btn.addEventListener('click', () => { close(); fn(); });
     menu.appendChild(btn);
-    if (window.lucide) lucide.createIcons();
     return btn;
   };
 
@@ -10272,15 +10332,18 @@ function _tlPatchImageMove(tl, fromZoneId, toZoneId) {
   const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : _tlClampImgSize(tl.imgSize);
   const unplacedImgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : _tlClampImgSize(tl.imgSize);
 
+  const patchedZoneEls = [];
   const patchZone = (zoneId) => {
     if (zoneId === '__unplaced__') {
       _tlFillUnplacedZone(tl, unplacedImgSize);
       _tlUpdateUnplacedCount(tl);
+      patchedZoneEls.push(tlUnplacedZone);
     } else {
       const tier = tl.tiers.find(t => t.id === zoneId);
       const imgsDiv = tlTiersZone.querySelector(`.tl-tier-images[data-dropzone="${zoneId}"]`);
       if (!tier || !imgsDiv) return false;
       _tlFillTierImagesDiv(tl, tier, imgsDiv, imgSize);
+      patchedZoneEls.push(imgsDiv);
     }
     return true;
   };
@@ -10290,11 +10353,11 @@ function _tlPatchImageMove(tl, fromZoneId, toZoneId) {
   // tlMaxImagesInput ne dépend que de maxImagesOverride/TL_MAX_IMAGES (fixe pour le groupe), jamais
   // du contenu déplacé — inutile de le rafraîchir ici (tlRenderUnplaced le fait à chaque rendu
   // complet "gratuitement", mais sa valeur ne varie jamais suite à un simple déplacement d'image).
-  // root: tlEditor (pas document) — createIcons() sans scope re-scanne TOUTE la page (148+ icônes
-  // statiques + celles générées en JS) à chaque déplacement d'image, alors que seules les 1-2 cartes
-  // patchées ici peuvent contenir une icône neuve (bouton zoom). tlEditor englobe tlTiersZone ET
-  // tlUnplacedZone (les deux seules zones jamais touchées par patchZone), donc rien n'est manqué.
-  if (window.lucide) lucide.createIcons({ root: tlEditor });
+  // createIcons() sans scope re-scanne TOUTE la page (148+ icônes statiques + celles générées en JS)
+  // à chaque déplacement d'image, alors que seules les 1-2 cartes réellement patchées ci-dessus
+  // peuvent contenir une icône neuve (bouton zoom) — scope précis aux 1-2 zones patchées plutôt
+  // qu'à tout tlEditor (source ET destination des tiers, jamais plus).
+  if (window.lucide) patchedZoneEls.forEach(el => lucide.createIcons({ root: el }));
   return true;
 }
 
@@ -12342,39 +12405,56 @@ function _tlWireImgSizeControls(slider, valueInput, onChange, onCommit) {
 
 const tlImgSizeValueInput = document.getElementById('tl-img-size-value-input');
 _tlWireImgSizeControls(tlImgSizeSlider, tlImgSizeValueInput,
-  v => { _tlLocalImgSize = v; tlRender(); },
-  v => saveUserPrefs({ tlImgSize: v })
+  v => _tlPreviewImgSize(v),
+  v => { saveUserPrefs({ tlImgSize: v }); tlRender(); }
 );
 
 if (tlUnplacedImgSizeSlider) {
   const tlUnplacedImgSizeValueInput = document.getElementById('tl-unplaced-img-size-value-input');
   _tlWireImgSizeControls(tlUnplacedImgSizeSlider, tlUnplacedImgSizeValueInput,
-    v => { _tlLocalUnplacedImgSize = v; tlRender(); },
-    v => saveUserPrefs({ tlUnplacedImgSize: v })
+    v => _tlPreviewUnplacedImgSize(v),
+    v => { saveUserPrefs({ tlUnplacedImgSize: v }); tlRender(); }
   );
 }
 
+// Aperçu local (variable CSS + inputs miroir) sans écrire dans Firebase — voir _tlCommitSplit
+// pour la sauvegarde, réservée au relâchement du slider (`change`) ou à un changement via les
+// champs numériques, jamais à l'`input` (règle CLAUDE.md : sliders → Firebase au `change` seul).
 function _tlApplySplit(value) {
   _tlLocalSplit = Math.max(30, Math.min(70, value));
   if (tlSplitSlider) tlSplitSlider.value = _tlLocalSplit;
   if (tlSplitValueInput) tlSplitValueInput.value = _tlLocalSplit;
   if (tlSplitValueInputRight) tlSplitValueInputRight.value = 100 - _tlLocalSplit;
   document.documentElement.style.setProperty('--tl-split', _tlLocalSplit);
+}
+function _tlCommitSplit(value) {
+  _tlApplySplit(value);
   saveUserPrefs({ tlSplit: _tlLocalSplit });
 }
 if (tlSplitSlider) {
-  tlSplitSlider.addEventListener('input', () => _tlApplySplit(parseInt(tlSplitSlider.value)));
+  // Même throttle rAF que _tlWireImgSizeControls : l'event 'input' peut se déclencher plus vite
+  // que 60fps pendant le glissement.
+  let _tlSplitRafPending = false;
+  tlSplitSlider.addEventListener('input', () => {
+    if (_tlSplitRafPending) return;
+    _tlSplitRafPending = true;
+    requestAnimationFrame(() => {
+      _tlSplitRafPending = false;
+      _tlApplySplit(parseInt(tlSplitSlider.value));
+    });
+  });
+  tlSplitSlider.addEventListener('change', () => _tlCommitSplit(parseInt(tlSplitSlider.value)));
 }
 if (tlSplitValueInput) {
   tlSplitValueInput.addEventListener('change', () => {
     const n = parseInt(tlSplitValueInput.value);
-    _tlApplySplit(isNaN(n) ? _tlLocalSplit || 60 : n);
+    _tlCommitSplit(isNaN(n) ? _tlLocalSplit || 60 : n);
   });
 }
 if (tlSplitValueInputRight) {
   tlSplitValueInputRight.addEventListener('change', () => {
     const n = parseInt(tlSplitValueInputRight.value);
-    _tlApplySplit(isNaN(n) ? _tlLocalSplit || 60 : 100 - n);
+    _tlCommitSplit(isNaN(n) ? _tlLocalSplit || 60 : 100 - n);
   });
 }
 
@@ -13181,8 +13261,16 @@ function _homeRenderHero() {
   btn.style.display = 'none';
 }
 
+// Reconstruire l'accueil (2 listes "récents" triées + hero) est appelé sans garde depuis plusieurs
+// listeners Firebase (souscription saison bingo, snapshots index bingo/tierlist) même quand l'accueil
+// n'est pas la page affichée — jusqu'à 9 reconstructions d'affilée sur du DOM invisible au chargement
+// d'une saison de 9 épisodes. Sauté si la page n'est pas active, rattrapé par _switchPage('home')
+// (même principe que _casesPanelDirty pour le panneau Cases).
+let _homeDirty = false;
 function renderHomePage() {
   if (!currentUser) return;
+  if (_currentPage !== 'home') { _homeDirty = true; return; }
+  _homeDirty = false;
   _homeRenderHero();
   _homeRenderRecentBingo();
   _homeRenderRecentTl();
