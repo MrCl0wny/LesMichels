@@ -254,13 +254,6 @@ body {
   transition: max-height 0.25s ease, opacity 0.2s ease;
 }
 
-.bingo-control-panel.panel-ctrl-collapsed .bingo-control-panel-body {
-  max-height: 0 !important;
-  opacity: 0;
-  pointer-events: none;
-  padding: 0;
-}
-
 /* Ligne de contrôle générique */
 .ctrl-row {
   display: flex;
@@ -269,19 +262,6 @@ body {
   flex-wrap: wrap;
 }
 
-.ctrl-row-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  flex-shrink: 0;
-  min-width: 38px;
-}
-
-.ctrl-row-breadcrumb    { padding-bottom: 4px; min-height: 20px; }
-.ctrl-row-root-folders  { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-.ctrl-row-folders       { border-bottom: 1px solid var(--border); padding-bottom: 8px; padding-left: 12px; }
 .ctrl-row-grids         { border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 /* 3 zones de largeur égale pour que "Plein écran" soit vraiment centré, quelle que
    soit la largeur du chemin d'accès ou des boutons de chaque côté. */
@@ -470,29 +450,12 @@ body {
   color: var(--text-muted);
   letter-spacing: 0;
 }
-.folders-panel-new-root {
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: var(--radius);
-  border: 1px dashed var(--border);
-  background: none;
-  color: var(--text-faint);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: var(--transition);
-}
-.folders-panel-new-root:hover { border-color: var(--accent); color: var(--accent); }
 .folders-panel-header .btn-new-folder-in-grids,
 .folders-panel-header .btn-new-grid {
   font-size: 0.8rem;
   height: 32px;
   padding: 0 10px;
   background: none;
-}
-.folders-panel-close {
-  flex-shrink: 0;
 }
 .folders-panel-scroll {
   flex: 1;
@@ -582,18 +545,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.folders-panel-footer {
-  flex-shrink: 0;
-  display: flex;
-  gap: 6px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--border);
-}
-.folders-panel-footer .btn-action {
-  flex: 1;
-  text-align: center;
 }
 
 /* ── Page dédiée Dossiers (remplace les 2 anciens drawers latéraux Bingo/Tier List) ── */
@@ -725,7 +676,6 @@ body {
 }
 .fp-folder-row:hover { border-color: #60a5fa; background: var(--surface-3); }
 .fp-folder-row.active { border-color: #3b82f6; background: rgba(59,130,246,0.18); }
-.fp-folder-row.ancestor { border-color: #1e3a5f; background: rgba(30,58,95,0.45); }
 .fp-folder-row.selected { border-color: #3b82f6; background: rgba(59,130,246,0.18); }
 .fp-folder-icon { font-size: 0.8rem; flex-shrink: 0; }
 .fp-folder-icon [data-lucide] { margin-right: 0; }
@@ -742,7 +692,6 @@ body {
   text-overflow: ellipsis;
 }
 .fp-folder-row.active .fp-folder-name { color: #93c5fd; }
-.fp-folder-row.ancestor .fp-folder-name { color: #60a5fa; }
 .fp-folder-arrow {
   font-size: 0.75rem;
   color: var(--text-dim);
@@ -771,28 +720,6 @@ body {
 .fp-folder-ctx-btn:hover { color: var(--text); background: var(--surface-3); opacity: 1; }
 .fp-folder-ctx-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
 
-/* Poignée drag dossier */
-.fp-folder-drag-handle {
-  font-size: 1rem;
-  color: var(--text-dim);
-  cursor: grab;
-  opacity: 0.6;
-  transition: opacity var(--transition), color var(--transition);
-  flex-shrink: 0;
-  padding: 0 4px;
-  user-select: none;
-  letter-spacing: 0.05em;
-}
-.fp-folder-row:hover .fp-folder-drag-handle { opacity: 1; color: var(--text); }
-.fp-folder-drag-handle:hover { opacity: 1 !important; color: var(--accent); }
-.fp-folder-drag-handle:active { cursor: grabbing; }
-.fp-folder-drag-handle [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
-
-/* États drag des lignes dossier */
-.fp-folder-row.fp-folder-dragging { opacity: 0.4; }
-.fp-folder-row.fp-folder-drop-inside { border-color: var(--accent); background: var(--accent-glow); }
-.fp-folder-row.fp-folder-drop-before { box-shadow: 0 -2px 0 var(--accent); }
-.fp-folder-row.fp-folder-drop-after  { box-shadow: 0 2px 0 var(--accent); }
 
 /* Modal déplacer dossier — radios */
 .move-folder-elements-choice { margin-bottom: 4px; }
@@ -914,64 +841,6 @@ body {
   font-size: 0.85rem;
 }
 
-/* Grilles dans le drawer */
-.fp-grid-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: var(--transition);
-  user-select: none;
-}
-.fp-grid-row:hover { border-color: var(--border); background: var(--surface-2); }
-.fp-grid-row.active { border-color: var(--accent); background: var(--accent-glow); }
-.fp-grid-icon { font-size: 0.65rem; color: var(--text-faint); flex-shrink: 0; }
-.fp-grid-icon [data-lucide] { width: 13px; height: 13px; margin-right: 0; vertical-align: middle; }
-.fp-grid-name {
-  flex: 1;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.fp-grid-row.active .fp-grid-name { color: var(--accent); font-weight: 600; }
-.fp-grid-ctx-btn {
-  font-size: 0.7rem;
-  color: var(--text-faint);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
-  opacity: 0;
-  transition: opacity var(--transition);
-  flex-shrink: 0;
-}
-.fp-grid-row:hover .fp-grid-ctx-btn { opacity: 1; }
-.fp-grid-ctx-btn:hover { color: var(--text); background: var(--surface-3); }
-.fp-grid-ctx-btn [data-lucide] { width: 13px; height: 13px; margin-right: 0; vertical-align: middle; }
-
-/* Bouton "+ Nouveau dossier enfant" et "+ Grille" dans le drawer */
-.fp-new-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: var(--radius);
-  border: 1px dashed var(--border);
-  background: none;
-  color: var(--text-faint);
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: var(--transition);
-  width: 100%;
-  margin-top: 2px;
-}
-.fp-new-btn:hover { border-color: var(--accent); color: var(--accent); }
 .fp-empty {
   color: var(--text-faint);
   font-size: 0.82rem;
@@ -1078,42 +947,11 @@ body {
 }
 .btn-new-bingo-folder:hover { border-color: #3ecf6e; background: rgba(62,207,110,0.1); }
 
-/* Bouton collapse du panneau */
-.btn-control-panel-collapse {
-  display: block;
-  width: 100%;
-  background: none;
-  border: none;
-  border-top: 1px solid var(--border);
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: 0.65rem;
-  padding: 4px 0 2px;
-  margin-top: 6px;
-  text-align: center;
-  transition: var(--transition);
-  letter-spacing: 0.1em;
-}
-.btn-control-panel-collapse:hover { color: var(--text-muted); background: var(--surface-2); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
-
-.bingo-control-panel.panel-ctrl-collapsed .btn-control-panel-collapse {
-  margin-top: 0;
-  border-top: none;
-}
-
 /* Icone "+" verte */
 .btn-plus-green { color: #3ecf6e; font-weight: 900; }
 
 /* "+ Dossier" en bleu dans la ligne grilles */
 .btn-new-folder-in-grids .btn-plus-green { color: #60a5fa; }
-
-/* ── Boutons de réordonnancement des grilles ── */
-.btn-grid-move {
-  opacity: 0.55;
-  font-size: 0.65rem !important;
-  padding: 3px 6px !important;
-}
-.btn-grid-move:hover { opacity: 1; }
 
 /* ── Bingo layout ── */
 .bingo-layout {
@@ -1484,7 +1322,6 @@ body.compare-tierlist-mode #page-tierlist.page.active {
   line-height: 1;
 }
 .btn-icon:hover { background: #2db85a; }
-#btn-import-elements-panel,
 #btn-presets-elements-panel,
 #btn-clear-elements-panel {
   width: auto;
@@ -1498,9 +1335,7 @@ body.compare-tierlist-mode #page-tierlist.page.active {
   font-weight: 600;
   white-space: nowrap;
 }
-#btn-import-elements-panel:hover,
 #btn-presets-elements-panel:hover { background: #6b7280; }
-#btn-import-elements-panel [data-lucide],
 #btn-presets-elements-panel [data-lucide],
 #btn-clear-elements-panel [data-lucide] { width: 15px; height: 15px; margin-right: 0; }
 #btn-clear-elements-panel { background: #5c2b2b; color: #f3d4d4; }
@@ -1573,12 +1408,6 @@ body.compare-tierlist-mode #page-tierlist.page.active {
   word-break: break-word;
 }
 .element-item.archived .element-text { color: var(--text-muted); font-style: italic; }
-.element-item.placed {
-  opacity: 0.4;
-  background: var(--surface);
-  border-color: transparent;
-}
-.element-item.placed .element-text { color: var(--text-faint); }
 
 /* Case cochée dans une grille du sous-thème */
 .element-item.elem-checked {
@@ -1607,23 +1436,6 @@ textarea.element-edit-input {
   white-space: pre-wrap;
   word-wrap: break-word;
 }
-
-.elem-btn {
-  background: none;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 2px 5px;
-  border-radius: 4px;
-  transition: var(--transition);
-  flex-shrink: 0;
-  line-height: 1;
-}
-.elem-btn:hover { color: var(--text); background: var(--surface-3); }
-.elem-btn.delete:hover { color: var(--danger); }
-.elem-btn.archive:hover { color: var(--accent); }
-.elem-btn.restore:hover { color: var(--success); }
 
 .element-text { cursor: pointer; }
 .element-item:not(.archived) .element-text:hover { color: var(--accent); }
@@ -1720,18 +1532,7 @@ textarea.element-edit-input {
 .grid-tab-ctx-btn:hover { opacity: 1; background: var(--surface-3); }
 .grid-tab-ctx-btn [data-lucide] { width: 13px; height: 13px; margin-right: 0; vertical-align: middle; }
 
-.grid-tab-check {
-  accent-color: var(--accent);
-  width: 13px;
-  height: 13px;
-  cursor: pointer;
-  flex-shrink: 0;
-  margin: 0;
-}
-
-
 .grid-tab.dragging { opacity: 0.4; }
-.grid-tab.drag-over-tab { border-color: var(--accent); background: var(--accent-glow); }
 
 .btn-new-grid {
   background: var(--surface-2);
@@ -1973,12 +1774,6 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   border: 1px solid #a82015;
 }
 .btn-action.btn-reset:hover { background: #a82015; color: #fff; border-color: #c42a1a; }
-.btn-action.btn-brown {
-  background: #6b4226;
-  color: #f0d9c4;
-  border: 1px solid #8a5a35;
-}
-.btn-action.btn-brown:hover { background: #8a5a35; color: #fff; border-color: #a56d40; }
 .btn-action.btn-disabled,
 .btn-action:disabled {
   opacity: 0.4;
@@ -2076,26 +1871,6 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 }
 .lock-generate-label[aria-pressed="true"] { color: var(--accent); }
 .lock-generate-label [data-lucide] { margin-right: 0; }
-
-/* ── Checkbox remplir cases vides ── */
-.fill-only-empty-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-.fill-only-empty-label input[type="checkbox"] {
-  accent-color: var(--success);
-  width: 15px;
-  height: 15px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
 
 /* ── Modal renommage grand ── */
 .modal-rename-input {
@@ -2362,13 +2137,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .bingo-cell.empty:hover { border-color: var(--border); background: var(--surface-2); }
 
-.bingo-cell.manual-target {
-  cursor: copy;
-}
-.bingo-cell.manual-target.empty {
-  border-style: dashed;
-  color: var(--text-faint);
-}
 .bingo-cell.drag-over {
   border-color: var(--accent) !important;
   background: var(--accent-glow) !important;
@@ -2879,14 +2647,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .btn-danger-action:hover { background: #a82015 !important; color: #fff !important; border-color: #c42a1a !important; }
 
-.themes-empty-msg {
-  color: var(--text-faint);
-  font-style: italic;
-  font-size: 0.85rem;
-  align-self: center;
-  padding: 0 8px;
-}
-
 /* ── Authentification ── */
 .btn-google {
   display: flex;
@@ -2962,8 +2722,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .btn-signout-header:hover { border-color: var(--danger); color: var(--danger); background: rgba(232,91,71,0.1); }
 .btn-signout-header [data-lucide] { width: 16px; height: 16px; margin-right: 0; }
-
-.user-name { display: none; }
 
 /* ══════════════════════════════════════════════════
    TIER LIST
@@ -3083,21 +2841,6 @@ body.solo-tierlist-mode .tl-layout {
 .tl-list-item-btn.del:hover { color: var(--danger); background: rgba(232,91,71,0.12); }
 .tl-list-item-btn.copy:hover { color: var(--accent); }
 
-.tl-btn-archived-toggle {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: var(--transition);
-  text-align: left;
-  flex-shrink: 0;
-}
-.tl-btn-archived-toggle:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
-
 /* ── Zone principale éditeur ── */
 .tl-main {
   display: flex;
@@ -3143,18 +2886,6 @@ body.solo-tierlist-mode .tl-layout {
 
 .tl-editor { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
 .tl-editor.hidden { display: none; }
-
-.tl-icon-btn {
-  background: none;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 3px 6px;
-  border-radius: var(--radius);
-  transition: var(--transition);
-}
-.tl-icon-btn:hover { color: var(--accent); background: var(--accent-glow); }
 
 .tl-toggle-label {
   display: flex;
@@ -3312,14 +3043,6 @@ body.solo-tierlist-mode .tl-layout {
   gap: 8px;
 }
 .tl-toolbar-side-left { margin-right: auto; }
-.tl-toolbar-sep {
-  width: 1px;
-  align-self: stretch;
-  min-height: 24px;
-  background: var(--text-muted);
-  opacity: 0.5;
-  flex-shrink: 0;
-}
 .tl-btn-reset {
   background: rgba(232,91,71,0.12) !important;
   color: var(--danger) !important;
@@ -3385,7 +3108,6 @@ body.solo-tierlist-mode .tl-layout {
   min-width: 0;
   height: auto;
 }
-.tl-editor-body--template .tl-unplaced-expand-btn { display: none; }
 /* Le template n'a pas de vrais tiers remplis (labels seuls) : "à placer" n'a aucun sens pour lui. */
 .tl-editor-body--template .tl-toplace-zone { display: none; }
 
@@ -3721,22 +3443,6 @@ body.solo-tierlist-mode .tl-layout {
   box-sizing: border-box;
 }
 
-.tl-img-ctx-item {
-  display: block;
-  width: 100%;
-  background: none;
-  border: none;
-  color: var(--text);
-  cursor: pointer;
-  font-size: 0.82rem;
-  padding: 7px 14px;
-  text-align: left;
-  transition: background 0.1s;
-}
-.tl-img-ctx-item:hover { background: var(--surface-3); }
-.tl-img-ctx-item-danger { color: var(--danger); }
-.tl-img-ctx-item-danger:hover { background: rgba(232,91,71,0.12); }
-
 /* ── Zone images non placées — cadre distinct de la zone des tiers, scroll interne indépendant ── */
 .tl-unplaced-section {
   display: flex;
@@ -3881,28 +3587,6 @@ body.solo-tierlist-mode .tl-layout {
 }
 .tl-unplaced-sort-btn:hover { color: var(--text); border-color: var(--accent-dim); }
 .tl-unplaced-sort-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
-
-.tl-unplaced-expand-btn {
-  font-size: 0.8rem;
-  font-family: 'Space Mono', monospace;
-  line-height: 1;
-  background: var(--surface-2);
-  color: var(--text-muted);
-  width: auto;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  justify-content: center;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  cursor: pointer;
-  padding: 0 12px;
-  white-space: nowrap;
-}
-.tl-unplaced-expand-btn:hover { color: var(--text); border-color: var(--accent-dim); }
-.tl-unplaced-expand-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
-.tl-unplaced-expand-btn.tl-unplaced-expand-btn--active { color: var(--accent); border-color: var(--accent-dim); }
 
 .tl-max-images-label {
   font-size: 0.72rem;
@@ -4069,27 +3753,6 @@ body.solo-tierlist-mode .tl-layout {
 }
 
 
-/* ── Tier label inline edit ── */
-.tl-tier-label-edit {
-  background: rgba(0,0,0,0.3);
-  border: 1px solid rgba(255,255,255,0.3);
-  border-radius: 4px;
-  color: #111;
-  font-weight: 800;
-  font-size: 0.9rem;
-  text-align: center;
-  width: 120px;
-  padding: 2px 4px;
-  outline: none;
-}
-
-/* ── Sidebar header btns ── */
-.tl-sidebar-header-btns {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .tl-btn-new-folder {
   background: none;
   border: 1px dashed var(--border);
@@ -4201,92 +3864,6 @@ body.solo-tierlist-mode .tl-layout {
 
 .tl-folder-children .tl-list-item { font-size: 0.78rem; padding: 3px 8px; }
 
-/* ── Overlay pour les ctx modals centrés ── */
-.tl-ctx-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  z-index: 1999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.tl-ctx-overlay.hidden { display: none; }
-
-/* ── Modal contextuel centré (tierlist manage) ── */
-.tl-ctx-modal {
-  position: relative;
-  z-index: 2000;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 12px;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
-  min-width: 200px;
-}
-.tl-ctx-modal.hidden { display: none; }
-
-.tl-ctx-modal-title {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 2px 8px 6px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 280px;
-}
-
-/* ── Modal gestion tierlist ── */
-.tl-modal-manage-box {
-  min-width: 0 !important;
-  max-width: 200px !important;
-  width: auto !important;
-  padding: 12px !important;
-}
-.tl-modal-manage-box .modal-header {
-  margin-bottom: 10px;
-}
-.tl-modal-manage-box .modal-header h3 {
-  font-size: 0.72rem;
-}
-.tl-manage-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.tl-manage-btn {
-  width: 100%;
-  text-align: left;
-  font-size: 0.85rem;
-  font-weight: 700;
-  padding: 7px 12px;
-  border-radius: var(--radius);
-  background: var(--surface-2) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text) !important;
-  cursor: pointer;
-  transition: var(--transition);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  white-space: nowrap;
-}
-.tl-manage-btn:hover {
-  color: var(--text) !important;
-  border-color: var(--accent-dim) !important;
-  background: var(--surface-3) !important;
-}
-.tl-manage-btn-archive:hover {
-  border-color: #f0b429 !important;
-  color: #f0b429 !important;
-  background: rgba(240,180,41,0.1) !important;
-}
-
 .tl-btn-toggle-labels,
 .tl-btn-toggle-labels.active {
   background: var(--surface-2) !important;
@@ -4315,8 +3892,6 @@ body.solo-tierlist-mode .tl-layout {
   display: none;
 }
 
-/* ── Export canvas (caché) ── */
-#tl-export-canvas { display: none; }
 
 /* ── Select dossier dans modal ── */
 .modal-folder-select {
@@ -4538,16 +4113,6 @@ body.solo-tierlist-mode .tl-layout {
   color: var(--accent) !important;
 }
 
-/* ── Option "Ranger dans un dossier" dans le ctx modal ── */
-.tl-manage-btn-move {
-  /* hérite de .tl-manage-btn */
-}
-.tl-manage-btn-move:hover {
-  color: #7ab8ff !important;
-  border-color: #3a6abf !important;
-  background: rgba(58,106,191,0.12) !important;
-}
-
 /* ── Boutons Archives & Corbeille — même style que btn-action ── */
 .btn-archives-unified {
   background: var(--surface-2);
@@ -4593,44 +4158,10 @@ body.solo-tierlist-mode .tl-layout {
   cursor: default;
 }
 
-.modal-archives-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-.modal-archives-section-title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--accent-dim);
-  margin-bottom: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-}
-
 .modal-trash-actions-top {
   margin-bottom: 14px;
   display: flex;
   justify-content: flex-end;
-}
-
-/* Badge type dans la corbeille */
-.trash-type-badge {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  background: var(--surface-3);
-  border-radius: var(--radius);
-  padding: 2px 6px;
-  flex-shrink: 0;
-  min-width: 68px;
-  text-align: center;
 }
 
 /* ── Arborescence Archives / Corbeille ── */
@@ -4761,6 +4292,7 @@ body.solo-tierlist-mode .tl-layout {
 }
 @media (max-width: 760px) {
   .home-recent-columns { grid-template-columns: 1fr; }
+  .home-columns { grid-template-columns: 1fr; }
 }
 
 .home-recent:empty { display: none; }
@@ -4823,9 +4355,6 @@ body.solo-tierlist-mode .tl-layout {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
-@media (max-width: 760px) {
-  .home-columns { grid-template-columns: 1fr; }
-}
 
 .home-col {
   border: 1px solid var(--border);
@@ -4878,41 +4407,12 @@ body.solo-tierlist-mode .tl-layout {
   color: var(--bingo-green);
 }
 .home-big-btn-accent:hover { border-color: var(--bingo-green); background: rgba(80, 220, 140, 0.24); }
-.home-big-btn-blue {
-  border-color: #1e4a8f;
-  background: rgba(59, 130, 246, 0.14);
-  color: #60a5fa;
-}
-.home-big-btn-blue:hover { border-color: #3b82f6; background: rgba(59, 130, 246, 0.24); color: #93c5fd; }
-.home-big-btn-yellow {
-  border-color: var(--accent-dim);
-  background: var(--accent-glow);
-  color: var(--accent);
-}
-.home-big-btn-yellow:hover { border-color: var(--accent); background: rgba(232, 197, 71, 0.24); }
-.home-big-btn-purple {
-  border-color: #7c3aed80;
-  background: rgba(139, 92, 246, 0.14);
-  color: #c4b5fd;
-}
-.home-big-btn-purple:hover { border-color: #8b5cf6; background: rgba(139, 92, 246, 0.24); color: #ddd6fe; }
 .home-big-btn-folders {
   border-color: rgba(146,94,54,0.5);
   background: rgba(146,94,54,0.18);
   color: #c9855a;
 }
 .home-big-btn-folders:hover { border-color: #c9855a; background: rgba(146,94,54,0.3); color: #e0a374; }
-
-/* ── Modals "Rejoindre Bingo/Template" — même arborescence pliable que le panneau Dossiers
-   (.fp-folder-row/.fp-children), dans un modal centré au lieu d'un panneau flottant ancré au
-   bouton ; scrolle si la liste dépasse la hauteur du modal. ── */
-.home-join-modal-tree {
-  max-height: 60vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
 
 .archived-theme-btn.del {
   font-size: 0.95rem;

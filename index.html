@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=268" />
+  <link rel="stylesheet" href="style.css?v=270" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -588,20 +588,6 @@
     </div>
   </div>
 
-  <!-- Overlay ctx modals (tierlist & dossier manage) -->
-  <div id="tl-ctx-overlay" class="tl-ctx-overlay hidden">
-    <!-- Menu contextuel tierlist (double clic sur onglet) -->
-    <div id="tl-modal-manage" class="tl-ctx-modal hidden">
-      <div class="tl-ctx-modal-title" id="tl-modal-manage-title">Options</div>
-      <div class="tl-manage-actions" id="tl-manage-actions">
-        <button class="tl-manage-btn" id="tl-modal-manage-rename"><i data-lucide="pencil"></i> Renommer</button>
-        <button class="tl-manage-btn" id="tl-modal-manage-duplicate"><i data-lucide="copy-plus"></i> Dupliquer</button>
-        <button class="tl-manage-btn tl-manage-btn-move" id="tl-modal-manage-move"><i data-lucide="shelving-unit"></i> Ranger</button>
-        <button class="tl-manage-btn tl-manage-btn-archive" id="tl-modal-manage-archive"><i data-lucide="package"></i> Archiver</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Modal : ranger une tierlist dans un dossier -->
   <div id="tl-modal-move" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -920,10 +906,6 @@
     </div>
   </div>
 
-  <!-- Modales legacy conservées pour compatibilité JS (cachées, non utilisées) -->
-  <div id="modal-archived-themes" class="hidden" style="display:none!important"></div>
-  <div id="modal-archived-grids" class="hidden" style="display:none!important"></div>
-
   <!-- Modal déplacer dossier -->
   <div id="modal-move-folder" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -1089,11 +1071,6 @@
     </div>
   </div>
 
-  <!-- Modal sous-thèmes archivés legacy (stub pour compatibilité JS) -->
-  <div id="modal-archived-subthemes" class="hidden" style="display:none!important">
-    <button id="btn-close-archived-subthemes-modal" style="display:none"></button>
-  </div>
-
   <!-- Modal renommer sous-thème -->
   <div id="modal-rename-subtheme" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -1109,15 +1086,6 @@
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- Menu contextuel sous-thème (clic droit) -->
-  <div id="ctx-menu-subtheme" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-subtheme-cancel" title="Fermer"><i data-lucide="x"></i></button>
-    <button class="ctx-menu-item" id="ctx-subtheme-rename"><i data-lucide="pencil"></i> Renommer</button>
-    <button class="ctx-menu-item" id="ctx-subtheme-duplicate"><i data-lucide="copy-plus"></i> Dupliquer</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-archive"><i data-lucide="package"></i> Archiver</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-subtheme-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
 
   <!-- Modal nouvelle grille -->
@@ -1337,6 +1305,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=397"></script>
+  <script src="app.js?v=399"></script>
 </body>
 </html>

@@ -1465,62 +1465,6 @@ function moveFolder(id, targetParentId) {
   renderGrid();
 }
 
-function reorderFolder(srcId, refId, position) {
-  const folder = findFolderById(state.folders, srcId);
-  if (!folder) return;
-  const srcParent = findParentFolder(state.folders, srcId);
-  const refParent = findParentFolder(state.folders, refId);
-  // Les deux doivent avoir le même parent pour réordonner
-  const srcList  = srcParent ? (srcParent.folders || []) : state.folders;
-  const refList  = refParent ? (refParent.folders || []) : state.folders;
-  if (srcList !== refList) {
-    // Parents différents : on réordonne quand même en retirant du src et insérant au bon endroit dans refList
-    if (srcParent) {
-      srcParent.folders = (srcParent.folders || []).filter(f => f.id !== srcId);
-      srcParent.children = (srcParent.children || []).filter(c => c.id !== srcId);
-    } else {
-      state.folders = state.folders.filter(f => f.id !== srcId);
-    }
-    const targetList = refParent ? (refParent.folders || (refParent.folders = [])) : state.folders;
-    const refIdx = targetList.findIndex(f => f.id === refId);
-    const insertAt = position === 'before' ? refIdx : refIdx + 1;
-    targetList.splice(insertAt < 0 ? targetList.length : insertAt, 0, folder);
-    if (refParent) {
-      const cList = refParent.children || (refParent.children = []);
-      const cRefIdx = cList.findIndex(c => c.id === refId);
-      const cInsert = position === 'before' ? cRefIdx : cRefIdx + 1;
-      cList.splice(cInsert < 0 ? cList.length : cInsert, 0, { type: 'folder', id: srcId });
-    }
-  } else {
-    const list = srcList;
-    const fromIdx = list.findIndex(f => f.id === srcId);
-    let toIdx = list.findIndex(f => f.id === refId);
-    if (fromIdx < 0 || toIdx < 0) return;
-    list.splice(fromIdx, 1);
-    toIdx = list.findIndex(f => f.id === refId);
-    const insertAt = position === 'before' ? toIdx : toIdx + 1;
-    list.splice(insertAt, 0, folder);
-    // Sync children si présent
-    const parentOfList = srcParent || refParent;
-    if (parentOfList && parentOfList.children) {
-      const cList = parentOfList.children;
-      const ci = cList.findIndex(c => c.id === srcId);
-      let ri = cList.findIndex(c => c.id === refId);
-      if (ci >= 0 && ri >= 0) {
-        const [item] = cList.splice(ci, 1);
-        ri = cList.findIndex(c => c.id === refId);
-        cList.splice(position === 'before' ? ri : ri + 1, 0, item);
-      }
-    }
-  }
-  // Réordonnancement pur (même parent ou changement de parent) : structure seule, index suffit.
-  _bingoSaveIndex();
-  renderAllFolders();
-  renderElements();
-  renderGridsList();
-  renderGrid();
-}
-
 // async : source ET cible peuvent être des dossiers-bingo hors contexte actif (ex. import depuis un
 // dossier jamais ouvert cette session) — les deux doivent être chargés en lourd avant de lire
 // src.elements / dst.grids (plan §3, pattern 3f). Note : en pratique le point d'entrée de cette
@@ -2021,22 +1965,12 @@ btnToggleNewBadge?.addEventListener('click', () => {
   _updateNewBadgeButton();
   renderGrid();
 });
-const panelElementsBody        = document.getElementById('panel-elements-body');
 const bingoLayout              = document.getElementById('bingo-layout');
-const bingoControlPanel        = document.getElementById('bingo-control-panel');
-const bingoControlPanelBody    = document.getElementById('bingo-control-panel-body');
-// Modales renommage — migré vers modal-rename-folder
-const modalRenameTheme      = document.getElementById('modal-rename-folder');
-const renameThemeInput      = document.getElementById('rename-folder-input');
-const btnConfirmRenameTheme = document.getElementById('btn-confirm-rename-folder');
-const btnCancelRenameTheme  = document.getElementById('btn-cancel-rename-folder');
-const btnCloseRenameThemeModal = document.getElementById('btn-close-rename-folder-modal');
 const modalRenameGrid       = document.getElementById('modal-rename-grid');
 const renameGridInput       = document.getElementById('rename-grid-input');
 const btnConfirmRenameGrid  = document.getElementById('btn-confirm-rename-grid');
 const btnCancelRenameGrid   = document.getElementById('btn-cancel-rename-grid');
 const btnCloseRenameGridModal = document.getElementById('btn-close-rename-grid-modal');
-let _renameThemeId = null;
 let _renameGridId  = null;
 
 // ──────────────────────────────────────────────
@@ -2783,43 +2717,6 @@ function renderFoldersPanelTree() {
   if (window.lucide) lucide.createIcons();
 }
 
-function _initPanelPosition(panel, side) {
-  if (panel.dataset.positioned) return;
-  const ctrl = document.getElementById('bingo-control-panel');
-  const ctrlBottom = ctrl ? ctrl.getBoundingClientRect().bottom + 12 : 80;
-  const panelW = panel.offsetWidth || 300;
-  const x = side === 'left' ? 12 : window.innerWidth - panelW - 12;
-  panel.style.left = x + 'px';
-  panel.style.top  = ctrlBottom + 'px';
-  panel.dataset.positioned = '1';
-}
-
-function _makePanelDraggable(panel) {
-  if (panel.dataset.draggable) return;
-  panel.dataset.draggable = '1';
-  const header = panel.querySelector('.folders-panel-header');
-  if (!header) return;
-  let ox = 0, oy = 0, startX = 0, startY = 0, dragging = false;
-
-  header.addEventListener('mousedown', e => {
-    if (e.target.closest('button, input, select')) return;
-    dragging = true;
-    startX = e.clientX; startY = e.clientY;
-    ox = panel.offsetLeft; oy = panel.offsetTop;
-    e.preventDefault();
-  });
-  document.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    const nx = ox + e.clientX - startX;
-    const ny = oy + e.clientY - startY;
-    const maxX = window.innerWidth  - panel.offsetWidth;
-    const maxY = window.innerHeight - panel.offsetHeight;
-    panel.style.left = Math.max(0, Math.min(nx, maxX)) + 'px';
-    panel.style.top  = Math.max(0, Math.min(ny, maxY)) + 'px';
-  });
-  document.addEventListener('mouseup', () => { dragging = false; });
-}
-
 // ── Page dédiée Dossiers (remplace les anciens drawers latéraux Bingo/Tier List) ──
 // _foldersPageActiveTab n'est pas persisté (juste en mémoire) : à chaque ouverture explicite d'un
 // onglet précis (ex. depuis un bouton "Dossiers" propre à Bingo ou Tier List), on force l'onglet
@@ -2849,11 +2746,8 @@ function openFoldersPage(tab) {
   saveUserPrefs({ activePage: 'folders' });
 }
 
-// Stubs de compat : anciens noms encore appelés depuis divers call sites historiques.
-function openFoldersPanel() { openFoldersPage('bingo'); }
-function closeFoldersPanel() {}
+// Stub de compat : ancien nom encore appelé depuis un call site historique.
 function openTlSidebar() { openFoldersPage('tierlist'); }
-function closeTlSidebar() {}
 
 document.getElementById('folders-page-tab-bingo').addEventListener('click', () => { _userNavigated = true; _switchFoldersPageTab('bingo'); });
 document.getElementById('folders-page-tab-tierlist').addEventListener('click', () => { _userNavigated = true; _switchFoldersPageTab('tierlist'); });
@@ -2882,12 +2776,7 @@ function renderThemesList() {
 }
 
 // Sous-thèmes — délégation vers fonctions dossiers
-function createSubtheme(name) { createFolder(name, _localActiveFolderId || null); }
-function switchSubtheme(id) { switchFolder(id); }
-function deleteSubtheme(id) { deleteFolder(id); }
-function archiveSubtheme(id) { archiveFolder(id); }
 function renameSubtheme(id, newName) { renameFolder(id, newName); }
-function duplicateSubtheme(id) { openDuplicateFolderModal(id); }
 
 function renderSubthemesList() {
   renderAllFolders();
@@ -2902,8 +2791,6 @@ const btnCancelRenameSubtheme  = document.getElementById('btn-cancel-rename-subt
 const btnCloseRenameSubthemeModal = document.getElementById('btn-close-rename-subtheme-modal');
 let _renameSubthemeId = null;
 
-function openRenameSubthemeModal(id) { openRenameFolderModal(id); }
-
 function closeRenameSubthemeModal() { modalRenameSubtheme.classList.add('hidden'); _renameSubthemeId = null; }
 function confirmRenameSubtheme() { if (!_renameSubthemeId) return; renameSubtheme(_renameSubthemeId, renameSubthemeInput.value); closeRenameSubthemeModal(); }
 
@@ -2911,13 +2798,6 @@ btnConfirmRenameSubtheme.addEventListener('click', confirmRenameSubtheme);
 btnCancelRenameSubtheme.addEventListener('click', closeRenameSubthemeModal);
 btnCloseRenameSubthemeModal.addEventListener('click', closeRenameSubthemeModal);
 renameSubthemeInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmRenameSubtheme(); if (e.key === 'Escape') closeRenameSubthemeModal(); });
-
-// Modale nouveau sous-thème — stubs legacy (la modale modal-new-subtheme est cachée)
-const modalNewSubtheme        = document.getElementById('modal-new-subtheme');
-const newSubthemeNameInput    = document.getElementById('new-subtheme-name-input') || { value: '' };
-const btnConfirmNewSubtheme   = document.getElementById('btn-confirm-new-subtheme');
-const btnCancelNewSubtheme    = document.getElementById('btn-cancel-new-subtheme');
-const btnCloseNewSubthemeModal = document.getElementById('btn-close-new-subtheme-modal');
 
 // Brancher le bouton "+ Dossier" sur la vraie modale
 const _btnNewFolderBingo = document.getElementById('btn-new-folder-bingo');
@@ -2935,14 +2815,6 @@ if (_btnNewRootFolder) {
 }
 // Les sous-thèmes archivés sont désormais dans modal-archives-unified
 
-// Menu contextuel sous-thème — redirigé vers menu dossier (ctx-menu-folder)
-const ctxMenuSubtheme    = document.getElementById('ctx-menu-folder'); // alias
-const ctxSubthemeRename    = document.getElementById('ctx-folder-rename');
-const ctxSubthemeDuplicate = document.getElementById('ctx-folder-duplicate');
-const ctxSubthemeArchive   = document.getElementById('ctx-folder-archive');
-let _ctxSubthemeId = null;
-
-function openCtxMenuSubtheme(id, e, anchorEl) { openCtxMenuFolder(id, e, anchorEl); }
 function closeCtxMenuSubtheme() { closeCtxMenuFolder(); }
 
 // ──────────────────────────────────────────────
@@ -3227,24 +3099,6 @@ function renameGrid(id, newName) {
   if (s) {
     _bingoSave(s.id); // renameGrid touche aussi g.name/g.title dans l'index (allégé mais présent)
   }
-  renderGridsList();
-  renderGrid();
-}
-
-function duplicateGrid(id) {
-  const s = activeSubtheme();
-  if (!s) return;
-  const src = s.grids.find(g => g.id === id);
-  if (!src) return;
-  const copy = JSON.parse(JSON.stringify(src));
-  copy.id = uid();
-  copy.name = src.name + ' (copie)';
-  copy.archived = false;
-  copy.hidden = false;
-  s.grids.push(copy);
-  s.activeGridId = copy.id;
-  touchFolderChain(s.id);
-  _bingoSave(s.id); // touchFolderChain touche updatedAt (index) — cf commentaire dans createGrid
   renderGridsList();
   renderGrid();
 }
@@ -4496,8 +4350,6 @@ function confirmNewTheme() {
   }
 }
 
-function createTheme(name) { createFolder(name, null); }
-
 if (btnConfirmNewTheme) btnConfirmNewTheme.addEventListener('click', confirmNewTheme);
 if (btnCancelNewTheme) btnCancelNewTheme.addEventListener('click', closeNewThemeModal);
 if (btnCloseNewThemeModal) btnCloseNewThemeModal.addEventListener('click', closeNewThemeModal);
@@ -4519,10 +4371,6 @@ _wireNumberingChecks(
 // voir openEditFolderModal / openDuplicateFolderModalFull.
 function openRenameFolderModal(id) { openEditFolderModal(id); }
 function openDuplicateFolderModal(id) { openDuplicateFolderModalFull(id); }
-function renameTheme(id, newName) { renameFolder(id, newName); }
-function duplicateTheme(id) { openDuplicateFolderModal(id); }
-function deleteTheme(id) { deleteFolder(id); }
-function archiveTheme(id) { archiveFolder(id); }
 
 // ──────────────────────────────────────────────
 // Modale — déplacer un dossier
@@ -6089,8 +5937,6 @@ if (_foldersSortSelect) {
 const modalTrashUnified = document.getElementById('modal-trash-unified');
 const modalConfirmTrashEmpty = document.getElementById('modal-confirm-trash-empty');
 
-const _TYPE_LABELS = { theme: 'Dossier', subtheme: 'Dossier', folder: 'Dossier', grid: 'Grille' };
-
 function renderTrashList() {
   const container = document.getElementById('trash-list');
   container.innerHTML = '';
@@ -7412,8 +7258,6 @@ const tlBtnAddImage       = document.getElementById('tl-btn-add-image');
 const tlAddTextInput      = document.getElementById('tl-add-text-input');
 const tlMaxImagesInput    = document.getElementById('tl-max-images-input');
 const tlControlPanel      = document.getElementById('tl-control-panel');
-const tlGroupElems        = document.querySelectorAll('.tl-group-elem');
-const tlGroupBreadcrumb   = document.getElementById('tl-group-breadcrumb');
 
 // Fallback dragover sur le conteneur de tiers lui-même : ses zones de padding/marges entre tiers
 // ne sont couvertes par aucun listener dragover enfant (.tl-tier-wrap / .tl-tier-images), donc le
@@ -11865,7 +11709,7 @@ function tlCapture() {
 }
 
 // ── Ouverture de la page Dossiers (onglet Tier List) ──────────────────────────
-// openTlSidebar/closeTlSidebar définies plus haut (stubs de compat → openFoldersPage('tierlist')).
+// openTlSidebar définie plus haut (stub de compat → openFoldersPage('tierlist')).
 document.getElementById('tl-empty-btn-folders').addEventListener('click', () => openFoldersPage('tierlist'));
 
 const _tlBtnFolderOptions = document.getElementById('tl-btn-folder-options');
@@ -13160,13 +13004,6 @@ function _homeGoToTlTierlist(tl) {
   _tlLocalNoSelection = false;
   saveUserPrefs({ activePage: 'tierlist', tlActiveTierlistId: root.id, tlNoSelection: false });
   tlRender();
-}
-
-// Équivalent _homeGoToBingoFolder côté Tier List — ouvre directement la page sur ce dossier
-// (voir _homeRenderRecentTl pour le même enchaînement _switchPage + _tlGoToFolder).
-function _homeGoToTlFolder(folderId) {
-  window._switchPage('tierlist');
-  _tlGoToFolder(folderId);
 }
 
 // ── Récents (2 listes séparées de 5 : Bingo / Tier List) ──────────────────────
