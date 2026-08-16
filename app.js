@@ -1772,7 +1772,11 @@ function _bingoSaveFolder(folderId) {
   // silencieuse) laisserait sinon une empreinte orpheline indéfiniment. 20 est très large par
   // rapport au rythme réel de clics × latence réseau (quelques écritures en vol tout au plus).
   if (inFlight.size >= 20) inFlight.delete(inFlight.values().next().value);
-  inFlight.add(JSON.stringify(sanitized));
+  const sanitizedJSON = JSON.stringify(sanitized);
+  inFlight.add(sanitizedJSON);
+  // Ce qu'on envoie devient, par définition, notre nouvel état local connu — évite de le
+  // recalculer plus tard pour la comparaison de secours de _bingoSetActiveSeasonSubscription.
+  _bingoLastKnownPayloadJSON.set(folderId, sanitizedJSON);
   _dbBingoData.child(folderId).set(sanitized).catch(e => console.warn('Bingo folder save error:', e));
 }
 
@@ -1829,13 +1833,23 @@ function _bingoMergeDataIntoState(folderId, rawData) {
 const _bingoLoadedFolders = new Set();        // folderId -> chargé (jamais déchargé pendant la session)
 const _bingoLoadPromises  = new Map();        // folderId -> Promise en cours (dédup des appels concurrents)
 
+// folderId -> dernière empreinte JSON (sanitizeForFirebase + stringify) connue comme correspondant
+// exactement à l'état local du dossier — mise à jour à chaque écriture (_bingoSaveFolder) et à
+// chaque fusion réussie d'un snapshot distant (_bingoMergeDataIntoState). Évite de reconstruire
+// le payload + sanitize + stringify à chaque snapshot juste pour la comparaison de secours dans
+// _bingoSetActiveSeasonSubscription (cf commentaire sur place) — coûteux au chargement d'une
+// saison à plusieurs épisodes ou pendant une rafale de clics.
+const _bingoLastKnownPayloadJSON = new Map();
+
 async function _bingoEnsureFolderLoaded(folderId) {
   if (!folderId) return null;
   if (_bingoLoadedFolders.has(folderId)) return findFolderById(state.folders, folderId);
   if (_bingoLoadPromises.has(folderId)) return _bingoLoadPromises.get(folderId);
   const promise = _dbBingoData.child(folderId).once('value').then(snapshot => {
-    _bingoMergeDataIntoState(folderId, snapshot.val());
+    const rawVal = snapshot.val();
+    _bingoMergeDataIntoState(folderId, rawVal);
     _bingoLoadedFolders.add(folderId);
+    _bingoLastKnownPayloadJSON.set(folderId, JSON.stringify(rawVal));
     _bingoLoadPromises.delete(folderId);
     return findFolderById(state.folders, folderId);
   }).catch(e => { console.warn('Bingo folder load error:', e); _bingoLoadPromises.delete(folderId); throw e; });
@@ -2239,7 +2253,10 @@ function addElement() {
   inputEl.value = '';
   _bingoSaveFolder(s.id);
   renderElements();
-  renderGrid();
+  // Une case tout juste créée n'est placée dans aucune cellule (jamais générée ni glissée
+  // manuellement) : renderGrid() complet inutile ici, contrairement à delete/archive/restore
+  // qui peuvent vider des cellules déjà affichées. Perceptible en rafale (plusieurs cases
+  // ajoutées à la suite) : évite un reflow + reconstruction DOM complète par case.
 }
 
 function deleteElement(id) {
@@ -9539,8 +9556,16 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
   if (!readOnly) {
     card.addEventListener('click', e => {
       e.stopPropagation();
+      // Simple bascule de classe CSS ciblée au lieu d'un tlRender() complet : la sélection ne
+      // change rien d'autre dans le DOM (confirmé dans tlBuildImgCard, aucun autre élément ne
+      // dépend de _tlSelectedImgId), donc reconstruire tous les tiers pour ça est inutile.
+      const previouslySelectedId = _tlSelectedImgId;
       _tlSelectedImgId = (_tlSelectedImgId === img.id) ? null : img.id;
-      tlRender();
+      if (previouslySelectedId && previouslySelectedId !== img.id) {
+        const prevCard = document.querySelector(`.tl-img-card[data-img-id="${previouslySelectedId}"]`);
+        if (prevCard) prevCard.classList.remove('selected');
+      }
+      card.classList.toggle('selected', _tlSelectedImgId === img.id);
     });
 
     card.addEventListener('dragstart', e => {
@@ -12046,11 +12071,13 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && _tlActiveCtxMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; }
 });
 
-// Désélectionner l'image en cliquant ailleurs
+// Désélectionner l'image en cliquant ailleurs — patch ciblé (retrait de la classe CSS) plutôt
+// qu'un tlRender() complet, même principe que le clic de sélection dans tlBuildImgCard.
 document.addEventListener('click', e => {
   if (_tlSelectedImgId && !e.target.closest('.tl-img-card')) {
+    const prevCard = document.querySelector(`.tl-img-card[data-img-id="${_tlSelectedImgId}"]`);
+    if (prevCard) prevCard.classList.remove('selected');
     _tlSelectedImgId = null;
-    tlRender();
   }
 });
 
@@ -12737,16 +12764,17 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
       const rawValJSON = JSON.stringify(rawVal);
       if (inFlight && inFlight.has(rawValJSON)) {
         inFlight.delete(rawValJSON);
+        _bingoLastKnownPayloadJSON.set(id, rawValJSON);
         return;
       }
       // Écho qui confirme ce qu'on a DÉJÀ en mémoire pour ce dossier (pas une de nos écritures : cf
       // ci-dessus, plutôt une lecture qui arrive par un second chemin — ex. au chargement initial de
       // la page, _bingoEnsureSeasonLoaded() fait un .once() sur ce même dossier EN PLUS de ce .on()
       // permanent ici, les deux pouvant recevoir le même contenu et redéclencher chacun un rendu
-      // complet coup sur coup : le badge "BINGO !" se recréait deux fois au chargement). Comparer au
-      // payload déjà en mémoire (même forme que ce qui est stocké côté Firebase, cf
-      // _bingoBuildFolderPayload) : si rigoureusement identique, rien de neuf à fusionner ni à rendre.
-      if (_bingoLoadedFolders.has(id) && rawValJSON === JSON.stringify(sanitizeForFirebase(_bingoBuildFolderPayload(id)))) {
+      // complet coup sur coup : le badge "BINGO !" se recréait deux fois au chargement). Comparée à
+      // l'empreinte du dernier état local connu (_bingoLastKnownPayloadJSON, tenue à jour par
+      // _bingoSaveFolder et par cette fusion elle-même) plutôt que recalculée à chaque snapshot.
+      if (_bingoLoadedFolders.has(id) && rawValJSON === _bingoLastKnownPayloadJSON.get(id)) {
         return;
       }
       _bingoRemoteUpdate = true;
@@ -12754,6 +12782,7 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
       _bingoMergeDataIntoState(id, rawVal);
       const f = findFolderById(state.folders, id);
       _bingoLoadedFolders.add(id);
+      _bingoLastKnownPayloadJSON.set(id, rawValJSON);
       // Nouvelles grilles apparues (créées par un autre utilisateur) dans le dossier actif : les
       // ajouter à la sélection locale — même comportement que l'ancien listener unique.
       if (f && _localActiveFolderId === id) {
