@@ -1674,6 +1674,7 @@ function _bingoBuildFolderPayload(folderId) {
     persistentCheckedIds: f.persistentCheckedIds || [],
     grids: f.grids || [],
     activeGridId: f.activeGridId || null,
+    mainGridId: f.mainGridId || null,
   };
 }
 
@@ -1753,6 +1754,7 @@ function _bingoMergeDataIntoState(folderId, rawData) {
   f.archivedElementIds = data.archivedElementIds || [];
   f.persistentCheckedIds = data.persistentCheckedIds || [];
   f.activeGridId = data.activeGridId || null;
+  f.mainGridId = data.mainGridId || null;
   f.grids = (data.grids || []).map(g => {
     if (indexArchivedById.has(g.id)) g.archived = indexArchivedById.get(g.id);
     if (g.hidden === undefined) g.hidden = false;
@@ -3086,6 +3088,7 @@ async function deleteGrid(id) {
     const remaining = s.grids.filter(g => !g.archived);
     s.activeGridId = remaining.length > 0 ? remaining[0].id : null;
   }
+  if (s.mainGridId === id) s.mainGridId = null;
   touchFolderChain(s.id);
   _bingoSave(s.id); // touchFolderChain touche updatedAt (index) — cf commentaire dans createGrid
   renderGridsList();
@@ -3320,7 +3323,7 @@ function _patchCellsAfterCheck(elementId) {
   });
 }
 
-function buildSingleGrid(t, g, isActive, totalGrids = 1) {
+function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
   const n = g.gridSize;
   const scale = _localFontScale;
   const s = activeSubtheme();
@@ -3330,6 +3333,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   const wrapper = document.createElement('div');
   wrapper.className = 'grid-view-wrapper';
   wrapper.dataset.gridId = g.id;
+  if (s && s.mainGridId && s.mainGridId === g.id) wrapper.classList.add('grid-view-wrapper-main');
 
   // Titre de grille éditable (synchronisé avec le nom de l'onglet)
   const titleRow = document.createElement('div');
@@ -3496,8 +3500,9 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
     div.className = 'bingo-cell';
     div.dataset.index = i;
 
-    // Drag & drop (actif si grille non bloquée)
-    if (!gridLocked) {
+    // Drag & drop (actif si grille non bloquée) — désactivé sur les grilles secondaires
+    // (purement visuelles, cf isSecondary : pas d'interaction possible avec leurs cases).
+    if (!gridLocked && !isSecondary) {
       div.draggable = true;
       div.addEventListener('dragstart', e => {
         e.stopPropagation();
@@ -3561,8 +3566,8 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
         div.appendChild(newBadge);
       }
 
-      div.title = cell.checked ? 'Désactiver cette case' : 'Valider cette case' + (!gridLocked ? ' · Clic droit : vider' : '');
-      div.addEventListener('click', () => {
+      div.title = isSecondary ? '' : (cell.checked ? 'Désactiver cette case' : 'Valider cette case' + (!gridLocked ? ' · Clic droit : vider' : ''));
+      if (!isSecondary) div.addEventListener('click', () => {
         if (!cell.elementId) return;
         const newChecked = !cell.checked;
         const tNow = activeTheme();
@@ -3614,7 +3619,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
         }
       });
 
-      if (!gridLocked) {
+      if (!gridLocked && !isSecondary) {
         div.addEventListener('contextmenu', e => {
           e.preventDefault();
           const el = (s && s.elements ? s.elements : []).find(x => x.id === cell.elementId);
@@ -3636,6 +3641,14 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
           });
         });
       }
+
+      // Grilles secondaires : pas de clic/contexte (cf ci-dessus), mais un aperçu détaché
+      // apparaît dans l'espace libre à droite au survol — affiche le texte réel de la case sans
+      // superposer quoi que ce soit sur la grille elle-même (cf #bingo-secondary-cell-preview).
+      if (isSecondary) {
+        div.addEventListener('mouseenter', () => _showSecondaryCellPreview(div, cellText, cell));
+        div.addEventListener('mouseleave', _hideSecondaryCellPreview);
+      }
     }
 
     gridEl.appendChild(div);
@@ -3644,6 +3657,39 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1) {
   wrapper.appendChild(gridEl);
 
   return { wrapper, bingoLines };
+}
+
+// Aperçu détaché d'une case de grille secondaire au survol (cf isSecondary dans buildSingleGrid) :
+// positionné dans l'espace libre à droite de la colonne secondaire (#grid-wrapper-secondary-col),
+// jamais superposé à une grille. Une seule instance réutilisée dans le DOM (#bingo-secondary-
+// cell-preview, cf index.html) plutôt que recréée à chaque survol.
+function _showSecondaryCellPreview(cellDiv, cellText, cell) {
+  const preview = document.getElementById('bingo-secondary-cell-preview');
+  if (!preview) return;
+  const secondaryCol = gridWrapper.querySelector('.grid-wrapper-secondary-col');
+  if (!secondaryCol) return;
+
+  preview.textContent = cellText;
+  preview.classList.toggle('checked', !!cell.checked);
+  preview.classList.toggle('bingo-line', cellDiv.classList.contains('bingo-line'));
+  preview.classList.remove('hidden');
+
+  // Positionné à droite de la colonne secondaire (espace toujours libre dans ce mode, cf largeur
+  // dynamique calculée par _adjustBingoGridSizes), centré verticalement sur la case survolée.
+  const colRect = secondaryCol.getBoundingClientRect();
+  const cellRect = cellDiv.getBoundingClientRect();
+  preview.style.left = (colRect.right + 16) + 'px';
+  preview.style.top = '0px'; // mesuré puis recentré ci-dessous une fois la hauteur réelle connue
+  const previewHeight = preview.getBoundingClientRect().height;
+  let top = cellRect.top + cellRect.height / 2 - previewHeight / 2;
+  const viewportMargin = 8;
+  top = Math.max(viewportMargin, Math.min(top, window.innerHeight - previewHeight - viewportMargin));
+  preview.style.top = top + 'px';
+}
+
+function _hideSecondaryCellPreview() {
+  const preview = document.getElementById('bingo-secondary-cell-preview');
+  if (preview) preview.classList.add('hidden');
 }
 
 // "Reset" décoche toutes les cases de toutes les grilles non archivées du sous-thème actif — inutile
@@ -3679,6 +3725,7 @@ function renderGrid(skipSizeRecalc = false) {
   updateResetButton();
   _updateNewBadgeButton();
   document.getElementById('btn-cases-panel')?.classList.remove('btn-attention');
+  _hideSecondaryCellPreview();
   gridWrapper.innerHTML = '';
   gridWrapper.style.justifyContent = '';
   gridWrapper.style.alignItems = '';
@@ -3782,20 +3829,35 @@ function renderGrid(skipSizeRecalc = false) {
   // pas par canGenerate : tant que ce seuil n'est pas atteint, la surbrillance reste affichée même
   // si canFillEmptyCellsVisibleGrids() permettrait déjà de générer partiellement.
   document.getElementById('btn-cases-panel')?.classList.toggle('btn-attention', !enoughElements);
+  // Le bouton Grilles est bleu en permanence (cf #btn-grids-dropdown en CSS) — pas de toggle JS.
 
-  gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}`;
+  const hasMainGrid = gridsToShow.length > 1 && !!s.mainGridId && gridsToShow.some(gx => gx.id === s.mainGridId);
+  gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}` + (hasMainGrid ? ' grid-wrapper-has-main' : '');
 
   // Le message global est désormais remplacé par des messages individuels par grille
   bingoMsg.classList.add('hidden');
 
   const _pendingBingoEffects = [];
 
+  // Grille principale : les grilles secondaires sont regroupées dans une colonne dédiée
+  // à droite (cf .grid-wrapper-secondary-col en CSS) plutôt que placées directement dans
+  // gridWrapper, sinon elles se retrouveraient dans le même flex-row que la grille principale.
+  // secondaryCol n'est inséré dans gridWrapper qu'APRÈS la grille principale (cf fin de la
+  // boucle ci-dessous) pour que l'ordre DOM place bien la principale à gauche.
+  let secondaryCol = null;
+  if (hasMainGrid) {
+    secondaryCol = document.createElement('div');
+    secondaryCol.className = 'grid-wrapper-secondary-col';
+  }
+
   gridsToShow.forEach(gridItem => {
     const isActive = gridItem.id === (g?.id);
-    const { wrapper, bingoLines } = buildSingleGrid(t, gridItem, isActive, gridsToShow.length);
+    const isSecondary = hasMainGrid && gridItem.id !== s.mainGridId;
+    const { wrapper, bingoLines } = buildSingleGrid(t, gridItem, isActive, gridsToShow.length, isSecondary);
 
-    // Drag & drop pour réordonner les grilles affichées
-    if (gridsToShow.length > 1) {
+    // Drag & drop pour réordonner les grilles affichées — désactivé pour les grilles secondaires
+    // du mode "grille principale" (purement visuelles, pas de réordonnancement par glisser).
+    if (gridsToShow.length > 1 && !isSecondary) {
       wrapper.draggable = true;
       wrapper.style.cursor = 'grab';
       wrapper.title = 'Déplace la grille';
@@ -3828,9 +3890,17 @@ function renderGrid(skipSizeRecalc = false) {
       });
     }
 
-    gridWrapper.appendChild(wrapper);
+    if (secondaryCol && !wrapper.classList.contains('grid-view-wrapper-main')) {
+      secondaryCol.appendChild(wrapper);
+    } else {
+      gridWrapper.appendChild(wrapper);
+    }
     _pendingBingoEffects.push({ gridId: gridItem.id, lineCount: bingoLines.length });
   });
+
+  // Inséré après la grille principale (déjà dans gridWrapper à ce stade) quel que soit l'ordre
+  // de gridsToShow, pour garantir "principale à gauche, secondaires à droite" dans tous les cas.
+  if (secondaryCol) gridWrapper.appendChild(secondaryCol);
 
   // applyFontScale() n'est PAS rappelé ici : buildSingleGrid() applique déjà getCellFontSize()
   // à la construction de chaque cellule (avec le même _localFontScale) — un second passage sur
@@ -3892,6 +3962,55 @@ function _adjustBingoGridSizes() {
   const mainStyle = getComputedStyle(document.querySelector('.main'));
   const bottomReserve = parseFloat(panelGridStyle.paddingBottom) + parseFloat(panelGridStyle.borderBottomWidth) + parseFloat(mainStyle.paddingBottom);
   const totalAvailableHeight = window.innerHeight - gridWrapper.getBoundingClientRect().top - bottomReserve;
+
+  const secondaryCol = gridWrapper.querySelector('.grid-wrapper-secondary-col');
+  if (secondaryCol) {
+    // Mode "grille principale" : la grille principale occupe toute la hauteur disponible (une
+    // seule "rangée"), les grilles secondaires sont empilées dans leur propre colonne — leurs
+    // `top` DOM n'ont donc aucun rapport avec des rangées de la grille principale, contrairement
+    // au calcul rowTops ci-dessous qui suppose un flex-wrap classique à plat.
+    const secWrappers = secondaryCol.querySelectorAll('.grid-view-wrapper');
+    const secGapV = parseFloat(getComputedStyle(secondaryCol).rowGap || getComputedStyle(secondaryCol).gap) || 0;
+    const secAvailableHeight = (totalAvailableHeight - secGapV * Math.max(0, secWrappers.length - 1)) / Math.max(1, secWrappers.length);
+
+    // secondaryCol n'a plus de largeur CSS fixe (cf .grid-wrapper-secondary-col) : on lui donne ici
+    // la largeur exacte que ferait une grille secondaire carrée occupant toute sa hauteur allouée
+    // (secAvailableHeight), pour que les grilles secondaires ENSEMBLE remplissent toute la hauteur
+    // disponible au lieu de rester petites et plafonnées par une largeur de colonne arbitraire.
+    secondaryCol.style.width = '';
+    if (secWrappers.length > 0) {
+      const sampleWrapper = secWrappers[0];
+      const sampleStyle = getComputedStyle(sampleWrapper);
+      const samplePaddingV = parseFloat(sampleStyle.paddingTop) + parseFloat(sampleStyle.paddingBottom)
+        + parseFloat(sampleStyle.borderTopWidth) + parseFloat(sampleStyle.borderBottomWidth);
+      const samplePaddingH = parseFloat(sampleStyle.paddingLeft) + parseFloat(sampleStyle.paddingRight);
+      const titleRowEl = sampleWrapper.querySelector('.grid-view-title-row');
+      const headerHeight = titleRowEl ? titleRowEl.getBoundingClientRect().height : 0;
+      const sampleGap = parseFloat(sampleStyle.rowGap || sampleStyle.gap) || 0;
+      const cellSide = Math.max(80, secAvailableHeight - headerHeight - samplePaddingV - sampleGap - 4);
+      const colWidth = cellSide + samplePaddingH;
+      // Bornes : jamais plus large que ~40% du conteneur (garder une grille principale substantielle
+      // même avec une seule grille secondaire très haute), jamais plus étroit que l'ancien plancher.
+      const gwWidthNow = gridWrapper.getBoundingClientRect().width;
+      secondaryCol.style.width = Math.max(180, Math.min(colWidth, gwWidthNow * 0.4)) + 'px';
+    }
+
+    const mainWrapper = gridWrapper.querySelector('.grid-view-wrapper-main');
+    if (mainWrapper) {
+      // mainWrapper est en width:fit-content (cf CSS .grid-view-wrapper-main) pour épouser le
+      // carré de la grille sans laisser de vide sur les côtés — sa propre largeur mesurée n'est
+      // donc PAS la largeur disponible (elle dépend justement de ce qu'on est en train de calculer).
+      // On utilise plutôt l'espace du conteneur gridWrapper moins la colonne secondaire et le gap.
+      const gwStyle = getComputedStyle(gridWrapper);
+      const gwGapH = parseFloat(gwStyle.columnGap || gwStyle.gap) || 0;
+      const availableWidth = gridWrapper.getBoundingClientRect().width - secondaryCol.getBoundingClientRect().width - gwGapH;
+      _sizeSingleGridWrapper(mainWrapper, totalAvailableHeight, availableWidth);
+    }
+
+    secWrappers.forEach(wrapper => _sizeSingleGridWrapper(wrapper, secAvailableHeight));
+    return;
+  }
+
   // Avec flex-wrap, un grand nombre de grilles peut occuper plusieurs rangées : diviser la
   // hauteur disponible par le nombre de rangées réellement affichées (détecté par les tops
   // distincts des wrappers), sinon chaque grille tente de prendre toute la hauteur du viewport
@@ -3900,24 +4019,27 @@ function _adjustBingoGridSizes() {
   const rowCount = Math.max(1, rowTops.size);
   const wrapperGapV = parseFloat(getComputedStyle(gridWrapper).rowGap || getComputedStyle(gridWrapper).gap) || 0;
   const availableHeight = (totalAvailableHeight - wrapperGapV * (rowCount - 1)) / rowCount;
-  wrappers.forEach(wrapper => {
-    const gridEl = wrapper.querySelector('.bingo-grid');
-    if (!gridEl) return;
-    const headerHeight = Array.from(wrapper.children).reduce((sum, child) => {
-      return child === gridEl ? sum : sum + child.getBoundingClientRect().height;
-    }, 0);
-    const wrapperStyle = getComputedStyle(wrapper);
-    const wrapperPaddingV = parseFloat(wrapperStyle.paddingTop) + parseFloat(wrapperStyle.paddingBottom)
-      + parseFloat(wrapperStyle.borderTopWidth) + parseFloat(wrapperStyle.borderBottomWidth);
-    const wrapperPaddingH = parseFloat(wrapperStyle.paddingLeft) + parseFloat(wrapperStyle.paddingRight);
-    const wrapperGap = parseFloat(wrapperStyle.rowGap || wrapperStyle.gap) || 0;
-    const gapCount = wrapper.children.length - 1;
-    const maxH = Math.max(80, availableHeight - headerHeight - wrapperPaddingV - wrapperGap * gapCount - 4);
-    const maxW = Math.max(80, wrapper.getBoundingClientRect().width - wrapperPaddingH);
-    const side = Math.min(maxH, maxW);
-    gridEl.style.maxHeight = side + 'px';
-    gridEl.style.width = side + 'px';
-  });
+  wrappers.forEach(wrapper => _sizeSingleGridWrapper(wrapper, availableHeight));
+}
+
+function _sizeSingleGridWrapper(wrapper, availableHeight, availableWidth = null) {
+  const gridEl = wrapper.querySelector('.bingo-grid');
+  if (!gridEl) return;
+  const headerHeight = Array.from(wrapper.children).reduce((sum, child) => {
+    return child === gridEl ? sum : sum + child.getBoundingClientRect().height;
+  }, 0);
+  const wrapperStyle = getComputedStyle(wrapper);
+  const wrapperPaddingV = parseFloat(wrapperStyle.paddingTop) + parseFloat(wrapperStyle.paddingBottom)
+    + parseFloat(wrapperStyle.borderTopWidth) + parseFloat(wrapperStyle.borderBottomWidth);
+  const wrapperPaddingH = parseFloat(wrapperStyle.paddingLeft) + parseFloat(wrapperStyle.paddingRight);
+  const wrapperGap = parseFloat(wrapperStyle.rowGap || wrapperStyle.gap) || 0;
+  const gapCount = wrapper.children.length - 1;
+  const maxH = Math.max(80, availableHeight - headerHeight - wrapperPaddingV - wrapperGap * gapCount - 4);
+  const rawWidth = availableWidth !== null ? availableWidth : wrapper.getBoundingClientRect().width;
+  const maxW = Math.max(80, rawWidth - wrapperPaddingH);
+  const side = Math.min(maxH, maxW);
+  gridEl.style.maxHeight = side + 'px';
+  gridEl.style.width = side + 'px';
 }
 
 window.addEventListener('resize', () => {
@@ -5086,6 +5208,22 @@ function _renderGridsDropdownMenu() {
     nameSpan.textContent = g.name;
     nameSpan.addEventListener('click', () => cb.click());
     item.appendChild(nameSpan);
+
+    const isMain = s.mainGridId === g.id;
+    const mainBtn = document.createElement('button');
+    mainBtn.className = 'grid-tab-main-btn' + (isMain ? ' active' : '');
+    mainBtn.innerHTML = '<i data-lucide="star"></i>';
+    mainBtn.title = isMain ? 'Retirer comme grille principale' : 'Définir comme grille principale';
+    mainBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const sNow = activeSubtheme();
+      if (!sNow) return;
+      sNow.mainGridId = (sNow.mainGridId === g.id) ? null : g.id;
+      _bingoSaveFolder(sNow.id);
+      _renderGridsDropdownMenu();
+      renderGrid();
+    });
+    item.appendChild(mainBtn);
 
     const ctxBtn = document.createElement('button');
     ctxBtn.className = 'grid-tab-ctx-btn';

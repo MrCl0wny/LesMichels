@@ -353,19 +353,27 @@ body {
   background: var(--accent-glow) !important;
 }
 
-/* Surbrillance forte du bouton Cases tant que le nombre minimal de cases n'est pas atteint
-   (disparaît dès que le seuil est atteint, voir enoughElements dans renderGrid()). Bordure épaisse
-   + fond saturé + glow large, largement plus marquée qu'un simple hover, pour que ce soit
-   immédiatement visible même en périphérie de vision. */
+/* Surbrillance du bouton Cases tant que le nombre minimal de cases n'est pas atteint (disparaît
+   dès que le seuil est atteint, voir enoughElements dans renderGrid()). Bordure épaisse + fond
+   saturé, plus marquée qu'un simple hover, pour que ce soit visible même en périphérie de vision. */
 .btn-cases-panel.btn-attention {
   border: 2px solid #3b82f6 !important;
   color: #fff !important;
   background: rgba(59,130,246,0.4) !important;
-  animation: pulse-attention 1s ease-in-out infinite alternate;
 }
-@keyframes pulse-attention {
-  from { box-shadow: 0 0 6px rgba(59,130,246, 0.4); }
-  to   { box-shadow: 0 0 20px rgba(59,130,246, 1), 0 0 36px rgba(59,130,246, 0.5); }
+
+/* Bouton Grilles : toujours bleu (même style que Cases en surbrillance, mais permanent — pas
+   conditionné au nombre de cases), en mode normal comme en plein écran (même élément DOM déplacé
+   en JS, cf #btn-grids-dropdown). */
+#btn-grids-dropdown {
+  border: 2px solid #3b82f6 !important;
+  color: #fff !important;
+  background: rgba(59,130,246,0.4) !important;
+}
+#btn-grids-dropdown:hover {
+  background: rgba(59,130,246,0.6) !important;
+  border-color: #60a5fa !important;
+  color: #fff !important;
 }
 /* ── Breadcrumb dans ctrl-row-grids ── */
 .grids-breadcrumb {
@@ -1532,6 +1540,22 @@ textarea.element-edit-input {
 .grid-tab-ctx-btn:hover { opacity: 1; background: var(--surface-3); }
 .grid-tab-ctx-btn [data-lucide] { width: 13px; height: 13px; margin-right: 0; vertical-align: middle; }
 
+.grid-tab-main-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 3px;
+  opacity: 0.6;
+  transition: var(--transition);
+}
+.grid-tab-main-btn:hover { opacity: 1; background: var(--surface-3); }
+.grid-tab-main-btn [data-lucide] { width: 13px; height: 13px; margin-right: 0; vertical-align: middle; }
+.grid-tab-main-btn.active { opacity: 1; color: #f5c518; }
+.grid-tab-main-btn.active [data-lucide] { fill: #f5c518; }
+
 .grid-tab.dragging { opacity: 0.4; }
 
 .btn-new-grid {
@@ -1768,6 +1792,9 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 #btn-new-element-preset {
   font-weight: 900;
 }
+/* Générer / Vider / Reset (panneau global ET boutons par grille individuelle) : même opacité au
+   repos que les boutons neutres (Dossiers, Grilles…) — gardent leur teinte distinctive (violet/
+   orange/rouge) mais estompée, pleine opacité seulement au survol (cf règle commune plus bas). */
 .btn-action.btn-reset {
   background: #8b1a0f;
   color: #f5c0bb;
@@ -1829,6 +1856,23 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   opacity: 0.4;
   cursor: not-allowed;
   pointer-events: none;
+}
+
+.btn-action.btn-reset:not(.btn-disabled):not(:disabled),
+.btn-action.btn-generate-global:not(.btn-disabled):not(:disabled),
+.btn-action.btn-generate-fill-empty:not(.btn-disabled):not(:disabled),
+.btn-action.btn-subgrid-gen:not(.btn-disabled):not(:disabled),
+.btn-action.btn-clear-grids:not(.btn-disabled):not(:disabled),
+.btn-action.btn-subgrid-clear:not(.btn-disabled):not(:disabled) {
+  opacity: 0.7;
+}
+.btn-action.btn-reset:hover,
+.btn-action.btn-generate-global:hover,
+.btn-action.btn-generate-fill-empty:hover:not(:disabled),
+.btn-action.btn-subgrid-gen:hover:not(:disabled),
+.btn-action.btn-clear-grids:hover:not(:disabled),
+.btn-action.btn-subgrid-clear:hover:not(:disabled) {
+  opacity: 1;
 }
 
 .btn-action.btn-screenshot-bingo {
@@ -1941,6 +1985,103 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
+
+/* Grille principale : occupe toute la hauteur à gauche, les autres grilles sont empilées
+   en colonne à droite en plus petit (pattern demandé, actif dès qu'une grille principale
+   est définie ET que plusieurs grilles sont affichées — cf hasMainGrid côté JS). */
+.grid-wrapper.grid-wrapper-has-main {
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+.grid-wrapper.grid-wrapper-has-main .grid-view-wrapper {
+  flex: 0 0 auto;
+}
+.grid-wrapper.grid-wrapper-has-main .grid-view-wrapper-main {
+  /* La grille interne est un carré dimensionné en JS (_sizeSingleGridWrapper) à partir de la
+     hauteur disponible : le wrapper doit épouser cette largeur plutôt que s'étirer avec flex-grow
+     (flex:3 laissait un vide de part et d'autre du carré, la largeur du wrapper dépassant celle
+     réellement occupée par la grille). */
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: 100%;
+  align-self: stretch;
+}
+.grid-wrapper.grid-wrapper-has-main .grid-view-wrapper-main .bingo-grid {
+  max-height: 100% !important;
+}
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* flex: 0 0 auto plutôt que 1 1 0 — la largeur est fixée dynamiquement en JS
+     (_adjustBingoGridSizes) pour que les grilles secondaires remplissent toute la hauteur
+     disponible ; min-width reste un plancher de sécurité avant le premier calcul JS. */
+  flex: 0 0 auto;
+  min-width: 180px;
+  overflow-y: auto;
+  align-self: stretch;
+}
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .grid-view-wrapper {
+  flex: 0 0 auto;
+  width: 100%;
+}
+/* Grilles secondaires : wrapper trop étroit pour le groupe Bloquer/Générer/Vider en position
+   absolute (cf .subgrid-lock-gen-group) — masqué comme en plein écran (body.solo-grid-mode),
+   et le padding réservé pour lui (190px de chaque côté, cf .grid-view-title-row) réduit d'autant,
+   sinon le titre est poussé hors champ et invisible sur un wrapper de cette largeur. */
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .subgrid-lock-gen-group,
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .grid-view-title-capture {
+  display: none;
+}
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .grid-view-title-row {
+  padding: 0 4px;
+}
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .grid-view-title-input {
+  font-size: 0.8rem;
+  padding: 2px 4px;
+}
+/* Couleurs seules pour les cases des grilles secondaires : texte masqué au repos (mais pas les
+   couleurs de fond checked/bingo-line, qui restent l'info utile en un coup d'œil sur un aperçu
+   miniature) — purement visuel, non cliquable (pointer-events désactivés sur toute la grille).
+   Au survol d'une case : un aperçu détaché apparaît dans l'espace libre à droite (cf #bingo-
+   secondary-cell-preview, positionné en JS par _showSecondaryCellPreview) — pas de zoom inline
+   sur la case elle-même, qui déborderait par-dessus la grille au lieu de rester lisible à côté. */
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .bingo-grid {
+  pointer-events: none;
+}
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .bingo-cell {
+  font-size: 0 !important;
+  color: transparent !important;
+  cursor: default;
+  pointer-events: auto;
+}
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .bingo-cell-new-badge {
+  display: none;
+}
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .bingo-cell:not(.empty):hover {
+  box-shadow: inset 0 0 0 2px var(--accent-dim);
+}
+
+#bingo-secondary-cell-preview {
+  position: fixed;
+  z-index: 200;
+  min-width: 140px;
+  max-width: 260px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-3);
+  border: 1px solid var(--accent-dim);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  color: var(--text);
+  font-family: Arial, sans-serif;
+  font-size: 1rem;
+  line-height: 1.3;
+  text-align: center;
+  word-break: break-word;
+  pointer-events: none;
+}
+#bingo-secondary-cell-preview.checked { color: var(--accent); border-color: var(--accent); }
+#bingo-secondary-cell-preview.bingo-line { color: var(--bingo-green); border-color: var(--bingo-green); }
 
 .grid-view-title-row {
   width: 100%;
