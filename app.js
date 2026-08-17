@@ -302,6 +302,7 @@ function setupAuth() {
       _prefsReady            = false;
       _localActiveFolderId   = null;
       _selectedGridsByFolder = {};
+      _mainGridByFolder = {};
       _selectedGridIds = [];
       _localFontScale  = 1;
       _localShowNewBadge = true;
@@ -356,6 +357,10 @@ function loadUserPrefs() {
     if (prefs.selectedGrids    != null) {
       try { _selectedGridsByFolder = typeof prefs.selectedGrids === 'object' ? prefs.selectedGrids : JSON.parse(prefs.selectedGrids); }
       catch { _selectedGridsByFolder = {}; }
+    }
+    if (prefs.mainGridByFolder != null) {
+      try { _mainGridByFolder = typeof prefs.mainGridByFolder === 'object' ? prefs.mainGridByFolder : JSON.parse(prefs.mainGridByFolder); }
+      catch { _mainGridByFolder = {}; }
     }
     // Migration prefs anciens formats vers nouvelle structure
     if (!prefs.activeFolderId && prefs.activeThemeId) {
@@ -703,6 +708,21 @@ function loadLocalSelectedGridsForFolder(folderId) {
   if (!saved) return [];
   if (Array.isArray(saved) && saved.length === 1 && saved[0] === _EMPTY_SELECTION) return [];
   return saved.slice();
+}
+
+// Grille principale : propre à chaque utilisateur (prefs Firebase par uid), pas au dossier partagé
+// — chaque utilisateur peut définir une grille principale différente sur le même dossier-bingo.
+// Stocké par dossier : { [folderId]: gridId }
+let _mainGridByFolder = {};
+
+function getMainGridId(folderId) {
+  return _mainGridByFolder[folderId] || null;
+}
+
+function setMainGridId(folderId, gridId) {
+  if (gridId) _mainGridByFolder[folderId] = gridId;
+  else delete _mainGridByFolder[folderId];
+  saveUserPrefs({ mainGridByFolder: _mainGridByFolder });
 }
 
 // Compose le nom affiché d'un dossier numéroté (saison/épisode) : "S01" ou "S01 La Guerre des Chefs"
@@ -1674,7 +1694,6 @@ function _bingoBuildFolderPayload(folderId) {
     persistentCheckedIds: f.persistentCheckedIds || [],
     grids: f.grids || [],
     activeGridId: f.activeGridId || null,
-    mainGridId: f.mainGridId || null,
   };
 }
 
@@ -1754,7 +1773,6 @@ function _bingoMergeDataIntoState(folderId, rawData) {
   f.archivedElementIds = data.archivedElementIds || [];
   f.persistentCheckedIds = data.persistentCheckedIds || [];
   f.activeGridId = data.activeGridId || null;
-  f.mainGridId = data.mainGridId || null;
   f.grids = (data.grids || []).map(g => {
     if (indexArchivedById.has(g.id)) g.archived = indexArchivedById.get(g.id);
     if (g.hidden === undefined) g.hidden = false;
@@ -3088,7 +3106,7 @@ async function deleteGrid(id) {
     const remaining = s.grids.filter(g => !g.archived);
     s.activeGridId = remaining.length > 0 ? remaining[0].id : null;
   }
-  if (s.mainGridId === id) s.mainGridId = null;
+  if (getMainGridId(s.id) === id) setMainGridId(s.id, null);
   touchFolderChain(s.id);
   _bingoSave(s.id); // touchFolderChain touche updatedAt (index) — cf commentaire dans createGrid
   renderGridsList();
@@ -3333,7 +3351,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
   const wrapper = document.createElement('div');
   wrapper.className = 'grid-view-wrapper';
   wrapper.dataset.gridId = g.id;
-  if (s && s.mainGridId && s.mainGridId === g.id) wrapper.classList.add('grid-view-wrapper-main');
+  if (s && getMainGridId(s.id) === g.id) wrapper.classList.add('grid-view-wrapper-main');
 
   // Titre de grille éditable (synchronisé avec le nom de l'onglet)
   const titleRow = document.createElement('div');
@@ -3831,7 +3849,8 @@ function renderGrid(skipSizeRecalc = false) {
   document.getElementById('btn-cases-panel')?.classList.toggle('btn-attention', !enoughElements);
   // Le bouton Grilles est bleu en permanence (cf #btn-grids-dropdown en CSS) — pas de toggle JS.
 
-  const hasMainGrid = gridsToShow.length > 1 && !!s.mainGridId && gridsToShow.some(gx => gx.id === s.mainGridId);
+  const mainGridId = getMainGridId(s.id);
+  const hasMainGrid = gridsToShow.length > 1 && !!mainGridId && gridsToShow.some(gx => gx.id === mainGridId);
   gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}` + (hasMainGrid ? ' grid-wrapper-has-main' : '');
 
   // Le message global est désormais remplacé par des messages individuels par grille
@@ -3852,7 +3871,7 @@ function renderGrid(skipSizeRecalc = false) {
 
   gridsToShow.forEach(gridItem => {
     const isActive = gridItem.id === (g?.id);
-    const isSecondary = hasMainGrid && gridItem.id !== s.mainGridId;
+    const isSecondary = hasMainGrid && gridItem.id !== mainGridId;
     const { wrapper, bingoLines } = buildSingleGrid(t, gridItem, isActive, gridsToShow.length, isSecondary);
 
     // Drag & drop pour réordonner les grilles affichées — désactivé pour les grilles secondaires
@@ -5209,7 +5228,7 @@ function _renderGridsDropdownMenu() {
     nameSpan.addEventListener('click', () => cb.click());
     item.appendChild(nameSpan);
 
-    const isMain = s.mainGridId === g.id;
+    const isMain = getMainGridId(s.id) === g.id;
     const mainBtn = document.createElement('button');
     mainBtn.className = 'grid-tab-main-btn' + (isMain ? ' active' : '');
     mainBtn.innerHTML = '<i data-lucide="star"></i>';
@@ -5218,8 +5237,7 @@ function _renderGridsDropdownMenu() {
       e.stopPropagation();
       const sNow = activeSubtheme();
       if (!sNow) return;
-      sNow.mainGridId = (sNow.mainGridId === g.id) ? null : g.id;
-      _bingoSaveFolder(sNow.id);
+      setMainGridId(sNow.id, (getMainGridId(sNow.id) === g.id) ? null : g.id);
       _renderGridsDropdownMenu();
       renderGrid();
     });
