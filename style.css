@@ -981,6 +981,15 @@ body.solo-grid-mode .ctrl-row-grids,
 body.solo-grid-mode .btn-hide-solo-mode {
   display: none !important;
 }
+/* Filet de sécurité : #btn-ce-set-header est déplacé en JS à côté de #btn-grids-dropdown
+   (voir _placeCeSetHeaderBtn), qui lui-même est déplacé dans la barre plein écran par
+   btn-open-grids-window. Si renderCurrentEventButton() s'exécute pendant que le plein écran
+   est actif (ex: mise à jour Firebase reçue pendant ce mode), le bouton peut se retrouver
+   repositionné à côté de Grilles dans la barre visible au lieu de rester caché dans
+   .ctrl-row-grids — on le masque donc explicitement ici, peu importe où il est dans le DOM. */
+body.solo-grid-mode #btn-ce-set-header {
+  display: none !important;
+}
 body.solo-grid-mode .main {
   padding: 8px;
   height: 100vh;
@@ -1055,6 +1064,11 @@ body.solo-tierlist-mode .header,
 body.solo-tierlist-mode .ctrl-row-line1,
 body.solo-tierlist-mode .ctrl-row-toolbar {
   display: none;
+}
+/* Même filet de sécurité que solo-grid-mode (voir plus haut) : #btn-ce-set-header ne doit
+   jamais apparaître en plein écran, quel que soit l'endroit où le JS l'a placé. */
+body.solo-tierlist-mode #btn-ce-set-header {
+  display: none !important;
 }
 body.solo-tierlist-mode .main {
   padding: 8px;
