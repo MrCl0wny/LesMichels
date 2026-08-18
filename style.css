@@ -1077,12 +1077,11 @@ body.solo-tierlist-mode .btn-fullscreen-only,
 body.solo-tierlist-mode .tl-btn-exit-mode {
   display: flex !important;
 }
-/* En plein écran, un template ne peut pas s'afficher (voir _applySoloTierlistModeIfNeeded) : les
-   options propres à un template (Tiers = gérer les tiers du template, Reset) n'ont pas leur place
-   dans le cadre Options Liste une fois déplacé côté plein écran — le bouton Liste (déplacé par
-   _tlEnterSoloToolbarLayout) les remplace pour permettre de changer de liste sans quitter le
-   plein écran. */
-body.solo-tierlist-mode #tl-btn-add-tier,
+/* En plein écran, un template ne peut pas s'afficher (voir _applySoloTierlistModeIfNeeded) : Reset
+   (propre à un template) n'a pas sa place dans le cadre Options Liste une fois déplacé côté plein
+   écran — le bouton Liste (déplacé par _tlEnterSoloToolbarLayout) le remplace pour permettre de
+   changer de liste sans quitter le plein écran. (Tiers, lui, est sur la ligne 1, déjà masquée
+   entièrement en plein écran — pas besoin de règle dédiée ici.) */
 body.solo-tierlist-mode #tl-btn-reset {
   display: none !important;
 }
@@ -2581,6 +2580,15 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   gap: 6px;
 }
 
+/* Sépare les presets protégés (Standard/Inversé, en tête) des presets personnalisés triés
+   alphabétiquement (voir tlOpenTiersSourceModal) */
+.tl-preset-list-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0;
+  flex-shrink: 0;
+}
+
 .tl-preset-row-btn {
   display: flex !important;
   align-items: center;
@@ -2623,7 +2631,9 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 160px;
+  /* Largeur calée pour que les 27 pastilles (voir TL_PRESET_COLORS) tiennent en 3 rangées de 9,
+     même agencement que le sélecteur du modal Nouveau/Modifier tier (.tl-modal-tier-box). */
+  width: 306px;
   padding: 10px;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -3307,7 +3317,7 @@ body.solo-tierlist-mode .tl-layout {
 .tl-tiers-zone::-webkit-scrollbar { width: 4px; }
 .tl-tiers-zone::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
-/* ── Ligne de tier (grip + settings en dehors du rectangle coloré, puis le tier lui-même) ── */
+/* ── Ligne de tier (settings en dehors du rectangle coloré, puis le tier lui-même) ── */
 .tl-tier-wrap {
   display: flex;
   align-items: stretch;
@@ -3324,18 +3334,6 @@ body.solo-tierlist-mode .tl-layout {
   flex-shrink: 0;
   width: 26px;
 }
-.tl-tier-drag-handle {
-  color: #fff;
-  cursor: grab;
-  opacity: 0.75;
-  transition: opacity var(--transition), color var(--transition);
-  user-select: none;
-  display: flex;
-}
-.tl-tier-wrap:hover .tl-tier-drag-handle { opacity: 1; }
-.tl-tier-drag-handle:hover { opacity: 1; color: var(--accent); }
-.tl-tier-drag-handle:active { cursor: grabbing; }
-.tl-tier-drag-handle [data-lucide] { width: 22px; height: 22px; margin-right: 0; }
 
 .tl-tier-settings-btn {
   background: none;
@@ -3408,12 +3406,6 @@ body.solo-tierlist-mode .tl-layout {
   resize: none;
   overflow: hidden;
   word-break: break-word;
-}
-
-.tl-tier-wrap.tl-tier-label-dragging { opacity: 0.4; }
-.tl-tier-drop-placeholder {
-  width: 100%;
-  min-height: 40px;
 }
 
 .tl-tier-images {
@@ -3854,12 +3846,22 @@ body.solo-tierlist-mode .tl-layout {
   pointer-events: none;
 }
 
+/* Élargi par rapport à .modal-box-sm : 27 pastilles (3 rangées de 9, voir TL_PRESET_COLORS) ont
+   besoin d'assez de largeur pour que 9 tiennent sur une ligne, sinon les rangées ne correspondent
+   plus visuellement aux 3 groupes de 9 couleurs voulus. */
+.tl-modal-tier-box {
+  min-width: 336px;
+  max-width: 336px;
+}
+
 /* ── Color picker ── */
+/* Empilé (label, puis pastilles, puis "Autre") plutôt qu'en ligne : sur une seule ligne flex avec
+   le label, l'espace restant pour les pastilles était trop étroit. */
 .tl-color-picker {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
 }
 .tl-color-picker-label {
   font-size: 0.75rem;
@@ -3873,7 +3875,6 @@ body.solo-tierlist-mode .tl-layout {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  flex: 1;
 }
 .tl-swatch {
   width: 26px;

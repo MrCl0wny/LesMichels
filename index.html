@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=279" />
+  <link rel="stylesheet" href="style.css?v=283" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -218,6 +218,7 @@
             </div>
             <div class="ctrl-row-grids-center"></div>
             <div class="ctrl-row-grids-right">
+              <button class="tl-toolbar-btn tl-btn-neutral tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Tiers</button>
               <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Non placés</button>
             </div>
           </div>
@@ -235,7 +236,6 @@
                 </label>
                 <button class="tl-toolbar-btn tl-btn-capture tl-shrink-0" id="tl-btn-capture" title="Capturer la liste"><i data-lucide="camera"></i> Capture</button>
                 <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
-                <button class="tl-toolbar-btn tl-btn-neutral tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Tiers</button>
                 <button class="tl-toolbar-btn tl-btn-reset tl-shrink-0" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
               </div>
             </div>
@@ -543,7 +543,7 @@
 
   <!-- Modal nouveau/modifier tier -->
   <div id="tl-modal-tier" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
+    <div class="modal-box modal-box-sm tl-modal-tier-box">
       <div class="modal-header">
         <h3 id="tl-modal-tier-title">Nouveau tier</h3>
         <button class="modal-close" id="tl-modal-tier-close"><i data-lucide="x"></i></button>
@@ -1306,6 +1306,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=405"></script>
+  <script src="app.js?v=408"></script>
 </body>
 </html>

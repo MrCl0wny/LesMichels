@@ -6315,26 +6315,41 @@ const TL_DEFAULT_TIERS = [
 ];
 
 const TL_PRESET_COLORS = [
-  '#e85b47', // rouge
-  '#e8733a', // orange-rouge
-  '#e8a047', // orange
-  '#e8c547', // jaune-or
-  '#e8d447', // jaune
-  '#b5d44a', // jaune-vert
-  '#6ac96a', // vert
-  '#3db88b', // vert-teal
-  '#3db8c8', // cyan
-  '#5b9de8', // bleu
-  '#7b5be8', // violet
-  '#c05be8', // mauve
-  '#e85bb8', // rose
-  '#e85b7b', // rose-rouge
-  '#888888', // gris
-  '#444455', // gris sombre
+  // Rangée 1
+  '#FF0000', // rouge vif
+  '#FFA500', // orange
+  '#FFFF00', // jaune vif
+  '#00FF00', // vert pur
+  '#00FFFF', // cyan pur
+  '#0000FF', // bleu pur
+  '#9400D3', // violet vif
+  '#000000', // noir
+  '#FFFFFF', // blanc
+  // Rangée 2
+  '#800020', // bordeaux
+  '#FF4500', // orange foncé
+  '#FFD700', // jaune doré
+  '#006400', // vert foncé
+  '#008080', // turquoise foncé
+  '#000080', // bleu marine
+  '#4B0082', // violet foncé
+  '#505050', // gris foncé
+  '#A0A0A0', // gris moyen
+  // Rangée 3
+  '#FF69B4', // rose
+  '#FFA500', // orange vif
+  '#FFFFE0', // jaune pâle
+  '#90EE90', // vert clair
+  '#64FFFF', // cyan clair
+  '#64B4FF', // bleu clair
+  '#FF00FF', // fuchsia
+  '#808080', // gris
+  '#D3D3D3', // gris clair
 ];
 
 // Presets de tiers par défaut — copiés dans tlState.tierPresets au premier chargement (voir
-// _tlNormalizeState), pour que l'utilisateur puisse ensuite les modifier/supprimer comme les siens.
+// _tlNormalizeIndex), marqués protected:true (voir tlOpenTiersSourceModal) : ni renommables ni
+// supprimables, toujours affichés en tête avant un séparateur.
 const TL_SEED_PRESETS = [
   { name: 'Standard', tiers: TL_DEFAULT_TIERS.map(t => ({ ...t })) },
   // Même ordre de labels (S→D) que Standard, mais couleurs inversées (bleu→rouge)
@@ -6443,18 +6458,19 @@ function tlSave(groupRootId) {
 
 function _tlNormalizeState(parsed) {
   if (!parsed || typeof parsed !== 'object') {
-    return { tierlists: [], folders: [], trash: [], tierPresets: TL_SEED_PRESETS.map(p => ({ id: uid(), name: p.name, tiers: p.tiers.map(t => ({ ...t })) })), tierPresetsSeeded: true };
+    return { tierlists: [], folders: [], trash: [], tierPresets: TL_SEED_PRESETS.map(p => ({ id: uid(), name: p.name, tiers: p.tiers.map(t => ({ ...t })), protected: true })), tierPresetsSeeded: true };
   }
   if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
   if (!Array.isArray(parsed.folders)) parsed.folders = [];
   if (!Array.isArray(parsed.trash)) parsed.trash = [];
   if (!Array.isArray(parsed.tierPresets)) parsed.tierPresets = [];
-  // Injecter les presets par défaut une seule fois (première utilisation) — ensuite l'utilisateur
-  // peut les renommer/recolorer/supprimer librement, comme n'importe quel preset personnalisé.
+  // Injecter les presets par défaut une seule fois (première utilisation), marqués protected:true
+  // (ni renommables ni supprimables, cf. tlOpenTiersSourceModal) — tout preset personnalisé créé
+  // ensuite par l'utilisateur reste librement modifiable/supprimable.
   let _tlPresetsSeededNow = false;
   if (!parsed.tierPresetsSeeded) {
     parsed.tierPresets = [
-      ...TL_SEED_PRESETS.map(p => ({ id: uid(), name: p.name, tiers: p.tiers.map(t => ({ ...t })) })),
+      ...TL_SEED_PRESETS.map(p => ({ id: uid(), name: p.name, tiers: p.tiers.map(t => ({ ...t })), protected: true })),
       ...parsed.tierPresets,
     ];
     parsed.tierPresetsSeeded = true;
@@ -6610,14 +6626,23 @@ function _tlNormalizeIndex(rawIndex) {
   if (!Array.isArray(parsed.tierlists)) parsed.tierlists = [];
   if (!Array.isArray(parsed.folders)) parsed.folders = [];
   if (!Array.isArray(parsed.tierPresets)) parsed.tierPresets = [];
-  // Injecter les presets par défaut une seule fois (première utilisation) — ensuite l'utilisateur
-  // peut les renommer/recolorer/supprimer librement, comme n'importe quel preset personnalisé.
+  // Injecter les presets par défaut une seule fois (première utilisation), marqués protected:true
+  // (ni renommables ni supprimables, cf. tlOpenTiersSourceModal) — tout preset personnalisé créé
+  // ensuite par l'utilisateur reste librement modifiable/supprimable.
   if (!parsed.tierPresetsSeeded) {
     parsed.tierPresets = [
-      ...TL_SEED_PRESETS.map(p => ({ id: uid(), name: p.name, tiers: p.tiers.map(t => ({ ...t })) })),
+      ...TL_SEED_PRESETS.map(p => ({ id: uid(), name: p.name, tiers: p.tiers.map(t => ({ ...t })), protected: true })),
       ...parsed.tierPresets,
     ];
     parsed.tierPresetsSeeded = true;
+  }
+  // Réparation : les comptes déjà seedés avant l'introduction de protected:true (ci-dessus) ont
+  // leurs 2 presets Standard/Inversé d'origine en tête de tierPresets mais sans ce flag — recalculé
+  // ici à chaque snapshot (comme le seed initial juste au-dessus) jusqu'à ce qu'une sauvegarde le
+  // persiste, sans jamais dupliquer ni re-marquer un preset personnalisé de l'utilisateur.
+  if (parsed.tierPresetsSeeded && parsed.tierPresets.length >= 2 && parsed.tierPresets[0].protected === undefined) {
+    parsed.tierPresets[0].protected = true;
+    parsed.tierPresets[1].protected = true;
   }
   return parsed;
 }
@@ -7419,7 +7444,7 @@ const tlControlPanel      = document.getElementById('tl-control-panel');
 // ne sont couvertes par aucun listener dragover enfant (.tl-tier-wrap / .tl-tier-images), donc le
 // navigateur y affiche son icône "interdit" faute de preventDefault() — d'où l'impression que le
 // curseur "change" dès qu'on quitte un tier pendant un drag.
-tlTiersZone.addEventListener('dragover', e => { if (_tlTierDragId || tlDragImgId) e.preventDefault(); });
+tlTiersZone.addEventListener('dragover', e => { if (tlDragImgId) e.preventDefault(); });
 
 // Auto-scroll pendant un drag&drop : le navigateur ne scrolle jamais automatiquement une zone
 // en overflow pendant un dragover natif — sans ça, impossible de déposer une image hors de la
@@ -7708,6 +7733,7 @@ function tlRender(skipHeightRecalc = false) {
     }
     const tlListOptionsFrameEmpty = document.getElementById('tl-list-options-frame');
     if (tlListOptionsFrameEmpty) tlListOptionsFrameEmpty.classList.add('hidden');
+    if (tlBtnAddTier) tlBtnAddTier.classList.add('hidden');
     if (tlBtnToggleUnplaced) tlBtnToggleUnplaced.classList.add('hidden');
     _tlUpdateSplitSliderVisibility(null);
     const activeFolder = _tlLocalActiveFolderId
@@ -7731,6 +7757,7 @@ function tlRender(skipHeightRecalc = false) {
   if (tlBtnExportImages) tlBtnExportImages.classList.toggle('hidden', !tl.isTemplate);
   const tlListOptionsFrame = document.getElementById('tl-list-options-frame');
   if (tlListOptionsFrame) tlListOptionsFrame.classList.toggle('hidden', !!tl.isTemplate);
+  if (tlBtnAddTier) tlBtnAddTier.classList.remove('hidden');
   if (tlBtnToggleUnplaced) {
     tlBtnToggleUnplaced.classList.toggle('hidden', !!tl.isTemplate);
     tlEditorBody.classList.toggle('tl-unplaced-hidden', !tl.isTemplate && _tlLocalUnplacedHidden);
@@ -7823,9 +7850,9 @@ function _tlFitPathBtnLabel(labelEl) {
 // comme pour les grilles bingo, une tier list ne s'affiche jamais qu'une à la fois).
 function tlRenderGroupPanel(tl) {
   const { folderId, templatesHere, root } = _tlActiveGroupContext();
-  // Le chemin s'arrête au template (inclus) quand il y en a un dans ce dossier — jamais aux
-  // tierlists générées individuelles, qui ne sont que des membres du même groupe.
-  const folderPath = (_tlFolderPath(folderId) || 'Racine') + (root ? ' \\ ' + root.name : '');
+  // Le chemin n'affiche que les dossiers, jamais le nom du template (déjà affiché dans son propre
+  // bouton "Template" juste à côté).
+  const folderPath = _tlFolderPath(folderId) || 'Racine';
 
   // Dropdown Chemin : toujours visible dès qu'un dossier est sélectionné ou qu'une tierlist est
   // active (contrairement à Template/Listes/Comparaison/Plein écran, qui dépendent d'un template).
@@ -8753,30 +8780,6 @@ function tlRenderList() {
   if (window.lucide) lucide.createIcons();
 }
 
-// ── Drag & drop réordonnement des tiers ───────────────────────────────────────
-let _tlTierDragId = null;
-
-// Aperçu du réordonnement de tier, même principe que le placeholder d'image (tl-drop-placeholder) :
-// un bloc pousse visuellement les tiers voisins à la place où le tier atterrira, plutôt qu'une
-// simple bordure indicative — cohérent avec l'aperçu déjà en place pour le drag d'image.
-function _tlShowTierDropPlaceholder(wrap, before) {
-  let placeholder = tlTiersZone.querySelector('.tl-tier-drop-placeholder');
-  if (!placeholder) {
-    placeholder = document.createElement('div');
-    placeholder.className = 'tl-tier-drop-placeholder tl-drop-placeholder';
-  }
-  const rect = wrap.getBoundingClientRect();
-  placeholder.style.height = rect.height + 'px';
-  const refNode = before ? wrap : wrap.nextSibling;
-  if (placeholder.nextSibling !== refNode || placeholder.parentElement !== tlTiersZone) {
-    tlTiersZone.insertBefore(placeholder, refNode);
-  }
-}
-function _tlClearTierDropPlaceholder() {
-  const placeholder = tlTiersZone.querySelector('.tl-tier-drop-placeholder');
-  if (placeholder) placeholder.remove();
-}
-
 // Peuple la zone images d'UN tier (vide-la d'abord). Factorisé hors de tlRenderTiers pour être
 // réutilisé par le patch ciblé de tlDrop (_tlPatchImageMove), qui ne doit reconstruire QUE les
 // deux zones (source/destination) concernées par un déplacement d'image plutôt que tous les tiers.
@@ -8834,19 +8837,10 @@ function tlRenderTiers(tl) {
     const wrap = document.createElement('div');
     wrap.className = 'tl-tier-wrap';
     wrap.dataset.tierId = tier.id;
-    wrap.draggable = false;
 
-    // Colonne grip + settings — en dehors du carré coloré du tier
+    // Colonne settings — en dehors du carré coloré du tier
     const controls = document.createElement('div');
     controls.className = 'tl-tier-controls';
-
-    const dragHandle = document.createElement('span');
-    dragHandle.className = 'tl-tier-drag-handle';
-    dragHandle.innerHTML = '<i data-lucide="grip"></i>';
-    dragHandle.title = 'Glisser pour réordonner';
-    dragHandle.addEventListener('mousedown', () => { wrap.draggable = true; });
-    dragHandle.addEventListener('mouseleave', () => { if (!wrap.classList.contains('tl-tier-label-dragging')) wrap.draggable = false; });
-    controls.appendChild(dragHandle);
 
     const settingsBtn = document.createElement('button');
     settingsBtn.className = 'tl-tier-settings-btn';
@@ -8867,7 +8861,7 @@ function tlRenderTiers(tl) {
     const labelCell = document.createElement('div');
     labelCell.className = 'tl-tier-label-cell';
     labelCell.style.background = tier.color;
-    labelCell.title = 'Clic droit pour les options · Glisser la poignée pour réordonner';
+    labelCell.title = 'Clic droit pour les options';
 
     const labelText = document.createElement('span');
     labelText.className = 'tl-tier-label-text';
@@ -8890,56 +8884,6 @@ function tlRenderTiers(tl) {
     });
     labelCell.appendChild(labelText);
 
-    // Drag & drop réordonnement tiers — déclenché uniquement depuis la poignée (wrap.draggable).
-    // e.target === wrap est indispensable : un dragstart/dragend démarré sur une carte-image à
-    // l'intérieur du tier bubble jusqu'ici, et sans ce garde-fou _tlTierDragId se retrouvait affecté
-    // pendant tout drag d'image (bloquant le drop dans imgsDiv, cf. wrap.addEventListener('drop')).
-    wrap.addEventListener('dragstart', e => {
-      if (e.target !== wrap) return;
-      _tlTierDragId = tier.id;
-      e.dataTransfer.effectAllowed = 'move';
-      setTimeout(() => wrap.classList.add('tl-tier-label-dragging'), 0);
-    });
-    wrap.addEventListener('dragend', e => {
-      if (e.target !== wrap) return;
-      _tlTierDragId = null;
-      wrap.draggable = false;
-      wrap.classList.remove('tl-tier-label-dragging');
-      _tlClearTierDropPlaceholder();
-    });
-    wrap.addEventListener('dragover', e => {
-      if (!_tlTierDragId) return;
-      // preventDefault() dans tous les cas (même en survolant le tier qu'on drag lui-même) pour que
-      // le curseur natif du navigateur reste en mode "autorisé" partout dans la zone valide — sans
-      // ça, il passe en icône "interdit" dès qu'on repasse sur la position d'origine du drag.
-      e.preventDefault();
-      if (_tlTierDragId === tier.id) return;
-      const rect = wrap.getBoundingClientRect();
-      const before = e.clientY < rect.top + rect.height / 2;
-      _tlShowTierDropPlaceholder(wrap, before);
-    });
-    wrap.addEventListener('dragleave', e => {
-      if (!wrap.contains(e.relatedTarget)) {
-        wrap.classList.remove('tl-tier-drop-above', 'tl-tier-drop-below');
-      }
-    });
-    wrap.addEventListener('drop', e => {
-      if (!_tlTierDragId || _tlTierDragId === tier.id) return;
-      e.preventDefault();
-      _tlClearTierDropPlaceholder();
-      const rect = wrap.getBoundingClientRect();
-      const before = e.clientY < rect.top + rect.height / 2;
-      const fromIdx = tl.tiers.findIndex(t => t.id === _tlTierDragId);
-      if (fromIdx === -1) return;
-      _tlPushUndoOp({ tierlistId: tl.id, type: 'reorderTier', tierId: _tlTierDragId, fromIndex: fromIdx });
-      const [moved] = tl.tiers.splice(fromIdx, 1);
-      let insertIdx = tl.tiers.findIndex(t => t.id === tier.id);
-      if (!before) insertIdx += 1;
-      tl.tiers.splice(insertIdx, 0, moved);
-      tlSave(_tlGroupRoot(tl).id);
-      tlRender();
-    });
-
     // Clic droit → menu contextuel tier
     labelCell.addEventListener('contextmenu', e => {
       e.preventDefault();
@@ -8953,18 +8897,9 @@ function tlRenderTiers(tl) {
     const imgsDiv = document.createElement('div');
     imgsDiv.className = 'tl-tier-images';
     imgsDiv.dataset.dropzone = tier.id;
-    imgsDiv.addEventListener('dragover', e => {
-      if (_tlTierDragId) return; // ignore si on réordonne les tiers
-      tlDragOver(e);
-    });
-    imgsDiv.addEventListener('drop', e => {
-      if (_tlTierDragId) return;
-      tlDrop(e, tier.id);
-    });
-    imgsDiv.addEventListener('dragleave', e => {
-      if (_tlTierDragId) return;
-      tlDragLeave(e);
-    });
+    imgsDiv.addEventListener('dragover', tlDragOver);
+    imgsDiv.addEventListener('drop', e => tlDrop(e, tier.id));
+    imgsDiv.addEventListener('dragleave', tlDragLeave);
 
     _tlFillTierImagesDiv(tl, tier, imgsDiv, imgSize);
 
@@ -9117,6 +9052,23 @@ function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
     else tlOpenTierModal({ mode: 'edit', tl, tier });
   });
   addItem('palette', 'Modifier la couleur', false, () => tlOpenTierModal({ mode: 'color', tl, tier }));
+  addSep();
+  if (tierIdx > 0) {
+    addItem('arrow-up', 'Déplacer vers le haut', false, () => {
+      _tlPushUndoOp({ tierlistId: tl.id, type: 'reorderTier', tierId: tier.id, fromIndex: tierIdx });
+      const [moved] = tl.tiers.splice(tierIdx, 1);
+      tl.tiers.splice(tierIdx - 1, 0, moved);
+      tlSave(_tlGroupRoot(tl).id); tlRender();
+    });
+  }
+  if (tierIdx < tl.tiers.length - 1) {
+    addItem('arrow-down', 'Déplacer vers le bas', false, () => {
+      _tlPushUndoOp({ tierlistId: tl.id, type: 'reorderTier', tierId: tier.id, fromIndex: tierIdx });
+      const [moved] = tl.tiers.splice(tierIdx, 1);
+      tl.tiers.splice(tierIdx + 1, 0, moved);
+      tlSave(_tlGroupRoot(tl).id); tlRender();
+    });
+  }
   addSep();
   addItem('chevron-up', 'Ajouter un tier au-dessus', false, () => {
     const newTier = { id: uid(), label: '?', color: '#888888', items: [] };
@@ -9989,6 +9941,8 @@ function tlSaveCurrentAsPreset(tl, name) {
 
 function tlDeletePreset(id) {
   if (String(id).startsWith('__builtin_')) return;
+  const preset = (tlState.tierPresets || []).find(p => p.id === id);
+  if (preset && preset.protected) return; // Standard/Inversé : ni renommables ni supprimables
   tlState.tierPresets = (tlState.tierPresets || []).filter(p => p.id !== id);
   tlSave(); // presets : global, index-only
 }
@@ -10916,7 +10870,13 @@ function tlOpenTiersSourceModal(id) {
     empty.textContent = 'Aucun preset.';
     presetList.appendChild(empty);
   } else {
-    presets.forEach(p => {
+    // Presets protégés (Standard/Inversé fournis par défaut, ni renommables ni supprimables)
+    // d'abord dans leur ordre d'origine, séparateur, puis le reste trié alphabétiquement.
+    const protectedPresets = presets.filter(p => p.protected);
+    const customPresets = presets.filter(p => !p.protected)
+      .sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
+
+    const buildRow = p => {
       const row = document.createElement('div');
       row.className = 'modal-item-row';
 
@@ -10942,24 +10902,34 @@ function tlOpenTiersSourceModal(id) {
       });
       row.appendChild(btn);
 
-      const editBtn = document.createElement('button');
-      editBtn.className = 'btn-action btn-secondary';
-      editBtn.title = 'Modifier ce preset';
-      editBtn.innerHTML = '<i data-lucide="pencil"></i>';
-      editBtn.addEventListener('click', () => tlOpenPresetEditModal(p.id, id));
-      row.appendChild(editBtn);
+      if (!p.protected) {
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn-action btn-secondary';
+        editBtn.title = 'Modifier ce preset';
+        editBtn.innerHTML = '<i data-lucide="pencil"></i>';
+        editBtn.addEventListener('click', () => tlOpenPresetEditModal(p.id, id));
+        row.appendChild(editBtn);
 
-      const del = document.createElement('button');
-      del.className = 'btn-action btn-secondary';
-      del.title = 'Supprimer ce preset';
-      del.innerHTML = '<i data-lucide="trash-2"></i>';
-      del.addEventListener('click', () => {
-        if (confirm(`Supprimer le preset "${p.name}" ?`)) { tlDeletePreset(p.id); tlOpenTiersSourceModal(id); }
-      });
-      row.appendChild(del);
+        const del = document.createElement('button');
+        del.className = 'btn-action btn-secondary';
+        del.title = 'Supprimer ce preset';
+        del.innerHTML = '<i data-lucide="trash-2"></i>';
+        del.addEventListener('click', () => {
+          if (confirm(`Supprimer le preset "${p.name}" ?`)) { tlDeletePreset(p.id); tlOpenTiersSourceModal(id); }
+        });
+        row.appendChild(del);
+      }
 
-      presetList.appendChild(row);
-    });
+      return row;
+    };
+
+    protectedPresets.forEach(p => presetList.appendChild(buildRow(p)));
+    if (protectedPresets.length > 0 && customPresets.length > 0) {
+      const sep = document.createElement('div');
+      sep.className = 'tl-preset-list-sep';
+      presetList.appendChild(sep);
+    }
+    customPresets.forEach(p => presetList.appendChild(buildRow(p)));
   }
 
   saveInput.value = '';
@@ -11228,7 +11198,7 @@ document.getElementById('tl-modal-preset-edit-confirm').addEventListener('click'
   if (!Array.isArray(tlState.tierPresets)) tlState.tierPresets = [];
   if (_tlPresetEditId) {
     const preset = tlState.tierPresets.find(p => p.id === _tlPresetEditId);
-    if (preset) { preset.name = name; preset.tiers = _tlPresetEditTiers.map(t => ({ ...t })); }
+    if (preset && !preset.protected) { preset.name = name; preset.tiers = _tlPresetEditTiers.map(t => ({ ...t })); }
   } else {
     tlState.tierPresets.push({ id: uid(), name, tiers: _tlPresetEditTiers.map(t => ({ ...t })) });
   }
