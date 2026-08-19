@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=283" />
+  <link rel="stylesheet" href="style.css?v=284" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -382,6 +382,7 @@
               <div id="grids-breadcrumb" class="grids-breadcrumb hidden"></div>
               <button class="btn-action btn-neutral-action btn-path" id="btn-path-dropdown" title="Aller à un dossier"><i data-lucide="chevron-down"></i> <span id="path-dropdown-label"></span></button>
               <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-grids-dropdown" title="Choisir les grilles à afficher"><i data-lucide="chevron-down"></i> Grilles</button>
+              <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-new-grid-main" title="Nouveau bingo"><i data-lucide="plus"></i> Nouveau bingo</button>
             </div>
             <div class="ctrl-row-grids-right">
               <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-bingo-stats" title="Statistiques des cases sur la saison"><i data-lucide="bar-chart-2"></i> Stats</button>
@@ -470,6 +471,19 @@
             <div class="add-element-form">
               <button id="btn-presets-elements-panel" class="btn-icon" title="Preset cases"><i data-lucide="list-plus"></i> Preset cases</button>
               <button id="btn-clear-elements-panel" class="btn-icon" title="Supprimer toutes les cases"><i data-lucide="trash-2"></i> Vider</button>
+            </div>
+            <div class="folders-panel-sort">
+              <label for="elements-sort-select">Trier par</label>
+              <select id="elements-sort-select" class="folders-sort-select">
+                <option value="alpha">Alphabétique</option>
+                <option value="tag">Tag (preset)</option>
+              </select>
+            </div>
+            <div class="folders-panel-sort">
+              <label for="elements-filter-tag-select">Tag</label>
+              <select id="elements-filter-tag-select" class="folders-sort-select">
+                <option value="">Tous les tags</option>
+              </select>
             </div>
             <div class="elements-tabs">
               <button class="tab-btn active" data-tab="active" title="Clic gauche : afficher les cases actives">Actives</button>
@@ -802,6 +816,7 @@
     <button class="ctx-close-btn" id="ctx-element-cancel" title="Fermer"><i data-lucide="x"></i></button>
     <div class="ctx-menu-title" id="ctx-element-title"></div>
     <button class="ctx-menu-item" id="ctx-element-edit"><i data-lucide="pencil"></i> Modifier</button>
+    <button class="ctx-menu-item" id="ctx-element-add-to-preset"><i data-lucide="tag"></i> Ajouter à un preset</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-archive"><i data-lucide="package"></i> Archiver</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-delete-active"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
@@ -843,9 +858,8 @@
           <select id="new-folder-parent-select" class="modal-folder-select hidden"></select>
           <button type="button" class="folder-tree-dropdown-btn" id="new-folder-parent-dropdown-btn"><i data-lucide="folder-closed"></i> <span></span></button>
         </div>
-        <!-- Section grille : n'apparaît que pour "Nouveau Bingo" depuis l'accueil, fusionnant
-             ce modal avec le modal "Nouvelle grille" — même dossier ET sa première grille en un
-             seul geste (voir _homeNewGridAfterFolder). -->
+        <!-- Section grille : n'apparaît que pour "Nouveau Bingo" (dossier + sa première grille en
+             un seul geste, voir _homeNewGridAfterFolder) — jamais pour "Nouveau dossier" simple. -->
         <div id="new-folder-grid-wrap" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
           <span class="modal-folder-select-label">Première grille</span>
           <div class="grid-name-presets">
@@ -949,6 +963,12 @@
         <button class="modal-close" id="btn-close-element-presets-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
+        <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Dossier cible</label>
+        <div style="display:flex;gap:6px;margin-bottom:12px;">
+          <select id="import-elements-target-select" class="modal-folder-select hidden"></select>
+          <button type="button" class="folder-tree-dropdown-btn" id="import-elements-target-dropdown-btn" style="flex:1;"><i data-lucide="folder-closed"></i> <span></span></button>
+        </div>
+
         <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;cursor:pointer;">
           <input type="checkbox" id="element-preset-replace-checkbox" />
           Remplacer les cases existantes (au lieu de les compléter)
@@ -1306,6 +1326,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=408"></script>
+  <script src="app.js?v=410"></script>
 </body>
 </html>

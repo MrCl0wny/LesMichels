@@ -1523,7 +1523,9 @@ async function importElements(sourceId, targetId, replace = false) {
 }
 
 // Importe une liste de textes (preset) dans un dossier, avec option de remplacement.
-function importElementTexts(texts, targetId, replace = false) {
+// presetName : si fourni (import depuis un preset enregistré), étiquette chaque case importée
+// pour affichage d'un tag d'origine dans le panneau Cases (voir buildElementItem).
+function importElementTexts(texts, targetId, replace = false, presetName = null) {
   const dst = findFolderById(state.folders, targetId);
   if (!dst || !texts || texts.length === 0) return 0;
   if (replace) {
@@ -1540,7 +1542,7 @@ function importElementTexts(texts, targetId, replace = false) {
     const trimmed = text.trim();
     if (!trimmed) return;
     if (!existingTexts.has(trimmed.toLowerCase())) {
-      dst.elements.push({ id: uid(), text: trimmed });
+      dst.elements.push(presetName ? { id: uid(), text: trimmed, presetName } : { id: uid(), text: trimmed });
       existingTexts.add(trimmed.toLowerCase());
       added++;
     }
@@ -2021,8 +2023,31 @@ function renderElements() {
   }
   const archivedIds = s.archivedElementIds || [];
   const sElems = s.elements || [];
-  const active   = sElems.filter(e => !archivedIds.includes(e.id)).sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
-  const archived = sElems.filter(e => archivedIds.includes(e.id)).sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
+
+  // Filtre + tri par tag (preset d'origine) : contrôles du panneau Cases.
+  const sortSelect = document.getElementById('elements-sort-select');
+  const filterSelect = document.getElementById('elements-filter-tag-select');
+  const sortMode = sortSelect ? sortSelect.value : 'alpha';
+  if (filterSelect) {
+    const tags = [...new Set(sElems.map(e => e.presetName).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    const prevValue = filterSelect.value;
+    filterSelect.innerHTML = '<option value="">Tous les tags</option>';
+    tags.forEach(tag => {
+      const opt = document.createElement('option');
+      opt.value = tag;
+      opt.textContent = tag;
+      filterSelect.appendChild(opt);
+    });
+    filterSelect.value = tags.includes(prevValue) ? prevValue : '';
+  }
+  const filterTag = filterSelect ? filterSelect.value : '';
+  const filteredElems = filterTag ? sElems.filter(e => e.presetName === filterTag) : sElems;
+
+  const elemCompare = sortMode === 'tag'
+    ? (a, b) => (a.presetName || '').localeCompare(b.presetName || '', undefined, { sensitivity: 'base' }) || a.text.localeCompare(b.text, undefined, { sensitivity: 'base' })
+    : (a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' });
+  const active   = filteredElems.filter(e => !archivedIds.includes(e.id)).sort(elemCompare);
+  const archived = filteredElems.filter(e => archivedIds.includes(e.id)).sort(elemCompare);
 
   elementCount.textContent = active.length;
 
@@ -2116,6 +2141,14 @@ function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
   span.textContent = el.text;
   span.style.cursor = 'text';
   li.appendChild(span);
+
+  if (el.presetName) {
+    const tag = document.createElement('span');
+    tag.className = 'element-preset-tag';
+    tag.textContent = el.presetName;
+    tag.title = 'Provient du preset "' + el.presetName + '"';
+    li.appendChild(tag);
+  }
 
   // Bouton "..." options
   const menuBtn = document.createElement('button');
@@ -2515,6 +2548,10 @@ function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder) {
   e.stopPropagation();
   const { addItem } = _tlMakeCtxMenu(anchor, e, { title: f.name });
   addItem('folder-open', 'Ouvrir',              false, openThisFolder);
+  addItem('grid-3x3', '+ Nouveau bingo',        false, async () => {
+    if (_localActiveFolderId !== f.id) await switchFolder(f.id);
+    openNewGridModal();
+  });
   addItem('folder-closed', 'Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
   addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
   addItem('copy-plus', 'Dupliquer',            false, () => openDuplicateFolderModal(f.id));
@@ -4202,6 +4239,7 @@ function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, stora
     selectEl.value = id || '';
     refreshBtn();
     _closeFolderTreeDropdown();
+    selectEl.dispatchEvent(new Event('change'));
   }
 
   function renderFolderRow(f, depth) {
@@ -4333,7 +4371,7 @@ function openNewThemeModal(parentId = null) {
   _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'));
 
   // Section grille (fusion avec le modal "Nouvelle grille") : visible uniquement pour
-  // "Nouveau Bingo" depuis l'accueil (_homeNewGridAfterFolder).
+  // "Nouveau Bingo" (_homeNewGridAfterFolder) — pas pour "Nouveau dossier" simple.
   const gridWrap = document.getElementById('new-folder-grid-wrap');
   if (gridWrap) {
     gridWrap.classList.toggle('hidden', !_homeNewGridAfterFolder);
@@ -4469,8 +4507,8 @@ function confirmNewTheme() {
   }
   const sel = document.getElementById('new-folder-parent-select');
   const parentId = (sel && sel.value) ? sel.value : null;
-  // "Nouveau Bingo" depuis l'accueil : lire la section grille fusionnée AVANT de fermer le
-  // modal (closeNewThemeModal ne vide pas ces champs, mais autant lire pendant qu'ils sont là).
+  // "Nouveau Bingo" : lire la section grille fusionnée AVANT de fermer le modal (closeNewThemeModal
+  // ne vide pas ces champs, mais autant lire pendant qu'ils sont là).
   const fromHome = _homeNewGridAfterFolder;
   let gridNames = [];
   if (fromHome) {
@@ -4596,33 +4634,82 @@ function _buildImportElementsSourceTree(folders, targetId) {
   }).filter(Boolean);
 }
 
-function openImportElementsModal(targetId) {
-  _elementPresetsTargetId = targetId;
+// Arbre complet (tous dossiers bingo, sans filtre) pour le select "Dossier cible".
+function _buildFolderTreeAll(folders) {
+  return (folders || []).filter(f => !f.archived).map(f => ({
+    id: f.id,
+    name: f.name,
+    folders: _buildFolderTreeAll(f.folders)
+  }));
+}
+
+// _setupFolderTreeDropdown pilote uniquement le dropdown custom (survol/clic visuel) — le <select>
+// natif sous-jacent n'a de vraie <option> que si on les crée nous-mêmes (comme le fait déjà
+// new-folder-parent-select). Sans ça, `selectEl.value = id` échoue silencieusement (un <select> HTML
+// ignore toute valeur sans <option> correspondante) : c'était le bug du dossier cible/source ignoré.
+function _populateFolderSelectOptions(selectEl, tree, placeholderLabel) {
+  selectEl.innerHTML = '';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = placeholderLabel;
+  selectEl.appendChild(placeholder);
+  function addOptions(folders, depth) {
+    (folders || []).forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f.id;
+      opt.textContent = '  '.repeat(depth) + f.name;
+      selectEl.appendChild(opt);
+      addOptions(f.folders, depth + 1);
+    });
+  }
+  addOptions(tree, 0);
+}
+
+// Reconstruit le select "Importer depuis" en excluant le dossier cible actuellement choisi (on ne
+// peut pas importer un dossier dans lui-même) — appelé à l'ouverture et à chaque changement de cible.
+function _refreshImportElementsSourceSelect(currentTargetId) {
   const sel = document.getElementById('import-elements-source-select');
   const dropdownBtn = document.getElementById('import-elements-source-dropdown-btn');
-  if (sel) {
-    sel.innerHTML = '';
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = '— Choisir un dossier —';
-    sel.appendChild(placeholder);
+  if (!sel || !dropdownBtn) return;
+  const tree = _buildImportElementsSourceTree(state.folders, currentTargetId);
+  _populateFolderSelectOptions(sel, tree, '— Choisir un dossier —');
+  _setupFolderTreeDropdown(sel, dropdownBtn, tree, '— Choisir un dossier —', 'fp_importelements_collapsed');
+}
+
+function openImportElementsModal(targetId) {
+  _elementPresetsTargetId = targetId;
+
+  const targetSel = document.getElementById('import-elements-target-select');
+  const targetDropdownBtn = document.getElementById('import-elements-target-dropdown-btn');
+  if (targetSel && targetDropdownBtn) {
+    const fullTree = _buildFolderTreeAll(state.folders);
+    _populateFolderSelectOptions(targetSel, fullTree, '— Choisir un dossier —');
+    targetSel.value = targetId || '';
+    _setupFolderTreeDropdown(targetSel, targetDropdownBtn, fullTree, '— Choisir un dossier —', 'fp_importelements_target_collapsed');
+    targetSel.onchange = () => _refreshImportElementsSourceSelect(targetSel.value || null);
   }
-  if (sel && dropdownBtn) {
-    const tree = _buildImportElementsSourceTree(state.folders, targetId);
-    _setupFolderTreeDropdown(sel, dropdownBtn, tree, '— Choisir un dossier —', 'fp_importelements_collapsed');
-  }
+
+  _refreshImportElementsSourceSelect(targetId);
   const replaceCb = document.getElementById('element-preset-replace-checkbox');
   if (replaceCb) replaceCb.checked = false;
 }
 
+// Le dossier cible réellement choisi par l'utilisateur (select "Dossier cible"), avec repli sur
+// le dossier actif au moment de l'ouverture si le select est vide/absent.
+function _currentImportTargetId() {
+  const targetSel = document.getElementById('import-elements-target-select');
+  return (targetSel && targetSel.value) ? targetSel.value : _elementPresetsTargetId;
+}
+
 async function confirmImportElements() {
-  if (!_elementPresetsTargetId) return;
+  const targetId = _currentImportTargetId();
+  if (!targetId) return;
   const sel = document.getElementById('import-elements-source-select');
   const sourceRootId = sel ? sel.value : '';
   if (!sourceRootId) return;
   const replaceCb = document.getElementById('element-preset-replace-checkbox');
   const replace = replaceCb ? replaceCb.checked : false;
-  const added = await importElements(sourceRootId, _elementPresetsTargetId, replace);
+  const added = await importElements(sourceRootId, targetId, replace);
   closeElementPresetsModal();
   if (added === 0 && !replace) {
     alert('Toutes les cases existent déjà dans ce dossier.');
@@ -4639,7 +4726,7 @@ function renderElementPresetList() {
   const list = document.getElementById('element-preset-list');
   if (!list) return;
   list.innerHTML = '';
-  const presets = getElementPresets();
+  const presets = getElementPresets().slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   if (presets.length === 0) {
     const empty = document.createElement('div');
     empty.style.cssText = 'font-size:0.8rem;color:var(--text-muted);';
@@ -4655,13 +4742,14 @@ function renderElementPresetList() {
     btn.className = 'btn-action btn-secondary';
     btn.style.flex = '1';
     btn.style.textAlign = 'left';
-    btn.title = 'Importer ce preset dans le dossier actif';
+    btn.title = 'Importer ce preset dans le dossier cible';
     btn.textContent = `${p.name} (${(p.elements || []).length})`;
     btn.addEventListener('click', () => {
-      if (!_elementPresetsTargetId) return;
+      const targetId = _currentImportTargetId();
+      if (!targetId) return;
       const replaceCb = document.getElementById('element-preset-replace-checkbox');
       const replace = replaceCb ? replaceCb.checked : false;
-      const added = importElementTexts(p.elements || [], _elementPresetsTargetId, replace);
+      const added = importElementTexts(p.elements || [], targetId, replace, p.name);
       closeElementPresetsModal();
       if (added === 0 && !replace) {
         alert('Toutes les cases existent déjà dans ce dossier.');
@@ -4914,6 +5002,19 @@ document.getElementById('btn-clear-elements-panel').addEventListener('click', ()
     : `Supprimer les ${s.elements.length} case(s) de ce dossier ?`;
   document.getElementById('modal-confirm-clear').classList.remove('hidden');
 });
+
+const _elementsSortSelect = document.getElementById('elements-sort-select');
+if (_elementsSortSelect) {
+  _elementsSortSelect.value = localStorage.getItem('bingoElementsSortMode') || 'alpha';
+  _elementsSortSelect.addEventListener('change', () => {
+    localStorage.setItem('bingoElementsSortMode', _elementsSortSelect.value);
+    renderElements();
+  });
+}
+const _elementsFilterTagSelect = document.getElementById('elements-filter-tag-select');
+if (_elementsFilterTagSelect) {
+  _elementsFilterTagSelect.addEventListener('change', renderElements);
+}
 
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
 btnSizePlus.addEventListener('click',  () => changeSize(+1));
@@ -5404,6 +5505,43 @@ document.getElementById('ctx-element-delete-active').addEventListener('click', (
 });
 document.getElementById('ctx-element-cancel').addEventListener('click', () => closeCtxMenuElement());
 
+// Ajoute la case au preset choisi (existant ou nouveau) et lui assigne son tag — permet de tagger
+// rétroactivement une case créée avant l'ajout du tag preset (aucune trace d'origine à deviner).
+function _addElementToPreset(elementId, presetId, presetName) {
+  const s = activeSubtheme();
+  const el = s && (s.elements || []).find(e => e.id === elementId);
+  if (!el) return;
+  const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
+  if (preset) {
+    if (!preset.elements.some(t => t.trim().toLowerCase() === el.text.trim().toLowerCase())) {
+      preset.elements.push(el.text);
+    }
+    _bingoSaveIndex();
+  } else if (presetName) {
+    saveElementPreset(presetName, [el.text]);
+  } else {
+    return;
+  }
+  el.presetName = preset ? preset.name : presetName.trim();
+  _bingoSaveFolder(s.id);
+  renderElements();
+}
+
+document.getElementById('ctx-element-add-to-preset').addEventListener('click', e => {
+  e.stopPropagation();
+  const elementId = _ctxElementId;
+  const anchorEl = _ctxElementSpan ? _ctxElementSpan.closest('.element-item') : null;
+  closeCtxMenuElement();
+  if (!elementId) return;
+  const { addItem } = _tlMakeCtxMenu(anchorEl, e, { title: 'Ajouter à un preset' });
+  const presets = getElementPresets().slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  presets.forEach(p => addItem('tag', p.name, false, () => _addElementToPreset(elementId, p.id, null)));
+  addItem('plus', 'Nouveau preset...', false, () => {
+    const name = prompt('Nom du nouveau preset :');
+    if (name && name.trim()) _addElementToPreset(elementId, null, name.trim());
+  });
+});
+
 // ── Menu contextuel cases archivées ──
 const ctxMenuElementArchived = document.getElementById('ctx-menu-element-archived');
 const ctxElRestore           = document.getElementById('ctx-element-restore');
@@ -5882,6 +6020,14 @@ btnNewGrid.addEventListener('click', () => {
   if (!activeSubtheme()) return;
   openNewGridModal();
 });
+
+const btnNewGridMain = document.getElementById('btn-new-grid-main');
+if (btnNewGridMain) {
+  btnNewGridMain.addEventListener('click', () => {
+    if (!activeSubtheme()) return;
+    openNewGridModal();
+  });
+}
 
 const _btnCeNavigate = document.getElementById('btn-ce-navigate');
 if (_btnCeNavigate) {
