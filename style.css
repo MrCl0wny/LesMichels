@@ -1403,9 +1403,13 @@ body.compare-tierlist-mode #page-tierlist.page.active {
 .elements-list::-webkit-scrollbar-track { background: transparent; }
 .elements-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
+/* Grid à 3 colonnes fixes : texte (moitié gauche, wrap toujours dedans, même sans tag) | tags
+   (empilés un par ligne) | menu "..." (toujours en haut à droite). Chaque colonne a sa zone
+   propre — pas de concurrence flexbox entre texte et tags comme dans les versions précédentes. */
 .element-item {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: start;
   gap: 6px;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -1417,13 +1421,20 @@ body.compare-tierlist-mode #page-tierlist.page.active {
 }
 .element-item:hover { border-color: var(--surface-3); background: var(--surface-3); }
 
+.element-item-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 @keyframes slide-in {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 .element-text {
-  flex: 1;
+  flex: 1 1 auto;
   font-size: 0.88rem;
   color: var(--text);
   word-break: break-word;
@@ -1460,6 +1471,14 @@ textarea.element-edit-input {
 
 .element-text { cursor: pointer; }
 .element-item:not(.archived) .element-text:hover { color: var(--accent); }
+
+.element-tags-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
 
 .element-preset-tag {
   flex-shrink: 0;

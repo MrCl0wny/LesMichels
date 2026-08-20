@@ -1523,9 +1523,9 @@ async function importElements(sourceId, targetId, replace = false) {
 }
 
 // Importe une liste de textes (preset) dans un dossier, avec option de remplacement.
-// presetName : si fourni (import depuis un preset enregistré), étiquette chaque case importée
-// pour affichage d'un tag d'origine dans le panneau Cases (voir buildElementItem).
-function importElementTexts(texts, targetId, replace = false, presetName = null) {
+// Le tag d'origine affiché dans le panneau Cases (voir buildElementItem/getElementTags) est
+// recalculé dynamiquement par comparaison de texte — rien à stocker ici.
+function importElementTexts(texts, targetId, replace = false) {
   const dst = findFolderById(state.folders, targetId);
   if (!dst || !texts || texts.length === 0) return 0;
   if (replace) {
@@ -1542,7 +1542,7 @@ function importElementTexts(texts, targetId, replace = false, presetName = null)
     const trimmed = text.trim();
     if (!trimmed) return;
     if (!existingTexts.has(trimmed.toLowerCase())) {
-      dst.elements.push(presetName ? { id: uid(), text: trimmed, presetName } : { id: uid(), text: trimmed });
+      dst.elements.push({ id: uid(), text: trimmed });
       existingTexts.add(trimmed.toLowerCase());
       added++;
     }
@@ -1577,6 +1577,17 @@ function updateElementPreset(id, name, texts) {
 function deleteElementPreset(id) {
   state.elementPresets = getElementPresets().filter(p => p.id !== id);
   _bingoSaveIndex();
+}
+
+// Tags dynamiques d'une case : noms des presets dont un texte correspond (comparaison insensible
+// à la casse/espaces), recalculés à chaque affichage — jamais stockés sur la case elle-même.
+function getElementTags(text) {
+  const norm = (text || '').trim().toLowerCase();
+  if (!norm) return [];
+  return getElementPresets()
+    .filter(p => (p.elements || []).some(t => (t || '').trim().toLowerCase() === norm))
+    .map(p => p.name)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
 // ──────────────────────────────────────────────
@@ -2024,12 +2035,14 @@ function renderElements() {
   const archivedIds = s.archivedElementIds || [];
   const sElems = s.elements || [];
 
-  // Filtre + tri par tag (preset d'origine) : contrôles du panneau Cases.
+  // Filtre + tri par tag (presets dont le texte de la case fait partie) : contrôles du panneau
+  // Cases. Une case peut avoir plusieurs tags — recalculés dynamiquement à chaque rendu.
   const sortSelect = document.getElementById('elements-sort-select');
   const filterSelect = document.getElementById('elements-filter-tag-select');
   const sortMode = sortSelect ? sortSelect.value : 'alpha';
+  const tagsOf = e => getElementTags(e.text);
   if (filterSelect) {
-    const tags = [...new Set(sElems.map(e => e.presetName).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    const tags = [...new Set(sElems.flatMap(tagsOf))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     const prevValue = filterSelect.value;
     filterSelect.innerHTML = '<option value="">Tous les tags</option>';
     tags.forEach(tag => {
@@ -2041,10 +2054,10 @@ function renderElements() {
     filterSelect.value = tags.includes(prevValue) ? prevValue : '';
   }
   const filterTag = filterSelect ? filterSelect.value : '';
-  const filteredElems = filterTag ? sElems.filter(e => e.presetName === filterTag) : sElems;
+  const filteredElems = filterTag ? sElems.filter(e => tagsOf(e).includes(filterTag)) : sElems;
 
   const elemCompare = sortMode === 'tag'
-    ? (a, b) => (a.presetName || '').localeCompare(b.presetName || '', undefined, { sensitivity: 'base' }) || a.text.localeCompare(b.text, undefined, { sensitivity: 'base' })
+    ? (a, b) => (tagsOf(a)[0] || '').localeCompare(tagsOf(b)[0] || '', undefined, { sensitivity: 'base' }) || a.text.localeCompare(b.text, undefined, { sensitivity: 'base' })
     : (a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' });
   const active   = filteredElems.filter(e => !archivedIds.includes(e.id)).sort(elemCompare);
   const archived = filteredElems.filter(e => archivedIds.includes(e.id)).sort(elemCompare);
@@ -2110,6 +2123,13 @@ function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
   li.dataset.id = el.id;
   li.title = 'Clic gauche : renommer · Clic droit : ' + (isArchived ? 'restaurer, supprimer' : 'archiver, supprimer');
 
+  // Colonne de gauche (grid) : poignée drag + texte + tags, tout ce qui peut wrapper librement.
+  // Colonne de droite, réservée exclusivement au menu "..." (voir plus bas) : jamais envahie par
+  // les tags, toujours ancrée en haut à droite quel que soit leur nombre.
+  const content = document.createElement('span');
+  content.className = 'element-item-content';
+  li.appendChild(content);
+
   // Poignée drag & drop si l'élément est absent d'au moins une grille visible non bloquée
   const _t = activeTheme();
   const canDragToAny = !isArchived && visGrids.some(gx => {
@@ -2133,24 +2153,29 @@ function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
       _isDraggingElement = false;
     });
     handle.addEventListener('click', e => e.stopPropagation());
-    li.appendChild(handle);
+    content.appendChild(handle);
   }
 
   const span = document.createElement('span');
   span.className = 'element-text';
   span.textContent = el.text;
   span.style.cursor = 'text';
-  li.appendChild(span);
+  content.appendChild(span);
 
-  if (el.presetName) {
+  // Colonne dédiée aux tags (toujours créée, même vide) : garde les 3 colonnes de la grille
+  // alignées entre toutes les lignes, que la case ait des tags ou non.
+  const tagsRow = document.createElement('span');
+  tagsRow.className = 'element-tags-row';
+  getElementTags(el.text).forEach(tagName => {
     const tag = document.createElement('span');
     tag.className = 'element-preset-tag';
-    tag.textContent = el.presetName;
-    tag.title = 'Provient du preset "' + el.presetName + '"';
-    li.appendChild(tag);
-  }
+    tag.textContent = tagName;
+    tag.title = 'Présent dans le preset "' + tagName + '"';
+    tagsRow.appendChild(tag);
+  });
+  li.appendChild(tagsRow);
 
-  // Bouton "..." options
+  // Bouton "..." options — colonne de droite fixe, à part du contenu wrappable.
   const menuBtn = document.createElement('button');
   menuBtn.className = 'elem-menu-btn';
   menuBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
@@ -4749,7 +4774,7 @@ function renderElementPresetList() {
       if (!targetId) return;
       const replaceCb = document.getElementById('element-preset-replace-checkbox');
       const replace = replaceCb ? replaceCb.checked : false;
-      const added = importElementTexts(p.elements || [], targetId, replace, p.name);
+      const added = importElementTexts(p.elements || [], targetId, replace);
       closeElementPresetsModal();
       if (added === 0 && !replace) {
         alert('Toutes les cases existent déjà dans ce dossier.');
@@ -5505,8 +5530,8 @@ document.getElementById('ctx-element-delete-active').addEventListener('click', (
 });
 document.getElementById('ctx-element-cancel').addEventListener('click', () => closeCtxMenuElement());
 
-// Ajoute la case au preset choisi (existant ou nouveau) et lui assigne son tag — permet de tagger
-// rétroactivement une case créée avant l'ajout du tag preset (aucune trace d'origine à deviner).
+// Ajoute le texte de la case au preset choisi (existant ou nouveau) — le tag apparaît ensuite tout
+// seul dans le panneau Cases (détection dynamique par comparaison de texte, voir getElementTags).
 function _addElementToPreset(elementId, presetId, presetName) {
   const s = activeSubtheme();
   const el = s && (s.elements || []).find(e => e.id === elementId);
@@ -5522,8 +5547,6 @@ function _addElementToPreset(elementId, presetId, presetName) {
   } else {
     return;
   }
-  el.presetName = preset ? preset.name : presetName.trim();
-  _bingoSaveFolder(s.id);
   renderElements();
 }
 
@@ -6024,8 +6047,8 @@ btnNewGrid.addEventListener('click', () => {
 const btnNewGridMain = document.getElementById('btn-new-grid-main');
 if (btnNewGridMain) {
   btnNewGridMain.addEventListener('click', () => {
-    if (!activeSubtheme()) return;
-    openNewGridModal();
+    if (!_localActiveFolderId) return;
+    openDuplicateFolderModal(_localActiveFolderId);
   });
 }
 
