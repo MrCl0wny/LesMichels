@@ -1403,12 +1403,10 @@ body.compare-tierlist-mode #page-tierlist.page.active {
 .elements-list::-webkit-scrollbar-track { background: transparent; }
 .elements-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
-/* Grid à 3 colonnes fixes : texte (moitié gauche, wrap toujours dedans, même sans tag) | tags
-   (empilés un par ligne) | menu "..." (toujours en haut à droite). Chaque colonne a sa zone
-   propre — pas de concurrence flexbox entre texte et tags comme dans les versions précédentes. */
+/* Grid à 2 colonnes fixes : texte (wrap dedans) | menu "..." (toujours en haut à droite). */
 .element-item {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr auto;
   align-items: start;
   gap: 6px;
   background: var(--surface-2);
@@ -1471,25 +1469,6 @@ textarea.element-edit-input {
 
 .element-text { cursor: pointer; }
 .element-item:not(.archived) .element-text:hover { color: var(--accent); }
-
-.element-tags-row {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  min-width: 0;
-}
-
-.element-preset-tag {
-  flex-shrink: 0;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  background: var(--surface-3);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1px 8px;
-  white-space: nowrap;
-}
 
 .elem-drag-handle {
   color: var(--text-faint);
@@ -1849,6 +1828,14 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   opacity: 0.4;
   cursor: not-allowed;
   pointer-events: none;
+}
+/* Bouton carré icône seule (ex. modifier/supprimer un preset à côté d'un select) : padding
+   symétrique au lieu du padding horizontal large de .btn-action, pensé pour du texte. */
+.btn-icon-square {
+  padding: 0;
+  width: 32px;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 /* Bouton Générer grille */
@@ -2742,6 +2729,11 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 .modal-box-stats {
   min-width: 420px;
   max-width: 640px;
+}
+
+.modal-box-md {
+  min-width: 420px;
+  max-width: 560px;
 }
 
 .bingo-stats-list .modal-item-row {

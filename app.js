@@ -2035,11 +2035,10 @@ function renderElements() {
   const archivedIds = s.archivedElementIds || [];
   const sElems = s.elements || [];
 
-  // Filtre + tri par tag (presets dont le texte de la case fait partie) : contrôles du panneau
-  // Cases. Une case peut avoir plusieurs tags — recalculés dynamiquement à chaque rendu.
-  const sortSelect = document.getElementById('elements-sort-select');
+  // Filtre par tag (presets dont le texte de la case fait partie) : contrôle du panneau Cases.
+  // Une case peut avoir plusieurs tags — recalculés dynamiquement à chaque rendu.
+  // Filtre par texte (recherche) : la barre d'ajout de case sert aussi de recherche.
   const filterSelect = document.getElementById('elements-filter-tag-select');
-  const sortMode = sortSelect ? sortSelect.value : 'alpha';
   const tagsOf = e => getElementTags(e.text);
   if (filterSelect) {
     const tags = [...new Set(sElems.flatMap(tagsOf))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -2054,11 +2053,12 @@ function renderElements() {
     filterSelect.value = tags.includes(prevValue) ? prevValue : '';
   }
   const filterTag = filterSelect ? filterSelect.value : '';
-  const filteredElems = filterTag ? sElems.filter(e => tagsOf(e).includes(filterTag)) : sElems;
+  const searchText = inputEl ? inputEl.value.trim().toLowerCase() : '';
+  const filteredElems = sElems
+    .filter(e => !filterTag || tagsOf(e).includes(filterTag))
+    .filter(e => !searchText || e.text.toLowerCase().includes(searchText));
 
-  const elemCompare = sortMode === 'tag'
-    ? (a, b) => (tagsOf(a)[0] || '').localeCompare(tagsOf(b)[0] || '', undefined, { sensitivity: 'base' }) || a.text.localeCompare(b.text, undefined, { sensitivity: 'base' })
-    : (a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' });
+  const elemCompare = (a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' });
   const active   = filteredElems.filter(e => !archivedIds.includes(e.id)).sort(elemCompare);
   const archived = filteredElems.filter(e => archivedIds.includes(e.id)).sort(elemCompare);
 
@@ -2123,9 +2123,8 @@ function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
   li.dataset.id = el.id;
   li.title = 'Clic gauche : renommer · Clic droit : ' + (isArchived ? 'restaurer, supprimer' : 'archiver, supprimer');
 
-  // Colonne de gauche (grid) : poignée drag + texte + tags, tout ce qui peut wrapper librement.
-  // Colonne de droite, réservée exclusivement au menu "..." (voir plus bas) : jamais envahie par
-  // les tags, toujours ancrée en haut à droite quel que soit leur nombre.
+  // Colonne de gauche (grid) : poignée drag + texte, peut wrapper librement.
+  // Colonne de droite, réservée exclusivement au menu "..." (voir plus bas).
   const content = document.createElement('span');
   content.className = 'element-item-content';
   li.appendChild(content);
@@ -2161,19 +2160,6 @@ function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
   span.textContent = el.text;
   span.style.cursor = 'text';
   content.appendChild(span);
-
-  // Colonne dédiée aux tags (toujours créée, même vide) : garde les 3 colonnes de la grille
-  // alignées entre toutes les lignes, que la case ait des tags ou non.
-  const tagsRow = document.createElement('span');
-  tagsRow.className = 'element-tags-row';
-  getElementTags(el.text).forEach(tagName => {
-    const tag = document.createElement('span');
-    tag.className = 'element-preset-tag';
-    tag.textContent = tagName;
-    tag.title = 'Présent dans le preset "' + tagName + '"';
-    tagsRow.appendChild(tag);
-  });
-  li.appendChild(tagsRow);
 
   // Bouton "..." options — colonne de droite fixe, à part du contenu wrappable.
   const menuBtn = document.createElement('button');
@@ -4748,59 +4734,30 @@ document.getElementById('btn-confirm-import-elements').addEventListener('click',
 // enregistrés : cliquer un preset l'importe directement dans le dossier actif.
 // ──────────────────────────────────────────────
 function renderElementPresetList() {
-  const list = document.getElementById('element-preset-list');
-  if (!list) return;
-  list.innerHTML = '';
+  const select = document.getElementById('element-preset-select');
+  if (!select) return;
+  const prevValue = select.value;
+  select.innerHTML = '';
   const presets = getElementPresets().slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  if (presets.length === 0) {
-    const empty = document.createElement('div');
-    empty.style.cssText = 'font-size:0.8rem;color:var(--text-muted);';
-    empty.textContent = 'Aucun preset.';
-    list.appendChild(empty);
+  const hasPresets = presets.length > 0;
+  ['btn-import-element-preset', 'btn-edit-element-preset', 'btn-delete-element-preset'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = !hasPresets;
+  });
+  if (!hasPresets) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'Aucun preset';
+    select.appendChild(opt);
     return;
   }
   presets.forEach(p => {
-    const row = document.createElement('div');
-    row.className = 'modal-item-row';
-
-    const btn = document.createElement('button');
-    btn.className = 'btn-action btn-secondary';
-    btn.style.flex = '1';
-    btn.style.textAlign = 'left';
-    btn.title = 'Importer ce preset dans le dossier cible';
-    btn.textContent = `${p.name} (${(p.elements || []).length})`;
-    btn.addEventListener('click', () => {
-      const targetId = _currentImportTargetId();
-      if (!targetId) return;
-      const replaceCb = document.getElementById('element-preset-replace-checkbox');
-      const replace = replaceCb ? replaceCb.checked : false;
-      const added = importElementTexts(p.elements || [], targetId, replace);
-      closeElementPresetsModal();
-      if (added === 0 && !replace) {
-        alert('Toutes les cases existent déjà dans ce dossier.');
-      }
-    });
-    row.appendChild(btn);
-
-    const editBtn = document.createElement('button');
-    editBtn.className = 'btn-action btn-secondary';
-    editBtn.title = 'Modifier ce preset';
-    editBtn.innerHTML = '<i data-lucide="pencil"></i>';
-    editBtn.addEventListener('click', () => openElementPresetEditModal(p.id));
-    row.appendChild(editBtn);
-
-    const del = document.createElement('button');
-    del.className = 'btn-action btn-secondary';
-    del.title = 'Supprimer ce preset';
-    del.innerHTML = '<i data-lucide="trash-2"></i>';
-    del.addEventListener('click', () => {
-      if (confirm(`Supprimer le preset "${p.name}" ?`)) { deleteElementPreset(p.id); renderElementPresetList(); }
-    });
-    row.appendChild(del);
-
-    list.appendChild(row);
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = `${p.name} (${(p.elements || []).length})`;
+    select.appendChild(opt);
   });
-  if (window.lucide) lucide.createIcons();
+  select.value = presets.some(p => p.id === prevValue) ? prevValue : presets[0].id;
 }
 
 function openElementPresetsModal(targetId) {
@@ -4819,6 +4776,35 @@ function closeElementPresetsModal() {
 document.getElementById('btn-close-element-presets-modal').addEventListener('click', closeElementPresetsModal);
 document.getElementById('btn-close-element-presets').addEventListener('click', closeElementPresetsModal);
 document.getElementById('btn-new-element-preset').addEventListener('click', () => openElementPresetEditModal(null));
+
+document.getElementById('btn-import-element-preset').addEventListener('click', () => {
+  const select = document.getElementById('element-preset-select');
+  const presetId = select ? select.value : '';
+  const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
+  if (!preset) return;
+  const targetId = _currentImportTargetId();
+  if (!targetId) return;
+  const replaceCb = document.getElementById('element-preset-replace-checkbox');
+  const replace = replaceCb ? replaceCb.checked : false;
+  const added = importElementTexts(preset.elements || [], targetId, replace);
+  closeElementPresetsModal();
+  if (added === 0 && !replace) {
+    alert('Toutes les cases existent déjà dans ce dossier.');
+  }
+});
+document.getElementById('btn-edit-element-preset').addEventListener('click', () => {
+  const select = document.getElementById('element-preset-select');
+  const presetId = select ? select.value : '';
+  if (!presetId) return;
+  openElementPresetEditModal(presetId);
+});
+document.getElementById('btn-delete-element-preset').addEventListener('click', () => {
+  const select = document.getElementById('element-preset-select');
+  const presetId = select ? select.value : '';
+  const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
+  if (!preset) return;
+  if (confirm(`Supprimer le preset "${preset.name}" ?`)) { deleteElementPreset(preset.id); renderElementPresetList(); }
+});
 document.getElementById('btn-save-current-as-element-preset').addEventListener('click', () => {
   const input = document.getElementById('element-preset-save-input');
   const name = input.value.trim();
@@ -4995,6 +4981,7 @@ tabBtns.forEach(btn => {
 // ──────────────────────────────────────────────
 btnAdd.addEventListener('click', addElement);
 inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') addElement(); });
+inputEl.addEventListener('input', renderElements);
 
 document.getElementById('btn-presets-elements-panel').addEventListener('click', async () => {
   const s = activeSubtheme();
@@ -5028,14 +5015,6 @@ document.getElementById('btn-clear-elements-panel').addEventListener('click', ()
   document.getElementById('modal-confirm-clear').classList.remove('hidden');
 });
 
-const _elementsSortSelect = document.getElementById('elements-sort-select');
-if (_elementsSortSelect) {
-  _elementsSortSelect.value = localStorage.getItem('bingoElementsSortMode') || 'alpha';
-  _elementsSortSelect.addEventListener('change', () => {
-    localStorage.setItem('bingoElementsSortMode', _elementsSortSelect.value);
-    renderElements();
-  });
-}
 const _elementsFilterTagSelect = document.getElementById('elements-filter-tag-select');
 if (_elementsFilterTagSelect) {
   _elementsFilterTagSelect.addEventListener('change', renderElements);
