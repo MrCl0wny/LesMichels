@@ -7074,6 +7074,11 @@ function tlUndo() {
       if (img) img.name = op.oldName;
       break;
     }
+    case 'replaceImage': {
+      const img = (root.images || []).find(i => i.id === op.imgId);
+      if (img) { img.src = op.oldSrc; _tlSrcCache[img.id] = op.oldSrc; }
+      break;
+    }
     case 'addTier':
       tl.tiers = tl.tiers.filter(t => t.id !== op.tierId);
       break;
@@ -9562,15 +9567,30 @@ document.getElementById('tl-compare-btn-exit')?.addEventListener('click', _exitC
 
 // Peuple la zone "non placées" (vide-la d'abord). Factorisé pour être réutilisé par le patch
 // ciblé de tlDrop (_tlPatchImageMove), voir _tlFillTierImagesDiv pour le même principe côté tiers.
+// La barre d'ajout de texte sert aussi de recherche (voir tlAddTextInput 'input' listener) : ne
+// filtre que l'affichage de la zone non placées, jamais tl.unplaced lui-même.
 function _tlFillUnplacedZone(tl, imgSize) {
   tlUnplacedZone.innerHTML = '';
+  const searchText = tlAddTextInput.value.trim().toLowerCase();
+  const sorted = _tlGetSortedUnplaced(tl);
+  const visibleIds = searchText
+    ? sorted.filter(imgId => {
+        const img = tlFindImage(tl, imgId);
+        return img && img.name.toLowerCase().includes(searchText);
+      })
+    : sorted;
   if (tl.unplaced.length === 0) {
     const hint = document.createElement('div');
     hint.className = 'tl-unplaced-hint';
     hint.textContent = 'Dépose des images ici ou importe-en';
     tlUnplacedZone.appendChild(hint);
+  } else if (visibleIds.length === 0) {
+    const hint = document.createElement('div');
+    hint.className = 'tl-unplaced-hint';
+    hint.textContent = 'Aucun résultat.';
+    tlUnplacedZone.appendChild(hint);
   } else {
-    _tlGetSortedUnplaced(tl).forEach(imgId => {
+    visibleIds.forEach(imgId => {
       const img = tlFindImage(tl, imgId);
       if (img) tlUnplacedZone.appendChild(tlBuildImgCard(tl, img, imgSize, false, true));
     });
@@ -9797,6 +9817,7 @@ function _tlShowImgCtxMenu(e, tl, img) {
   if (!isText) addItem('zoom-in', 'Zoomer', false, () => _tlOpenImgZoom(img, tl));
   if (!tl.isTemplate) addItem('pin', 'À placer', false, () => _tlSetImageToPlace(tl, img.id));
   addItem('pencil', 'Renommer', false, () => tlOpenRenameImg(tl, img));
+  if (!isText) addItem('image-up', 'Remplacer l\'image', false, () => tlOpenReplaceImage(tl, img));
   addItem('x', 'Supprimer', true, () => tlDeleteImage(tl, img.id));
 }
 
@@ -10210,6 +10231,34 @@ function tlDeleteImage(tl, imgId) {
   tlSave(root.id);
   tlRender();
 }
+
+// Remplace la source d'une image existante (garde id/nom/emplacement) sans passer par
+// supprimer+réimporter, qui aurait perdu la position de la carte dans son tier.
+let _tlReplaceImgContext = null; // { tlId, imgId }
+function tlOpenReplaceImage(tl, img) {
+  _tlReplaceImgContext = { tlId: tl.id, imgId: img.id };
+  document.getElementById('tl-file-input-replace').click();
+}
+document.getElementById('tl-file-input-replace').addEventListener('change', () => {
+  const input = document.getElementById('tl-file-input-replace');
+  const file = input.files[0];
+  const ctx = _tlReplaceImgContext;
+  input.value = '';
+  if (!file || !ctx) return;
+  const tl = tlState.tierlists.find(t => t.id === ctx.tlId);
+  if (!tl) return;
+  const root = _tlGroupRoot(tl);
+  const img = (root.images || []).find(i => i.id === ctx.imgId);
+  if (!img) return;
+  _tlCompressToBase64(file).then(src => {
+    _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'replaceImage', imgId: img.id, oldSrc: img.src });
+    img.src = src;
+    img.updatedAt = Date.now();
+    _tlSrcCache[img.id] = src;
+    tlSave(root.id);
+    tlRender();
+  }).catch(e => console.warn('TL replace image error:', e));
+});
 
 // ── Drag & drop ───────────────────────────────────────────────────────────────
 // Aperçu "temps réel" du dépôt : un vrai élément placeholder (taille de la carte glissée) est
@@ -10999,86 +11048,124 @@ function _tlBuildFolderTree(excludeId) {
   return build(null);
 }
 
-// ── Modal "Gérer les tiers" (presets + import + sauvegarde) ─────────────────
+// ── Modal "Preset tiers" (presets + import inline + sauvegarde) ─────────────
 let _tlTiersSourceTargetId = null;
+
+// Dropdown custom des presets personnalisés (non protégés) uniquement — les presets protégés
+// (Standard/Inversé) sont affichés à part, en boutons directs, cf. tlOpenTiersSourceModal.
+function _tlSyncCustomPresetDropdown(customPresets, tl, id) {
+  const wrap = document.getElementById('tl-tiers-source-preset-dropdown');
+  const btn = document.getElementById('tl-tiers-source-preset-dropdown-btn');
+  const list = document.getElementById('tl-tiers-source-preset-dropdown-list');
+  const applyBtn = document.getElementById('tl-tiers-source-preset-apply-btn');
+  const editBtn = document.getElementById('tl-tiers-source-preset-edit-btn');
+  const delBtn = document.getElementById('tl-tiers-source-preset-delete-btn');
+
+  const hasPresets = customPresets.length > 0;
+  applyBtn.disabled = !hasPresets;
+  editBtn.disabled = !hasPresets;
+  delBtn.disabled = !hasPresets;
+
+  if (!_tlCustomPresetDropdownValue || !customPresets.some(p => p.id === _tlCustomPresetDropdownValue)) {
+    _tlCustomPresetDropdownValue = hasPresets ? customPresets[0].id : null;
+  }
+
+  const renderBtn = () => {
+    btn.innerHTML = '';
+    const preset = customPresets.find(p => p.id === _tlCustomPresetDropdownValue);
+    if (!preset) { btn.textContent = '— Aucun preset —'; return; }
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tl-preset-row-name';
+    nameSpan.textContent = preset.name;
+    btn.appendChild(nameSpan);
+    btn.appendChild(_tlBuildPresetDotsRow(preset));
+  };
+
+  list.innerHTML = '';
+  customPresets.forEach(p => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'tl-preset-dropdown-item';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tl-preset-row-name';
+    nameSpan.textContent = p.name;
+    item.appendChild(nameSpan);
+    item.appendChild(_tlBuildPresetDotsRow(p));
+    item.addEventListener('click', () => {
+      _tlCustomPresetDropdownValue = p.id;
+      renderBtn();
+      list.classList.add('hidden');
+    });
+    list.appendChild(item);
+  });
+
+  renderBtn();
+  btn.onclick = () => list.classList.toggle('hidden');
+
+  applyBtn.onclick = () => {
+    if (!_tlCustomPresetDropdownValue) return;
+    if (tlApplyPreset(tl, _tlCustomPresetDropdownValue) !== false) tlModalTiersSource.classList.add('hidden');
+  };
+  editBtn.onclick = () => {
+    if (_tlCustomPresetDropdownValue) tlOpenPresetEditModal(_tlCustomPresetDropdownValue, id);
+  };
+  delBtn.onclick = () => {
+    const preset = customPresets.find(p => p.id === _tlCustomPresetDropdownValue);
+    if (!preset) return;
+    if (confirm(`Supprimer le preset "${preset.name}" ?`)) {
+      tlDeletePreset(preset.id);
+      _tlCustomPresetDropdownValue = null;
+      tlOpenTiersSourceModal(id);
+    }
+  };
+}
+let _tlCustomPresetDropdownValue = null;
 
 function tlOpenTiersSourceModal(id) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
   _tlTiersSourceTargetId = id;
 
-  const presetList = document.getElementById('tl-tiers-source-preset-list');
+  const protectedList = document.getElementById('tl-tiers-source-protected-list');
   const saveInput = document.getElementById('tl-tiers-source-save-input');
 
-  presetList.innerHTML = '';
+  protectedList.innerHTML = '';
   const presets = tlState.tierPresets || [];
-  if (presets.length === 0) {
+  const protectedPresets = presets.filter(p => p.protected);
+  const customPresets = presets.filter(p => !p.protected)
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
+
+  if (protectedPresets.length === 0) {
     const empty = document.createElement('div');
     empty.style.cssText = 'font-size:0.8rem;color:var(--text-muted);';
-    empty.textContent = 'Aucun preset.';
-    presetList.appendChild(empty);
+    empty.textContent = 'Aucun preset standard.';
+    protectedList.appendChild(empty);
   } else {
-    // Presets protégés (Standard/Inversé fournis par défaut, ni renommables ni supprimables)
-    // d'abord dans leur ordre d'origine, séparateur, puis le reste trié alphabétiquement.
-    const protectedPresets = presets.filter(p => p.protected);
-    const customPresets = presets.filter(p => !p.protected)
-      .sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
-
-    const buildRow = p => {
-      const row = document.createElement('div');
-      row.className = 'modal-item-row';
-
+    protectedPresets.forEach(p => {
       const btn = document.createElement('button');
       btn.className = 'btn-action btn-secondary tl-preset-row-btn';
-      btn.style.flex = '1';
       btn.title = p.name + ' : ' + p.tiers.map(t => t.label).join(', ');
       const nameSpan = document.createElement('span');
       nameSpan.className = 'tl-preset-row-name';
       nameSpan.textContent = p.name;
       btn.appendChild(nameSpan);
-      const dotsWrap = document.createElement('span');
-      dotsWrap.className = 'tl-preset-row-dots';
-      p.tiers.forEach(t => {
-        const dot = document.createElement('span');
-        dot.className = 'tl-preset-dot';
-        dot.style.background = t.color;
-        dotsWrap.appendChild(dot);
-      });
-      btn.appendChild(dotsWrap);
+      btn.appendChild(_tlBuildPresetDotsRow(p));
       btn.addEventListener('click', () => {
         if (tlApplyPreset(tl, p.id) !== false) tlModalTiersSource.classList.add('hidden');
       });
-      row.appendChild(btn);
-
-      if (!p.protected) {
-        const editBtn = document.createElement('button');
-        editBtn.className = 'btn-action btn-secondary';
-        editBtn.title = 'Modifier ce preset';
-        editBtn.innerHTML = '<i data-lucide="pencil"></i>';
-        editBtn.addEventListener('click', () => tlOpenPresetEditModal(p.id, id));
-        row.appendChild(editBtn);
-
-        const del = document.createElement('button');
-        del.className = 'btn-action btn-secondary';
-        del.title = 'Supprimer ce preset';
-        del.innerHTML = '<i data-lucide="trash-2"></i>';
-        del.addEventListener('click', () => {
-          if (confirm(`Supprimer le preset "${p.name}" ?`)) { tlDeletePreset(p.id); tlOpenTiersSourceModal(id); }
-        });
-        row.appendChild(del);
-      }
-
-      return row;
-    };
-
-    protectedPresets.forEach(p => presetList.appendChild(buildRow(p)));
-    if (protectedPresets.length > 0 && customPresets.length > 0) {
-      const sep = document.createElement('div');
-      sep.className = 'tl-preset-list-sep';
-      presetList.appendChild(sep);
-    }
-    customPresets.forEach(p => presetList.appendChild(buildRow(p)));
+      protectedList.appendChild(btn);
+    });
   }
+
+  _tlSyncCustomPresetDropdown(customPresets, tl, id);
+
+  _tlPopulateImportTiersSelect(document.getElementById('tl-tiers-source-import-select'), id);
+  document.getElementById('tl-tiers-source-import-confirm-btn').onclick = async () => {
+    const sourceId = document.getElementById('tl-tiers-source-import-select').value;
+    if (!sourceId) return;
+    await tlImportTiersFrom(tl, sourceId);
+    tlOpenTiersSourceModal(id);
+  };
 
   saveInput.value = '';
   document.getElementById('tl-tiers-source-save-btn').onclick = () => {
@@ -11088,13 +11175,12 @@ function tlOpenTiersSourceModal(id) {
   };
 
   document.getElementById('tl-tiers-source-new-preset-btn').onclick = () => tlOpenPresetEditModal(null, id);
-  document.getElementById('tl-tiers-source-import-btn').onclick = () => tlOpenImportTiersModal(id);
 
   if (window.lucide) lucide.createIcons();
   tlModalTiersSource.classList.remove('hidden');
 }
 
-// ── Modal "Importer tiers" — choix de la tier list source via un simple <select> ─────────────
+// ── Select "Importer depuis un autre dossier" — choix de la tier list source ─────────────
 // Même pattern que le select de dossier parent (tlPopulateFolderSelect) : une liste plate
 // indentée par profondeur de dossier, pas une arborescence interactive.
 function _tlPopulateImportTiersSelect(selectEl, excludeId) {
@@ -11126,47 +11212,33 @@ function _tlPopulateImportTiersSelect(selectEl, excludeId) {
   });
 }
 
-let _tlImportTiersTargetId = null; // id d'une tierlist existante (mode "Gérer les tiers")
-let _tlImportTiersOnPick = null;   // callback(sourceId) — mode "création" (pas de tierlist encore créée)
+let _tlImportTiersOnPick = null; // callback(sourceId) — mode "création" (modal Nouveau tier, pas de tierlist encore créée)
 
-// `targetId` : id d'une tierlist déjà créée dont on remplace directement les tiers (comportement
-// existant, appelé depuis le hub "Gérer les tiers"). `onPick` : callback alternatif utilisé quand
-// aucune tierlist n'existe encore (ex: modal de création d'un nouveau template) — reçoit l'id de
-// la tierlist source choisie, à appliquer soi-même après création.
+// Mode "création" (modal Nouveau tier list) : pas de hub "Preset tiers" à ouvrir, juste un choix
+// direct de tierlist source via le même select, réutilisé inline dans le modal de création
+// (voir _tlSetupNewModalImportBtn) — reçoit l'id choisi via callback, appliqué après création.
 function tlOpenImportTiersModal(targetId, onPick) {
-  _tlImportTiersTargetId = targetId || null;
-  _tlImportTiersOnPick = onPick || null;
-  _tlPopulateImportTiersSelect(document.getElementById('tl-modal-import-tiers-select'), targetId || null);
-  tlModalTiersSource.classList.add('hidden');
-  document.getElementById('tl-modal-import-tiers').classList.remove('hidden');
+  if (!onPick) return; // le mode "hub existant" est désormais géré inline dans tlOpenTiersSourceModal
+  _tlImportTiersOnPick = onPick;
+  const modal = document.getElementById('tl-modal-import-tiers-pick');
+  const select = document.getElementById('tl-modal-import-tiers-pick-select');
+  _tlPopulateImportTiersSelect(select, targetId || null);
+  modal.classList.remove('hidden');
 }
 
-document.getElementById('tl-modal-import-tiers-confirm').addEventListener('click', async () => {
-  const sourceId = document.getElementById('tl-modal-import-tiers-select').value;
-  if (!sourceId) return;
-  if (_tlImportTiersOnPick) {
-    _tlImportTiersOnPick(sourceId);
-    document.getElementById('tl-modal-import-tiers').classList.add('hidden');
-    return;
-  }
-  if (!_tlImportTiersTargetId) return;
-  const tl = tlState.tierlists.find(t => t.id === _tlImportTiersTargetId);
-  if (!tl) return;
-  if (await tlImportTiersFrom(tl, sourceId) !== false) {
-    document.getElementById('tl-modal-import-tiers').classList.add('hidden');
-  }
+document.getElementById('tl-modal-import-tiers-pick-confirm').addEventListener('click', () => {
+  const sourceId = document.getElementById('tl-modal-import-tiers-pick-select').value;
+  if (!sourceId || !_tlImportTiersOnPick) return;
+  _tlImportTiersOnPick(sourceId);
+  _tlImportTiersOnPick = null;
+  document.getElementById('tl-modal-import-tiers-pick').classList.add('hidden');
 });
-const _tlCloseImportTiersModal = () => {
-  document.getElementById('tl-modal-import-tiers').classList.add('hidden');
-  if (_tlImportTiersOnPick) {
-    _tlImportTiersOnPick = null;
-    tlModalNew.classList.remove('hidden');
-  } else if (_tlImportTiersTargetId) {
-    tlOpenTiersSourceModal(_tlImportTiersTargetId);
-  }
+const _tlCloseImportTiersPickModal = () => {
+  document.getElementById('tl-modal-import-tiers-pick').classList.add('hidden');
+  _tlImportTiersOnPick = null;
 };
-document.getElementById('tl-modal-import-tiers-cancel').addEventListener('click', _tlCloseImportTiersModal);
-document.getElementById('tl-modal-import-tiers-close').addEventListener('click', _tlCloseImportTiersModal);
+document.getElementById('tl-modal-import-tiers-pick-cancel').addEventListener('click', _tlCloseImportTiersPickModal);
+document.getElementById('tl-modal-import-tiers-pick-close').addEventListener('click', _tlCloseImportTiersPickModal);
 
 // ── Modal édition d'un preset (nom + tiers) ──────────────────────────────────
 let _tlPresetEditId = null; // null = nouveau preset
@@ -12760,6 +12832,12 @@ tlAddTextInput.addEventListener('keydown', e => {
     if (!tl || !text) return;
     _tlAddTextCard(tl, text);
   }
+});
+// Sert aussi de barre de recherche (même principe que le panneau Cases, cf. renderElements) :
+// filtre la zone "Non placés" en direct, sans jamais toucher tl.unplaced.
+tlAddTextInput.addEventListener('input', () => {
+  const tl = tlActiveTierlist();
+  if (tl) tlRenderUnplaced(tl);
 });
 
 // ── Coller depuis le presse-papier ────────────────────────────────────────────

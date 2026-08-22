@@ -2609,6 +2609,8 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 .tl-preset-row-btn {
   display: flex !important;
   align-items: center;
+  align-self: flex-start;
+  width: auto;
   gap: 8px;
   text-align: left;
 }
@@ -4227,7 +4229,7 @@ body.solo-tierlist-mode .tl-layout {
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -4239,6 +4241,14 @@ body.solo-tierlist-mode .tl-layout {
   transition: var(--transition);
 }
 .tl-preset-dropdown-btn:hover { border-color: var(--accent-dim); }
+.tl-preset-dropdown-btn::after {
+  content: '';
+  flex-shrink: 0;
+  margin-left: auto;
+  width: 10px;
+  height: 6px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%237a7a90' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E") no-repeat center;
+}
 .tl-preset-dropdown-list {
   position: absolute;
   top: calc(100% + 4px);
@@ -4257,7 +4267,7 @@ body.solo-tierlist-mode .tl-layout {
 .tl-preset-dropdown-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   padding: 8px 12px;
   background: none;

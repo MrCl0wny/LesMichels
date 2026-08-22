@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=292" />
+  <link rel="stylesheet" href="style.css?v=293" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -215,6 +215,7 @@
                 <button class="tl-toolbar-btn tl-btn-blue" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une liste"><i data-lucide="chevron-down"></i> <span id="tl-tierlist-dropdown-label"></span></button>
               </div>
               <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
+              <input type="file" id="tl-file-input-replace" accept="image/*" class="hidden" />
             </div>
             <div class="ctrl-row-grids-center"></div>
             <div class="ctrl-row-grids-right">
@@ -332,7 +333,7 @@
                     <div class="tl-unplaced-header-row">
                       <button id="tl-btn-add-image" class="tl-btn-add-image" title="Ajouter des images&#10;Clic : importer des fichiers ou coller depuis le presse-papier">+ Image</button>
                       <span id="tl-add-text-wrap" class="tl-add-text-wrap">
-                        <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Ajouter texte..." title="Taper un texte puis Entrée pour ajouter une carte" />
+                        <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Texte / recherche..." title="Rechercher : filtre les éléments non placés en direct&#10;Entrée : ajoute une carte texte avec ce contenu" />
                       </span>
                       <button type="button" id="tl-btn-export-images" class="tl-toolbar-btn tl-btn-neutral hidden" title="Exporter toutes les images du template (fichier .zip)"><i data-lucide="images"></i> Exporter images</button>
                     </div>
@@ -654,17 +655,38 @@
 
   <!-- Modal gestion des tiers : presets, import, sauvegarde -->
   <div id="tl-modal-tiers-source" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
+    <div class="modal-box modal-box-md">
       <div class="modal-header">
-        <h3>Gérer les tiers</h3>
+        <h3>Preset tiers</h3>
         <button class="modal-close" id="tl-modal-tiers-source-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
+        <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Importer depuis un autre dossier</label>
+        <div style="display:flex;gap:6px;margin-bottom:16px;">
+          <select id="tl-tiers-source-import-select" class="modal-folder-select" style="flex:1;">
+            <option value="">— Choisir —</option>
+          </select>
+          <button class="btn-action" id="tl-tiers-source-import-confirm-btn">Importer</button>
+        </div>
+
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-          <label style="font-size:0.78rem;color:var(--text-muted);">Presets</label>
+          <label style="font-size:0.78rem;color:var(--text-muted);">Presets standard</label>
+        </div>
+        <div id="tl-tiers-source-protected-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;"></div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <label style="font-size:0.78rem;color:var(--text-muted);">Presets enregistrés</label>
           <button class="btn-action btn-secondary" id="tl-tiers-source-new-preset-btn" style="padding:3px 10px;font-size:0.78rem;">+ Nouveau preset</button>
         </div>
-        <div id="tl-tiers-source-preset-list" class="modal-items-list"></div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <div class="tl-preset-dropdown" id="tl-tiers-source-preset-dropdown" style="flex:1;">
+            <button type="button" class="tl-preset-dropdown-btn" id="tl-tiers-source-preset-dropdown-btn"></button>
+            <div class="tl-preset-dropdown-list hidden" id="tl-tiers-source-preset-dropdown-list"></div>
+          </div>
+          <button class="btn-action" id="tl-tiers-source-preset-apply-btn" title="Appliquer ce preset">Appliquer</button>
+          <button class="btn-action btn-secondary btn-icon-square" id="tl-tiers-source-preset-edit-btn" title="Modifier ce preset"><i data-lucide="pencil"></i></button>
+          <button class="btn-action btn-secondary btn-icon-square" id="tl-tiers-source-preset-delete-btn" title="Supprimer ce preset"><i data-lucide="trash-2"></i></button>
+        </div>
 
         <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin:12px 0 4px;">Sauvegarder les tiers actuels comme preset</label>
         <div style="display:flex;gap:6px;">
@@ -673,28 +695,28 @@
         </div>
 
         <div class="modal-actions">
-          <button class="btn-action btn-secondary" id="tl-tiers-source-import-btn">Importer tiers</button>
           <button class="btn-action btn-secondary" id="tl-modal-tiers-source-cancel">Fermer</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Modal choix de la tier list source pour "Importer tiers" -->
-  <div id="tl-modal-import-tiers" class="modal-overlay hidden">
+  <!-- Modal choix de la tier list source, mode "création" uniquement (modal Nouveau tier list/template,
+       avant que la tierlist existe) : le hub "Preset tiers" gère l'import inline une fois la tierlist créée. -->
+  <div id="tl-modal-import-tiers-pick" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Importer les tiers</h3>
-        <button class="modal-close" id="tl-modal-import-tiers-close"><i data-lucide="x"></i></button>
+        <button class="modal-close" id="tl-modal-import-tiers-pick-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Copier les tiers depuis</label>
-        <select id="tl-modal-import-tiers-select" class="modal-folder-select">
+        <select id="tl-modal-import-tiers-pick-select" class="modal-folder-select">
           <option value="">— Choisir —</option>
         </select>
         <div class="modal-actions">
-          <button class="btn-action" id="tl-modal-import-tiers-confirm">Importer</button>
-          <button class="btn-action btn-secondary" id="tl-modal-import-tiers-cancel">Annuler</button>
+          <button class="btn-action" id="tl-modal-import-tiers-pick-confirm">Importer</button>
+          <button class="btn-action btn-secondary" id="tl-modal-import-tiers-pick-cancel">Annuler</button>
         </div>
       </div>
     </div>
@@ -1324,6 +1346,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=416"></script>
+  <script src="app.js?v=419"></script>
 </body>
 </html>
