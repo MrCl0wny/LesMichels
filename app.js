@@ -101,6 +101,20 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ──────────────────────────────────────────────
+// Clic en dehors du contenu d'un modal (sur l'overlay lui-même) = fermeture, pour tous les modaux
+// (délégation globale plutôt qu'un handler par modal). Redéclenche le bouton .modal-close du modal
+// (le X) plutôt que d'ajouter .hidden directement : certains modaux font plus que masquer dans leur
+// fermeture (ex. _tlClosePresetEditModal rouvre le hub parent) — passer par le même bouton garantit
+// un état final identique à une fermeture explicite. #modal-auth exclu : connexion obligatoire.
+// ──────────────────────────────────────────────
+document.addEventListener('mousedown', (e) => {
+  if (!e.target.classList.contains('modal-overlay') || e.target.id === 'modal-auth') return;
+  const closeBtn = e.target.querySelector('.modal-close, [id$="-img-zoom-close"]');
+  if (closeBtn) closeBtn.click();
+  else e.target.classList.add('hidden');
+});
+
+// ──────────────────────────────────────────────
 // Audio singleton + effets Bingo
 // ──────────────────────────────────────────────
 function playBingoSound() {
@@ -4856,6 +4870,7 @@ function _buildElementPresetEditItem(text, idx) {
     e.stopPropagation();
     _elementPresetEditTexts.splice(idx, 1);
     _renderElementPresetEditList();
+    _commitElementPresetEdit();
   });
   li.appendChild(del);
 
@@ -4882,6 +4897,7 @@ function _startEditElementPresetEditText(idx, span, clickEvent) {
     const newText = textarea.value.trim();
     if (newText) _elementPresetEditTexts[idx] = newText;
     _renderElementPresetEditList();
+    _commitElementPresetEdit();
   };
 
   textarea.addEventListener('blur', commit);
@@ -4929,6 +4945,23 @@ function closeElementPresetEditModal() {
   renderElementPresetList();
 }
 
+// Sauvegarde automatique : appelée après chaque modification (ajout/suppression/renommage case ou
+// preset) — pas de bouton "Enregistrer" à part. Tant qu'aucun nom n'est saisi, rien n'est persisté
+// (un preset sans nom n'a pas de sens) ; dès qu'un nom existe, crée le preset au premier appel puis
+// le met à jour ensuite (_elementPresetEditId bascule de null vers l'id créé).
+function _commitElementPresetEdit() {
+  const name = document.getElementById('element-preset-edit-name').value.trim();
+  if (!name) return;
+  if (_elementPresetEditId) {
+    updateElementPreset(_elementPresetEditId, name, _elementPresetEditTexts);
+  } else {
+    const created = { id: uid(), name, elements: _elementPresetEditTexts.map(t => t.trim()).filter(Boolean) };
+    getElementPresets().push(created);
+    _bingoSaveIndex();
+    _elementPresetEditId = created.id;
+  }
+}
+
 function _addElementPresetEditText() {
   const input = document.getElementById('element-preset-edit-input');
   if (!input) return;
@@ -4937,6 +4970,7 @@ function _addElementPresetEditText() {
   _elementPresetEditTexts.push(text);
   input.value = '';
   _renderElementPresetEditList();
+  _commitElementPresetEdit();
   input.focus();
 }
 document.getElementById('btn-element-preset-edit-add').addEventListener('click', _addElementPresetEditText);
@@ -4944,17 +4978,8 @@ document.getElementById('element-preset-edit-input').addEventListener('keydown',
   if (e.key === 'Enter') _addElementPresetEditText();
 });
 document.getElementById('element-preset-edit-input').addEventListener('input', _renderElementPresetEditList);
+document.getElementById('element-preset-edit-name').addEventListener('input', _commitElementPresetEdit);
 
-document.getElementById('btn-confirm-element-preset-edit').addEventListener('click', () => {
-  const name = document.getElementById('element-preset-edit-name').value.trim();
-  if (!name) return;
-  if (_elementPresetEditId) {
-    updateElementPreset(_elementPresetEditId, name, _elementPresetEditTexts);
-  } else {
-    saveElementPreset(name, _elementPresetEditTexts);
-  }
-  closeElementPresetEditModal();
-});
 document.getElementById('btn-cancel-element-preset-edit').addEventListener('click', closeElementPresetEditModal);
 document.getElementById('btn-close-element-preset-edit-modal').addEventListener('click', closeElementPresetEditModal);
 
@@ -6249,7 +6274,7 @@ if (_foldersSortSelect) {
 
 // ── Corbeille unifiée ──────────────────────────────────────────────────────────
 const modalTrashUnified = document.getElementById('modal-trash-unified');
-const modalConfirmTrashEmpty = document.getElementById('modal-confirm-trash-empty');
+const trashEmptyConfirmInline = document.getElementById('trash-empty-confirm-inline');
 
 function renderTrashList() {
   const container = document.getElementById('trash-list');
@@ -6377,6 +6402,8 @@ async function openTrashUnified() {
 function closeTrashUnified() {
   modalTrashUnified.classList.remove('open');
   modalTrashUnifiedOverlay.classList.remove('open');
+  trashEmptyConfirmInline.classList.add('hidden');
+  document.getElementById('btn-trash-empty-all').classList.remove('hidden');
 }
 modalTrashUnifiedOverlay.addEventListener('click', closeTrashUnified);
 
@@ -6386,15 +6413,21 @@ document.getElementById('btn-trash-unified').addEventListener('click', () => {
 });
 document.getElementById('btn-close-trash-unified').addEventListener('click', closeTrashUnified);
 
-document.getElementById('btn-trash-empty-all').addEventListener('click', () => {
+// Confirmation inline (remplace le bouton "Vider" sur place, jamais un modal par-dessus le drawer
+// Corbeille) : cf. tl-btn-trash-empty-all pour le pendant tier list.
+document.getElementById('btn-trash-empty-all').addEventListener('click', (e) => {
   if ((state.trash || []).length === 0) return;
-  modalConfirmTrashEmpty.classList.remove('hidden');
+  e.currentTarget.classList.add('hidden');
+  trashEmptyConfirmInline.classList.remove('hidden');
 });
-document.getElementById('btn-close-confirm-trash-empty').addEventListener('click', () => modalConfirmTrashEmpty.classList.add('hidden'));
-document.getElementById('btn-cancel-trash-empty').addEventListener('click', () => modalConfirmTrashEmpty.classList.add('hidden'));
+document.getElementById('btn-cancel-trash-empty').addEventListener('click', () => {
+  trashEmptyConfirmInline.classList.add('hidden');
+  document.getElementById('btn-trash-empty-all').classList.remove('hidden');
+});
 document.getElementById('btn-confirm-trash-empty').addEventListener('click', () => {
   trashEmpty();
-  modalConfirmTrashEmpty.classList.add('hidden');
+  trashEmptyConfirmInline.classList.add('hidden');
+  document.getElementById('btn-trash-empty-all').classList.remove('hidden');
   renderTrashList();
 });
 
@@ -7720,7 +7753,7 @@ const tlArchivedList      = document.getElementById('tl-archived-list');
 const tlModalTrash          = document.getElementById('tl-modal-trash');
 const tlModalTrashClose      = document.getElementById('tl-modal-trash-close');
 const tlTrashList            = document.getElementById('tl-trash-list');
-const tlModalConfirmTrashEmpty = document.getElementById('tl-modal-confirm-trash-empty');
+const tlTrashEmptyConfirmInline = document.getElementById('tl-trash-empty-confirm-inline');
 
 const tlModalImgName      = document.getElementById('tl-modal-imgname');
 const tlModalImgNameInput = document.getElementById('tl-modal-imgname-input');
@@ -11321,6 +11354,7 @@ function _tlOpenPresetColorPopover(dotEl, tier) {
       tier.color = color;
       _tlClosePresetColorPopover();
       _tlRenderPresetEditTiers();
+      _tlCommitPresetEdit();
     });
     swatchesRow.appendChild(sw);
   });
@@ -11342,6 +11376,7 @@ function _tlOpenPresetColorPopover(dotEl, tier) {
   customInput.addEventListener('change', () => {
     _tlClosePresetColorPopover();
     _tlRenderPresetEditTiers();
+    _tlCommitPresetEdit();
   });
   customLabel.appendChild(customText);
   customLabel.appendChild(customInput);
@@ -11403,6 +11438,7 @@ function _tlRenderPresetEditTiers() {
         const val = input.value.trim();
         if (val) tier.label = val;
         _tlRenderPresetEditTiers();
+        _tlCommitPresetEdit();
       };
       input.addEventListener('blur', commit);
       input.addEventListener('keydown', e => {
@@ -11419,6 +11455,7 @@ function _tlRenderPresetEditTiers() {
     del.addEventListener('click', () => {
       _tlPresetEditTiers.splice(idx, 1);
       _tlRenderPresetEditTiers();
+      _tlCommitPresetEdit();
     });
     row.appendChild(del);
 
@@ -11441,6 +11478,7 @@ function _tlRenderPresetEditTiers() {
       const [moved] = _tlPresetEditTiers.splice(fromIdx, 1);
       _tlPresetEditTiers.splice(toIdx, 0, moved);
       _tlRenderPresetEditTiers();
+      _tlCommitPresetEdit();
     });
 
     wrap.appendChild(row);
@@ -11448,12 +11486,11 @@ function _tlRenderPresetEditTiers() {
   if (window.lucide) lucide.createIcons();
 }
 
-document.getElementById('tl-modal-preset-edit-add-tier').addEventListener('click', () => {
-  _tlPresetEditTiers.push({ label: '?', color: TL_PRESET_COLORS[0] });
-  _tlRenderPresetEditTiers();
-});
-
-document.getElementById('tl-modal-preset-edit-confirm').addEventListener('click', () => {
+// Sauvegarde automatique : appelée après chaque modification (ajout/suppression/réordonnancement/
+// couleur/renommage d'un tier ou du preset) — pas de bouton "Enregistrer" à part. Tant qu'aucun nom
+// n'est saisi ou qu'il n'y a aucun tier, rien n'est persisté ; dès que les deux existent, crée le
+// preset au premier appel puis le met à jour ensuite (_tlPresetEditId bascule de null vers l'id créé).
+function _tlCommitPresetEdit() {
   const name = document.getElementById('tl-modal-preset-edit-name').value.trim();
   if (!name || _tlPresetEditTiers.length === 0) return;
   if (!Array.isArray(tlState.tierPresets)) tlState.tierPresets = [];
@@ -11461,12 +11498,20 @@ document.getElementById('tl-modal-preset-edit-confirm').addEventListener('click'
     const preset = tlState.tierPresets.find(p => p.id === _tlPresetEditId);
     if (preset && !preset.protected) { preset.name = name; preset.tiers = _tlPresetEditTiers.map(t => ({ ...t })); }
   } else {
-    tlState.tierPresets.push({ id: uid(), name, tiers: _tlPresetEditTiers.map(t => ({ ...t })) });
+    const created = { id: uid(), name, tiers: _tlPresetEditTiers.map(t => ({ ...t })) };
+    tlState.tierPresets.push(created);
+    _tlPresetEditId = created.id;
   }
   tlSave(); // presets : global, index-only
-  document.getElementById('tl-modal-preset-edit').classList.add('hidden');
-  if (_tlPresetEditReturnToId) tlOpenTiersSourceModal(_tlPresetEditReturnToId);
+}
+
+document.getElementById('tl-modal-preset-edit-add-tier').addEventListener('click', () => {
+  _tlPresetEditTiers.push({ label: '?', color: TL_PRESET_COLORS[0] });
+  _tlRenderPresetEditTiers();
+  _tlCommitPresetEdit();
 });
+
+document.getElementById('tl-modal-preset-edit-name').addEventListener('input', _tlCommitPresetEdit);
 
 const _tlClosePresetEditModal = () => {
   document.getElementById('tl-modal-preset-edit').classList.add('hidden');
@@ -12329,7 +12374,10 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
-tlBtnNewTemplate.addEventListener('click', () => tlOpenNewTemplateModal(_tlCurrentSelectedFolderId()));
+// "+ Template" du panneau de contrôle (page d'accueil) : même mécanisme que "+ Bingo"
+// (_homeNewGridAfterFolder) — template + sa première liste générée en une seule action.
+// Racine par défaut (null) ; l'utilisateur choisit l'emplacement réel dans la modal.
+tlBtnNewTemplate.addEventListener('click', () => tlOpenNewTemplateModal(null, true));
 document.getElementById('tl-empty-btn-new').addEventListener('click', () => tlOpenNewTemplateModal(_tlCurrentSelectedFolderId()));
 document.getElementById('tl-empty-btn-folder').addEventListener('click', () => tlOpenFolderModal('create', null, '', _tlCurrentSelectedFolderId()));
 
@@ -12761,6 +12809,8 @@ async function tlOpenTrashUnified() {
 function tlCloseTrashUnified() {
   tlModalTrash.classList.remove('open');
   tlModalTrashOverlay.classList.remove('open');
+  tlTrashEmptyConfirmInline.classList.add('hidden');
+  document.getElementById('tl-btn-trash-empty-all').classList.remove('hidden');
 }
 document.getElementById('tl-btn-trash-unified').addEventListener('click', () => {
   if (tlModalTrash.classList.contains('open')) tlCloseTrashUnified();
@@ -12769,15 +12819,21 @@ document.getElementById('tl-btn-trash-unified').addEventListener('click', () => 
 tlModalTrashClose.addEventListener('click', tlCloseTrashUnified);
 tlModalTrashOverlay.addEventListener('click', tlCloseTrashUnified);
 
-document.getElementById('tl-btn-trash-empty-all').addEventListener('click', () => {
+// Confirmation inline (remplace le bouton "Vider" sur place, jamais un modal par-dessus le drawer
+// Corbeille) : cf. btn-trash-empty-all pour le pendant Bingo.
+document.getElementById('tl-btn-trash-empty-all').addEventListener('click', (e) => {
   if ((tlState.trash || []).length === 0) return;
-  tlModalConfirmTrashEmpty.classList.remove('hidden');
+  e.currentTarget.classList.add('hidden');
+  tlTrashEmptyConfirmInline.classList.remove('hidden');
 });
-document.getElementById('tl-btn-close-confirm-trash-empty').addEventListener('click', () => tlModalConfirmTrashEmpty.classList.add('hidden'));
-document.getElementById('tl-btn-cancel-trash-empty').addEventListener('click', () => tlModalConfirmTrashEmpty.classList.add('hidden'));
+document.getElementById('tl-btn-cancel-trash-empty').addEventListener('click', () => {
+  tlTrashEmptyConfirmInline.classList.add('hidden');
+  document.getElementById('tl-btn-trash-empty-all').classList.remove('hidden');
+});
 document.getElementById('tl-btn-confirm-trash-empty').addEventListener('click', () => {
   tlTrashEmpty();
-  tlModalConfirmTrashEmpty.classList.add('hidden');
+  tlTrashEmptyConfirmInline.classList.add('hidden');
+  document.getElementById('tl-btn-trash-empty-all').classList.remove('hidden');
   tlRenderTrashList();
 });
 
@@ -13412,7 +13468,7 @@ function _homeRenderHero() {
           parts.push(...folderParts);
         }
         parts.push(tl.name);
-        lbl.textContent = 'Rejoindre la soirée en cours : ' + parts.join(' \\ ');
+        lbl.textContent = parts.join(' \\ ');
       }
       return;
     }
@@ -13430,7 +13486,7 @@ function _homeRenderHero() {
       btn.style.display = 'inline-flex';
       if (lbl) {
         const path = getFolderPath(state.folders, ceFolder);
-        lbl.textContent = 'Rejoindre la soirée en cours : Bingo \\ ' + path.map(f => f.name).join(' \\ ');
+        lbl.textContent = 'Bingo \\ ' + path.map(f => f.name).join(' \\ ');
       }
       return;
     }

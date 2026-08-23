@@ -536,14 +536,32 @@ body {
   background: var(--surface-2);
   overflow: hidden;
 }
-.fp-tree-frame-title {
+.fp-tree-frame-header {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 6px;
+}
+.fp-tree-frame-title {
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #7dd3fc;
-  padding: 8px 10px 6px;
+}
+.fp-tree-frame-header .btn-new-folder-in-grids,
+.fp-tree-frame-header .tl-btn-new-folder {
+  height: 32px;
+  font-size: 0.78rem;
+  background: rgba(96, 165, 250, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.45);
+}
+.fp-tree-frame-header .btn-new-folder-in-grids:hover,
+.fp-tree-frame-header .tl-btn-new-folder:hover {
+  background: rgba(96, 165, 250, 0.26);
+  border-color: #60a5fa;
 }
 .folders-panel-tree {
   flex: 1;
@@ -567,8 +585,26 @@ body {
 .folders-page-hero {
   flex-shrink: 0;
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 16px;
   padding: 4px 0;
+}
+.folders-page-hero .btn-new-bingo-folder,
+.folders-page-hero .tl-btn-new {
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 16px 30px;
+  height: auto;
+  border-radius: var(--radius);
+  background: rgba(62, 207, 110, 0.14);
+  border: 1px solid rgba(62, 207, 110, 0.45);
+  color: #3ecf6e;
+}
+.folders-page-hero .btn-new-bingo-folder:hover,
+.folders-page-hero .tl-btn-new:hover {
+  background: rgba(62, 207, 110, 0.26);
+  border-color: #3ecf6e;
 }
 .folders-page-columns {
   flex: 1;
@@ -4363,6 +4399,25 @@ body.solo-tierlist-mode .tl-layout {
   margin-bottom: 14px;
   display: flex;
   justify-content: flex-end;
+}
+
+/* Confirmation "Vider la corbeille" inline (remplace le bouton sur place) — jamais un modal par-dessus
+   le drawer Corbeille, qui empilait deux fonds assombris au même endroit. */
+.trash-empty-confirm-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+.trash-empty-confirm-inline-text {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  text-align: right;
+}
+.trash-empty-confirm-inline-actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* ── Arborescence Archives / Corbeille ── */

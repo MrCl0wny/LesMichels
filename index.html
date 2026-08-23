@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=296" />
+  <link rel="stylesheet" href="style.css?v=303" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -56,11 +56,13 @@
     <section id="page-folders" class="page active">
       <div class="folders-page">
 
-        <!-- Panneau de contrôle : bouton "Rejoindre soirée en cours" en grand, centré. -->
+        <!-- Panneau de contrôle : + Bingo / bouton "Rejoindre soirée en cours" / + Template, centrés. -->
         <div class="folders-page-hero">
+          <button class="btn-new-bingo-folder" id="btn-new-bingo-folder" title="Nouveau Bingo">+ Bingo</button>
           <button class="home-ce-btn" id="home-btn-current-event" style="display:none">
-            <i data-lucide="party-popper"></i> <span id="home-ce-label">Rejoindre la soirée en cours</span>
+            <i data-lucide="party-popper"></i> <span id="home-ce-label"></span>
           </button>
+          <button id="tl-btn-new-template" class="tl-btn-new" title="Créer un nouveau template">+ Template</button>
         </div>
 
         <div class="folders-page-columns">
@@ -69,8 +71,6 @@
         <div class="folders-page-panel" id="folders-page-panel-bingo">
           <div class="folders-panel-header">
             <span class="folders-panel-title"><i data-lucide="grid-3x3"></i> Dossiers Bingo</span>
-            <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
-            <button class="btn-new-bingo-folder" id="btn-new-bingo-folder" title="Nouveau Bingo">+ Bingo</button>
             <button class="btn-new-grid hidden" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
             <button class="folders-page-btn-presets" id="folders-page-btn-presets-cases" title="Preset cases"><i data-lucide="settings"></i> Preset cases</button>
             <button class="folders-page-btn-archives" id="folders-page-btn-archives-bingo" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
@@ -92,7 +92,10 @@
               </div>
             </div>
             <div class="fp-tree-frame">
-              <div class="fp-tree-frame-title" id="fp-tree-frame-title">Dossiers</div>
+              <div class="fp-tree-frame-header">
+                <div class="fp-tree-frame-title" id="fp-tree-frame-title">Dossiers</div>
+                <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
+              </div>
               <div id="fp-icons-breadcrumb" class="fp-icons-breadcrumb"></div>
               <div id="folders-panel-tree" class="folders-panel-tree"></div>
               <div id="folders-panel-icons" class="folders-panel-icons hidden"></div>
@@ -104,8 +107,6 @@
         <div class="folders-page-panel" id="folders-page-panel-tierlist">
           <div class="folders-panel-header">
             <span class="folders-panel-title"><i data-lucide="scroll"></i> Dossiers Tier List</span>
-            <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
-            <button id="tl-btn-new-template" class="tl-btn-new" title="Créer un nouveau template">+ Template</button>
             <button class="folders-page-btn-presets" id="folders-page-btn-presets-tiers" title="Preset tiers"><i data-lucide="settings"></i> Preset tiers</button>
             <button class="folders-page-btn-archives" id="folders-page-btn-archives-tl" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
             <button class="folders-page-btn-trash" id="folders-page-btn-trash-tl" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
@@ -126,7 +127,10 @@
               </div>
             </div>
             <div class="fp-tree-frame">
-              <div class="fp-tree-frame-title">Dossiers</div>
+              <div class="fp-tree-frame-header">
+                <div class="fp-tree-frame-title">Dossiers</div>
+                <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
+              </div>
               <div id="tl-icons-breadcrumb" class="fp-icons-breadcrumb"></div>
               <div id="tl-list" class="tl-list folders-panel-tree"></div>
               <div id="tl-folders-panel-icons" class="folders-panel-icons hidden"></div>
@@ -500,7 +504,7 @@
              fusionnant ce modal avec le modal "Générer depuis ce template" — le template ET sa
              première tier list générée en un seul geste (voir _homeGenerateAfterTemplate). -->
         <div id="tl-modal-new-generate-wrap" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
-          <span class="modal-folder-select-label">Première liste générée</span>
+          <span class="modal-folder-select-label">Première liste</span>
           <div class="grid-name-presets">
             <span class="grid-name-preset-label">Noms prédéfinis :</span>
             <label class="grid-name-preset-check"><input type="checkbox" value="Jérôme"> Jérôme</label>
@@ -706,7 +710,6 @@
         <div id="tl-modal-preset-edit-tiers" class="modal-items-list" style="margin-top:10px;"></div>
         <div class="modal-actions">
           <button class="btn-action btn-secondary" id="tl-modal-preset-edit-add-tier">+ Ajouter un tier</button>
-          <button class="btn-action" id="tl-modal-preset-edit-confirm">Enregistrer</button>
           <button class="btn-action btn-secondary" id="tl-modal-preset-edit-cancel">Fermer</button>
         </div>
       </div>
@@ -736,25 +739,15 @@
     <div class="folders-panel-tree">
       <div class="modal-trash-actions-top">
         <button class="btn-action btn-danger-action" id="tl-btn-trash-empty-all"><i data-lucide="trash-2"></i> Vider la corbeille</button>
-      </div>
-      <div id="tl-trash-list" class="modal-items-list"></div>
-    </div>
-  </div>
-
-  <!-- Modal confirmation vider corbeille tier list -->
-  <div id="tl-modal-confirm-trash-empty" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Vider la corbeille</h3>
-        <button class="modal-close" id="tl-btn-close-confirm-trash-empty"><i data-lucide="x"></i></button>
-      </div>
-      <div class="modal-body">
-        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Supprimer définitivement tous les éléments de la corbeille ? Cette action est irréversible.</p>
-        <div class="modal-actions">
-          <button class="btn-action btn-danger-action" id="tl-btn-confirm-trash-empty"><i data-lucide="trash-2"></i> Vider</button>
-          <button class="btn-action btn-secondary" id="tl-btn-cancel-trash-empty">Annuler</button>
+        <div class="trash-empty-confirm-inline hidden" id="tl-trash-empty-confirm-inline">
+          <span class="trash-empty-confirm-inline-text">Suppression définitive et irréversible.</span>
+          <div class="trash-empty-confirm-inline-actions">
+            <button class="btn-action btn-danger-action" id="tl-btn-confirm-trash-empty"><i data-lucide="trash-2"></i> Confirmer</button>
+            <button class="btn-action btn-secondary" id="tl-btn-cancel-trash-empty">Annuler</button>
+          </div>
         </div>
       </div>
+      <div id="tl-trash-list" class="modal-items-list"></div>
     </div>
   </div>
 
@@ -886,25 +879,15 @@
     <div class="folders-panel-tree">
       <div class="modal-trash-actions-top">
         <button class="btn-action btn-danger-action" id="btn-trash-empty-all"><i data-lucide="trash-2"></i> Vider la corbeille</button>
-      </div>
-      <div id="trash-list" class="modal-items-list"></div>
-    </div>
-  </div>
-
-  <!-- Modal confirmation vider corbeille -->
-  <div id="modal-confirm-trash-empty" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Vider la corbeille</h3>
-        <button class="modal-close" id="btn-close-confirm-trash-empty"><i data-lucide="x"></i></button>
-      </div>
-      <div class="modal-body">
-        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Supprimer définitivement tous les éléments de la corbeille ? Cette action est irréversible.</p>
-        <div class="modal-actions">
-          <button class="btn-action btn-danger-action" id="btn-confirm-trash-empty"><i data-lucide="trash-2"></i> Vider</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-trash-empty">Annuler</button>
+        <div class="trash-empty-confirm-inline hidden" id="trash-empty-confirm-inline">
+          <span class="trash-empty-confirm-inline-text">Suppression définitive et irréversible.</span>
+          <div class="trash-empty-confirm-inline-actions">
+            <button class="btn-action btn-danger-action" id="btn-confirm-trash-empty"><i data-lucide="trash-2"></i> Confirmer</button>
+            <button class="btn-action btn-secondary" id="btn-cancel-trash-empty">Annuler</button>
+          </div>
         </div>
       </div>
+      <div id="trash-list" class="modal-items-list"></div>
     </div>
   </div>
 
@@ -1030,7 +1013,6 @@
         </div>
         <ul id="element-preset-edit-list" class="elements-list" style="margin-top:8px;"></ul>
         <div class="modal-actions">
-          <button class="btn-action" id="btn-confirm-element-preset-edit">Enregistrer</button>
           <button class="btn-action btn-secondary" id="btn-cancel-element-preset-edit">Fermer</button>
         </div>
       </div>
@@ -1322,6 +1304,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=425"></script>
+  <script src="app.js?v=431"></script>
 </body>
 </html>
