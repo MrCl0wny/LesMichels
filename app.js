@@ -2553,10 +2553,15 @@ function _renderRecentFolderPaths() {
 }
 
 // Menu ⋮ / clic droit d'un dossier bingo — partagé entre la vue liste et la vue icônes.
-function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder) {
+function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder, browseThisFolder) {
   e.stopPropagation();
   const { addItem } = _tlMakeCtxMenu(anchor, e, { title: f.name });
   addItem('folder-open', 'Ouvrir',              false, openThisFolder);
+  // Un dossier-bingo (a des grilles) s'ouvre toujours directement au clic simple — s'il a AUSSI des
+  // sous-dossiers, ceux-ci restent sinon inaccessibles en navigation (piégés), d'où cette entrée dédiée.
+  if (browseThisFolder && (f.folders || []).filter(sf => !sf.archived).length > 0) {
+    addItem('folder-open', 'Parcourir les sous-dossiers', false, browseThisFolder);
+  }
   addItem('grid-3x3', '+ Nouveau bingo',        false, async () => {
     if (_localActiveFolderId !== f.id) await switchFolder(f.id);
     openNewGridModal();
@@ -2670,7 +2675,8 @@ function _renderFoldersPanelIcons() {
     tile.appendChild(nameEl);
 
     const openThisFolder = () => { if (_localActiveFolderId !== f.id) switchFolder(f.id); _switchPage('bingo'); };
-    const openMenu = e => _openBingoFolderCtxMenu(f, e, tile, openThisFolder);
+    const browseThisFolder = () => { _foldersNavFolderId = f.id; _renderFoldersPanelIcons(); };
+    const openMenu = e => _openBingoFolderCtxMenu(f, e, tile, openThisFolder, browseThisFolder);
 
     // Simple clic : un dossier contenant des grilles (is-bingo) s'ouvre directement, même s'il a
     // aussi des sous-dossiers — sinon (dossier "conteneur" pur) on descend dedans façon Explorateur.
@@ -2773,7 +2779,8 @@ function renderFoldersPanelTree() {
       else { _foldersNavFolderId = f.id; renderFoldersPanelTree(); }
     });
 
-    const openFolderMenu = (e, anchor) => _openBingoFolderCtxMenu(f, e, anchor, openThisFolder);
+    const browseThisFolder = () => { _foldersNavFolderId = f.id; renderFoldersPanelTree(); };
+    const openFolderMenu = (e, anchor) => _openBingoFolderCtxMenu(f, e, anchor, openThisFolder, browseThisFolder);
     ctxBtn.addEventListener('click', e => openFolderMenu(e, row));
     row.addEventListener('contextmenu', e => { e.preventDefault(); openFolderMenu(e, null); });
 
