@@ -57,7 +57,22 @@
       },
       once() { return Promise.resolve({ val: () => get() }); },
       set,
-      update(patch) { const t = get() || {}; Object.assign(t, patch); return set(t); },
+      update(patch) {
+        // Le vrai SDK Firebase interprète chaque clé de `patch` contenant des "/" comme un chemin
+        // imbriqué relatif (ex. "members/abc" écrit dans t.members.abc), pas comme une clé littérale.
+        const t = get() || {};
+        Object.keys(patch).forEach(key => {
+          const parts = key.split('/');
+          let target = t;
+          for (let i = 0; i < parts.length - 1; i++) {
+            if (!target[parts[i]]) target[parts[i]] = {};
+            target = target[parts[i]];
+          }
+          const leaf = parts[parts.length - 1];
+          if (patch[key] === null) delete target[leaf]; else target[leaf] = patch[key];
+        });
+        return set(t);
+      },
       child(p) { return makeRef([...pathParts, p], root); },
       push() { const id = 'k' + Math.random().toString(36).slice(2); return makeRef([...pathParts, id], root); },
     };

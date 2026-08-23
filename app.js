@@ -6586,9 +6586,34 @@ function tlSaveIndex() {
   _dbTierlistIndex.set(sanitizeForFirebase(_tlBuildIndexPayload())).catch(e => console.warn('TL index save error:', e));
 }
 
+// Cache du dernier payload EFFECTIVEMENT écrit par groupe (JSON stringifié), pour ne réécrire que
+// les branches qui ont changé — évite de retransmettre `images` (lourd, base64) à chaque déplacement
+// de case qui ne touche que `members/<id>.tiers/unplaced` (léger, IDs seulement). Perdu au rechargement
+// de page (Map en mémoire) : le premier tlSaveGroup() de la session réécrit tout, sans risque.
+const _tlLastGroupPayloadJson = new Map();
+
 function tlSaveGroup(groupRootId) {
   if (_tlRemoteUpdate || !groupRootId) return;
-  _dbTierlistData.child(groupRootId).set(sanitizeForFirebase(_tlBuildGroupPayload(groupRootId))).catch(e => console.warn('TL group save error:', e));
+  const payload = sanitizeForFirebase(_tlBuildGroupPayload(groupRootId));
+  const prevJson = _tlLastGroupPayloadJson.get(groupRootId);
+  if (prevJson === undefined) {
+    // Rien d'écrit pour ce groupe depuis le chargement de la page : set() complet, comme avant.
+    _tlLastGroupPayloadJson.set(groupRootId, JSON.stringify(payload));
+    _dbTierlistData.child(groupRootId).set(payload).catch(e => console.warn('TL group save error:', e));
+    return;
+  }
+  const prev = JSON.parse(prevJson);
+  const updates = {};
+  if (JSON.stringify(payload.images) !== JSON.stringify(prev.images)) updates.images = payload.images;
+  if (payload.toPlaceImgId !== prev.toPlaceImgId) updates.toPlaceImgId = payload.toPlaceImgId;
+  const memberIds = new Set([...Object.keys(payload.members || {}), ...Object.keys(prev.members || {})]);
+  memberIds.forEach(id => {
+    const a = payload.members[id], b = prev.members[id];
+    if (JSON.stringify(a) !== JSON.stringify(b)) updates['members/' + id] = a === undefined ? null : a;
+  });
+  _tlLastGroupPayloadJson.set(groupRootId, JSON.stringify(payload));
+  if (Object.keys(updates).length === 0) return;
+  _dbTierlistData.child(groupRootId).update(updates).catch(e => console.warn('TL group save error:', e));
 }
 
 // Corbeille : nœud séparé, toujours chargé/écrit en entier (contient déjà des snapshots complets —
@@ -13204,6 +13229,12 @@ function _tlSetActiveGroupSubscription(groupRootId) {
     _tlRemoteUpdate = true;
     const needsSave = _tlMergeGroupDataIntoState(groupRootId, snapshot.val());
     _tlLoadedGroups.set(groupRootId, 'loaded');
+    // Resynchronise le cache de diff (tlSaveGroup) sur l'état réellement présent côté Firebase
+    // (snapshot reçu), pour que la prochaine sauvegarde locale calcule son delta par rapport à
+    // l'état serveur à jour plutôt qu'à un cache devenu obsolète (voir commentaire sur
+    // _tlLastGroupPayloadJson) — sinon la prochaine écriture locale réenverrait des branches qui
+    // n'ont en fait pas changé depuis ce snapshot distant.
+    _tlLastGroupPayloadJson.set(groupRootId, JSON.stringify(sanitizeForFirebase(_tlBuildGroupPayload(groupRootId))));
     tlRender();
     _tlRemoteUpdate = false;
     // cf. commentaire équivalent dans _tlEnsureGroupLoaded : persiste les réparations auto.
