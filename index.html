@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=293" />
+  <link rel="stylesheet" href="style.css?v=296" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -30,8 +30,7 @@
       </div>
       <div class="nav-group">
         <nav class="nav">
-          <button class="nav-btn active" data-page="home"><i data-lucide="house"></i> Accueil</button>
-          <button class="nav-btn nav-btn-folders" data-page="folders" title="Dossiers"><i data-lucide="folder"></i> Dossiers</button>
+          <button class="nav-btn active nav-btn-folders" data-page="folders" title="Dossiers"><i data-lucide="folder"></i> Dossiers</button>
           <button class="nav-btn" data-page="bingo">Bingo</button>
           <button class="nav-btn" data-page="tierlist">Tier List</button>
         </nav>
@@ -53,63 +52,29 @@
 
   <main class="main">
 
-    <!-- ═══════════════════ HOME PAGE ═══════════════════ -->
-    <section id="page-home" class="page active">
-      <div class="home-layout">
-
-        <button class="home-ce-btn" id="home-btn-current-event" style="display:none">
-          <i data-lucide="party-popper"></i> <span id="home-ce-label">Rejoindre la soirée en cours</span>
-        </button>
-
-        <div class="home-recent-columns">
-          <div id="home-recent-bingo" class="home-recent"></div>
-          <div id="home-recent-tl" class="home-recent"></div>
-        </div>
-
-        <div class="home-columns">
-
-          <div class="home-col">
-            <div class="home-col-header">
-              <span class="home-col-title"><i data-lucide="grid-3x3"></i> Bingo</span>
-            </div>
-            <div class="home-big-buttons">
-              <button class="home-big-btn home-big-btn-accent" id="home-btn-bingo-new-grid"><i data-lucide="plus"></i> Nouveau Bingo</button>
-              <button class="home-big-btn home-big-btn-folders" id="home-btn-bingo-join"><i data-lucide="folder"></i> Ouvrir Bingo existant</button>
-            </div>
-          </div>
-
-          <div class="home-col">
-            <div class="home-col-header">
-              <span class="home-col-title"><i data-lucide="list-ordered"></i> Liste</span>
-            </div>
-            <div class="home-big-buttons">
-              <button class="home-big-btn home-big-btn-accent" id="home-btn-tl-new-template"><i data-lucide="plus"></i> Nouveau Template</button>
-              <button class="home-big-btn home-big-btn-folders" id="home-btn-tl-join"><i data-lucide="folder"></i> Ouvrir Template existant</button>
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══════════════════ FOLDERS PAGE (page dédiée, remplace les 2 drawers latéraux) ═══════════════════ -->
-    <section id="page-folders" class="page">
+    <!-- ═══════════════════ FOLDERS PAGE (page d'accueil unique, fusion Accueil + Dossiers) ═══════════════════ -->
+    <section id="page-folders" class="page active">
       <div class="folders-page">
 
-        <div class="folders-page-tabs">
-          <button class="folders-page-tab active" id="folders-page-tab-bingo" data-tab="bingo"><i data-lucide="grid-3x3"></i> Bingo</button>
-          <button class="folders-page-tab" id="folders-page-tab-tierlist" data-tab="tierlist"><i data-lucide="scroll"></i> Tier List</button>
-          <button class="folders-page-btn-archives" id="folders-page-btn-archives" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
-          <button class="folders-page-btn-trash" id="folders-page-btn-trash" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
+        <!-- Panneau de contrôle : bouton "Rejoindre soirée en cours" en grand, centré. -->
+        <div class="folders-page-hero">
+          <button class="home-ce-btn" id="home-btn-current-event" style="display:none">
+            <i data-lucide="party-popper"></i> <span id="home-ce-label">Rejoindre la soirée en cours</span>
+          </button>
         </div>
 
-        <!-- ── Onglet Bingo ── -->
+        <div class="folders-page-columns">
+
+        <!-- ── Colonne Bingo ── -->
         <div class="folders-page-panel" id="folders-page-panel-bingo">
           <div class="folders-panel-header">
-            <span class="folders-panel-title"><i data-lucide="folder"></i> Dossiers Bingo</span>
+            <span class="folders-panel-title"><i data-lucide="grid-3x3"></i> Dossiers Bingo</span>
             <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
             <button class="btn-new-bingo-folder" id="btn-new-bingo-folder" title="Nouveau Bingo">+ Bingo</button>
             <button class="btn-new-grid hidden" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
+            <button class="folders-page-btn-presets" id="folders-page-btn-presets-cases" title="Preset cases"><i data-lucide="settings"></i> Preset cases</button>
+            <button class="folders-page-btn-archives" id="folders-page-btn-archives-bingo" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
+            <button class="folders-page-btn-trash" id="folders-page-btn-trash-bingo" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
           </div>
           <div class="folders-panel-scroll">
             <div id="folders-panel-recent" class="fp-recent"></div>
@@ -135,12 +100,15 @@
           </div>
         </div>
 
-        <!-- ── Onglet Tier List ── -->
-        <div class="folders-page-panel hidden" id="folders-page-panel-tierlist">
+        <!-- ── Colonne Tier List ── -->
+        <div class="folders-page-panel" id="folders-page-panel-tierlist">
           <div class="folders-panel-header">
-            <span class="folders-panel-title"><i data-lucide="folder"></i> Dossiers Tier List</span>
+            <span class="folders-panel-title"><i data-lucide="scroll"></i> Dossiers Tier List</span>
             <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
             <button id="tl-btn-new-template" class="tl-btn-new" title="Créer un nouveau template">+ Template</button>
+            <button class="folders-page-btn-presets" id="folders-page-btn-presets-tiers" title="Preset tiers"><i data-lucide="settings"></i> Preset tiers</button>
+            <button class="folders-page-btn-archives" id="folders-page-btn-archives-tl" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
+            <button class="folders-page-btn-trash" id="folders-page-btn-trash-tl" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
           </div>
           <div class="folders-panel-scroll">
             <div id="tl-folders-panel-recent" class="fp-recent"></div>
@@ -166,7 +134,7 @@
           </div>
         </div>
 
-
+        </div>
       </div>
     </section>
 
@@ -661,18 +629,20 @@
         <button class="modal-close" id="tl-modal-tiers-source-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
-        <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Importer depuis un autre dossier</label>
-        <div style="display:flex;gap:6px;margin-bottom:16px;">
-          <select id="tl-tiers-source-import-select" class="modal-folder-select" style="flex:1;">
-            <option value="">— Choisir —</option>
-          </select>
-          <button class="btn-action" id="tl-tiers-source-import-confirm-btn">Importer</button>
-        </div>
+        <div class="tl-preset-target-only">
+          <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Importer depuis un autre dossier</label>
+          <div style="display:flex;gap:6px;margin-bottom:16px;">
+            <select id="tl-tiers-source-import-select" class="modal-folder-select" style="flex:1;">
+              <option value="">— Choisir —</option>
+            </select>
+            <button class="btn-action" id="tl-tiers-source-import-confirm-btn">Importer</button>
+          </div>
 
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-          <label style="font-size:0.78rem;color:var(--text-muted);">Presets standard</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <label style="font-size:0.78rem;color:var(--text-muted);">Presets standard</label>
+          </div>
+          <div id="tl-tiers-source-protected-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;"></div>
         </div>
-        <div id="tl-tiers-source-protected-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;"></div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
           <label style="font-size:0.78rem;color:var(--text-muted);">Presets enregistrés</label>
@@ -683,15 +653,17 @@
             <button type="button" class="tl-preset-dropdown-btn" id="tl-tiers-source-preset-dropdown-btn"></button>
             <div class="tl-preset-dropdown-list hidden" id="tl-tiers-source-preset-dropdown-list"></div>
           </div>
-          <button class="btn-action" id="tl-tiers-source-preset-apply-btn" title="Appliquer ce preset">Appliquer</button>
+          <button class="btn-action tl-preset-target-only" id="tl-tiers-source-preset-apply-btn" title="Appliquer ce preset">Appliquer</button>
           <button class="btn-action btn-secondary btn-icon-square" id="tl-tiers-source-preset-edit-btn" title="Modifier ce preset"><i data-lucide="pencil"></i></button>
           <button class="btn-action btn-secondary btn-icon-square" id="tl-tiers-source-preset-delete-btn" title="Supprimer ce preset"><i data-lucide="trash-2"></i></button>
         </div>
 
-        <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin:12px 0 4px;">Sauvegarder les tiers actuels comme preset</label>
-        <div style="display:flex;gap:6px;">
-          <input type="text" id="tl-tiers-source-save-input" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" style="flex:1;" />
-          <button class="btn-action" id="tl-tiers-source-save-btn">Sauvegarder</button>
+        <div class="tl-preset-target-only">
+          <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin:12px 0 4px;">Sauvegarder les tiers actuels comme preset</label>
+          <div style="display:flex;gap:6px;">
+            <input type="text" id="tl-tiers-source-save-input" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" style="flex:1;" />
+            <button class="btn-action" id="tl-tiers-source-save-btn">Sauvegarder</button>
+          </div>
         </div>
 
         <div class="modal-actions">
@@ -978,22 +950,24 @@
         <button class="modal-close" id="btn-close-element-presets-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
-        <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Dossier cible</label>
-        <div style="display:flex;gap:6px;margin-bottom:12px;">
-          <select id="import-elements-target-select" class="modal-folder-select hidden"></select>
-          <button type="button" class="folder-tree-dropdown-btn" id="import-elements-target-dropdown-btn" style="flex:1;"><i data-lucide="folder-closed"></i> <span></span></button>
-        </div>
+        <div class="tl-preset-target-only">
+          <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Dossier cible</label>
+          <div style="display:flex;gap:6px;margin-bottom:12px;">
+            <select id="import-elements-target-select" class="modal-folder-select hidden"></select>
+            <button type="button" class="folder-tree-dropdown-btn" id="import-elements-target-dropdown-btn" style="flex:1;"><i data-lucide="folder-closed"></i> <span></span></button>
+          </div>
 
-        <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;cursor:pointer;">
-          <input type="checkbox" id="element-preset-replace-checkbox" />
-          Remplacer les cases existantes (au lieu de les compléter)
-        </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;cursor:pointer;">
+            <input type="checkbox" id="element-preset-replace-checkbox" />
+            Remplacer les cases existantes (au lieu de les compléter)
+          </label>
 
-        <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Importer depuis un autre dossier</label>
-        <div style="display:flex;gap:6px;margin-bottom:16px;">
-          <select id="import-elements-source-select" class="modal-folder-select hidden"></select>
-          <button type="button" class="folder-tree-dropdown-btn" id="import-elements-source-dropdown-btn" style="flex:1;"><i data-lucide="folder-closed"></i> <span></span></button>
-          <button class="btn-action" id="btn-confirm-import-elements">Importer</button>
+          <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Importer depuis un autre dossier</label>
+          <div style="display:flex;gap:6px;margin-bottom:16px;">
+            <select id="import-elements-source-select" class="modal-folder-select hidden"></select>
+            <button type="button" class="folder-tree-dropdown-btn" id="import-elements-source-dropdown-btn" style="flex:1;"><i data-lucide="folder-closed"></i> <span></span></button>
+            <button class="btn-action" id="btn-confirm-import-elements">Importer</button>
+          </div>
         </div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
@@ -1002,15 +976,17 @@
         </div>
         <div style="display:flex;gap:6px;margin-bottom:16px;">
           <select id="element-preset-select" class="modal-folder-select" style="flex:1;"></select>
-          <button class="btn-action" id="btn-import-element-preset" title="Importer ce preset dans le dossier cible">Importer</button>
+          <button class="btn-action tl-preset-target-only" id="btn-import-element-preset" title="Importer ce preset dans le dossier cible">Importer</button>
           <button class="btn-action btn-secondary btn-icon-square" id="btn-edit-element-preset" title="Modifier ce preset"><i data-lucide="pencil"></i></button>
           <button class="btn-action btn-secondary btn-icon-square" id="btn-delete-element-preset" title="Supprimer ce preset"><i data-lucide="trash-2"></i></button>
         </div>
 
-        <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin:12px 0 4px;">Sauvegarder les cases actuelles comme preset</label>
-        <div style="display:flex;gap:6px;">
-          <input type="text" id="element-preset-save-input" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" style="flex:1;" />
-          <button class="btn-action" id="btn-save-current-as-element-preset">Sauvegarder</button>
+        <div class="tl-preset-target-only">
+          <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin:12px 0 4px;">Sauvegarder les cases actuelles comme preset</label>
+          <div style="display:flex;gap:6px;">
+            <input type="text" id="element-preset-save-input" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" style="flex:1;" />
+            <button class="btn-action" id="btn-save-current-as-element-preset">Sauvegarder</button>
+          </div>
         </div>
 
         <div class="modal-actions">
@@ -1049,7 +1025,7 @@
       <div class="modal-body">
         <input type="text" id="element-preset-edit-name" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" />
         <div class="add-element-form" style="margin-top:10px;">
-          <input type="text" id="element-preset-edit-input" placeholder="Ajouter une case..." maxlength="80" />
+          <input type="text" id="element-preset-edit-input" placeholder="Ajouter ou rechercher une case..." maxlength="80" />
           <button id="btn-element-preset-edit-add" class="btn-icon" title="Ajouter une case">+</button>
         </div>
         <ul id="element-preset-edit-list" class="elements-list" style="margin-top:8px;"></ul>
@@ -1346,6 +1322,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=419"></script>
+  <script src="app.js?v=423"></script>
 </body>
 </html>

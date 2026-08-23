@@ -27,7 +27,7 @@ const _compareModeIsDedicatedWindow = _compareTierlistIds.length >= 2;
 // Page actuellement affichée (mise à jour par window._switchPage) — sert à ne charger le contenu
 // lourd (grilles/images) d'un bingo ou d'une tierlist que si sa page est réellement affichée, plutôt
 // que de tout précharger dès l'arrivée sur l'accueil (cf _bingoLoadActivePageContent/_tlLoadActivePageContent).
-let _currentPage = 'home';
+let _currentPage = 'folders';
 // true dès que l'utilisateur a cliqué sur un onglet de nav (via window._switchPage) — loadUserPrefs()
 // s'en sert pour ne forcer l'accueil qu'au tout premier chargement (avant toute navigation manuelle),
 // jamais après : sinon un chargement de prefs qui répond en retard renverrait l'utilisateur sur
@@ -384,7 +384,7 @@ function loadUserPrefs() {
     // l'utilisateur ait déjà cliqué sur un autre onglet (Dossiers, Bingo…) : sans cette garde, la page
     // était renvoyée de force vers l'accueil en pleine navigation, écrasant le geste de l'utilisateur
     // sans prévenir (bug constaté : "Dossiers > Tier List" cliqué tôt ne s'affichait jamais).
-    if (window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId && !_userNavigated) _switchPage('home');
+    if (window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId && !_userNavigated) _switchPage('folders');
     _prefsReady = true;
     // Appliquer les prefs visuelles
     fontScaleInput.value = Math.round(_localFontScale * 100);
@@ -641,7 +641,7 @@ async function _applyPrefsAndRender() {
   }
   // Re-render la Tier List avec la bonne tierlist active
   if (typeof tlRender === 'function') tlRender();
-  if (typeof renderHomePage === 'function') renderHomePage();
+  if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
 }
 
 // Rattrape le chargement du contenu lourd Bingo (saison du dossier actif) quand l'utilisateur
@@ -1110,9 +1110,8 @@ function _placeCeSetHeaderBtn() {
 function _updateCeSetHeaderBtn() {
   const ceSet = document.getElementById('btn-ce-set-header');
   if (!ceSet) return;
-  const onHomePage = document.getElementById('page-home')?.classList.contains('active');
   const onFoldersPage = document.getElementById('page-folders')?.classList.contains('active');
-  if (onHomePage || onFoldersPage) {
+  if (onFoldersPage) {
     ceSet.style.display = 'none';
     return;
   }
@@ -1638,7 +1637,7 @@ function sanitizeForFirebase(obj) {
 // dans l'index. L'index garde par dossier un tableau folder.grids ALLÉGÉ (id/archived/hidden/title/
 // locked/name, sans le tableau grid[] de 25 cellules) plutôt qu'un "gridsMeta" séparé : toutes les
 // lectures cross-arbre existantes (_isFolderBingo, _collectEpisodeFolders, _flattenFoldersForRecent,
-// _homeRenderRecentBingo, renderArchivesUnified) ne lisent jamais folder.grids[].grid, seulement
+// _renderRecentFolderPaths, renderArchivesUnified) ne lisent jamais folder.grids[].grid, seulement
 // archived/hidden/name/length — donc réutilisables telles quelles sans aucune modification.
 const _dbBingoIndex = window._db.ref('bingo/index');
 const _dbBingoData  = window._db.ref('bingo/data');
@@ -2511,8 +2510,7 @@ function _dedupeAncestorFolders(sorted, getAncestorIds) {
   return kept;
 }
 
-// Même filtrage que _homeRenderRecentBingo (page d'accueil) : seuls les dossiers-bingo (au moins
-// une grille non archivée), même titre/icône.
+// Seuls les dossiers-bingo (au moins une grille non archivée).
 function _renderRecentFolderPaths() {
   const container = document.getElementById('folders-panel-recent');
   if (!container) return;
@@ -2698,11 +2696,11 @@ function _renderFoldersPanelIcons() {
 // d'arborescence dépliable — double-clic descend d'un niveau, le fil d'Ariane remonte.
 // Reconstruire le panneau Dossiers Bingo est coûteux sur beaucoup de dossiers (tri par
 // getFolderPath/ancestorIdsOf, cf _renderRecentFolderPaths) : inutile de le faire quand la page
-// Dossiers/onglet Bingo n'est pas affiché(e). Rattrapé par _renderFoldersPage() à la navigation
-// (même principe que _casesPanelDirty pour le panneau Cases).
+// Dossiers n'est pas affichée. Rattrapé par _renderFoldersPage() à la navigation (même principe
+// que _casesPanelDirty pour le panneau Cases).
 let _foldersPanelTreeDirty = false;
 function renderFoldersPanelTree() {
-  if (_currentPage !== 'folders' || _foldersPageActiveTab !== 'bingo') {
+  if (_currentPage !== 'folders') {
     _foldersPanelTreeDirty = true;
     return;
   }
@@ -2785,31 +2783,19 @@ function renderFoldersPanelTree() {
   if (window.lucide) lucide.createIcons();
 }
 
-// ── Page dédiée Dossiers (remplace les anciens drawers latéraux Bingo/Tier List) ──
-// _foldersPageActiveTab n'est pas persisté (juste en mémoire) : à chaque ouverture explicite d'un
-// onglet précis (ex. depuis un bouton "Dossiers" propre à Bingo ou Tier List), on force l'onglet
-// demandé plutôt que de garder le dernier visité, plus prévisible pour l'utilisateur.
-let _foldersPageActiveTab = 'bingo';
-
-function _switchFoldersPageTab(tab) {
-  _foldersPageActiveTab = tab;
-  document.getElementById('folders-page-tab-bingo').classList.toggle('active', tab === 'bingo');
-  document.getElementById('folders-page-tab-tierlist').classList.toggle('active', tab === 'tierlist');
-  document.getElementById('folders-page-panel-bingo').classList.toggle('hidden', tab !== 'bingo');
-  document.getElementById('folders-page-panel-tierlist').classList.toggle('hidden', tab !== 'tierlist');
-  _renderFoldersPage();
-}
-
+// ── Page d'accueil unique (fusion Accueil + Dossiers) : colonnes Bingo et Tier List
+// affichées côte à côte en permanence, plus de notion d'onglet actif. ──
 function _renderFoldersPage() {
-  if (_foldersPageActiveTab === 'bingo') renderFoldersPanelTree();
-  else tlRenderList();
+  renderFoldersPanelTree();
+  tlRenderList();
+  _homeRenderHero();
   const pageFolders = document.getElementById('page-folders');
   if (window.lucide) lucide.createIcons(pageFolders ? { root: pageFolders } : undefined);
 }
 
-// Ouvre la page Dossiers directement sur l'onglet demandé (ou l'onglet courant si non précisé).
+// Ouvre la page Dossiers (le paramètre tab est ignoré : les deux colonnes sont toujours visibles,
+// conservé pour compat avec les call sites existants qui précisaient un onglet).
 function openFoldersPage(tab) {
-  if (tab) _switchFoldersPageTab(tab);
   _switchPage('folders');
   saveUserPrefs({ activePage: 'folders' });
 }
@@ -2817,27 +2803,20 @@ function openFoldersPage(tab) {
 // Stub de compat : ancien nom encore appelé depuis un call site historique.
 function openTlSidebar() { openFoldersPage('tierlist'); }
 
-document.getElementById('folders-page-tab-bingo').addEventListener('click', () => { _userNavigated = true; _switchFoldersPageTab('bingo'); });
-document.getElementById('folders-page-tab-tierlist').addEventListener('click', () => { _userNavigated = true; _switchFoldersPageTab('tierlist'); });
-
-// "+ Bingo" : même mécanisme que "Nouveau Bingo" sur l'accueil (home-btn-bingo-new-grid) — la
-// modal "Nouveau dossier" affiche en plus sa section grille (_homeNewGridAfterFolder), dossier +
-// première grille créés en une seule action. Racine par défaut (null) ; l'utilisateur choisit
-// l'emplacement réel dans la modal.
+// "+ Bingo" : même mécanisme que "Nouveau Bingo" sur l'ancienne page d'accueil (_homeNewGridAfterFolder) —
+// la modal "Nouveau dossier" affiche en plus sa section grille, dossier + première grille créés en
+// une seule action. Racine par défaut (null) ; l'utilisateur choisit l'emplacement réel dans la modal.
 document.getElementById('btn-new-bingo-folder').addEventListener('click', () => {
   _homeNewGridAfterFolder = true;
   openNewFolderModal(null);
 });
 
-// Archives/Corbeille communes : ouvrent la modale correspondant à l'onglet actif.
-document.getElementById('folders-page-btn-archives').addEventListener('click', () => {
-  if (_foldersPageActiveTab === 'bingo') openArchivesUnified();
-  else tlOpenArchivesUnified();
-});
-document.getElementById('folders-page-btn-trash').addEventListener('click', () => {
-  if (_foldersPageActiveTab === 'bingo') openTrashUnified();
-  else tlOpenTrashUnified();
-});
+// Archives/Corbeille : une paire de boutons par colonne, câblés directement (plus de notion
+// d'onglet actif à consulter).
+document.getElementById('folders-page-btn-archives-bingo').addEventListener('click', openArchivesUnified);
+document.getElementById('folders-page-btn-trash-bingo').addEventListener('click', openTrashUnified);
+document.getElementById('folders-page-btn-archives-tl').addEventListener('click', tlOpenArchivesUnified);
+document.getElementById('folders-page-btn-trash-tl').addEventListener('click', tlOpenTrashUnified);
 
 function renderThemesList() {
   renderAllFolders();
@@ -4770,6 +4749,7 @@ function openElementPresetsModal(targetId) {
 
 function closeElementPresetsModal() {
   document.getElementById('modal-element-presets').classList.add('hidden');
+  document.querySelector('#modal-element-presets .modal-box').classList.remove('preset-standalone');
   _elementPresetsTargetId = null;
 }
 
@@ -4834,37 +4814,50 @@ function _renderElementPresetEditList() {
   const list = document.getElementById('element-preset-edit-list');
   if (!list) return;
   _updateElementPresetEditTitle();
+
+  // Le champ d'ajout sert aussi de recherche (même principe que le panneau Cases, cf. renderElements) :
+  // filtre la liste affichée sans toucher à _elementPresetEditTexts (les index d'origine restent
+  // valides pour éditer/supprimer). Ordre alphabétique, comme le panneau Cases.
+  const searchInput = document.getElementById('element-preset-edit-input');
+  const searchText = searchInput ? searchInput.value.trim().toLowerCase() : '';
+  const entries = _elementPresetEditTexts
+    .map((text, idx) => ({ text, idx }))
+    .filter(e => !searchText || e.text.toLowerCase().includes(searchText))
+    .sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
+
   list.innerHTML = '';
-  _elementPresetEditTexts.forEach((text, idx) => {
-    const li = document.createElement('li');
-    li.className = 'element-item';
-    li.title = 'Clic gauche : renommer';
-
-    const span = document.createElement('span');
-    span.className = 'element-text';
-    span.textContent = text;
-    span.style.cursor = 'text';
-    li.appendChild(span);
-
-    const del = document.createElement('button');
-    del.className = 'elem-menu-btn';
-    del.title = 'Supprimer cette case';
-    del.innerHTML = '<i data-lucide="x"></i>';
-    del.addEventListener('click', e => {
-      e.stopPropagation();
-      _elementPresetEditTexts.splice(idx, 1);
-      _renderElementPresetEditList();
-    });
-    li.appendChild(del);
-
-    li.addEventListener('click', e => {
-      e.stopPropagation();
-      _startEditElementPresetEditText(idx, span, e);
-    });
-
-    list.appendChild(li);
-  });
+  entries.forEach(({ text, idx }) => list.appendChild(_buildElementPresetEditItem(text, idx)));
   if (window.lucide) lucide.createIcons();
+}
+
+function _buildElementPresetEditItem(text, idx) {
+  const li = document.createElement('li');
+  li.className = 'element-item';
+  li.title = 'Clic gauche : renommer';
+
+  const span = document.createElement('span');
+  span.className = 'element-text';
+  span.textContent = text;
+  span.style.cursor = 'text';
+  li.appendChild(span);
+
+  const del = document.createElement('button');
+  del.className = 'elem-menu-btn';
+  del.title = 'Supprimer cette case';
+  del.innerHTML = '<i data-lucide="x"></i>';
+  del.addEventListener('click', e => {
+    e.stopPropagation();
+    _elementPresetEditTexts.splice(idx, 1);
+    _renderElementPresetEditList();
+  });
+  li.appendChild(del);
+
+  li.addEventListener('click', e => {
+    e.stopPropagation();
+    _startEditElementPresetEditText(idx, span, e);
+  });
+
+  return li;
 }
 
 // Édition inline d'une case du preset en cours d'édition, même comportement que startEditElement()
@@ -4943,6 +4936,7 @@ document.getElementById('btn-element-preset-edit-add').addEventListener('click',
 document.getElementById('element-preset-edit-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') _addElementPresetEditText();
 });
+document.getElementById('element-preset-edit-input').addEventListener('input', _renderElementPresetEditList);
 
 document.getElementById('btn-confirm-element-preset-edit').addEventListener('click', () => {
   const name = document.getElementById('element-preset-edit-name').value.trim();
@@ -4991,6 +4985,15 @@ document.getElementById('btn-presets-elements-panel').addEventListener('click', 
   // dossiers-bingo avant de l'ouvrir (plan §3, pattern 4). Action volontaire et rare, coût acceptable.
   await _bingoEnsureFoldersLoaded(_collectAllBingoFolderIds(state.folders));
   openElementPresetsModal(s.id);
+});
+
+// Bouton "Preset cases" de la page Dossiers (pas de dossier bingo actif dans ce contexte) : ouvre
+// la même modale en mode "standalone" (classe .preset-standalone sur .modal-box), qui masque en CSS
+// tout ce qui suppose une cible (Dossier cible/Importer/Sauvegarder) — ne reste que la gestion des
+// presets enregistrés (créer/modifier/supprimer), valable indépendamment de tout dossier.
+document.getElementById('folders-page-btn-presets-cases').addEventListener('click', () => {
+  document.querySelector('#modal-element-presets .modal-box').classList.add('preset-standalone');
+  openElementPresetsModal(null);
 });
 
 document.getElementById('btn-clear-elements-panel').addEventListener('click', () => {
@@ -6432,7 +6435,6 @@ renameGridInput.addEventListener('keydown', e => {
     if (target === 'tierlist' && typeof _adjustTlLayoutHeight === 'function') {
       requestAnimationFrame(_adjustTlLayoutHeight);
     }
-    if (target === 'home' && typeof renderHomePage === 'function') renderHomePage();
     if (target === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
   };
 
@@ -8600,9 +8602,8 @@ function _tlDepthOf(folderId) {
   return _tlAncestorIdsOf(folderId).length;
 }
 
-// Même filtrage que _homeRenderRecentTl (page d'accueil) : seuls les dossiers contenant au moins
-// un template, même titre/icône/comportement de clic (ouvre directement le template s'il n'y en a
-// qu'un dans le dossier).
+// Seuls les dossiers contenant au moins un template ; clic ouvre directement le template s'il n'y
+// en a qu'un dans le dossier.
 function _tlRenderRecentFolderPaths() {
   const container = document.getElementById('tl-folders-panel-recent');
   if (!container) return;
@@ -11121,59 +11122,67 @@ function _tlSyncCustomPresetDropdown(customPresets, tl, id) {
 }
 let _tlCustomPresetDropdownValue = null;
 
+// Sentinelle "pas de tierlist cible" (page Dossiers, bouton "Preset tiers" hors contexte) — truthy
+// pour continuer à traverser les `if (id)`/`if (returnToId)` existants (rafraîchir après édition/
+// suppression d'un preset), mais ne correspond à aucune tierlist réelle.
+const TL_PRESETS_STANDALONE = '__standalone__';
+
 function tlOpenTiersSourceModal(id) {
-  const tl = tlState.tierlists.find(t => t.id === id);
-  if (!tl) return;
+  const standalone = id === TL_PRESETS_STANDALONE;
+  const tl = standalone ? null : tlState.tierlists.find(t => t.id === id);
+  if (!standalone && !tl) return;
   _tlTiersSourceTargetId = id;
 
-  const protectedList = document.getElementById('tl-tiers-source-protected-list');
-  const saveInput = document.getElementById('tl-tiers-source-save-input');
+  document.getElementById('tl-modal-tiers-source').querySelector('.modal-box').classList.toggle('preset-standalone', standalone);
 
-  protectedList.innerHTML = '';
+  const saveInput = document.getElementById('tl-tiers-source-save-input');
   const presets = tlState.tierPresets || [];
-  const protectedPresets = presets.filter(p => p.protected);
   const customPresets = presets.filter(p => !p.protected)
     .sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
 
-  if (protectedPresets.length === 0) {
-    const empty = document.createElement('div');
-    empty.style.cssText = 'font-size:0.8rem;color:var(--text-muted);';
-    empty.textContent = 'Aucun preset standard.';
-    protectedList.appendChild(empty);
-  } else {
-    protectedPresets.forEach(p => {
-      const btn = document.createElement('button');
-      btn.className = 'btn-action btn-secondary tl-preset-row-btn';
-      btn.title = p.name + ' : ' + p.tiers.map(t => t.label).join(', ');
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'tl-preset-row-name';
-      nameSpan.textContent = p.name;
-      btn.appendChild(nameSpan);
-      btn.appendChild(_tlBuildPresetDotsRow(p));
-      btn.addEventListener('click', () => {
-        if (tlApplyPreset(tl, p.id) !== false) tlModalTiersSource.classList.add('hidden');
+  if (!standalone) {
+    const protectedList = document.getElementById('tl-tiers-source-protected-list');
+    protectedList.innerHTML = '';
+    const protectedPresets = presets.filter(p => p.protected);
+    if (protectedPresets.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'font-size:0.8rem;color:var(--text-muted);';
+      empty.textContent = 'Aucun preset standard.';
+      protectedList.appendChild(empty);
+    } else {
+      protectedPresets.forEach(p => {
+        const btn = document.createElement('button');
+        btn.className = 'btn-action btn-secondary tl-preset-row-btn';
+        btn.title = p.name + ' : ' + p.tiers.map(t => t.label).join(', ');
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'tl-preset-row-name';
+        nameSpan.textContent = p.name;
+        btn.appendChild(nameSpan);
+        btn.appendChild(_tlBuildPresetDotsRow(p));
+        btn.addEventListener('click', () => {
+          if (tlApplyPreset(tl, p.id) !== false) tlModalTiersSource.classList.add('hidden');
+        });
+        protectedList.appendChild(btn);
       });
-      protectedList.appendChild(btn);
-    });
+    }
+
+    _tlPopulateImportTiersSelect(document.getElementById('tl-tiers-source-import-select'), id);
+    document.getElementById('tl-tiers-source-import-confirm-btn').onclick = async () => {
+      const sourceId = document.getElementById('tl-tiers-source-import-select').value;
+      if (!sourceId) return;
+      await tlImportTiersFrom(tl, sourceId);
+      tlOpenTiersSourceModal(id);
+    };
+
+    saveInput.value = '';
+    document.getElementById('tl-tiers-source-save-btn').onclick = () => {
+      if (!saveInput.value.trim()) return;
+      tlSaveCurrentAsPreset(tl, saveInput.value);
+      tlOpenTiersSourceModal(id);
+    };
   }
 
   _tlSyncCustomPresetDropdown(customPresets, tl, id);
-
-  _tlPopulateImportTiersSelect(document.getElementById('tl-tiers-source-import-select'), id);
-  document.getElementById('tl-tiers-source-import-confirm-btn').onclick = async () => {
-    const sourceId = document.getElementById('tl-tiers-source-import-select').value;
-    if (!sourceId) return;
-    await tlImportTiersFrom(tl, sourceId);
-    tlOpenTiersSourceModal(id);
-  };
-
-  saveInput.value = '';
-  document.getElementById('tl-tiers-source-save-btn').onclick = () => {
-    if (!saveInput.value.trim()) return;
-    tlSaveCurrentAsPreset(tl, saveInput.value);
-    tlOpenTiersSourceModal(id);
-  };
-
   document.getElementById('tl-tiers-source-new-preset-btn').onclick = () => tlOpenPresetEditModal(null, id);
 
   if (window.lucide) lucide.createIcons();
@@ -12353,6 +12362,13 @@ tlBtnAddTier.addEventListener('click', () => {
   const tl = tlActiveTierlist();
   if (tl) tlOpenTiersSourceModal(tl.id);
 });
+
+// Bouton "Preset tiers" de la page Dossiers (pas de tierlist active dans ce contexte) : ouvre la
+// même modale en mode standalone (cf TL_PRESETS_STANDALONE) — gestion des presets enregistrés
+// (créer/modifier/supprimer) uniquement, sans rien qui suppose une tierlist cible.
+document.getElementById('folders-page-btn-presets-tiers').addEventListener('click', () => {
+  tlOpenTiersSourceModal(TL_PRESETS_STANDALONE);
+});
 tlModalTierConfirm.addEventListener('click', tlConfirmTierModal);
 tlModalTierCancel.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
 tlModalTierClose.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
@@ -13004,7 +13020,7 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
       // les autres dossiers restent fusionnés en mémoire (ligne _bingoMergeDataIntoState ci-dessus,
       // toujours faite) pour que NEW/Stats reste à jour, sans jamais toucher l'affichage courant.
       if (_prefsReady && id === _localActiveFolderId) _applyPrefsAndRender();
-      if (typeof renderHomePage === 'function') renderHomePage();
+      if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
     };
     _dbBingoData.child(id).on('value', handler);
     _bingoActiveSeasonHandlers.set(id, handler);
@@ -13152,7 +13168,6 @@ function _bingoStartListeners() {
         renderGrid();
         setTimeout(setBingoReadyForEffect, 0);
       }
-      if (typeof renderHomePage === 'function') renderHomePage();
       // Page Dossiers déjà affichée avant l'arrivée de cet index (ex. clic sur "Dossiers" pendant que
       // l'index bingo était encore en vol) : re-rendre pour ne pas laisser le panneau figé sur son
       // premier rendu incomplet.
@@ -13285,7 +13300,6 @@ function _tlStartTierlistListeners() {
       _applySoloTierlistModeIfNeeded();
       _applyCompareTierlistModeIfNeeded();
       tlRender();
-      if (typeof renderHomePage === 'function') renderHomePage();
       // Page Dossiers déjà affichée avant l'arrivée de cet index (ex. clic sur "Dossiers" pendant que
       // l'index tierlist était encore en vol) : re-rendre pour ne pas laisser "Templates récents" figé
       // sur son premier rendu incomplet (cf _tlRenderRecentFolderPaths).
@@ -13298,19 +13312,19 @@ function _tlStartTierlistListeners() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// PAGE D'ACCUEIL
+// PAGE D'ACCUEIL (page Dossiers)
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Va sur la page Bingo/Tier List et active un dossier donné (racine ou sous-dossier), en
-// positionnant la navigation du panneau Dossiers sur son dossier parent — même logique que les
-// liens "Récents" du panneau, réutilisée ici pour "rejoindre" depuis l'accueil.
+// Va sur la page Bingo et active un dossier donné (racine ou sous-dossier), en positionnant la
+// navigation du panneau Dossiers sur son dossier parent — utilisée pour "rejoindre" un dossier
+// après sa création via "+ Bingo" (_homeNewGridAfterFolder) et par les liens "Récents" du panneau.
 async function _homeGoToBingoFolder(folderId) {
   window._switchPage('bingo');
   const ancestors = getFolderPath(state.folders, folderId).slice(0, -1);
   _foldersNavFolderId = ancestors.length ? ancestors[ancestors.length - 1].id : null;
   if (_localActiveFolderId !== folderId) {
-    // await comme _homeGoToBingoGrid (sa fonction sœur) : sans lui, un dossier jamais ouvert cette
-    // session resterait allégé (métadonnées d'index seules) au moment du rendu qui suit.
+    // await : sans lui, un dossier jamais ouvert cette session resterait allégé (métadonnées
+    // d'index seules) au moment du rendu qui suit.
     await switchFolder(folderId);
   } else {
     // Dossier déjà actif localement (ex. déjà ouvert avant de "rejoindre" depuis l'accueil) :
@@ -13327,27 +13341,6 @@ async function _homeGoToBingoFolder(folderId) {
   saveUserPrefs({ activePage: 'bingo' });
 }
 
-// async : folder peut provenir d'une liste "légère" (Récents/Accueil, index seul) — s'assurer qu'il
-// est chargé en lourd avant de fixer folder.activeGridId et d'écrire son noeud data, sinon on
-// écrirait par-dessus un contenu jamais fusionné (grids[] vides).
-async function _homeGoToBingoGrid(folder, grid) {
-  window._switchPage('bingo');
-  const ancestors = getFolderPath(state.folders, folder.id).slice(0, -1);
-  _foldersNavFolderId = ancestors.length ? ancestors[ancestors.length - 1].id : null;
-  if (_localActiveFolderId !== folder.id) await switchFolder(folder.id);
-  else await _bingoEnsureSeasonLoaded(folder.id);
-  const folderNow = findFolderById(state.folders, folder.id) || folder;
-  _selectedGridIds = [grid.id];
-  saveLocalSelectedGrids(_selectedGridIds);
-  folderNow.activeGridId = grid.id;
-  _bingoSaveFolder(folderNow.id);
-  renderAllFolders();
-  renderElements();
-  renderGridsList();
-  renderGrid();
-  saveUserPrefs({ activePage: 'bingo' });
-}
-
 function _homeGoToTlTierlist(tl) {
   window._switchPage('tierlist');
   const root = typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
@@ -13356,78 +13349,6 @@ function _homeGoToTlTierlist(tl) {
   _tlLocalNoSelection = false;
   saveUserPrefs({ activePage: 'tierlist', tlActiveTierlistId: root.id, tlNoSelection: false });
   tlRender();
-}
-
-// ── Récents (2 listes séparées de 5 : Bingo / Tier List) ──────────────────────
-function _homeRenderRecentBingo() {
-  const container = document.getElementById('home-recent-bingo');
-  if (!container) return;
-  container.innerHTML = '';
-  const ancestorIdsOf = id => getFolderPath(state.folders, id).slice(0, -1).map(f => f.id);
-  // Seuls les dossiers contenant au moins une grille (chemin qui "aboutit" à une grille) — exclut
-  // les dossiers purement organisationnels qui n'ont que des sous-dossiers.
-  const sorted = _flattenFoldersForRecent(state.folders)
-    .filter(f => f.updatedAt && (f.grids || []).some(g => !g.archived))
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || ancestorIdsOf(b.id).length - ancestorIdsOf(a.id).length);
-  const recent = _dedupeAncestorFolders(sorted, ancestorIdsOf);
-  if (recent.length === 0) return;
-
-  const title = document.createElement('div');
-  title.className = 'home-recent-title';
-  title.innerHTML = '<i data-lucide="grid-3x3"></i> Bingos récents';
-  container.appendChild(title);
-
-  const list = document.createElement('div');
-  list.className = 'home-recent-list';
-  recent.forEach(f => {
-    const row = document.createElement('div');
-    row.className = 'home-recent-row';
-    row.innerHTML = '<span class="home-recent-icon"><i data-lucide="grid-3x3"></i></span><span class="home-recent-path"></span>';
-    row.querySelector('.home-recent-path').textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' \\ ');
-    row.addEventListener('click', () => _homeGoToBingoFolder(f.id));
-    list.appendChild(row);
-  });
-  container.appendChild(list);
-}
-
-function _homeRenderRecentTl() {
-  const container = document.getElementById('home-recent-tl');
-  if (!container) return;
-  container.innerHTML = '';
-  // Seuls les dossiers contenant au moins un template (chemin qui "aboutit" à un template) —
-  // exclut les dossiers purement organisationnels qui n'ont que des sous-dossiers.
-  const hasTemplate = f => tlState.tierlists.some(t => t.isTemplate && !t.archived && t.folderId === f.id);
-  const sorted = (tlState.folders || [])
-    .filter(f => !f.archived && f.updatedAt && hasTemplate(f))
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || _tlDepthOf(b.id) - _tlDepthOf(a.id));
-  const recent = _dedupeAncestorFolders(sorted, _tlAncestorIdsOf);
-  if (recent.length === 0) return;
-
-  const title = document.createElement('div');
-  title.className = 'home-recent-title';
-  title.innerHTML = '<i data-lucide="scroll"></i> Templates récents';
-  container.appendChild(title);
-
-  const list = document.createElement('div');
-  list.className = 'home-recent-list';
-  recent.forEach(f => {
-    const row = document.createElement('div');
-    row.className = 'home-recent-row';
-    row.innerHTML = '<span class="home-recent-icon"><i data-lucide="scroll"></i></span><span class="home-recent-path"></span>';
-    let pathText = _tlFolderPath(f.id);
-    const templatesHere = tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === f.id);
-    if (templatesHere.length === 1) pathText += ' \\ ' + templatesHere[0].name;
-    row.querySelector('.home-recent-path').textContent = pathText;
-    row.addEventListener('click', () => {
-      if (templatesHere.length === 1) _homeGoToTlTierlist(templatesHere[0]);
-      else {
-        window._switchPage('tierlist');
-        _tlGoToFolder(f.id);
-      }
-    });
-    list.appendChild(row);
-  });
-  container.appendChild(list);
 }
 
 function _homeRenderHero() {
@@ -13479,37 +13400,7 @@ function _homeRenderHero() {
   btn.style.display = 'none';
 }
 
-// Reconstruire l'accueil (2 listes "récents" triées + hero) est appelé sans garde depuis plusieurs
-// listeners Firebase (souscription saison bingo, snapshots index bingo/tierlist) même quand l'accueil
-// n'est pas la page affichée — jusqu'à 9 reconstructions d'affilée sur du DOM invisible au chargement
-// d'une saison de 9 épisodes. Sauté si la page n'est pas active, rattrapé par _switchPage('home')
-// (même principe que _casesPanelDirty pour le panneau Cases).
-let _homeDirty = false;
-function renderHomePage() {
-  if (!currentUser) return;
-  if (_currentPage !== 'home') { _homeDirty = true; return; }
-  _homeDirty = false;
-  _homeRenderHero();
-  _homeRenderRecentBingo();
-  _homeRenderRecentTl();
-  if (window.lucide) lucide.createIcons();
-}
-
 document.getElementById('home-btn-current-event')?.addEventListener('click', () => {
   document.getElementById('btn-ce-navigate')?.click();
 });
-
-// ── "Nouveau Bingo" — le modal "Nouveau dossier" affiche en plus sa section grille
-// (_homeNewGridAfterFolder, voir openNewThemeModal/confirmNewTheme) : dossier + première grille
-// créés en une seule action depuis l'accueil.
-document.getElementById('home-btn-bingo-new-grid')?.addEventListener('click', () => {
-  _homeNewGridAfterFolder = true;
-  openNewFolderModal(null);
-});
-document.getElementById('home-btn-tl-new-template')?.addEventListener('click', () => tlOpenNewTemplateModal(null, true));
-
-// "Ouvrir Bingo/Template existant" : ouvre directement la page Dossiers sur l'onglet correspondant
-// (remplace l'ancienne modal arborescente dédiée, redondante avec cette page).
-document.getElementById('home-btn-bingo-join')?.addEventListener('click', () => openFoldersPage('bingo'));
-document.getElementById('home-btn-tl-join')?.addEventListener('click', () => openFoldersPage('tierlist'));
 
