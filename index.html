@@ -469,7 +469,6 @@
        aux extensions de scan d'images type Fatkun, utilisée par ailleurs pour l'import. -->
   <div id="tl-modal-img-zoom" class="modal-overlay hidden">
     <div id="tl-img-zoom-frame">
-      <button class="tl-img-zoom-close" id="tl-img-zoom-close"><i data-lucide="x"></i></button>
       <div id="tl-img-zoom-picture"></div>
       <div id="tl-img-zoom-label" class="hidden"></div>
     </div>
@@ -480,7 +479,6 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="tl-modal-new-title">Nouvelle liste</h3>
-        <button class="modal-close" id="tl-modal-new-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="tl-modal-new-input" class="modal-text-input" placeholder="Nom de la liste..." maxlength="60" />
@@ -515,7 +513,6 @@
         </div>
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-new-confirm">Créer</button>
-          <button class="btn-action btn-secondary" id="tl-modal-new-cancel">Annuler</button>
         </div>
       </div>
     </div>
@@ -526,7 +523,6 @@
     <div class="modal-box modal-box-sm tl-modal-tier-box">
       <div class="modal-header">
         <h3 id="tl-modal-tier-title">Nouveau tier</h3>
-        <button class="modal-close" id="tl-modal-tier-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="tl-modal-tier-label" class="modal-text-input" placeholder="Label du tier (ex: S, A, B...)" />
@@ -540,7 +536,6 @@
         </div>
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-tier-confirm">Ajouter</button>
-          <button class="btn-action btn-secondary" id="tl-modal-tier-cancel">Annuler</button>
         </div>
       </div>
     </div>
@@ -551,7 +546,6 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Générer depuis ce template</h3>
-        <button class="modal-close" id="tl-modal-generate-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div class="grid-name-presets">
@@ -563,7 +557,6 @@
         <input type="text" id="tl-generate-name-input" class="modal-text-input" placeholder="Ou saisir un nom..." maxlength="60" />
         <div class="modal-actions">
           <button class="btn-action" id="tl-btn-confirm-generate">Générer</button>
-          <button class="btn-action btn-secondary" id="tl-btn-cancel-generate">Annuler</button>
         </div>
       </div>
     </div>
@@ -574,7 +567,6 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="tl-modal-move-title">Déplacer</h3>
-        <button class="modal-close" id="tl-modal-move-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <select id="tl-modal-move-select" class="modal-folder-select">
@@ -582,7 +574,6 @@
         </select>
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-move-confirm">Déplacer</button>
-          <button class="btn-action btn-secondary" id="tl-modal-move-cancel">Annuler</button>
         </div>
       </div>
     </div>
@@ -593,7 +584,6 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="tl-modal-folder-title">Nouveau dossier</h3>
-        <button class="modal-close" id="tl-modal-folder-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div id="tl-modal-folder-numbering-check-wrap" class="modal-numbering-checks">
@@ -619,7 +609,6 @@
         </div>
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-folder-confirm">Créer</button>
-          <button class="btn-action btn-secondary" id="tl-modal-folder-cancel">Annuler</button>
         </div>
       </div>
     </div>
@@ -630,7 +619,6 @@
     <div class="modal-box modal-box-md">
       <div class="modal-header">
         <h3>Preset tiers</h3>
-        <button class="modal-close" id="tl-modal-tiers-source-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div class="tl-preset-target-only">
@@ -670,9 +658,6 @@
           </div>
         </div>
 
-        <div class="modal-actions">
-          <button class="btn-action btn-secondary" id="tl-modal-tiers-source-cancel">Fermer</button>
-        </div>
       </div>
     </div>
   </div>
@@ -683,7 +668,6 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Importer les tiers</h3>
-        <button class="modal-close" id="tl-modal-import-tiers-pick-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Copier les tiers depuis</label>
@@ -692,7 +676,6 @@
         </select>
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-import-tiers-pick-confirm">Importer</button>
-          <button class="btn-action btn-secondary" id="tl-modal-import-tiers-pick-cancel">Annuler</button>
         </div>
       </div>
     </div>
@@ -703,14 +686,12 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Modifier le preset</h3>
-        <button class="modal-close" id="tl-modal-preset-edit-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="tl-modal-preset-edit-name" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" />
         <div id="tl-modal-preset-edit-tiers" class="modal-items-list" style="margin-top:10px;"></div>
         <div class="modal-actions">
           <button class="btn-action btn-secondary" id="tl-modal-preset-edit-add-tier">+ Ajouter un tier</button>
-          <button class="btn-action btn-secondary" id="tl-modal-preset-edit-cancel">Fermer</button>
         </div>
       </div>
     </div>
@@ -722,7 +703,6 @@
   <div id="tl-modal-archived" class="folders-panel archives-panel">
     <div class="folders-panel-header">
       <span class="folders-panel-title"><i data-lucide="package"></i> Archives</span>
-      <button class="modal-close" id="tl-modal-archived-close"><i data-lucide="x"></i></button>
     </div>
     <div class="folders-panel-tree">
       <div id="tl-archived-list" class="modal-items-list"></div>
@@ -734,7 +714,6 @@
   <div id="tl-modal-trash" class="folders-panel trash-panel">
     <div class="folders-panel-header">
       <span class="folders-panel-title"><i data-lucide="trash-2"></i> Corbeille</span>
-      <button class="modal-close" id="tl-modal-trash-close"><i data-lucide="x"></i></button>
     </div>
     <div class="folders-panel-tree">
       <div class="modal-trash-actions-top">
@@ -756,13 +735,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Renommer l'image</h3>
-        <button class="modal-close" id="tl-modal-imgname-close"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="tl-modal-imgname-input" class="modal-text-input" placeholder="Nom de l'image..." maxlength="80" />
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-imgname-confirm">OK</button>
-          <button class="btn-action btn-secondary" id="tl-modal-imgname-cancel">Annuler</button>
         </div>
       </div>
     </div>
@@ -813,7 +790,6 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="new-folder-modal-title">Nouveau dossier</h3>
-        <button class="modal-close" id="btn-close-new-folder-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div class="modal-numbering-checks">
@@ -852,7 +828,6 @@
         </div>
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-new-folder">Créer</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-new-folder">Annuler</button>
         </div>
       </div>
     </div>
@@ -863,7 +838,6 @@
   <div id="modal-archives-unified" class="folders-panel archives-panel">
     <div class="folders-panel-header">
       <span class="folders-panel-title"><i data-lucide="package"></i> Archives</span>
-      <button class="modal-close" id="btn-close-archives-unified"><i data-lucide="x"></i></button>
     </div>
     <div class="folders-panel-tree">
       <div id="archives-tree" class="archives-tree"></div>
@@ -874,7 +848,6 @@
   <div id="modal-trash-unified" class="folders-panel trash-panel">
     <div class="folders-panel-header">
       <span class="folders-panel-title"><i data-lucide="trash-2"></i> Corbeille</span>
-      <button class="modal-close" id="btn-close-trash-unified"><i data-lucide="x"></i></button>
     </div>
     <div class="folders-panel-tree">
       <div class="modal-trash-actions-top">
@@ -896,7 +869,6 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Déplacer le dossier</h3>
-        <button class="modal-close" id="btn-close-move-folder-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div style="margin-bottom:12px">
@@ -918,7 +890,6 @@
         </div>
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-move-folder">Déplacer</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-move-folder">Annuler</button>
         </div>
       </div>
     </div>
@@ -930,7 +901,6 @@
     <div class="modal-box modal-box-md">
       <div class="modal-header">
         <h3>Preset cases</h3>
-        <button class="modal-close" id="btn-close-element-presets-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div class="tl-preset-target-only">
@@ -972,9 +942,6 @@
           </div>
         </div>
 
-        <div class="modal-actions">
-          <button class="btn-action btn-secondary" id="btn-close-element-presets">Fermer</button>
-        </div>
       </div>
     </div>
   </div>
@@ -984,7 +951,6 @@
     <div class="modal-box modal-box-stats">
       <div class="modal-header">
         <h3>Statistiques — <span id="bingo-stats-folder-name"></span></h3>
-        <button class="modal-close" id="btn-close-bingo-stats-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div style="display:flex;justify-content:flex-end;margin-bottom:4px;">
@@ -1003,7 +969,6 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="element-preset-edit-title">Modifier le preset</h3>
-        <button class="modal-close" id="btn-close-element-preset-edit-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="element-preset-edit-name" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" />
@@ -1012,9 +977,6 @@
           <button id="btn-element-preset-edit-add" class="btn-icon" title="Ajouter une case">+</button>
         </div>
         <ul id="element-preset-edit-list" class="elements-list" style="margin-top:8px;"></ul>
-        <div class="modal-actions">
-          <button class="btn-action btn-secondary" id="btn-cancel-element-preset-edit">Fermer</button>
-        </div>
       </div>
     </div>
   </div>
@@ -1024,13 +986,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3 id="rename-folder-modal-title">Renommer le dossier</h3>
-        <button class="modal-close" id="btn-close-rename-folder-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="rename-folder-input" class="modal-text-input modal-rename-input" placeholder="Nom du dossier..." maxlength="40" />
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-rename-folder">Renommer</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-rename-folder">Annuler</button>
         </div>
       </div>
     </div>
@@ -1041,13 +1001,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Renommer la grille</h3>
-        <button class="modal-close" id="btn-close-rename-grid-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="rename-grid-input" class="modal-text-input modal-rename-input" placeholder="Nom de la grille..." maxlength="40" />
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-rename-grid">Renommer</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-rename-grid">Annuler</button>
         </div>
       </div>
     </div>
@@ -1058,13 +1016,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Nouveau sous-thème</h3>
-        <button class="modal-close" id="btn-close-new-subtheme-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="new-subtheme-name-input" class="modal-text-input" placeholder="Nom du sous-thème..." maxlength="40" />
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-new-subtheme">Créer</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-new-subtheme">Annuler</button>
         </div>
       </div>
     </div>
@@ -1075,13 +1031,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Renommer le sous-thème</h3>
-        <button class="modal-close" id="btn-close-rename-subtheme-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <input type="text" id="rename-subtheme-input" class="modal-text-input modal-rename-input" placeholder="Nom du sous-thème..." maxlength="40" />
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-rename-subtheme">Renommer</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-rename-subtheme">Annuler</button>
         </div>
       </div>
     </div>
@@ -1092,7 +1046,6 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Nouvelle grille</h3>
-        <button class="modal-close" id="btn-close-new-grid-modal"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <div class="grid-name-presets">
@@ -1104,7 +1057,6 @@
         <input type="text" id="new-grid-name-input" class="modal-text-input" placeholder="Ou saisir un nom..." maxlength="40" />
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-new-grid">Créer</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-new-grid">Annuler</button>
         </div>
       </div>
     </div>
@@ -1115,13 +1067,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Confirmer la déconnexion</h3>
-        <button class="modal-close" id="btn-close-confirm-signout"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Se déconnecter ?</p>
         <div class="modal-actions">
           <button class="btn-action btn-danger-action" id="btn-confirm-signout"><i data-lucide="log-out"></i> Se déconnecter</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-signout">Annuler</button>
         </div>
       </div>
     </div>
@@ -1131,13 +1081,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Confirmer le reset</h3>
-        <button class="modal-close" id="btn-close-confirm-reset"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Réinitialiser toutes les cases de ce sous-thème ?</p>
         <div class="modal-actions">
           <button class="btn-action btn-danger-action" id="btn-confirm-reset"><i data-lucide="undo-dot"></i> Reset</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-reset">Annuler</button>
         </div>
       </div>
     </div>
@@ -1148,13 +1096,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Capture</h3>
-        <button class="modal-close" id="btn-close-capture-choice"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Capturer toutes les grilles affichées ou une grille spécifique ?</p>
         <div class="modal-actions modal-actions-wrap" id="capture-choice-actions">
           <button class="btn-action" id="btn-capture-choice-all"><i data-lucide="camera"></i> Toutes les grilles</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-capture-choice">Annuler</button>
         </div>
       </div>
     </div>
@@ -1165,14 +1111,12 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Capture</h3>
-        <button class="modal-close" id="btn-close-tl-capture-choice"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Copier une capture d'écran dans le presse-papier ou exporter en PNG ?</p>
         <div class="modal-actions modal-actions-wrap">
           <button class="btn-action" id="btn-tl-capture-choice-screenshot"><i data-lucide="camera"></i> Capture d'écran</button>
           <button class="btn-action" id="btn-tl-capture-choice-export"><i data-lucide="download"></i> Export PNG</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-tl-capture-choice">Annuler</button>
         </div>
       </div>
     </div>
@@ -1183,14 +1127,12 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Générer</h3>
-        <button class="modal-close" id="btn-close-generate-choice"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Générer toutes les cases (écrase la grille) ou seulement les cases vides ?</p>
         <div class="modal-actions">
           <button class="btn-action btn-generate-global" id="btn-generate-choice-all"><i data-lucide="dices"></i> Toutes les cases</button>
           <button class="btn-action btn-generate-fill-empty" id="btn-generate-choice-empty"><i data-lucide="dice-1"></i> Cases vides</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-generate-choice">Annuler</button>
         </div>
       </div>
     </div>
@@ -1201,14 +1143,12 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Confirmer le vidage</h3>
-        <button class="modal-close" id="btn-close-confirm-clear"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;" id="modal-clear-msg">Vider les grilles affichées ?</p>
         <div class="modal-actions">
           <button class="btn-action btn-danger-action" id="btn-confirm-clear"><i data-lucide="eraser"></i> Vider</button>
           <button class="btn-action btn-danger-action hidden" id="btn-confirm-clear-archived-only"><i data-lucide="package"></i> Archivées seulement</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-clear">Annuler</button>
         </div>
       </div>
     </div>
@@ -1219,13 +1159,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Remplacer l'élément à placer</h3>
-        <button class="modal-close" id="btn-close-confirm-toplace"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Tout le monde n'a pas encore placé l'élément actuel. Le remplacer et le remettre dans les éléments non placés ?</p>
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-toplace">Remplacer</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-toplace">Annuler</button>
         </div>
       </div>
     </div>
@@ -1236,13 +1174,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Définir comme soirée en cours</h3>
-        <button class="modal-close" id="btn-close-confirm-current-event"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;" id="modal-current-event-msg">Définir ce dossier comme soirée en cours ?</p>
         <div class="modal-actions">
           <button class="btn-action" id="btn-confirm-current-event"><i data-lucide="party-popper"></i> Définir</button>
-          <button class="btn-action btn-secondary" id="btn-cancel-current-event">Annuler</button>
         </div>
       </div>
     </div>
@@ -1253,13 +1189,11 @@
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
         <h3>Confirmer le reset</h3>
-        <button class="modal-close" id="tl-btn-close-confirm-reset"><i data-lucide="x"></i></button>
       </div>
       <div class="modal-body">
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Remettre toutes les images dans « Non placées » ?</p>
         <div class="modal-actions">
           <button class="btn-action btn-danger-action" id="tl-btn-confirm-reset">⟳ Reset</button>
-          <button class="btn-action btn-secondary" id="tl-btn-cancel-reset">Annuler</button>
         </div>
       </div>
     </div>
@@ -1304,6 +1238,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=435"></script>
+  <script src="app.js?v=441"></script>
 </body>
 </html>

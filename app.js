@@ -102,15 +102,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ──────────────────────────────────────────────
 // Clic en dehors du contenu d'un modal (sur l'overlay lui-même) = fermeture, pour tous les modaux
-// (délégation globale plutôt qu'un handler par modal). Redéclenche le bouton .modal-close du modal
-// (le X) plutôt que d'ajouter .hidden directement : certains modaux font plus que masquer dans leur
-// fermeture (ex. _tlClosePresetEditModal rouvre le hub parent) — passer par le même bouton garantit
-// un état final identique à une fermeture explicite. #modal-auth exclu : connexion obligatoire.
+// (délégation globale plutôt qu'un handler par modal). Les boutons croix/Annuler ont été retirés du
+// HTML ; ce dispatch appelle directement la même fonction de fermeture que ces boutons appelaient
+// (certains modaux font plus que masquer, ex. _tlClosePresetEditModal rouvre le hub parent — d'où le
+// dispatch par fonction plutôt qu'un simple classList.add('hidden') générique). #modal-auth exclu :
+// connexion obligatoire. Table résolue en lazy (arrow functions) car les fonctions référencées sont
+// définies plus loin dans ce fichier.
 // ──────────────────────────────────────────────
+const MODAL_CLOSE_FNS = {
+  'tl-modal-img-zoom': () => _tlCloseImgZoom(),
+  'tl-modal-new': () => tlModalNew.classList.add('hidden'),
+  'tl-modal-tier': () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; },
+  'tl-modal-generate-from-template': () => tlModalGenerate.classList.add('hidden'),
+  'tl-modal-move': () => { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; },
+  'tl-modal-folder': () => tlModalFolder.classList.add('hidden'),
+  'tl-modal-tiers-source': () => tlModalTiersSource.classList.add('hidden'),
+  'tl-modal-import-tiers-pick': () => _tlCloseImportTiersPickModal(),
+  'tl-modal-preset-edit': () => _tlClosePresetEditModal(),
+  'tl-modal-imgname': () => _tlCancelRenameImgModal(),
+  'tl-modal-confirm-reset': () => _tlModalConfirmReset.classList.add('hidden'),
+  'modal-new-folder': () => closeNewThemeModal(),
+  'modal-move-folder': () => closeMoveFolderModal(),
+  'modal-element-presets': () => closeElementPresetsModal(),
+  'modal-bingo-stats': () => closeBingoStatsModal(),
+  'modal-element-preset-edit': () => closeElementPresetEditModal(),
+  'modal-rename-grid': () => closeRenameGridModal(),
+  'modal-rename-subtheme': () => closeRenameSubthemeModal(),
+  'modal-new-grid': () => closeNewGridModal(),
+  'modal-confirm-signout': () => document.getElementById('modal-confirm-signout').classList.add('hidden'),
+  'modal-confirm-reset': () => document.getElementById('modal-confirm-reset').classList.add('hidden'),
+  'modal-capture-choice': () => closeCaptureChoiceModal(),
+  'modal-tl-capture-choice': () => closeTlCaptureChoiceModal(),
+  'modal-generate-choice': () => closeGenerateChoiceModal(),
+  'modal-confirm-clear': () => {
+    document.getElementById('modal-confirm-clear').classList.add('hidden');
+    document.getElementById('btn-confirm-clear-archived-only').classList.add('hidden');
+    _clearCellCallback = null;
+    _clearArchivedOnlyCallback = null;
+  },
+  'modal-confirm-toplace': () => _tlCloseConfirmToPlaceModal(),
+  'modal-confirm-current-event': () => closeConfirmCurrentEventModal(),
+};
 document.addEventListener('mousedown', (e) => {
   if (!e.target.classList.contains('modal-overlay') || e.target.id === 'modal-auth') return;
-  const closeBtn = e.target.querySelector('.modal-close, [id$="-img-zoom-close"]');
-  if (closeBtn) closeBtn.click();
+  const fn = MODAL_CLOSE_FNS[e.target.id];
+  if (fn) fn();
   else e.target.classList.add('hidden');
 });
 
@@ -2041,8 +2077,6 @@ const bingoLayout              = document.getElementById('bingo-layout');
 const modalRenameGrid       = document.getElementById('modal-rename-grid');
 const renameGridInput       = document.getElementById('rename-grid-input');
 const btnConfirmRenameGrid  = document.getElementById('btn-confirm-rename-grid');
-const btnCancelRenameGrid   = document.getElementById('btn-cancel-rename-grid');
-const btnCloseRenameGridModal = document.getElementById('btn-close-rename-grid-modal');
 let _renameGridId  = null;
 
 // ──────────────────────────────────────────────
@@ -2601,32 +2635,26 @@ function _renderRecentFolderPaths() {
 // Menu ⋮ / clic droit d'un dossier bingo — partagé entre la vue liste et la vue icônes.
 function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder, browseThisFolder) {
   e.stopPropagation();
-  const { addItem } = _tlMakeCtxMenu(anchor, e, { title: f.name });
-  addItem('folder-open', 'Ouvrir',              false, openThisFolder);
-  // Un dossier-bingo (a des grilles) s'ouvre toujours directement au clic simple — s'il a AUSSI des
-  // sous-dossiers, ceux-ci restent sinon inaccessibles en navigation (piégés), d'où cette entrée dédiée.
-  if (browseThisFolder && (f.folders || []).filter(sf => !sf.archived).length > 0) {
-    addItem('folder-open', 'Parcourir les sous-dossiers', false, browseThisFolder);
-  }
-  // "Nouveau sous-dossier" et "+ Nouvelle grille" sont mutuellement exclusifs : un dossier-bingo
-  // ne contient jamais de sous-dossier, un dossier conteneur ne contient jamais de grille
-  // directement (type figé à la création, cf createFolder/confirmNewTheme).
+  const { addItem, addSep } = _tlMakeCtxMenu(anchor, e, { title: f.name });
   if (_isFolderBingo(f)) {
-    addItem('grid-3x3', '+ Nouvelle grille',      false, async () => {
-      if (_localActiveFolderId !== f.id) await switchFolder(f.id);
-      openNewGridModal();
-    });
-  } else {
-    addItem('folder-closed', 'Nouveau sous-dossier', false, () => openNewFolderModal(f.id));
+    // Dossier-bingo (contient des grilles) : Statistiques, Dupliquer, soirée en cours, puis le reste.
+    addItem('bar-chart-2', 'Statistiques',       false, () => openBingoStatsModal(f));
+    addItem('copy-plus', 'Dupliquer',            false, () => openDuplicateFolderModal(f.id));
+    const ceIsActive = state.currentEventFolderId === f.id;
+    const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
+    addItem('party-popper', ceLabel,                  false, () => confirmSetCurrentEventFolder(f.id));
+    addSep();
+    addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
+    addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
+    addItem('package', 'Archiver',            true,  () => archiveFolder(f.id));
+    addItem('trash-2', 'Supprimer',           true,  () => deleteFolder(f.id));
+    return;
   }
-  addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
-  addItem('copy-plus', 'Dupliquer',            false, () => openDuplicateFolderModal(f.id));
+  // Dossier conteneur (pas de grilles directement) : Statistiques puis menu épuré, jamais de soirée en cours.
   addItem('bar-chart-2', 'Statistiques',       false, () => openBingoStatsModal(f));
+  addSep();
+  addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
   addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
-  const ceIsActive = state.currentEventFolderId === f.id;
-  const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
-  addItem('party-popper', ceLabel,                  false, () => confirmSetCurrentEventFolder(f.id));
-
   addItem('package', 'Archiver',            true,  () => archiveFolder(f.id));
   addItem('trash-2', 'Supprimer',           true,  () => deleteFolder(f.id));
 }
@@ -2893,16 +2921,12 @@ function renderSubthemesList() {
 const modalRenameSubtheme      = document.getElementById('modal-rename-subtheme');
 const renameSubthemeInput      = document.getElementById('rename-subtheme-input');
 const btnConfirmRenameSubtheme = document.getElementById('btn-confirm-rename-subtheme');
-const btnCancelRenameSubtheme  = document.getElementById('btn-cancel-rename-subtheme');
-const btnCloseRenameSubthemeModal = document.getElementById('btn-close-rename-subtheme-modal');
 let _renameSubthemeId = null;
 
 function closeRenameSubthemeModal() { modalRenameSubtheme.classList.add('hidden'); _renameSubthemeId = null; }
 function confirmRenameSubtheme() { if (!_renameSubthemeId) return; renameSubtheme(_renameSubthemeId, renameSubthemeInput.value); closeRenameSubthemeModal(); }
 
 btnConfirmRenameSubtheme.addEventListener('click', confirmRenameSubtheme);
-btnCancelRenameSubtheme.addEventListener('click', closeRenameSubthemeModal);
-btnCloseRenameSubthemeModal.addEventListener('click', closeRenameSubthemeModal);
 renameSubthemeInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmRenameSubtheme(); if (e.key === 'Escape') closeRenameSubthemeModal(); });
 
 // Brancher le bouton "+ Dossier" sur la vraie modale
@@ -4219,8 +4243,6 @@ function getBingoResult(n, grid) {
 const modalNewTheme        = document.getElementById('modal-new-folder');
 const newThemeNameInput    = document.getElementById('new-folder-name-input');
 const btnConfirmNewTheme   = document.getElementById('btn-confirm-new-folder');
-const btnCancelNewTheme    = document.getElementById('btn-cancel-new-folder');
-const btnCloseNewThemeModal = document.getElementById('btn-close-new-folder-modal');
 
 let _editFolderId = null; // null = mode création, sinon id du dossier en cours d'édition ou de duplication
 let _folderModalMode = 'create'; // 'create' | 'edit' | 'duplicate'
@@ -4628,8 +4650,6 @@ function confirmNewTheme() {
 }
 
 if (btnConfirmNewTheme) btnConfirmNewTheme.addEventListener('click', confirmNewTheme);
-if (btnCancelNewTheme) btnCancelNewTheme.addEventListener('click', closeNewThemeModal);
-if (btnCloseNewThemeModal) btnCloseNewThemeModal.addEventListener('click', closeNewThemeModal);
 if (newThemeNameInput) newThemeNameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmNewTheme();
   if (e.key === 'Escape') closeNewThemeModal();
@@ -4709,13 +4729,8 @@ function confirmMoveFolder() {
 }
 
 (function() {
-  const modal = document.getElementById('modal-move-folder');
-  const btnClose = document.getElementById('btn-close-move-folder-modal');
   const btnConfirm = document.getElementById('btn-confirm-move-folder');
-  const btnCancel = document.getElementById('btn-cancel-move-folder');
-  if (btnClose) btnClose.addEventListener('click', closeMoveFolderModal);
   if (btnConfirm) btnConfirm.addEventListener('click', confirmMoveFolder);
-  if (btnCancel) btnCancel.addEventListener('click', closeMoveFolderModal);
 })();
 
 // ──────────────────────────────────────────────
@@ -4864,8 +4879,6 @@ function closeElementPresetsModal() {
   _elementPresetsTargetId = null;
 }
 
-document.getElementById('btn-close-element-presets-modal').addEventListener('click', closeElementPresetsModal);
-document.getElementById('btn-close-element-presets').addEventListener('click', closeElementPresetsModal);
 document.getElementById('btn-new-element-preset').addEventListener('click', () => openElementPresetEditModal(null));
 
 document.getElementById('btn-import-element-preset').addEventListener('click', () => {
@@ -5069,9 +5082,6 @@ document.getElementById('element-preset-edit-input').addEventListener('keydown',
 });
 document.getElementById('element-preset-edit-input').addEventListener('input', _renderElementPresetEditList);
 document.getElementById('element-preset-edit-name').addEventListener('input', _commitElementPresetEdit);
-
-document.getElementById('btn-cancel-element-preset-edit').addEventListener('click', closeElementPresetEditModal);
-document.getElementById('btn-close-element-preset-edit-modal').addEventListener('click', closeElementPresetEditModal);
 
 // ──────────────────────────────────────────────
 // Onglets actifs / archivés
@@ -5349,7 +5359,6 @@ function closeBingoStatsModal() {
   document.getElementById('modal-bingo-stats').classList.add('hidden');
 }
 document.getElementById('btn-bingo-stats').addEventListener('click', () => openBingoStatsModal());
-document.getElementById('btn-close-bingo-stats-modal').addEventListener('click', closeBingoStatsModal);
 
 // ── Menu déroulant "Épisodes" de la modale Stats : cocher/décocher les épisodes inclus. ──
 const _btnBingoStatsEpisodes = document.getElementById('btn-bingo-stats-episodes');
@@ -5818,7 +5827,6 @@ const captureChoiceActions = document.getElementById('capture-choice-actions');
 function openCaptureChoiceModal() {
   const grids = getVisibleGrids();
   captureChoiceActions.querySelectorAll('.btn-capture-choice-grid').forEach(btn => btn.remove());
-  const btnCancel = document.getElementById('btn-cancel-capture-choice');
   grids.forEach(g => {
     const btn = document.createElement('button');
     btn.className = 'btn-action btn-secondary btn-capture-choice-grid';
@@ -5827,7 +5835,7 @@ function openCaptureChoiceModal() {
       closeCaptureChoiceModal();
       bingoScreenshotOne(g.id);
     });
-    captureChoiceActions.insertBefore(btn, btnCancel);
+    captureChoiceActions.appendChild(btn);
   });
   if (window.lucide) lucide.createIcons();
   modalCaptureChoice.classList.remove('hidden');
@@ -5840,8 +5848,6 @@ document.getElementById('btn-capture-choice-all').addEventListener('click', () =
   closeCaptureChoiceModal();
   bingoScreenshot();
 });
-document.getElementById('btn-cancel-capture-choice').addEventListener('click', closeCaptureChoiceModal);
-document.getElementById('btn-close-capture-choice').addEventListener('click', closeCaptureChoiceModal);
 
 function generateAllVisibleGrids() {
   if (manualMode) return;
@@ -5945,8 +5951,6 @@ document.getElementById('btn-generate-choice-empty').addEventListener('click', (
   if (targetGridId) generateSingleGrid(targetGridId, true);
   else generateEmptyCellsVisibleGrids();
 });
-document.getElementById('btn-cancel-generate-choice').addEventListener('click', closeGenerateChoiceModal);
-document.getElementById('btn-close-generate-choice').addEventListener('click', closeGenerateChoiceModal);
 
 // Indique si au moins une grille affichée peut être remplie via "cases vides"
 function canFillEmptyCellsVisibleGrids() {
@@ -5985,13 +5989,6 @@ document.getElementById('btn-confirm-signout').addEventListener('click', () => {
   document.getElementById('modal-confirm-signout').classList.add('hidden');
   _auth.signOut();
 });
-document.getElementById('btn-cancel-signout').addEventListener('click', () => {
-  document.getElementById('modal-confirm-signout').classList.add('hidden');
-});
-document.getElementById('btn-close-confirm-signout').addEventListener('click', () => {
-  document.getElementById('modal-confirm-signout').classList.add('hidden');
-});
-
 btnReset.addEventListener('click', () => {
   const t = activeTheme();
   const s = activeSubtheme();
@@ -6014,12 +6011,6 @@ document.getElementById('btn-confirm-reset').addEventListener('click', () => {
   renderElements();
 });
 
-document.getElementById('btn-cancel-reset').addEventListener('click', () => {
-  document.getElementById('modal-confirm-reset').classList.add('hidden');
-});
-document.getElementById('btn-close-confirm-reset').addEventListener('click', () => {
-  document.getElementById('modal-confirm-reset').classList.add('hidden');
-});
 // Bouton global "Vider"
 const btnClearGrids = document.getElementById('btn-clear-grids');
 let _clearGridsTarget = 'visible'; // 'visible' ou gridId pour per-grille
@@ -6096,19 +6087,6 @@ document.getElementById('btn-confirm-clear').addEventListener('click', () => {
   renderElements();
 });
 
-document.getElementById('btn-cancel-clear').addEventListener('click', () => {
-  document.getElementById('modal-confirm-clear').classList.add('hidden');
-  document.getElementById('btn-confirm-clear-archived-only').classList.add('hidden');
-  _clearCellCallback = null;
-  _clearArchivedOnlyCallback = null;
-});
-document.getElementById('btn-close-confirm-clear').addEventListener('click', () => {
-  document.getElementById('modal-confirm-clear').classList.add('hidden');
-  document.getElementById('btn-confirm-clear-archived-only').classList.add('hidden');
-  _clearCellCallback = null;
-  _clearArchivedOnlyCallback = null;
-});
-
 function closeConfirmCurrentEventModal() {
   document.getElementById('modal-confirm-current-event').classList.add('hidden');
   _pendingCurrentEventFolderId = null;
@@ -6121,15 +6099,10 @@ document.getElementById('btn-confirm-current-event').addEventListener('click', (
   if (folderId) setCurrentEventFolder(folderId);
   else if (tierlistId) setCurrentEventTierlist(tierlistId);
 });
-document.getElementById('btn-cancel-current-event').addEventListener('click', closeConfirmCurrentEventModal);
-document.getElementById('btn-close-confirm-current-event').addEventListener('click', closeConfirmCurrentEventModal);
-
 // Modal nouvelle grille
 const modalNewGrid       = document.getElementById('modal-new-grid');
 const newGridNameInput   = document.getElementById('new-grid-name-input');
 const btnConfirmNewGrid  = document.getElementById('btn-confirm-new-grid');
-const btnCancelNewGrid   = document.getElementById('btn-cancel-new-grid');
-const btnCloseNewGridModal = document.getElementById('btn-close-new-grid-modal');
 
 function openNewGridModal() {
   const s = activeSubtheme();
@@ -6159,8 +6132,6 @@ function confirmNewGrid() {
 }
 
 btnConfirmNewGrid.addEventListener('click', confirmNewGrid);
-btnCancelNewGrid.addEventListener('click', closeNewGridModal);
-btnCloseNewGridModal.addEventListener('click', closeNewGridModal);
 newGridNameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmNewGrid();
   if (e.key === 'Escape') closeNewGridModal();
@@ -6372,7 +6343,6 @@ document.getElementById('btn-archives-unified').addEventListener('click', () => 
   if (modalArchivesUnified.classList.contains('open')) closeArchivesUnified();
   else openArchivesUnified();
 });
-document.getElementById('btn-close-archives-unified').addEventListener('click', closeArchivesUnified);
 
 // ── Panneau dossiers (bouton legacy caché, garde sa fonction pour compat JS) ──
 document.getElementById('btn-folders-panel').addEventListener('click', () => openFoldersPage('bingo'));
@@ -6524,7 +6494,6 @@ document.getElementById('btn-trash-unified').addEventListener('click', () => {
   if (modalTrashUnified.classList.contains('open')) closeTrashUnified();
   else openTrashUnified();
 });
-document.getElementById('btn-close-trash-unified').addEventListener('click', closeTrashUnified);
 
 // Confirmation inline (remplace le bouton "Vider" sur place, jamais un modal par-dessus le drawer
 // Corbeille) : cf. tl-btn-trash-empty-all pour le pendant tier list.
@@ -6546,8 +6515,6 @@ document.getElementById('btn-confirm-trash-empty').addEventListener('click', () 
 
 // Modales renommage grille
 btnConfirmRenameGrid.addEventListener('click', confirmRenameGrid);
-btnCancelRenameGrid.addEventListener('click', closeRenameGridModal);
-btnCloseRenameGridModal.addEventListener('click', closeRenameGridModal);
 renameGridInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmRenameGrid();
   if (e.key === 'Escape') closeRenameGridModal();
@@ -7848,31 +7815,22 @@ const tlModalNew          = document.getElementById('tl-modal-new');
 const tlModalNewTitle     = document.getElementById('tl-modal-new-title');
 const tlModalNewInput     = document.getElementById('tl-modal-new-input');
 const tlModalNewConfirm   = document.getElementById('tl-modal-new-confirm');
-const tlModalNewCancel    = document.getElementById('tl-modal-new-cancel');
-const tlModalNewClose     = document.getElementById('tl-modal-new-close');
-
 
 const tlModalTier         = document.getElementById('tl-modal-tier');
 const tlModalTierLabel    = document.getElementById('tl-modal-tier-label');
 const tlModalTierColor    = document.getElementById('tl-modal-tier-color');
 const tlModalTierConfirm  = document.getElementById('tl-modal-tier-confirm');
-const tlModalTierCancel   = document.getElementById('tl-modal-tier-cancel');
-const tlModalTierClose    = document.getElementById('tl-modal-tier-close');
 
 const tlModalArchived     = document.getElementById('tl-modal-archived');
-const tlModalArchivedClose= document.getElementById('tl-modal-archived-close');
 const tlArchivedList      = document.getElementById('tl-archived-list');
 
 const tlModalTrash          = document.getElementById('tl-modal-trash');
-const tlModalTrashClose      = document.getElementById('tl-modal-trash-close');
 const tlTrashList            = document.getElementById('tl-trash-list');
 const tlTrashEmptyConfirmInline = document.getElementById('tl-trash-empty-confirm-inline');
 
 const tlModalImgName      = document.getElementById('tl-modal-imgname');
 const tlModalImgNameInput = document.getElementById('tl-modal-imgname-input');
 const tlModalImgNameConfirm = document.getElementById('tl-modal-imgname-confirm');
-const tlModalImgNameCancel  = document.getElementById('tl-modal-imgname-cancel');
-const tlModalImgNameClose   = document.getElementById('tl-modal-imgname-close');
 
 // (tl-modal-manage remplacé par menus contextuels dynamiques)
 
@@ -8475,8 +8433,6 @@ document.getElementById('btn-confirm-toplace').addEventListener('click', () => {
   _tlCloseConfirmToPlaceModal();
   if (fn) fn();
 });
-document.getElementById('btn-cancel-toplace').addEventListener('click', _tlCloseConfirmToPlaceModal);
-document.getElementById('btn-close-confirm-toplace').addEventListener('click', _tlCloseConfirmToPlaceModal);
 
 function _tlRenderToPlaceZone(tl) {
   // Le template n'a pas de zone "à placer" (masquée en CSS, .tl-editor-body--template
@@ -9460,7 +9416,6 @@ function _tlCloseImgZoom() {
   const modal = document.getElementById('tl-modal-img-zoom');
   if (modal) modal.classList.add('hidden');
 }
-document.getElementById('tl-img-zoom-close')?.addEventListener('click', _tlCloseImgZoom);
 document.getElementById('tl-modal-img-zoom')?.addEventListener('click', e => {
   if (e.target.id === 'tl-modal-img-zoom') _tlCloseImgZoom();
 });
@@ -11425,8 +11380,6 @@ const _tlCloseImportTiersPickModal = () => {
   document.getElementById('tl-modal-import-tiers-pick').classList.add('hidden');
   _tlImportTiersOnPick = null;
 };
-document.getElementById('tl-modal-import-tiers-pick-cancel').addEventListener('click', _tlCloseImportTiersPickModal);
-document.getElementById('tl-modal-import-tiers-pick-close').addEventListener('click', _tlCloseImportTiersPickModal);
 
 // ── Modal édition d'un preset (nom + tiers) ──────────────────────────────────
 let _tlPresetEditId = null; // null = nouveau preset
@@ -11631,8 +11584,6 @@ const _tlClosePresetEditModal = () => {
   document.getElementById('tl-modal-preset-edit').classList.add('hidden');
   if (_tlPresetEditReturnToId) tlOpenTiersSourceModal(_tlPresetEditReturnToId);
 };
-document.getElementById('tl-modal-preset-edit-cancel').addEventListener('click', _tlClosePresetEditModal);
-document.getElementById('tl-modal-preset-edit-close').addEventListener('click', _tlClosePresetEditModal);
 
 function tlPopulatePresetSelect(selectEl) {
   selectEl.innerHTML = '';
@@ -11945,13 +11896,9 @@ function tlConfirmTierModal() {
 function tlOpenFolderManageModal(id, anchorEl) {
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
-  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null, { title: folder.name });
-  addItem('folder-open', 'Ouvrir', false, () => { _tlGoToFolder(id); _switchPage('tierlist'); });
+  const { addItem } = _tlMakeCtxMenu(anchorEl, null, { title: folder.name });
   addItem('pencil', 'Renommer', false, () => tlOpenFolderModal('edit', id));
-  addItem('copy-plus', 'Dupliquer', false, () => tlOpenFolderModal('duplicate', id));
-  addItem('move', 'Déplacer dans un dossier', false, () => tlOpenMoveFolderModal(id));
-  addItem('scroll', 'Ajouter un template', false, () => tlOpenNewTemplateModal(id));
-  addSep();
+  addItem('move', 'Déplacer', false, () => tlOpenMoveFolderModal(id));
   addItem('package', 'Archiver', true, () => tlArchiveFolder(id));
   addItem('trash-2', 'Supprimer', true, () => tlDeleteFolder(id));
 }
@@ -11963,8 +11910,6 @@ const tlModalFolder       = document.getElementById('tl-modal-folder');
 const tlModalFolderTitle  = document.getElementById('tl-modal-folder-title');
 const tlModalFolderInput  = document.getElementById('tl-modal-folder-input');
 const tlModalFolderConfirm = document.getElementById('tl-modal-folder-confirm');
-const tlModalFolderCancel  = document.getElementById('tl-modal-folder-cancel');
-const tlModalFolderClose   = document.getElementById('tl-modal-folder-close');
 
 const tlModalFolderParentSelect = document.getElementById('tl-modal-folder-parent-select');
 const tlModalFolderParentWrap   = document.getElementById('tl-modal-folder-parent-wrap');
@@ -12104,8 +12049,6 @@ _wireNumberingChecks(
 );
 
 tlModalFolderConfirm.addEventListener('click', tlConfirmFolderModal);
-tlModalFolderCancel.addEventListener('click', () => tlModalFolder.classList.add('hidden'));
-tlModalFolderClose.addEventListener('click', () => tlModalFolder.classList.add('hidden'));
 tlModalFolderInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmFolderModal();
   if (e.key === 'Escape') tlModalFolder.classList.add('hidden');
@@ -12118,8 +12061,6 @@ document.getElementById('tl-btn-new-folder').addEventListener('click', () => tlO
 
 // ── Modal "Gérer les tiers" — listeners de fermeture ─────────────────────────
 const tlModalTiersSource = document.getElementById('tl-modal-tiers-source');
-document.getElementById('tl-modal-tiers-source-close').addEventListener('click', () => tlModalTiersSource.classList.add('hidden'));
-document.getElementById('tl-modal-tiers-source-cancel').addEventListener('click', () => tlModalTiersSource.classList.add('hidden'));
 
 // ── Comparaison : menu déroulant "Listes" ouvert au CLIC (cocher/décocher, tout coché par
 // défaut) + ouverture automatique dans cette fenêtre au clic sur "Comparaison" (plus de modal).
@@ -12216,24 +12157,20 @@ function tlOpenManageModal(id, anchorEl, context) {
   if (!tl) return;
   const ctx = context || 'folders'; // 'folders' | 'dropdown'
   const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null, { title: tl.name });
-  addItem('pencil', 'Renommer', false, () => tlOpenRenameModal(id));
-  if (!(ctx === 'dropdown' && !tl.isTemplate)) addItem('copy-plus', 'Dupliquer', false, () => tlCopy(id));
-  // Une tierlist rattachée à un template vivant suit toujours le dossier du template — se déplace via lui.
-  if (!(ctx === 'dropdown' && tl.isTemplate) && !_tlHasLiveTemplate(tl)) addItem('shelving-unit', 'Déplacer', false, () => tlOpenMoveModal(id));
-  // "Définir soirée en cours" : retiré pour les tierlists (dropdown ET panneau dossiers),
-  // gardé seulement pour les templates (hors dropdown Template, où il est aussi retiré).
-  if (tl.isTemplate && ctx !== 'dropdown') {
+  if (tl.isTemplate) {
+    addItem('copy-plus', 'Dupliquer', false, () => tlCopy(id));
     const ceRoot = typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
     const ceIsActive = state.currentEventTierlistId === (ceRoot ? ceRoot.id : id);
     const ceLabel = ceIsActive ? 'Retirer soirée en cours' : 'Définir comme soirée en cours';
     addItem('party-popper', ceLabel, false, () => confirmSetCurrentEventTierlist(id));
+    addSep();
   }
-  if (!tl.isTemplate) {
-    if (!tl.templateId) addItem('scroll', 'Convertir en template', false, () => tlConvertToTemplate(id));
-  } else if (ctx !== 'dropdown') {
-    addItem('scroll-text', 'Générer depuis ce template', false, () => tlOpenGenerateFromTemplateModal(id));
-  }
-  addSep();
+  addItem('pencil', 'Renommer', false, () => tlOpenRenameModal(id));
+  if (!tl.isTemplate && ctx !== 'dropdown') addItem('copy-plus', 'Dupliquer', false, () => tlCopy(id));
+  // Une tierlist rattachée à un template vivant suit toujours le dossier du template — se déplace via lui.
+  if (!(ctx === 'dropdown' && tl.isTemplate) && !_tlHasLiveTemplate(tl)) addItem('move', 'Déplacer', false, () => tlOpenMoveModal(id));
+  if (!tl.isTemplate && !tl.templateId) addItem('scroll', 'Convertir en template', false, () => tlConvertToTemplate(id));
+  if (!tl.isTemplate) addSep();
   addItem('package', 'Archiver', true, () => tlArchive(id));
   addItem('trash-2', 'Supprimer', true, () => tlDelete(id));
 }
@@ -12512,8 +12449,6 @@ document.getElementById('tl-empty-btn-new').addEventListener('click', () => tlOp
 document.getElementById('tl-empty-btn-folder').addEventListener('click', () => tlOpenFolderModal('create', null, '', _tlCurrentSelectedFolderId()));
 
 tlModalNewConfirm.addEventListener('click', tlConfirmNewModal);
-tlModalNewCancel.addEventListener('click', () => tlModalNew.classList.add('hidden'));
-tlModalNewClose.addEventListener('click', () => tlModalNew.classList.add('hidden'));
 tlModalNewInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmNewModal();
   if (e.key === 'Escape') tlModalNew.classList.add('hidden');
@@ -12527,8 +12462,6 @@ let _tlMoveTargetType = 'tierlist'; // 'tierlist' | 'folder'
 const tlModalMove        = document.getElementById('tl-modal-move');
 const tlModalMoveSelect  = document.getElementById('tl-modal-move-select');
 const tlModalMoveConfirm = document.getElementById('tl-modal-move-confirm');
-const tlModalMoveCancel  = document.getElementById('tl-modal-move-cancel');
-const tlModalMoveClose   = document.getElementById('tl-modal-move-close');
 
 function tlOpenMoveModal(id) {
   const tl = tlState.tierlists.find(t => t.id === id);
@@ -12565,8 +12498,6 @@ tlModalMoveConfirm.addEventListener('click', () => {
   }
   _tlMoveTargetId = null;
 });
-tlModalMoveCancel.addEventListener('click', () => { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; });
-tlModalMoveClose.addEventListener('click', () => { tlModalMove.classList.add('hidden'); _tlMoveTargetId = null; });
 
 tlBtnAddTier.addEventListener('click', () => {
   const tl = tlActiveTierlist();
@@ -12580,8 +12511,6 @@ document.getElementById('folders-page-btn-presets-tiers').addEventListener('clic
   tlOpenTiersSourceModal(TL_PRESETS_STANDALONE);
 });
 tlModalTierConfirm.addEventListener('click', tlConfirmTierModal);
-tlModalTierCancel.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
-tlModalTierClose.addEventListener('click', () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; });
 tlModalTierLabel.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmTierModal();
   if (e.key === 'Escape') { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; }
@@ -12622,8 +12551,6 @@ function _tlAddTextCard(tl, text) {
 const tlModalGenerate        = document.getElementById('tl-modal-generate-from-template');
 const tlGenerateNameInput    = document.getElementById('tl-generate-name-input');
 const tlBtnConfirmGenerate   = document.getElementById('tl-btn-confirm-generate');
-const tlBtnCancelGenerate    = document.getElementById('tl-btn-cancel-generate');
-const tlModalGenerateClose   = document.getElementById('tl-modal-generate-close');
 
 let _tlGenerateTemplateId = null;
 
@@ -12678,8 +12605,6 @@ function tlConfirmGenerateFromTemplate() {
 }
 
 tlBtnConfirmGenerate.addEventListener('click', tlConfirmGenerateFromTemplate);
-tlBtnCancelGenerate.addEventListener('click', () => tlModalGenerate.classList.add('hidden'));
-tlModalGenerateClose.addEventListener('click', () => tlModalGenerate.classList.add('hidden'));
 tlGenerateNameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmGenerateFromTemplate();
   if (e.key === 'Escape') tlModalGenerate.classList.add('hidden');
@@ -12692,8 +12617,6 @@ tlBtnReset.addEventListener('click', tlReset);
 tlBtnUndo.addEventListener('click', tlUndo);
 const _tlModalConfirmReset = document.getElementById('tl-modal-confirm-reset');
 document.getElementById('tl-btn-confirm-reset').addEventListener('click', () => { _tlModalConfirmReset.classList.add('hidden'); _tlDoReset(); });
-document.getElementById('tl-btn-cancel-reset').addEventListener('click', () => _tlModalConfirmReset.classList.add('hidden'));
-document.getElementById('tl-btn-close-confirm-reset').addEventListener('click', () => _tlModalConfirmReset.classList.add('hidden'));
 
 function tlRenderTrashList() {
   const container = tlTrashList;
@@ -12789,8 +12712,6 @@ document.getElementById('btn-tl-capture-choice-export').addEventListener('click'
   closeTlCaptureChoiceModal();
   if (fn) fn();
 });
-document.getElementById('btn-cancel-tl-capture-choice').addEventListener('click', closeTlCaptureChoiceModal);
-document.getElementById('btn-close-tl-capture-choice').addEventListener('click', closeTlCaptureChoiceModal);
 
 tlShowLabelsToggle.addEventListener('click', () => {
   const tl = tlActiveTierlist();
@@ -12925,7 +12846,6 @@ document.getElementById('tl-btn-archives-unified').addEventListener('click', () 
   if (tlModalArchived.classList.contains('open')) tlCloseArchivesUnified();
   else tlOpenArchivesUnified();
 });
-tlModalArchivedClose.addEventListener('click', tlCloseArchivesUnified);
 tlModalArchivedOverlay.addEventListener('click', tlCloseArchivesUnified);
 
 const tlModalTrashOverlay = document.getElementById('tl-modal-trash-overlay');
@@ -12946,7 +12866,6 @@ document.getElementById('tl-btn-trash-unified').addEventListener('click', () => 
   if (tlModalTrash.classList.contains('open')) tlCloseTrashUnified();
   else tlOpenTrashUnified();
 });
-tlModalTrashClose.addEventListener('click', tlCloseTrashUnified);
 tlModalTrashOverlay.addEventListener('click', tlCloseTrashUnified);
 
 // Confirmation inline (remplace le bouton "Vider" sur place, jamais un modal par-dessus le drawer
@@ -12975,8 +12894,6 @@ function _tlCancelRenameImgModal() {
   if (afterConfirm) afterConfirm();
 }
 tlModalImgNameConfirm.addEventListener('click', tlConfirmRenameImg);
-tlModalImgNameCancel.addEventListener('click', _tlCancelRenameImgModal);
-tlModalImgNameClose.addEventListener('click', _tlCancelRenameImgModal);
 tlModalImgNameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') tlConfirmRenameImg();
   if (e.key === 'Escape') _tlCancelRenameImgModal();
