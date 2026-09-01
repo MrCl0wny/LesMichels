@@ -2622,11 +2622,7 @@ function _renderRecentFolderPaths() {
     path.textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' \\ ');
     row.appendChild(icon);
     row.appendChild(path);
-    row.addEventListener('click', () => {
-      const ancestors = getFolderPath(state.folders, f.id).slice(0, -1);
-      _foldersNavFolderId = ancestors.length ? ancestors[ancestors.length - 1].id : null;
-      if (_localActiveFolderId !== f.id) switchFolder(f.id);
-    });
+    row.addEventListener('click', () => { _homeGoToBingoFolder(f.id); });
     list.appendChild(row);
   });
   container.appendChild(list);
