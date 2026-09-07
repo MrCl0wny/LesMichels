@@ -153,36 +153,16 @@ document.addEventListener('mousedown', (e) => {
 // ──────────────────────────────────────────────
 // Audio singleton + effets Bingo
 // ──────────────────────────────────────────────
+let _bingoAudio = null;
 function playBingoSound() {
   try {
-    const ctx = _getAudioCtx();
-    // Mélodie "ouverture de coffre" Zelda : E4 A4 C#5 E5 + accord final
-    const sequence = [
-      { freq: 329.63, dur: 0.10, t: 0.00 },  // E4
-      { freq: 440.00, dur: 0.10, t: 0.10 },  // A4
-      { freq: 554.37, dur: 0.10, t: 0.20 },  // C#5
-      { freq: 659.25, dur: 0.50, t: 0.30 },  // E5 (tenu)
-      // Accord final (E5 + A5 + C#6)
-      { freq: 659.25, dur: 0.60, t: 0.85 },
-      { freq: 880.00, dur: 0.60, t: 0.85 },
-      { freq: 1108.73, dur: 0.60, t: 0.85 },
-    ];
-    sequence.forEach(({ freq, dur, t }) => {
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'square';
-      osc.frequency.value = freq;
-      const start = ctx.currentTime + t;
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.005, start + 0.01);
-      gain.gain.setValueAtTime(0.005, start + dur - 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
-      osc.start(start);
-      osc.stop(start + dur);
-    });
-  } catch (e) { /* contexte audio non disponible */ }
+    if (!_bingoAudio) {
+      _bingoAudio = new Audio('sounds/bingo-line.mp3');
+      _bingoAudio.volume = 0.6;
+    }
+    _bingoAudio.currentTime = 0;
+    _bingoAudio.play().catch(() => { /* lecture bloquée (autoplay) ou fichier absent */ });
+  } catch (e) { /* audio non disponible */ }
 }
 
 function launchConfetti(targetEl, gridId) {
