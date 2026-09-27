@@ -3628,6 +3628,9 @@ body.solo-tierlist-mode .tl-layout {
   border-bottom-right-radius: var(--radius);
 }
 
+/* Carte texte : hauteur au strict minimum. flex-start (et pas center) : ne s'étire pas à la hauteur
+   de la ligne, et garde le même haut que ses voisines — _tlNearestRowIndex groupe les lignes par `top`. */
+.tl-img-card--text { align-self: flex-start; }
 .tl-text-card-content {
   display: flex;
   align-items: center;

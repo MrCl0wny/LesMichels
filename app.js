@@ -341,7 +341,8 @@ function setupAuth() {
       _tlLocalUnplacedImgSize  = null;
       _tlLocalUnplacedShowLabels = null;
       _tlLocalUnplacedHidden   = false;
-      _tlLocalSplit            = null;
+      _tlLocalUnplacedSortByList = {};
+      _tlLocalSplit           = null;
       _tlLocalActiveTierlistId = null;
       _tlLocalActiveFolderId   = null;
       _tlLocalNoSelection      = false;
@@ -404,6 +405,7 @@ function loadUserPrefs() {
     if (prefs.tlUnplacedImgSize   != null) _tlLocalUnplacedImgSize  = prefs.tlUnplacedImgSize;
     if (prefs.tlUnplacedShowLabels != null) _tlLocalUnplacedShowLabels = !!prefs.tlUnplacedShowLabels;
     if (prefs.tlUnplacedHidden    != null) _tlLocalUnplacedHidden   = !!prefs.tlUnplacedHidden;
+    if (prefs.tlUnplacedSortByList && typeof prefs.tlUnplacedSortByList === 'object') _tlLocalUnplacedSortByList = prefs.tlUnplacedSortByList;
     if (prefs.tlSplit             != null) _tlLocalSplit            = prefs.tlSplit;
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
     if (prefs.tlActiveFolderId    != null) _tlLocalActiveFolderId   = prefs.tlActiveFolderId;
@@ -6629,7 +6631,8 @@ let _tlLocalImgSize         = null;
 let _tlLocalUnplacedImgSize = null; // taille des images du cadre "Éléments non placés" (indépendante de la tierlist)
 let _tlLocalUnplacedShowLabels = null; // afficher/masquer noms du cadre "Éléments non placés" (indépendant de la tierlist)
 let _tlLocalUnplacedHidden  = false; // true = cadre "Éléments non placés" masqué (préférence locale)
-let _tlLocalSplit           = null; // % de largeur allouée aux tiers (le reste va aux éléments non placés), null = pas encore chargé
+let _tlLocalUnplacedSortByList = {}; // { tierlistId: 'alpha'|'alpha-desc'|'updatedAt'|'updatedAt-asc' } — absent = 'manual'
+let _tlLocalSplit          = null; // % de largeur allouée aux tiers (le reste va aux éléments non placés), null = pas encore chargé
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
 let _tlLocalActiveFolderId  = null; // dossier sélectionné (vide) sans tierlist active
 let _tlLocalNoSelection     = false; // true = l'utilisateur a délibérément désélectionné
@@ -7199,7 +7202,12 @@ function tlUndo() {
     }
     case 'replaceImage': {
       const img = (root.images || []).find(i => i.id === op.imgId);
-      if (img) { img.src = op.oldSrc; _tlSrcCache[img.id] = op.oldSrc; }
+      if (img && op.oldType === 'text') {
+        // Annule "Associer une image" : l'élément redevient une carte texte.
+        img.type = 'text';
+        img.color = op.oldColor || TL_TEXT_CARD_COLOR;
+        delete img.src;
+      } else if (img) { img.src = op.oldSrc; _tlSrcCache[img.id] = op.oldSrc; }
       break;
     }
     case 'addTier':
@@ -7279,11 +7287,18 @@ function tlDefaultTierlist(name, isTemplate = false) {
   };
 }
 
+// Mode de tri de la zone "non placés" : préférence personnelle de l'utilisateur, par liste (jamais
+// stockée dans la tierlist partagée — tl.unplacedSort est un ancien champ, ignoré désormais).
+function _tlUnplacedSortMode(tl) {
+  return (tl && _tlLocalUnplacedSortByList[tl.id]) || 'manual';
+}
+
 // Copie triée de tl.unplaced pour l'affichage — ne mute jamais tl.unplaced (le drag&drop manuel s'appuie dessus)
 // Modes : 'manual' (ordre réel de tl.unplaced) | 'alpha'/'alpha-desc' (nom) | 'updatedAt'/'updatedAt-asc' (date de modification, récent→ancien par défaut)
+// Tri appliqué à chaque rendu : un élément ajouté plus tard prend directement sa place triée.
 function _tlGetSortedUnplaced(tl) {
   const ids = tl.unplaced.slice();
-  const mode = tl.unplacedSort || 'manual';
+  const mode = _tlUnplacedSortMode(tl);
   if (mode === 'alpha' || mode === 'alpha-desc') {
     ids.sort((a, b) => {
       const ia = tlFindImage(tl, a), ib = tlFindImage(tl, b);
@@ -8733,9 +8748,18 @@ function _tlRenderRecentFolderPaths() {
   title.textContent = 'Templates récents';
   container.appendChild(title);
 
+  // Une ligne par template (chemin complet jusqu'au template) : un dossier à plusieurs templates en
+  // donne plusieurs, du plus récemment créé au plus ancien (ordre inverse de tlState.tierlists, où
+  // tlCreate ajoute en fin) — toujours plafonné à 5 lignes au total.
+  const rows = [];
+  recent.forEach(f => {
+    tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === f.id).reverse()
+      .forEach(tpl => rows.push({ f, tpl }));
+  });
+
   const list = document.createElement('div');
   list.className = 'fp-recent-list';
-  recent.forEach(f => {
+  rows.slice(0, 5).forEach(({ f, tpl }) => {
     const row = document.createElement('div');
     row.className = 'fp-recent-row';
     const icon = document.createElement('span');
@@ -8743,15 +8767,14 @@ function _tlRenderRecentFolderPaths() {
     icon.innerHTML = '<i data-lucide="scroll"></i>';
     const path = document.createElement('span');
     path.className = 'fp-recent-path';
-    let pathText = _tlFolderPath(f.id);
-    const templatesHere = tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === f.id);
-    if (templatesHere.length === 1) pathText += ' \\ ' + templatesHere[0].name;
-    path.textContent = pathText;
+    path.textContent = _tlFolderPath(f.id) + ' \\ ' + tpl.name;
     row.appendChild(icon);
     row.appendChild(path);
-    row.addEventListener('click', () => {
-      if (templatesHere.length === 1) _homeGoToTlTierlist(templatesHere[0]);
-      else _tlGoToFolder(f.id);
+    // Même ouverture que les tuiles template de la page Dossiers (tlSwitch charge le groupe avant rendu).
+    row.addEventListener('click', async () => {
+      _tlExpandFolderAncestors(f.id);
+      await tlSwitch(tpl.id, false);
+      _switchPage('tierlist');
     });
     list.appendChild(row);
   });
@@ -9074,7 +9097,10 @@ function _tlPatchImgSizes(zoneEl, size) {
   if (!zoneEl) return;
   zoneEl.querySelectorAll(':scope > .tl-img-card').forEach(card => {
     const media = card.querySelector(':scope > img, :scope > .tl-text-card-content');
-    if (media) { media.style.width = size + 'px'; media.style.height = size + 'px'; }
+    if (media) {
+      media.style.width = size + 'px';
+      if (media.tagName === 'IMG') media.style.height = size + 'px'; // carte texte : hauteur = son texte
+    }
     const label = card.querySelector(':scope > .tl-img-label');
     if (label) label.style.width = size + 'px';
   });
@@ -9824,8 +9850,8 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
     card.classList.add('tl-img-card--text');
     const textEl = document.createElement('div');
     textEl.className = 'tl-text-card-content';
+    // Hauteur au strict minimum (celle du texte) : seule la largeur suit le slider Taille.
     textEl.style.width = size + 'px';
-    textEl.style.height = size + 'px';
     textEl.style.background = img.color || '#3a3a42';
     textEl.textContent = img.name;
     card.appendChild(textEl);
@@ -9928,7 +9954,8 @@ function _tlShowImgCtxMenu(e, tl, img) {
   if (!isText) addItem('zoom-in', 'Zoomer', false, () => _tlOpenImgZoom(img, tl));
   if (!tl.isTemplate) addItem('pin', 'À placer', false, () => _tlSetImageToPlace(tl, img.id));
   addItem('pencil', 'Renommer', false, () => tlOpenRenameImg(tl, img));
-  if (!isText) addItem('image-up', 'Remplacer l\'image', false, () => tlOpenReplaceImage(tl, img));
+  // Élément texte : même sélecteur de fichier — la carte devient une image, le texte devient son nom.
+  addItem(isText ? 'image-plus' : 'image-up', isText ? 'Associer une image' : 'Remplacer l\'image', false, () => tlOpenReplaceImage(tl, img));
   addItem('x', 'Supprimer', true, () => tlDeleteImage(tl, img.id));
 }
 
@@ -10362,7 +10389,10 @@ document.getElementById('tl-file-input-replace').addEventListener('change', () =
   const img = (root.images || []).find(i => i.id === ctx.imgId);
   if (!img) return;
   _tlCompressToBase64(file).then(src => {
-    _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'replaceImage', imgId: img.id, oldSrc: img.src });
+    const wasText = img.type === 'text';
+    _tlPushUndoOp({ tierlistId: tl.id, groupRootId: root.id, type: 'replaceImage', imgId: img.id, oldSrc: img.src, ...(wasText ? { oldType: 'text', oldColor: img.color } : {}) });
+    // Élément texte → image : son texte (img.name) reste tel quel et sert désormais de nom.
+    if (wasText) { delete img.type; delete img.color; }
     img.src = src;
     img.updatedAt = Date.now();
     _tlSrcCache[img.id] = src;
@@ -10549,6 +10579,8 @@ function tlDrop(e, targetZoneId) {
 
   if (tl.isTemplate && targetZoneId !== '__unplaced__') return;
   const from = _tlLocateImage(tl, imgId);
+  // Tri actif : réordonner à la main dans "non placés" n'a aucun effet visible — rien à sauvegarder.
+  if (from && from.zone === '__unplaced__' && targetZoneId === '__unplaced__' && _tlUnplacedSortMode(tl) !== 'manual') return;
   if (from) {
     _tlPushUndoOp({ tierlistId: tl.id, type: 'moveImage', imgId, fromZone: from.zone, fromIndex: from.index });
   }
@@ -10558,16 +10590,16 @@ function tlDrop(e, targetZoneId) {
   tl.tiers.forEach(t => { t.items = t.items.filter(id => id !== imgId); });
 
   if (targetZoneId === '__unplaced__') {
-    // "Tri" est une action ponctuelle qui fige déjà l'ordre manuel (cf. tlUnplacedSortBtn) : la zone
-    // affichée reflète donc toujours tl.unplaced, sauf appel externe laissant unplacedSort non-manuel.
-    const beforeId = tlDropInsertBeforeId(tlUnplacedZone, e.clientX, e.clientY, imgId);
-    if ((tl.unplacedSort || 'manual') !== 'manual') {
-      tl.unplaced = _tlGetSortedUnplaced(tl);
-      tl.unplacedSort = 'manual';
+    // Tri actif (préférence de l'utilisateur, cf. tlUnplacedSortBtn) : la position de dépôt n'a pas
+    // de sens, l'élément reprend sa place triée à l'affichage — on l'ajoute simplement en fin.
+    if (_tlUnplacedSortMode(tl) !== 'manual') {
+      tl.unplaced.push(imgId);
+    } else {
+      const beforeId = tlDropInsertBeforeId(tlUnplacedZone, e.clientX, e.clientY, imgId);
+      let insertIdx = beforeId ? tl.unplaced.indexOf(beforeId) : tl.unplaced.length;
+      if (insertIdx === -1) insertIdx = tl.unplaced.length;
+      tl.unplaced.splice(insertIdx, 0, imgId);
     }
-    let insertIdx = beforeId ? tl.unplaced.indexOf(beforeId) : tl.unplaced.length;
-    if (insertIdx === -1) insertIdx = tl.unplaced.length;
-    tl.unplaced.splice(insertIdx, 0, imgId);
   } else {
     const tier = tl.tiers.find(t => t.id === targetZoneId);
     if (tier) {
@@ -10801,13 +10833,39 @@ async function _tlBuildCanvas(tl) {
   // sinon la capture/export ne correspond plus à ce que l'utilisateur voit sur un écran large.
   const totalWidth = Math.round(tlTiersZone?.getBoundingClientRect().width) || 860;
 
-  const tierHeights = tl.tiers.map(tier => {
-    if (tier.items.length === 0) return imgSize + padding * 2;
-    const rows = Math.ceil(tier.items.length * (imgSize + imgGap) / (totalWidth - labelW));
-    return Math.max(imgSize + padding * 2, rows * (imgSize + imgGap) + padding * 2);
-  });
-
   const canvas = document.createElement('canvas');
+  const measureCtx = canvas.getContext('2d');
+  // Carte texte : même rendu qu'à l'écran (.tl-text-card-content : 0.78rem, line-height 1.2,
+  // padding 4px) — largeur imgSize, hauteur au strict minimum de son texte.
+  const textFontPx = 12.5;
+  const textLineH = Math.round(textFontPx * 1.2);
+  const textFont = `${textFontPx}px Arial`;
+  measureCtx.font = textFont;
+
+  // Mise en page façon flex-wrap aligné en haut (cf. .tl-img-card--text) : chaque ligne prend la
+  // hauteur de sa carte la plus haute, les cartes texte ne s'étirent pas.
+  const groupImages = _tlGetGroupImages(tl);
+  const tierLayouts = tl.tiers.map(tier => {
+    const items = [];
+    let x = labelW + padding, rowTop = padding, rowH = 0;
+    for (const imgId of tier.items) {
+      const imgData = groupImages.find(i => i.id === imgId) || null;
+      if (!imgData) continue;
+      const isText = (imgData.type || 'image') === 'text';
+      const lines = isText ? _tlWrapText(measureCtx, imgData.name, imgSize - 8) : null;
+      const h = isText ? lines.length * textLineH + 8 : imgSize;
+      if (x + imgSize > totalWidth - padding && x > labelW + padding) {
+        x = labelW + padding; rowTop += rowH + imgGap; rowH = 0;
+      }
+      items.push({ imgData, isText, lines, x, top: rowTop, h });
+      rowH = Math.max(rowH, h);
+      x += imgSize + imgGap;
+    }
+    const height = Math.max(imgSize + padding * 2, rowTop + rowH + padding);
+    return { items, height };
+  });
+  const tierHeights = tierLayouts.map(l => l.height);
+
   canvas.width = totalWidth;
   canvas.height = tierHeights.reduce((a, b) => a + b + rowGap, 0) + 40;
   const ctx = canvas.getContext('2d');
@@ -10836,25 +10894,21 @@ async function _tlBuildCanvas(tl) {
     _tlDrawTierLabel(ctx, tier.label, 0, y, labelW, tierH, labelFontSize);
     ctx.fillStyle = '#22222a';
     ctx.fillRect(labelW, y, totalWidth - labelW, tierH);
-    let x = labelW + padding;
-    let rowY = y + padding;
-    for (const imgId of tier.items) {
-      const imgData = _tlGetGroupImages(tl).find(i => i.id === imgId) || null;
-      if (!imgData) continue;
-      if (x + imgSize > totalWidth - padding) { x = labelW + padding; rowY += imgSize + imgGap; }
-      if ((imgData.type || 'image') === 'text') {
+    for (const { imgData, isText, lines, x, top, h } of tierLayouts[i].items) {
+      const rowY = y + top;
+      if (isText) {
         ctx.fillStyle = imgData.color || '#3a3a42';
-        ctx.fillRect(x, rowY, imgSize, imgSize);
+        ctx.fillRect(x, rowY, imgSize, h);
         ctx.fillStyle = '#fff';
-        ctx.font = `bold ${Math.round(imgSize * 0.16)}px Arial`;
+        ctx.font = textFont;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(imgData.name.slice(0, 20), x + imgSize / 2, rowY + imgSize / 2, imgSize - 8);
+        lines.forEach((l, li) => ctx.fillText(l, x + imgSize / 2, rowY + 4 + li * textLineH + textLineH / 2, imgSize - 8));
       } else {
         const imgEl = await loadImage(imgData.src);
         if (imgEl) _tlDrawImageContain(ctx, imgEl, x, rowY, imgSize);
       }
-      if (showLabels && (imgData.type || 'image') !== 'text') {
+      if (showLabels && !isText) {
         ctx.fillStyle = 'rgba(0,0,0,0.72)';
         ctx.fillRect(x, rowY + imgSize - 16, imgSize, 16);
         ctx.fillStyle = '#e8e8f0';
@@ -10863,7 +10917,6 @@ async function _tlBuildCanvas(tl) {
         ctx.textBaseline = 'middle';
         ctx.fillText(imgData.name.slice(0, 14), x + imgSize / 2, rowY + imgSize - 8);
       }
-      x += imgSize + imgGap;
     }
     y += tierH + rowGap;
   }
@@ -12262,8 +12315,41 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
 
   if (resetPathExpansion) currentPathIds.forEach(id => sessionStorage.removeItem('tl_folder_open_' + id));
 
+  // Un dossier reste toujours un dossier (jamais confondu avec son template, même s'il n'en a qu'un) :
+  // ses templates sont listés dessous quand il est déplié.
+  const templatesOf = folderId => tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === folderId);
+  const activeTl = tlActiveTierlist();
+  const activeRootId = activeTl ? _tlGroupRoot(activeTl).id : null;
+
+  const buildTemplateRow = (tpl, depth) => {
+    const row = document.createElement('div');
+    row.className = 'tl-path-menu-row' + (tpl.id === activeRootId ? ' active' : '');
+    row.style.paddingLeft = (depth * 14) + 'px';
+    const arrow = document.createElement('span');
+    arrow.className = 'tl-path-menu-arrow';
+    row.appendChild(arrow);
+    const icon = document.createElement('span');
+    icon.className = 'tl-path-menu-icon';
+    icon.innerHTML = '<i data-lucide="scroll"></i>';
+    row.appendChild(icon);
+    const name = document.createElement('span');
+    name.className = 'tl-path-menu-name';
+    name.textContent = tpl.name;
+    row.appendChild(name);
+    // Même principe que les lignes dossier : ouvre sans fermer le menu (stopPropagation).
+    row.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      _tlExpandFolderAncestors(tpl.folderId);
+      await tlSwitch(tpl.id, false);
+      _tlRenderPathMenuRows(menu, activeFolders, close);
+    });
+    return row;
+  };
+
   const buildRow = (folder, depth) => {
-    const hasChildren = activeFolders.some(f => (f.parentId || null) === folder.id);
+    const folderTemplates = templatesOf(folder.id);
+    const hasTemplates = folderTemplates.length > 0;
+    const hasChildren = hasTemplates || activeFolders.some(f => (f.parentId || null) === folder.id);
     const key = 'tl_folder_open_' + folder.id;
     const isOnCurrentPath = currentPathIds.includes(folder.id);
     // Déplié par défaut sur le chemin actif, mais seulement tant que l'utilisateur n'a pas explicitement
@@ -12287,10 +12373,9 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
     }
     row.appendChild(arrow);
 
-    const hasTemplate = tlState.tierlists.some(t => t.isTemplate && !t.archived && t.folderId === folder.id);
     const icon = document.createElement('span');
     icon.className = 'tl-path-menu-icon';
-    icon.innerHTML = hasTemplate ? '<i data-lucide="scroll"></i>' : '<i data-lucide="folder"></i>';
+    icon.innerHTML = '<i data-lucide="folder"></i>';
     row.appendChild(icon);
 
     const name = document.createElement('span');
@@ -12302,9 +12387,11 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
     // menu — stopPropagation empêche le clic d'atteindre le onDocClick de _tlMakeCtxMenu, qui
     // fermerait sinon le menu à chaque clic (close() n'est plus appelé ici, seul un clic extérieur
     // au menu le referme).
+    // Dossier contenant des templates : le clic ne fait que (dé)plier — c'est à l'utilisateur de choisir
+    // le template dans la liste, plutôt que d'ouvrir d'office le plus récent (_tlGoToFolder).
     row.addEventListener('click', ev => {
       ev.stopPropagation();
-      _tlGoToFolder(folder.id);
+      if (!hasTemplates) _tlGoToFolder(folder.id);
       if (hasChildren) {
         sessionStorage.setItem(key, isOpen ? '0' : '1');
         _tlRenderPathMenuRows(menu, activeFolders, close);
@@ -12320,7 +12407,11 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
         menu.appendChild(buildRow(f, depth));
         const stored = sessionStorage.getItem('tl_folder_open_' + f.id);
         const isOpen = stored !== null ? stored === '1' : currentPathIds.includes(f.id);
-        if (isOpen) addFolderRows(f.id, depth + 1);
+        if (isOpen) {
+          addFolderRows(f.id, depth + 1);
+          const folderTemplates = templatesOf(f.id);
+          folderTemplates.forEach(tpl => menu.appendChild(buildTemplateRow(tpl, depth + 1)));
+        }
       });
   };
   addFolderRows(null, 0);
@@ -12906,23 +12997,27 @@ tlMaxImagesInput.addEventListener('click', () => {
   });
 });
 
-// "Tri" est une action ponctuelle (pas un mode persistant) : trier fige immédiatement l'ordre
-// choisi comme nouvel ordre manuel (tl.unplaced), sans état de tri à retenir ensuite.
+// "Tri" est un mode persistant, personnel à chaque utilisateur et propre à chaque liste (prefs
+// Firebase users/<uid>/prefs/tlUnplacedSortByList) : il ne touche jamais tl.unplaced (partagé), il
+// ne fait que trier l'affichage — les éléments ajoutés ensuite sont donc triés eux aussi.
 tlUnplacedSortBtn.addEventListener('click', () => {
   const tl = tlActiveTierlist();
   if (!tl) return;
+  const current = _tlUnplacedSortMode(tl);
   const applySort = mode => {
-    tl.unplacedSort = mode;
-    tl.unplaced = _tlGetSortedUnplaced(tl);
-    tl.unplacedSort = 'manual';
-    tlSave(_tlGroupRoot(tl).id);
+    if (mode === 'manual') delete _tlLocalUnplacedSortByList[tl.id];
+    else _tlLocalUnplacedSortByList[tl.id] = mode;
+    saveUserPrefs({ ['tlUnplacedSortByList/' + tl.id]: mode === 'manual' ? null : mode });
     tlRender();
   };
   const { addItem } = _tlMakeCtxMenu(tlUnplacedSortBtn, null);
-  addItem('arrow-down-a-z', 'Alphabétique (A→Z)', false, () => applySort('alpha'));
-  addItem('arrow-up-a-z', 'Alphabétique (Z→A)', false, () => applySort('alpha-desc'));
-  addItem('arrow-down-0-1', 'Date de modification (récent→ancien)', false, () => applySort('updatedAt'));
-  addItem('arrow-up-0-1', 'Date de modification (ancien→récent)', false, () => applySort('updatedAt-asc'));
+  // Le mode actif remplace son icône par une coche.
+  const addSortItem = (icon, label, mode) => addItem(current === mode ? 'check' : icon, label, false, () => applySort(mode));
+  addSortItem('hand', 'Manuel', 'manual');
+  addSortItem('arrow-down-a-z', 'Alphabétique (A→Z)', 'alpha');
+  addSortItem('arrow-up-a-z', 'Alphabétique (Z→A)', 'alpha-desc');
+  addSortItem('arrow-down-0-1', 'Date de modification (récent→ancien)', 'updatedAt');
+  addSortItem('arrow-up-0-1', 'Date de modification (ancien→récent)', 'updatedAt-asc');
 });
 
 // ── Afficher/masquer le cadre "Éléments non placés" (tierlist normale uniquement) ──
