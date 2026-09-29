@@ -107,7 +107,7 @@ body {
 .nav-btn {
   background: none;
   border: 1px solid transparent;
-  color: var(--text-muted);
+  color: #444455;
   font-family: Arial, sans-serif;
   font-size: 0.85rem;
   font-weight: 600;
@@ -126,29 +126,13 @@ body {
   background: var(--surface-2);
 }
 .nav-btn.active {
-  color: var(--accent);
-  border-color: var(--accent-dim);
-  background: var(--accent-glow);
+  color: rgba(232, 197, 71, 0.4);
+  border-color: rgba(168, 140, 40, 0.25);
+  background: rgba(232, 197, 71, 0.03);
 }
 .nav-btn.disabled {
   opacity: 0.35;
   cursor: not-allowed;
-}
-/* Bouton marron : Dossiers (page dédiée) */
-.nav-btn-folders {
-  background: rgba(146,94,54,0.18);
-  color: #c9855a;
-  border-color: rgba(146,94,54,0.5);
-}
-.nav-btn-folders:hover:not(.disabled) {
-  color: #e0a374;
-  border-color: #c9855a;
-  background: rgba(146,94,54,0.3);
-}
-.nav-btn-folders.active {
-  color: #f0b688;
-  border-color: #c9855a;
-  background: rgba(146,94,54,0.35);
 }
 
 /* ── Layout principal ── */
@@ -174,14 +158,44 @@ body {
   position: relative;
 }
 
-/* Dossier conteneur actif (jamais de grilles à gérer) : ne garder que Chemin (gauche) et
-   Stats (droite) en ligne 1, masquer toute la ligne 3 (génération/cases/plein écran/etc). */
+/* Dossier conteneur actif (jamais de grilles à gérer) : ne garder que Chemin (ligne 1) et
+   Stats (ligne 2), masquer tout le reste (création/cases/taille/capture/plein écran/etc). */
 .bingo-control-panel.folder-mode #btn-grids-dropdown,
 .bingo-control-panel.folder-mode #btn-new-grid-main,
 .bingo-control-panel.folder-mode #btn-cases-panel,
 .bingo-control-panel.folder-mode #btn-ce-set-header,
-.bingo-control-panel.folder-mode .ctrl-row-toolbar {
+.bingo-control-panel.folder-mode #btn-bingo-creation,
+.bingo-control-panel.folder-mode #bingo-creation-group,
+.bingo-control-panel.folder-mode .ctrl-row-toolbar > :not(#bingo-grids-options-row),
+.bingo-control-panel.folder-mode #bingo-grids-options-row > :not(#btn-bingo-stats) {
   display: none !important;
+}
+
+/* Groupe révélé par le bouton Création (ligne 1, juste avant lui) */
+.bingo-creation-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Ligne 1 Bingo : pas d'élément centré à équilibrer — la zone droite prend d'abord la largeur de
+   son contenu (Cases + groupe Création ouvert), la zone gauche le reste. */
+/* min-height = hauteur du cadre .lock-group (42px, le plus haut du groupe Création) : la ligne 1
+   garde la même hauteur que le groupe soit affiché ou non. */
+#bingo-control-panel .ctrl-row-grids-right { flex: 1 0 auto; min-height: 42px; }
+/* Boutons par grille (cadenas/générer/vider) masqués tant que Création est fermé
+   (classe posée sur #page-bingo par le bouton Création). */
+#page-bingo:not(.creation-open) .subgrid-lock-gen-group { display: none; }
+/* Bouton Création : grisé (btn-neutral-action) sauf tant qu'une grille affichée a une case vide */
+#btn-bingo-creation.btn-creation-needed {
+  border-color: #60a5fa !important;
+  color: #dbeafe !important;
+  background: rgba(96,165,250,0.28) !important;
+}
+/* Bouton New : toujours grisé, même activé (l'icône œil/œil barré suffit à indiquer l'état) */
+#btn-toggle-new-badge[aria-pressed="true"]:not(:hover) {
+  border-color: var(--border) !important;
+  color: var(--text-muted) !important;
+  background: var(--surface-2) !important;
 }
 
 .tl-control-panel {
@@ -208,10 +222,11 @@ body {
   min-width: 0;
 }
 .btn-ce-label {
-  background: rgba(255, 185, 0, 0.12);
-  border: 1px solid rgba(255, 185, 0, 0.4);
+  background: rgba(56, 189, 248, 0.28);
+  border: 1px solid #7dd3fc;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
   border-radius: var(--radius);
-  color: #ffb900;
+  color: #e0f2fe;
   font-size: 0.82rem;
   font-weight: 700;
   padding: 5px 12px;
@@ -232,7 +247,7 @@ body {
   white-space: normal;
   word-break: break-word;
 }
-.btn-ce-label:hover { background: rgba(255, 185, 0, 0.22); border-color: #ffb900; }
+.btn-ce-label:hover { background: rgba(56, 189, 248, 0.4); border-color: #bae6fd; }
 .btn-ce-set {
   background: rgba(99, 102, 241, 0.15);
   border: 1px solid rgba(99, 102, 241, 0.4);
@@ -372,19 +387,6 @@ body {
   background: rgba(59,130,246,0.4) !important;
 }
 
-/* Bouton Grilles : toujours bleu (même style que Cases en surbrillance, mais permanent — pas
-   conditionné au nombre de cases), en mode normal comme en plein écran (même élément DOM déplacé
-   en JS, cf #btn-grids-dropdown). */
-#btn-grids-dropdown {
-  border: 2px solid #3b82f6 !important;
-  color: #fff !important;
-  background: rgba(59,130,246,0.4) !important;
-}
-#btn-grids-dropdown:hover {
-  background: rgba(59,130,246,0.6) !important;
-  border-color: #60a5fa !important;
-  color: #fff !important;
-}
 /* ── Breadcrumb dans ctrl-row-grids ── */
 .grids-breadcrumb {
   display: flex;
@@ -573,6 +575,29 @@ body {
   background: rgba(96, 165, 250, 0.26);
   border-color: #60a5fa;
 }
+/* Titre à gauche, boutons "+ Dossier" / "+ Bingo" / "+ Template" groupés à droite */
+.fp-tree-frame-header .fp-tree-frame-title { margin-right: auto; }
+/* Petits "+ Bingo" / "+ Template" verts (mêmes actions que les gros boutons du haut de page) */
+.fp-tree-frame-btn-new {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  background: rgba(62, 207, 110, 0.14);
+  border: 1px solid rgba(62, 207, 110, 0.45);
+  color: #3ecf6e;
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.fp-tree-frame-btn-new:hover {
+  background: rgba(62, 207, 110, 0.26);
+  border-color: #3ecf6e;
+}
 .folders-panel-tree {
   flex: 1;
   overflow-y: auto;
@@ -607,14 +632,15 @@ body {
   padding: 16px 30px;
   height: auto;
   border-radius: var(--radius);
-  background: rgba(62, 207, 110, 0.14);
-  border: 1px solid rgba(62, 207, 110, 0.45);
-  color: #3ecf6e;
+  background: rgba(62, 207, 110, 0.05);
+  border: 1px solid rgba(62, 207, 110, 0.22);
+  color: rgba(62, 207, 110, 0.6);
 }
 .folders-page-hero .btn-new-bingo-folder:hover,
 .folders-page-hero .tl-btn-new:hover {
-  background: rgba(62, 207, 110, 0.26);
-  border-color: #3ecf6e;
+  background: rgba(62, 207, 110, 0.14);
+  border-color: rgba(62, 207, 110, 0.5);
+  color: #3ecf6e;
 }
 .folders-page-columns {
   flex: 1;
@@ -626,8 +652,8 @@ body {
 @media (max-width: 900px) {
   .folders-page-columns { grid-template-columns: 1fr; }
 }
-/* Archives (orange) / Corbeille (rouge) / Preset (bleu) : dans le header de chaque colonne, à
-   droite des boutons "+ Dossier"/"+ Bingo"/"+ Template" — une paire par colonne (Bingo, Tier List). */
+/* Preset / Archives / Corbeille : dans le header de chaque colonne (Bingo, Tier List). Neutres
+   (sans couleur) pour ne pas détourner l'attention du bouton soirée en cours. */
 .folders-page-btn-presets,
 .folders-page-btn-archives,
 .folders-page-btn-trash {
@@ -643,25 +669,13 @@ body {
   cursor: pointer;
   transition: var(--transition);
   white-space: nowrap;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
 }
-.folders-page-btn-presets {
-  background: rgba(148,163,184,0.12);
-  color: #94a3b8;
-  border: 1px solid #94a3b8;
-}
-.folders-page-btn-presets:hover { background: rgba(148,163,184,0.24); color: #cbd5e1; border-color: #cbd5e1; }
-.folders-page-btn-archives {
-  background: rgba(224,120,0,0.15);
-  color: #e07800;
-  border: 1px solid #e07800;
-}
-.folders-page-btn-archives:hover { background: rgba(224,120,0,0.28); color: #ff9518; border-color: #ff9518; }
-.folders-page-btn-trash {
-  background: rgba(239,68,68,0.15);
-  color: #ef4444;
-  border: 1px solid #ef4444;
-}
-.folders-page-btn-trash:hover { background: rgba(239,68,68,0.28); color: #f87171; border-color: #f87171; }
+.folders-page-btn-presets:hover,
+.folders-page-btn-archives:hover,
+.folders-page-btn-trash:hover { background: var(--surface-3); color: var(--text); border-color: var(--text-muted); }
 .folders-page-panel {
   flex: 1;
   min-height: 0;
@@ -905,8 +919,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border: 1px solid var(--accent-dim);
-  background: var(--accent-glow);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
   border-radius: var(--radius-lg);
   padding: 10px;
 }
@@ -915,7 +929,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--accent);
+  color: #7dd3fc;
   padding: 0 2px;
 }
 /* Limité à 5 entrées en JS (cf _renderRecentFolderPaths/_tlRenderRecentFolderPaths) : toutes
@@ -2197,6 +2211,26 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
      jamais en fonction du nombre de caractères du titre. */
   font-size: clamp(0.9rem, 2vw, 1.5rem);
 }
+/* Étoile "grille principale" à côté du titre (même visuel que .grid-tab-main-btn du menu Grilles) */
+.grid-title-main-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 3px;
+  opacity: 0.6;
+  display: inline-flex;
+  align-items: center;
+  transition: var(--transition);
+}
+.grid-title-main-btn:hover { opacity: 1; background: var(--surface-3); }
+.grid-title-main-btn [data-lucide] { width: 18px; height: 18px; margin-right: 0; }
+.grid-title-main-btn.active { opacity: 1; color: #f5c518; }
+.grid-title-main-btn.active [data-lucide] { fill: #f5c518; }
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .grid-title-main-btn [data-lucide] { width: 14px; height: 14px; }
+
 .grid-view-title-input::placeholder { color: var(--text-faint); font-weight: 400; font-style: italic; }
 .grid-view-title-input:hover { border-bottom-color: var(--border); cursor: text; }
 .grid-view-title-input:focus { border-bottom-color: var(--accent-dim); background: var(--accent-glow); border-radius: var(--radius) var(--radius) 0 0; cursor: text; }
@@ -3313,7 +3347,7 @@ body.solo-tierlist-mode .tl-layout {
   min-height: 0;
 }
 /* Tierlist normale (pas template) : côte à côte en permanence, répartition réglable via
-   --tl-split (curseur "Répartition", pourcentage de largeur pour les tiers ; le reste va
+   --tl-split (poignée #tl-split-handle, pourcentage de largeur pour les tiers ; le reste va
    aux éléments non placés). 60% par défaut. */
 .tl-editor-body:not(.tl-editor-body--template) {
   flex-direction: row;
@@ -3680,6 +3714,7 @@ body.solo-tierlist-mode .tl-layout {
 
 /* ── Zone images non placées — cadre distinct de la zone des tiers, scroll interne indépendant ── */
 .tl-unplaced-section {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3823,34 +3858,34 @@ body.solo-tierlist-mode .tl-layout {
 .tl-unplaced-sort-btn:hover { color: var(--text); border-color: var(--accent-dim); }
 .tl-unplaced-sort-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
 
-.tl-max-images-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-left: auto;
-}
-
-.tl-max-images-input {
-  font-family: 'Space Mono', monospace;
-  font-size: 0.8rem;
-  background: var(--surface-2);
-  color: var(--text-muted);
-  height: 32px;
-  padding: 0 12px;
-  border-radius: var(--radius);
+/* Poignée de répartition : collée à cheval sur le coin supérieur gauche du cadre non placés
+   (la moitié qui dépasse tient dans le gap de 16px entre les cadres et le padding de .tl-main).
+   Glisser horizontalement règle --tl-split (voir _tlApplySplit). Inutile sur un template. */
+.tl-split-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
   border: 1px solid var(--border);
-  text-align: center;
-  cursor: pointer;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: ew-resize;
+  touch-action: none;
+  transition: var(--transition);
 }
-
-.tl-max-images-input:hover,
-.tl-max-images-input:focus {
-  color: var(--text);
-  border-color: var(--accent, var(--border));
-  outline: none;
-}
+.tl-split-handle:hover,
+body.tl-split-dragging .tl-split-handle { color: var(--accent); border-color: var(--accent); }
+.tl-split-handle [data-lucide] { width: 16px; height: 16px; margin-right: 0; }
+.tl-editor-body--template .tl-split-handle { display: none; }
+body.tl-split-dragging { cursor: ew-resize; user-select: none; }
 
 .tl-btn-add-image {
   flex-shrink: 0;
@@ -4534,10 +4569,11 @@ body.solo-tierlist-mode .tl-layout {
   justify-content: center;
   gap: 6px;
   align-self: center;
-  background: rgba(255, 185, 0, 0.14);
-  border: 1px solid rgba(255, 185, 0, 0.45);
+  background: rgba(56, 189, 248, 0.3);
+  border: 1px solid #7dd3fc;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
   border-radius: var(--radius);
-  color: #ffb900;
+  color: #e0f2fe;
   font-size: 1.1rem;
   font-weight: 700;
   padding: 16px 30px;
@@ -4545,7 +4581,7 @@ body.solo-tierlist-mode .tl-layout {
   transition: var(--transition);
   white-space: nowrap;
 }
-.home-ce-btn:hover { background: rgba(255, 185, 0, 0.26); border-color: #ffb900; }
+.home-ce-btn:hover { background: rgba(56, 189, 248, 0.42); border-color: #bae6fd; box-shadow: 0 0 18px rgba(56, 189, 248, 0.5); }
 
 .archived-theme-btn.del {
   font-size: 0.95rem;

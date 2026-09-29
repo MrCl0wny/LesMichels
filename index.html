@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=305" />
+  <link rel="stylesheet" href="style.css?v=312" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -95,6 +95,7 @@
               <div class="fp-tree-frame-header">
                 <div class="fp-tree-frame-title" id="fp-tree-frame-title">Dossiers</div>
                 <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
+                <button class="fp-tree-frame-btn-new" id="btn-new-bingo-folder-small" title="Nouveau Bingo">+ Bingo</button>
               </div>
               <div id="fp-icons-breadcrumb" class="fp-icons-breadcrumb"></div>
               <div id="folders-panel-tree" class="folders-panel-tree"></div>
@@ -130,6 +131,7 @@
               <div class="fp-tree-frame-header">
                 <div class="fp-tree-frame-title">Dossiers</div>
                 <button id="tl-btn-new-folder" class="tl-btn-new-folder" title="Créer un nouveau dossier">+ Dossier</button>
+                <button class="fp-tree-frame-btn-new" id="tl-btn-new-template-small" title="Créer un nouveau template">+ Template</button>
               </div>
               <div id="tl-icons-breadcrumb" class="fp-icons-breadcrumb"></div>
               <div id="tl-list" class="tl-list folders-panel-tree"></div>
@@ -168,7 +170,7 @@
       <div class="tl-control-panel hidden" id="tl-control-panel">
         <div class="tl-control-panel-body" id="tl-control-panel-body">
 
-          <!-- Ligne 1 : Dossiers + Chemin/Template/Listes (avec mini-titres centrés) à gauche,
+          <!-- Ligne 1 : Dossiers + Chemin (dossiers + template)/Liste (avec mini-titres centrés) à gauche,
                rien au centre, Non placés à droite. -->
           <div class="ctrl-row ctrl-row-line1">
             <div class="ctrl-row-grids-left tl-group-row">
@@ -179,10 +181,6 @@
                 <button class="tl-toolbar-btn tl-btn-neutral tl-btn-path" id="tl-btn-path-dropdown" title="Aller à un dossier"><i data-lucide="chevron-down"></i> <span id="tl-path-dropdown-label"></span></button>
               </div>
               <div class="tl-labeled-btn tl-group-elem hidden tl-shrink-0">
-                <span class="tl-labeled-btn-label">Template</span>
-                <button class="tl-toolbar-btn tl-btn-neutral" id="tl-btn-template-dropdown" title="Choisir un template de ce dossier"><i data-lucide="chevron-down"></i> <span id="tl-template-dropdown-label"></span></button>
-              </div>
-              <div class="tl-labeled-btn tl-group-elem hidden tl-shrink-0">
                 <span class="tl-labeled-btn-label">Liste</span>
                 <button class="tl-toolbar-btn tl-btn-blue" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une liste"><i data-lucide="chevron-down"></i> <span id="tl-tierlist-dropdown-label"></span></button>
               </div>
@@ -191,13 +189,13 @@
             </div>
             <div class="ctrl-row-grids-center"></div>
             <div class="ctrl-row-grids-right">
-              <button class="tl-toolbar-btn tl-btn-neutral tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Tiers</button>
+              <button class="tl-toolbar-btn tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Tiers</button>
               <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Non placés</button>
             </div>
           </div>
 
           <!-- Ligne 2 : cadre Options Liste à gauche (masqué sur un template ou sans liste
-               active), Répartition + Annuler centrés, Comparaison + Plein écran à droite. -->
+               active), Annuler centré, Comparaison + Plein écran à droite. -->
           <div class="ctrl-row ctrl-row-toolbar tl-ctrl-row-toolbar">
             <div class="ctrl-row-toolbar-left">
               <div class="tl-list-options-frame" id="tl-list-options-frame">
@@ -207,20 +205,12 @@
                     <input type="range" id="tl-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
                   </div>
                 </label>
-                <button class="tl-toolbar-btn tl-btn-capture tl-shrink-0" id="tl-btn-capture" title="Capturer la liste"><i data-lucide="camera"></i> Capture</button>
+                <button class="tl-toolbar-btn tl-shrink-0" id="tl-btn-capture" title="Capturer la liste"><i data-lucide="camera"></i> Capture</button>
                 <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
                 <button class="tl-toolbar-btn tl-btn-reset tl-shrink-0" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
               </div>
             </div>
             <div class="ctrl-row-toolbar-center">
-              <label class="tl-toggle-label tl-shrink-0" id="tl-split-slider-label" title="Régler la répartition largeur entre les tiers et les éléments non placés">
-                <span>Répartition</span>
-                <div class="tl-toggle-label-row">
-                  <input type="number" id="tl-split-value-input" min="30" max="70" value="60" class="tl-split-value-input" />
-                  <input type="range" id="tl-split-slider" min="30" max="70" value="60" class="tl-slider" />
-                  <input type="number" id="tl-split-value-input-right" min="30" max="70" value="40" class="tl-split-value-input" />
-                </div>
-              </label>
               <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
             </div>
             <div class="ctrl-row-toolbar-right">
@@ -229,8 +219,8 @@
             </div>
           </div>
 
-          <!-- Barre plein écran : cadre Options Liste + Annuler + Répartition à gauche,
-               Non placés + Quitter à droite. #tl-split-slider-label, #tl-btn-toggle-unplaced,
+          <!-- Barre plein écran : cadre Options Liste + Annuler à gauche,
+               Non placés + Quitter à droite. #tl-btn-toggle-unplaced,
                #tl-btn-undo et #tl-list-options-frame sont les mêmes éléments physiques que le mode
                normal, déplacés ici en JS (jamais deux jeux de contrôles désynchronisés) — voir
                _tlEnterSoloToolbarLayout/_tlExitSoloToolbarLayout. Pas de chemin en texte : la
@@ -282,6 +272,9 @@
 
               <!-- Zone images non placées -->
               <div class="tl-unplaced-section">
+                <!-- Poignée de répartition : glisser horizontalement règle la largeur tiers / non placés
+                     (--tl-split). Liste générée uniquement (masquée sur un template, voir CSS). -->
+                <button type="button" id="tl-split-handle" class="tl-split-handle" title="Glisser pour régler la place du cadre Éléments non placés"><i data-lucide="unfold-horizontal"></i></button>
                 <div class="tl-unplaced-top">
                   <div id="tl-toplace-zone" class="tl-toplace-zone"
                        data-dropzone="toplace"
@@ -296,10 +289,6 @@
                       <span class="tl-unplaced-header-row--top-center">
                         <span class="tl-unplaced-label">Non placés</span>
                         <span id="tl-unplaced-count" class="tl-unplaced-count">0</span>
-                      </span>
-                      <span class="tl-unplaced-header-row--top-right">
-                        <span class="tl-max-images-label">Max :</span>
-                        <button type="button" id="tl-max-images-input" class="tl-max-images-input" title="Choisir la capacité maximale du groupe">50</button>
                       </span>
                     </div>
                     <div class="tl-unplaced-header-row">
@@ -354,12 +343,30 @@
               <button class="btn-action btn-folders-panel hidden" id="btn-folders-panel" title="Ouvrir la page Dossiers"><i data-lucide="folder"></i> Dossiers</button>
               <div id="grids-breadcrumb" class="grids-breadcrumb hidden"></div>
               <button class="btn-action btn-neutral-action btn-path" id="btn-path-dropdown" title="Aller à un dossier"><i data-lucide="chevron-down"></i> <span id="path-dropdown-label"></span></button>
-              <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-grids-dropdown" title="Choisir les grilles à afficher"><i data-lucide="chevron-down"></i> Grilles</button>
-              <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-new-grid-main" title="Dupliquer le dossier actuel"><i data-lucide="copy-plus"></i> Dupliquer</button>
             </div>
             <div class="ctrl-row-grids-right">
-              <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-bingo-stats" title="Statistiques des cases sur la saison"><i data-lucide="bar-chart-2"></i> Stats</button>
-              <button class="btn-action btn-cases-panel" id="btn-cases-panel" title="Ouvrir/fermer le panneau cases"><i data-lucide="square-mouse-pointer"></i> Cases</button>
+              <!-- Groupe "Création" : révélé/masqué par #btn-bingo-creation, juste avant lui.
+                   #btn-ce-set-header y est inséré en JS (_placeCeSetHeaderBtn), avant Dupliquer.
+                   #btn-grids-dropdown en est retiré en plein écran puis y est remis en 1er. -->
+              <div class="bingo-creation-group hidden" id="bingo-creation-group">
+                <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-grids-dropdown" title="Choisir les grilles à afficher"><i data-lucide="chevron-down"></i> Grilles</button>
+                <div class="lock-group">
+                  <button type="button" class="lock-generate-label" id="chk-lock-generate" title="Bloquer la génération aléatoire, le redimensionnement et la réinitialisation de toutes les grilles" aria-pressed="false">
+                    <i data-lucide="lock-keyhole-open"></i>
+                  </button>
+                  <div class="subgrid-size-control" id="global-size-control" title="Redimensionner toutes les grilles affichées">
+                    <button class="size-btn size-btn-sm" id="btn-size-minus" title="Réduire les grilles">−</button>
+                    <span id="grid-size-display" class="subgrid-size-display">4×4</span>
+                    <button class="size-btn size-btn-sm" id="btn-size-plus" title="Agrandir les grilles">+</button>
+                  </div>
+                  <button class="btn-action btn-generate-global tl-shrink-0" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées"><i data-lucide="dices"></i> Générer</button>
+                  <button class="btn-action btn-clear-grids tl-shrink-0" id="btn-clear-grids" title="Vider toutes les grilles affichées"><i data-lucide="eraser"></i> Vider</button>
+                  <button class="btn-action btn-reset tl-shrink-0" id="btn-reset" title="Réinitialise toutes les cases du sous-thème"><i data-lucide="undo-dot"></i> Reset</button>
+                </div>
+                <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-new-grid-main" title="Dupliquer le dossier actuel"><i data-lucide="copy-plus"></i> Dupliquer</button>
+                <button class="btn-action btn-cases-panel" id="btn-cases-panel" title="Ouvrir/fermer le panneau cases"><i data-lucide="square-mouse-pointer"></i> Cases</button>
+              </div>
+              <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-bingo-creation" title="Afficher/masquer les outils de création des grilles" aria-expanded="false"><i data-lucide="pickaxe"></i> Création</button>
             </div>
           </div>
 
@@ -369,19 +376,6 @@
                Capture à gauche, chemin, Quitter à droite. Jamais deux jeux de contrôles séparés. -->
           <div class="ctrl-row ctrl-row-toolbar">
             <div class="ctrl-row-toolbar-left btn-hide-solo-mode" id="bingo-grids-options-row">
-              <div class="lock-group">
-                <button type="button" class="lock-generate-label" id="chk-lock-generate" title="Bloquer la génération aléatoire, le redimensionnement et la réinitialisation de toutes les grilles" aria-pressed="false">
-                  <i data-lucide="lock-keyhole-open"></i>
-                </button>
-                <div class="subgrid-size-control" id="global-size-control" title="Redimensionner toutes les grilles affichées">
-                  <button class="size-btn size-btn-sm" id="btn-size-minus" title="Réduire les grilles">−</button>
-                  <span id="grid-size-display" class="subgrid-size-display">4×4</span>
-                  <button class="size-btn size-btn-sm" id="btn-size-plus" title="Agrandir les grilles">+</button>
-                </div>
-                <button class="btn-action btn-generate-global tl-shrink-0" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées"><i data-lucide="dices"></i> Générer</button>
-                <button class="btn-action btn-clear-grids tl-shrink-0" id="btn-clear-grids" title="Vider toutes les grilles affichées"><i data-lucide="eraser"></i> Vider</button>
-                <button class="btn-action btn-reset tl-shrink-0" id="btn-reset" title="Réinitialise toutes les cases du sous-thème"><i data-lucide="undo-dot"></i> Reset</button>
-              </div>
               <button class="btn-action btn-neutral-action tl-shrink-0 hidden" id="btn-toggle-new-badge" title="Afficher/masquer le badge NEW des cases nouvelles"><i data-lucide="eye"></i> New</button>
               <label class="tl-toggle-label tl-shrink-0" id="font-scale-label" title="Régler la taille du texte (50–200 %)">
                 <span class="tl-toggle-label-head">Taille <input type="number" id="font-scale-value-input" min="50" max="200" step="10" value="100" class="tl-split-value-input" /></span>
@@ -389,7 +383,9 @@
                   <input type="range" id="font-scale-input" class="tl-slider" min="50" max="200" step="10" value="100" title="Taille du texte" />
                 </div>
               </label>
-              <button class="btn-action btn-screenshot-bingo tl-shrink-0" id="btn-screenshot-bingo-normal" title="Copier les grilles affichées dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
+              <!-- Capture : masqué (classe hidden) sur demande, code conservé au cas où. -->
+              <button class="btn-action btn-screenshot-bingo tl-shrink-0 hidden" id="btn-screenshot-bingo-normal" title="Copier les grilles affichées dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
+              <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-bingo-stats" title="Statistiques des cases sur la saison"><i data-lucide="bar-chart-2"></i> Stats</button>
             </div>
             <div class="ctrl-row-toolbar-center btn-fullscreen-only" id="bingo-solo-toolbar-center"></div>
             <div id="bingo-fullscreen-breadcrumb" class="bingo-fullscreen-breadcrumb bingo-breadcrumb-title"></div>
@@ -1238,6 +1234,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=446"></script>
+  <script src="app.js?v=450"></script>
 </body>
 </html>

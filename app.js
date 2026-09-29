@@ -456,14 +456,13 @@ async function _applySoloGridModeIfNeeded() {
   }
 }
 
-// #tl-split-slider-label, #tl-btn-undo, #tl-btn-toggle-unplaced, #tl-list-options-frame et le
+// #tl-btn-undo, #tl-btn-toggle-unplaced, #tl-list-options-frame et le
 // wrapper du bouton Liste vivent dans la toolbar du mode normal (lignes 1 et 2) et dans la barre
 // plein écran (.tl-solo-toolbar) en solo-tierlist-mode — mêmes éléments physiques déplacés en JS,
 // jamais deux jeux de contrôles désynchronisés (comme #font-scale-label côté Bingo). En plein
 // écran, un template ne peut pas s'afficher : le bouton Liste y remplace Tiers/Reset (masqués via
 // body.solo-tierlist-mode, voir CSS) pour permettre de changer de liste sans repasser en mode normal.
 function _tlEnterSoloToolbarLayout() {
-  const splitLabel = document.getElementById('tl-split-slider-label');
   const undoBtn = document.getElementById('tl-btn-undo');
   const optionsFrame = document.getElementById('tl-list-options-frame');
   const toggleUnplacedBtn = document.getElementById('tl-btn-toggle-unplaced');
@@ -474,14 +473,12 @@ function _tlEnterSoloToolbarLayout() {
   const exitBtn = document.getElementById('tl-btn-exit-solo');
   if (listWrap && soloLeft) soloLeft.appendChild(listWrap);
   if (optionsFrame && soloLeft) soloLeft.appendChild(optionsFrame);
-  // Répartition + Annuler regroupés et centrés sur TOUTE la barre (voir .tl-solo-toolbar-center
-  // en CSS), pas dans .tl-solo-toolbar-left avec le cadre Options Liste.
-  if (splitLabel && soloCenter) soloCenter.appendChild(splitLabel);
+  // Annuler centré sur TOUTE la barre (voir .tl-solo-toolbar-center en CSS), pas dans
+  // .tl-solo-toolbar-left avec le cadre Options Liste.
   if (undoBtn && soloCenter) soloCenter.appendChild(undoBtn);
   if (toggleUnplacedBtn && soloRight) soloRight.insertBefore(toggleUnplacedBtn, exitBtn);
 }
 function _tlExitSoloToolbarLayout() {
-  const splitLabel = document.getElementById('tl-split-slider-label');
   const undoBtn = document.getElementById('tl-btn-undo');
   const optionsFrame = document.getElementById('tl-list-options-frame');
   const toggleUnplacedBtn = document.getElementById('tl-btn-toggle-unplaced');
@@ -492,9 +489,8 @@ function _tlExitSoloToolbarLayout() {
   const toolbarCenter = document.querySelector('.tl-ctrl-row-toolbar .ctrl-row-toolbar-center');
   if (toggleUnplacedBtn && line1Right) line1Right.appendChild(toggleUnplacedBtn);
   if (optionsFrame && toolbarLeft) toolbarLeft.appendChild(optionsFrame);
-  // Répartition + Annuler retournent centrés sur la ligne 2 (.ctrl-row-toolbar-center), Répartition
-  // avant Annuler — même position qu'en mode normal avant l'entrée en plein écran.
-  if (splitLabel && toolbarCenter) toolbarCenter.appendChild(splitLabel);
+  // Annuler retourne centré sur la ligne 2 (.ctrl-row-toolbar-center) — même position qu'en mode
+  // normal avant l'entrée en plein écran.
   if (undoBtn && toolbarCenter) toolbarCenter.appendChild(undoBtn);
   if (listWrap && line1Left) line1Left.appendChild(listWrap);
 }
@@ -665,10 +661,7 @@ async function _applyPrefsAndRender() {
     if (tlUnplacedImgSizeValueInputEl) tlUnplacedImgSizeValueInputEl.value = _tlLocalUnplacedImgSize;
   }
   if (_tlLocalSplit !== null) {
-    _tlLocalSplit = Math.max(30, Math.min(70, _tlLocalSplit));
-    if (tlSplitSlider) tlSplitSlider.value = _tlLocalSplit;
-    if (tlSplitValueInput) tlSplitValueInput.value = _tlLocalSplit;
-    if (tlSplitValueInputRight) tlSplitValueInputRight.value = 100 - _tlLocalSplit;
+    _tlLocalSplit = Math.max(TL_SPLIT_MIN, Math.min(TL_SPLIT_MAX, _tlLocalSplit));
     document.documentElement.style.setProperty('--tl-split', _tlLocalSplit);
   }
   // Re-render la Tier List avec la bonne tierlist active
@@ -1133,10 +1126,10 @@ function renderCurrentEventButton() {
 }
 
 // Un seul bouton physique "Définir soirée en cours" (#btn-ce-set-header), déplacé en JS selon
-// la page active — même pattern que #font-scale-label (Bingo) / #tl-split-slider-label (Tier
-// List) : jamais deux jeux de contrôles désynchronisés. Sur Bingo, il vit juste après le bouton
-// Grilles (#btn-grids-dropdown) en ligne 1 du panneau bingo ; sur Tier List, juste après le
-// bouton Liste (#tl-btn-tierlist-dropdown) en ligne 1 du panneau tierlist. Masqué sur Accueil/
+// la page active — même pattern que #font-scale-label (Bingo) / #tl-btn-undo (Tier
+// List) : jamais deux jeux de contrôles désynchronisés. Sur Bingo, il vit dans le groupe Création
+// (#bingo-creation-group), juste avant Dupliquer (#btn-new-grid-main) ; sur Tier List, tout à droite
+// de la ligne 1 du panneau tierlist, juste avant le bouton Tiers (#tl-btn-add-tier). Masqué sur Accueil/
 // Dossiers (retombe dans le header, sa position d'origine dans le HTML).
 function _placeCeSetHeaderBtn() {
   const ceSet = document.getElementById('btn-ce-set-header');
@@ -1144,11 +1137,11 @@ function _placeCeSetHeaderBtn() {
   const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
   const onBingoPage = document.getElementById('page-bingo')?.classList.contains('active');
   if (onBingoPage) {
-    const gridsBtn = document.getElementById('btn-grids-dropdown');
-    if (gridsBtn && gridsBtn.nextSibling !== ceSet) gridsBtn.insertAdjacentElement('afterend', ceSet);
+    const dupBtn = document.getElementById('btn-new-grid-main');
+    if (dupBtn && dupBtn.previousSibling !== ceSet) dupBtn.insertAdjacentElement('beforebegin', ceSet);
   } else if (onTlPage) {
-    const listWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
-    if (listWrap && listWrap.nextSibling !== ceSet) listWrap.insertAdjacentElement('afterend', ceSet);
+    const tiersBtn = document.getElementById('tl-btn-add-tier');
+    if (tiersBtn && tiersBtn.previousSibling !== ceSet) tiersBtn.insertAdjacentElement('beforebegin', ceSet);
   }
 }
 
@@ -2875,6 +2868,9 @@ document.getElementById('btn-new-bingo-folder').addEventListener('click', () => 
   _homeNewGridAfterFolder = true;
   openNewThemeModal(null);
 });
+// Petits "+ Bingo" / "+ Template" des cadres Dossiers : mêmes actions que les gros boutons du haut.
+document.getElementById('btn-new-bingo-folder-small').addEventListener('click', () => document.getElementById('btn-new-bingo-folder').click());
+document.getElementById('tl-btn-new-template-small').addEventListener('click', () => document.getElementById('tl-btn-new-template').click());
 
 // Archives/Corbeille : une paire de boutons par colonne, câblés directement (plus de notion
 // d'onglet actif à consulter).
@@ -3483,6 +3479,20 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
   });
   titleRow.appendChild(titleInput);
 
+  // Étoile "grille principale" à côté du titre — même action que l'étoile du menu Grilles.
+  const isMainGrid = !!s && getMainGridId(s.id) === g.id;
+  const titleStar = document.createElement('button');
+  titleStar.type = 'button';
+  titleStar.className = 'grid-title-main-btn' + (isMainGrid ? ' active' : '');
+  titleStar.innerHTML = '<i data-lucide="star"></i>';
+  titleStar.addEventListener('click', () => {
+    const sNow = activeSubtheme();
+    if (!sNow) return;
+    setMainGridId(sNow.id, (getMainGridId(sNow.id) === g.id) ? null : g.id);
+    renderGrid();
+  });
+  titleRow.appendChild(titleStar);
+
   // Message bingo individuel ("BINGO !"), sur la même rangée que le titre, à droite
   // DÉSACTIVÉ : le message se recréait/rechargeait de façon incontrôlée à cause d'un ou plusieurs
   // mécanismes de rendu Firebase non entièrement résolus (échos multiples, rendus redondants au
@@ -3835,6 +3845,7 @@ function renderGrid(skipSizeRecalc = false) {
   document.getElementById('bingo-control-panel')?.classList.toggle('folder-mode', !!s && !_isFolderBingo(s));
 
   updateClearGridsButton();
+  updateCreationButton();
   updateOpenGridsWindowButton();
   updateResetButton();
   _updateNewBadgeButton();
@@ -3958,7 +3969,6 @@ function renderGrid(skipSizeRecalc = false) {
   // pas par canGenerate : tant que ce seuil n'est pas atteint, la surbrillance reste affichée même
   // si canFillEmptyCellsVisibleGrids() permettrait déjà de générer partiellement.
   document.getElementById('btn-cases-panel')?.classList.toggle('btn-attention', !enoughElements);
-  // Le bouton Grilles est bleu en permanence (cf #btn-grids-dropdown en CSS) — pas de toggle JS.
 
   const mainGridId = getMainGridId(s.id);
   const hasMainGrid = gridsToShow.length > 1 && !!mainGridId && gridsToShow.some(gx => gx.id === mainGridId);
@@ -5754,7 +5764,8 @@ document.getElementById('btn-open-grids-window').addEventListener('click', () =>
   document.body.classList.add('solo-grid-mode');
   // En plein écran, tout doit tenir sur une seule rangée : #btn-grids-dropdown (ligne 1, mode
   // normal), #font-scale-label, #btn-toggle-new-badge et le bouton Capture (2e rangée, mode normal)
-  // sont déplacés en JS dans #bingo-solo-toolbar-center, dans cet ordre (Grilles/Taille/New/Capture)
+  // sont déplacés en JS dans #bingo-solo-toolbar-center, dans cet ordre (Grilles/New/Taille/Capture,
+  // même ordre New/Taille qu'en mode normal)
   // — mêmes éléments physiques, jamais deux jeux de contrôles désynchronisés. Le chemin
   // (#bingo-fullscreen-breadcrumb) reste un frère indépendant de ce groupe, centré par position
   // absolue (voir CSS), pas dans ce conteneur — sinon un groupe trop large le pousse hors de son centrage.
@@ -5765,8 +5776,8 @@ document.getElementById('btn-open-grids-window').addEventListener('click', () =>
   const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
   if (soloCenter) {
     if (gridsDropdown) soloCenter.appendChild(gridsDropdown);
-    if (fontScaleLabel) soloCenter.appendChild(fontScaleLabel);
     if (newBadgeBtn) soloCenter.appendChild(newBadgeBtn);
+    if (fontScaleLabel) soloCenter.appendChild(fontScaleLabel);
     if (captureBtn) soloCenter.appendChild(captureBtn);
   }
   // Fermer le panneau Cases : affichage cassé s'il est laissé ouvert en plein écran.
@@ -5785,19 +5796,20 @@ document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
   document.body.classList.remove('solo-grid-mode');
   document.title = 'LesMichels';
   requestAnimationFrame(_adjustBingoGridSizes);
-  // Rendre #btn-grids-dropdown à la ligne 1 (après le bouton Chemin), #font-scale-label puis
-  // #btn-toggle-new-badge (entre le cadre .lock-group et Capture) et Capture à la 2e rangée (mode normal).
+  // Rendre #btn-grids-dropdown au groupe Création (1er bouton, ligne 1), #font-scale-label puis
+  // #btn-toggle-new-badge (début de la 2e rangée, ordre du HTML : New puis Taille) et Capture
+  // juste avant Stats (mode normal).
   const gridsDropdown = document.getElementById('btn-grids-dropdown');
-  const pathBtn = document.getElementById('btn-path-dropdown');
-  if (gridsDropdown && pathBtn) pathBtn.insertAdjacentElement('afterend', gridsDropdown);
+  const creationGroup = document.getElementById('bingo-creation-group');
+  if (gridsDropdown && creationGroup) creationGroup.prepend(gridsDropdown);
   const optionsRow = document.getElementById('bingo-grids-options-row');
-  const lockGroup = optionsRow ? optionsRow.querySelector('.lock-group') : null;
   const fontScaleLabel = document.getElementById('font-scale-label');
-  if (fontScaleLabel && lockGroup) lockGroup.insertAdjacentElement('afterend', fontScaleLabel);
+  if (fontScaleLabel && optionsRow) optionsRow.prepend(fontScaleLabel);
   const newBadgeBtn = document.getElementById('btn-toggle-new-badge');
-  if (newBadgeBtn && fontScaleLabel) fontScaleLabel.insertAdjacentElement('afterend', newBadgeBtn);
+  if (newBadgeBtn && optionsRow) optionsRow.prepend(newBadgeBtn);
   const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
-  if (captureBtn && optionsRow) optionsRow.appendChild(captureBtn);
+  const statsBtn = document.getElementById('btn-bingo-stats');
+  if (captureBtn && optionsRow) optionsRow.insertBefore(captureBtn, statsBtn && statsBtn.parentNode === optionsRow ? statsBtn : null);
 });
 // Modale de choix "Capture" (plein écran) : toutes les grilles affichées ou une grille précise
 const modalCaptureChoice = document.getElementById('modal-capture-choice');
@@ -6005,6 +6017,26 @@ function updateClearGridsButton() {
   btn.disabled = nothingToClear;
   btn.classList.toggle('btn-disabled', nothingToClear);
 }
+
+// Bouton "Création" : révèle/masque le groupe #bingo-creation-group (Grilles, cadre Générer/Vider/
+// Reset, Définir soirée en cours, Dupliquer, Cases). Grisé par défaut, bleu clair tant qu'au moins une grille
+// affichée a encore une case vide (génération à faire ou incomplète).
+function updateCreationButton() {
+  const btn = document.getElementById('btn-bingo-creation');
+  if (!btn) return;
+  const needsGenerate = getVisibleGrids().some(gx => gx.grid.slice(0, gx.gridSize * gx.gridSize).some(c => !c || !c.elementId));
+  btn.classList.toggle('btn-creation-needed', needsGenerate);
+}
+document.getElementById('btn-bingo-creation')?.addEventListener('click', () => {
+  const group = document.getElementById('bingo-creation-group');
+  if (!group) return;
+  const open = !group.classList.toggle('hidden');
+  document.getElementById('btn-bingo-creation').setAttribute('aria-expanded', open ? 'true' : 'false');
+  // Les boutons par grille (cadenas/générer/vider) ne sont visibles que Création ouvert (cf CSS).
+  document.getElementById('page-bingo')?.classList.toggle('creation-open', open);
+  // L'ouverture peut faire passer la ligne 1 sur deux rangées : la hauteur dispo des grilles change.
+  requestAnimationFrame(_adjustBingoGridSizes);
+});
 
 function updateOpenGridsWindowButton() {
   const btn = document.getElementById('btn-open-grids-window');
@@ -7713,9 +7745,6 @@ function _tlUpdateUnplacedShowLabelsBtn(showLabels) {
 }
 const tlImgSizeSlider     = document.getElementById('tl-img-size-slider');
 const tlUnplacedImgSizeSlider = document.getElementById('tl-unplaced-img-size-slider');
-const tlSplitSlider       = document.getElementById('tl-split-slider');
-const tlSplitValueInput   = document.getElementById('tl-split-value-input');
-const tlSplitValueInputRight = document.getElementById('tl-split-value-input-right');
 const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
 const tlBtnUndo           = document.getElementById('tl-btn-undo');
 const tlBtnReset          = document.getElementById('tl-btn-reset');
@@ -7728,7 +7757,6 @@ const tlUnplacedCount     = document.getElementById('tl-unplaced-count');
 const tlUnplacedSortBtn   = document.getElementById('tl-unplaced-sort-btn');
 const tlBtnAddImage       = document.getElementById('tl-btn-add-image');
 const tlAddTextInput      = document.getElementById('tl-add-text-input');
-const tlMaxImagesInput    = document.getElementById('tl-max-images-input');
 const tlControlPanel      = document.getElementById('tl-control-panel');
 
 // Fallback dragover sur le conteneur de tiers lui-même : ses zones de padding/marges entre tiers
@@ -8017,7 +8045,6 @@ function tlRender(skipHeightRecalc = false) {
     if (tlListOptionsFrameEmpty) tlListOptionsFrameEmpty.classList.add('hidden');
     if (tlBtnAddTier) tlBtnAddTier.classList.add('hidden');
     if (tlBtnToggleUnplaced) tlBtnToggleUnplaced.classList.add('hidden');
-    _tlUpdateSplitSliderVisibility(null);
     const activeFolder = _tlLocalActiveFolderId
       ? (tlState.folders || []).find(f => f.id === _tlLocalActiveFolderId && !f.archived)
       : null;
@@ -8045,7 +8072,6 @@ function tlRender(skipHeightRecalc = false) {
     tlEditorBody.classList.toggle('tl-unplaced-hidden', !tl.isTemplate && _tlLocalUnplacedHidden);
     _tlUpdateToggleUnplacedBtn();
   }
-  _tlUpdateSplitSliderVisibility(tl);
   tlRenderGroupPanel(tl);
 
   // Prefs d'affichage : version locale si disponible, sinon valeur de la tierlist
@@ -8132,9 +8158,9 @@ function _tlFitPathBtnLabel(labelEl) {
 // comme pour les grilles bingo, une tier list ne s'affiche jamais qu'une à la fois).
 function tlRenderGroupPanel(tl) {
   const { folderId, templatesHere, root } = _tlActiveGroupContext();
-  // Le chemin n'affiche que les dossiers, jamais le nom du template (déjà affiché dans son propre
-  // bouton "Template" juste à côté).
-  const folderPath = _tlFolderPath(folderId) || 'Racine';
+  // Le chemin affiche les dossiers puis le nom du template sélectionné (plus de bouton "Template"
+  // séparé : le menu Chemin liste déjà les templates sous chaque dossier).
+  const folderPath = (_tlFolderPath(folderId) || 'Racine') + (root ? ' \\ ' + root.name : '');
 
   // Dropdown Chemin : toujours visible dès qu'un dossier est sélectionné ou qu'une tierlist est
   // active (contrairement à Template/Listes/Comparaison/Plein écran, qui dépendent d'un template).
@@ -8146,22 +8172,18 @@ function tlRenderGroupPanel(tl) {
     _tlFitPathBtnLabel(tlPathDropdownLabel);
   }
 
-  const tlTemplateWrap = document.getElementById('tl-btn-template-dropdown')?.closest('.tl-labeled-btn');
   const tlTierlistWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
   const tlBtnCompare = document.getElementById('tl-btn-compare');
   const tlBtnOpenWindow = document.getElementById('tl-btn-open-window');
 
-  if (tlTemplateWrap) tlTemplateWrap.classList.remove('hidden');
   if (tlTierlistWrap) tlTierlistWrap.classList.remove('hidden');
 
-  const tlTemplateDropdownLabel = document.getElementById('tl-template-dropdown-label');
   const tlTierlistDropdownLabel = document.getElementById('tl-tierlist-dropdown-label');
 
   const tlBtnUndoEl = document.getElementById('tl-btn-undo');
 
   if (!root) {
-    // Dossier sans aucun template : Template/Listes n'affichent rien, Comparaison/Plein écran/Annuler cachés.
-    if (tlTemplateDropdownLabel) tlTemplateDropdownLabel.textContent = '';
+    // Dossier sans aucun template : Listes n'affiche rien, Comparaison/Plein écran/Annuler cachés.
     if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = '';
     if (tlBtnCompare) tlBtnCompare.classList.add('hidden');
     if (tlBtnOpenWindow) tlBtnOpenWindow.classList.add('hidden');
@@ -8172,7 +8194,6 @@ function tlRenderGroupPanel(tl) {
 
   const members = tlState.tierlists.filter(t => !t.archived && (t.id === root.id || t.templateId === root.id));
 
-  if (tlTemplateDropdownLabel) tlTemplateDropdownLabel.textContent = root.name;
   if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate && tl.templateId === root.id) ? tl.name : (tl && tl.isTemplate ? '(template)' : '');
 
   // Plein écran/Comparaison/Annuler n'ont de sens que si une tierlist de CE groupe est réellement
@@ -8265,7 +8286,8 @@ function _tlGetGroupImages(tl) {
 }
 
 function _tlGetGroupMaxImages(tl) {
-  return _tlGroupRoot(tl).maxImagesOverride || TL_MAX_IMAGES;
+  // Anciens groupes réglés à 50/100 (ancien menu "Max") : relevés au nouveau défaut de 200.
+  return Math.min(TL_MAX_IMAGES_CAP, Math.max(TL_MAX_IMAGES, _tlGroupRoot(tl).maxImagesOverride || 0));
 }
 
 // Le template lui-même + toutes les tierlists générées à partir de lui
@@ -9752,7 +9774,6 @@ function tlRenderUnplaced(tl) {
   _tlFillUnplacedZone(tl, imgSize);
   _tlUpdateUnplacedCount(tl);
   if (window.lucide) lucide.createIcons();
-  tlMaxImagesInput.textContent = _tlGetGroupMaxImages(tl);
 }
 
 function _tlShowImportMenu(anchorEl) {
@@ -9768,7 +9789,7 @@ function _tlPasteFromClipboard(tl) {
     if (imageItems.length === 0) { alert('Aucune image dans le presse-papier.'); return; }
     const root = _tlGroupRoot(tl);
     if (!root.images) root.images = [];
-    const maxImages = tlEffectiveMaxImages(tl);
+    const maxImages = _tlEnsureCapacity(tl, imageItems.length);
     if (root.images.length >= maxImages) {
       alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`); return;
     }
@@ -10294,9 +10315,10 @@ function _tlCompressToBase64(file, maxPx = 600, quality = 0.82) {
   });
 }
 
-const TL_MAX_IMAGES = 50;
+// Capacité par groupe : 200 éléments par défaut, 500 (TL_MAX_IMAGES_CAP) si l'utilisateur accepte
+// de l'augmenter lors d'un ajout qui dépasse (_tlEnsureCapacity). Plus de réglage manuel.
+const TL_MAX_IMAGES = 200;
 const TL_MAX_IMAGES_CAP = 500;
-const TL_MAX_IMAGES_CHOICES = [50, 100, 200, 500];
 
 // Retourne la limite effective du groupe (template + ses tierlists générées)
 function tlEffectiveMaxImages(tl) {
@@ -10312,13 +10334,23 @@ function tlSetMaxImages(tl, value) {
   return n;
 }
 
+// Si l'ajout de `incoming` éléments dépasse la limite du groupe, propose de la passer à 500.
+// Retourne la limite effective après la réponse (inchangée si refus : l'excédent est ignoré).
+function _tlEnsureCapacity(tl, incoming) {
+  const max = tlEffectiveMaxImages(tl);
+  const total = (_tlGroupRoot(tl).images || []).length + incoming;
+  if (total <= max || max >= TL_MAX_IMAGES_CAP) return max;
+  if (!confirm(`Cet ajout dépasse la limite de ${max} éléments (${total} au total).\n\nAugmenter la limite à ${TL_MAX_IMAGES_CAP} éléments ?`)) return max;
+  return tlSetMaxImages(tl, TL_MAX_IMAGES_CAP);
+}
+
 function tlImportImages(files) {
   const tl = tlActiveTierlist();
   if (!tl) return;
   const root = _tlGroupRoot(tl);
   if (!root.images) root.images = [];
 
-  const maxImages = tlEffectiveMaxImages(tl);
+  const maxImages = _tlEnsureCapacity(tl, files.length);
   const remaining = maxImages - root.images.length;
   if (remaining <= 0) {
     alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
@@ -10669,9 +10701,6 @@ function _tlPatchImageMove(tl, fromZoneId, toZoneId) {
 
   if (!patchZone(fromZoneId)) return false;
   if (toZoneId !== fromZoneId && !patchZone(toZoneId)) return false;
-  // tlMaxImagesInput ne dépend que de maxImagesOverride/TL_MAX_IMAGES (fixe pour le groupe), jamais
-  // du contenu déplacé — inutile de le rafraîchir ici (tlRenderUnplaced le fait à chaque rendu
-  // complet "gratuitement", mais sa valeur ne varie jamais suite à un simple déplacement d'image).
   // createIcons() sans scope re-scanne TOUTE la page (148+ icônes statiques + celles générées en JS)
   // à chaque déplacement d'image, alors que seules les 1-2 cartes réellement patchées ci-dessus
   // peuvent contenir une icône neuve (bouton zoom) — scope précis aux 1-2 zones patchées plutôt
@@ -12440,20 +12469,6 @@ if (_tlBtnPathDropdown) {
   });
 }
 
-// ── Dropdown Template : liste les templates du dossier actif (voir _tlActiveGroupContext) ──
-const _tlBtnTemplateDropdown = document.getElementById('tl-btn-template-dropdown');
-if (_tlBtnTemplateDropdown) {
-  _tlBtnTemplateDropdown.addEventListener('click', e => {
-    e.stopPropagation();
-    const { folderId, templatesHere, root } = _tlActiveGroupContext();
-    const { menu, addItem, addSep, close } = _tlMakeCtxMenu(_tlBtnTemplateDropdown, null, { noCloseBtn: true });
-    templatesHere.forEach(tpl => _tlAddDropdownSwitchItem(menu, tpl, root && tpl.id === root.id, close));
-    if (templatesHere.length) addSep();
-    addItem('', '+ Template', 'green', () => tlOpenNewTemplateModal(folderId));
-    if (window.lucide) lucide.createIcons();
-  });
-}
-
 // ── Dropdown Tier lists : liste les tier lists du groupe actif + option "Nouvelle" ──
 const _tlBtnTierlistDropdown = document.getElementById('tl-btn-tierlist-dropdown');
 if (_tlBtnTierlistDropdown) {
@@ -12596,7 +12611,7 @@ const TL_TEXT_CARD_COLOR = '#3a3a42';
 function _tlAddTextCard(tl, text) {
   const root = _tlGroupRoot(tl);
   if (!root.images) root.images = [];
-  const maxImages = tlEffectiveMaxImages(tl);
+  const maxImages = _tlEnsureCapacity(tl, 1);
   if (root.images.length >= maxImages) {
     alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
     return;
@@ -12848,45 +12863,50 @@ if (tlUnplacedImgSizeSlider) {
   );
 }
 
-// Aperçu local (variable CSS + inputs miroir) sans écrire dans Firebase — voir _tlCommitSplit
-// pour la sauvegarde, réservée au relâchement du slider (`change`) ou à un changement via les
-// champs numériques, jamais à l'`input` (règle CLAUDE.md : sliders → Firebase au `change` seul).
+// Poignée de répartition (#tl-split-handle, coin supérieur gauche du cadre Éléments non placés) :
+// glisser horizontalement règle --tl-split (largeur des tiers en % du corps éditeur, le reste va aux
+// non placés). Aperçu local pendant le glissement (throttle rAF), sauvegarde des prefs au relâchement
+// seulement — même règle que les sliders (CLAUDE.md : Firebase au `change` seul, jamais à l'`input`).
+const TL_SPLIT_MIN = 5;
+const TL_SPLIT_MAX = 95;
 function _tlApplySplit(value) {
-  _tlLocalSplit = Math.max(30, Math.min(70, value));
-  if (tlSplitSlider) tlSplitSlider.value = _tlLocalSplit;
-  if (tlSplitValueInput) tlSplitValueInput.value = _tlLocalSplit;
-  if (tlSplitValueInputRight) tlSplitValueInputRight.value = 100 - _tlLocalSplit;
+  _tlLocalSplit = Math.max(TL_SPLIT_MIN, Math.min(TL_SPLIT_MAX, value));
   document.documentElement.style.setProperty('--tl-split', _tlLocalSplit);
 }
-function _tlCommitSplit(value) {
-  _tlApplySplit(value);
-  saveUserPrefs({ tlSplit: _tlLocalSplit });
-}
-if (tlSplitSlider) {
-  // Même throttle rAF que _tlWireImgSizeControls : l'event 'input' peut se déclencher plus vite
-  // que 60fps pendant le glissement.
-  let _tlSplitRafPending = false;
-  tlSplitSlider.addEventListener('input', () => {
-    if (_tlSplitRafPending) return;
-    _tlSplitRafPending = true;
+const tlSplitHandle = document.getElementById('tl-split-handle');
+if (tlSplitHandle) {
+  let dragging = false, startX = 0, startSplit = 60, lastX = 0, rafPending = false;
+  // Décalage relatif au point de départ (pas la position absolue du pointeur) : la poignée ne
+  // "saute" pas au premier mouvement.
+  const splitAt = x => startSplit + (x - startX) / tlEditorBody.getBoundingClientRect().width * 100;
+  tlSplitHandle.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    dragging = true;
+    startX = lastX = e.clientX;
+    startSplit = _tlLocalSplit !== null ? _tlLocalSplit : 60;
+    tlSplitHandle.setPointerCapture(e.pointerId);
+    document.body.classList.add('tl-split-dragging');
+  });
+  tlSplitHandle.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    lastX = e.clientX;
+    if (rafPending) return;
+    rafPending = true;
     requestAnimationFrame(() => {
-      _tlSplitRafPending = false;
-      _tlApplySplit(parseInt(tlSplitSlider.value));
+      rafPending = false;
+      if (dragging) _tlApplySplit(splitAt(lastX));
     });
   });
-  tlSplitSlider.addEventListener('change', () => _tlCommitSplit(parseInt(tlSplitSlider.value)));
-}
-if (tlSplitValueInput) {
-  tlSplitValueInput.addEventListener('change', () => {
-    const n = parseInt(tlSplitValueInput.value);
-    _tlCommitSplit(isNaN(n) ? _tlLocalSplit || 60 : n);
-  });
-}
-if (tlSplitValueInputRight) {
-  tlSplitValueInputRight.addEventListener('change', () => {
-    const n = parseInt(tlSplitValueInputRight.value);
-    _tlCommitSplit(isNaN(n) ? _tlLocalSplit || 60 : 100 - n);
-  });
+  const endDrag = e => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('tl-split-dragging');
+    _tlApplySplit(splitAt(e.clientX));
+    saveUserPrefs({ tlSplit: _tlLocalSplit });
+  };
+  tlSplitHandle.addEventListener('pointerup', endDrag);
+  tlSplitHandle.addEventListener('pointercancel', endDrag);
 }
 
 const tlCompareImgSizeSlider = document.getElementById('tl-compare-img-size-slider');
@@ -12980,23 +13000,6 @@ tlUnplacedZone.addEventListener('drop', e => {
 });
 tlUnplacedZone.addEventListener('dragleave', tlDragLeave);
 
-// ── Limite d'images personnalisable ───────────────────────────────────────────
-tlMaxImagesInput.addEventListener('click', () => {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-  const current = tlEffectiveMaxImages(tl);
-  const { addItem } = _tlMakeCtxMenu(tlMaxImagesInput, null);
-  TL_MAX_IMAGES_CHOICES.forEach(n => {
-    const btn = addItem('', String(n), false, () => { tlMaxImagesInput.textContent = tlSetMaxImages(tl, n); tlRender(); });
-    if (current === n) {
-      const check = document.createElement('i');
-      check.setAttribute('data-lucide', 'check');
-      btn.insertBefore(check, btn.firstChild);
-      if (window.lucide) lucide.createIcons();
-    }
-  });
-});
-
 // "Tri" est un mode persistant, personnel à chaque utilisateur et propre à chaque liste (prefs
 // Firebase users/<uid>/prefs/tlUnplacedSortByList) : il ne touche jamais tl.unplaced (partagé), il
 // ne fait que trier l'affichage — les éléments ajoutés ensuite sont donc triés eux aussi.
@@ -13030,17 +13033,12 @@ function _tlUpdateToggleUnplacedBtn() {
   tlBtnToggleUnplaced.title = _tlLocalUnplacedHidden ? 'Afficher le cadre Éléments non placés' : 'Masquer le cadre Éléments non placés';
   if (window.lucide) lucide.createIcons();
 }
-function _tlUpdateSplitSliderVisibility(tl) {
-  const tlSplitSliderLabel = document.getElementById('tl-split-slider-label');
-  if (tlSplitSliderLabel) tlSplitSliderLabel.classList.toggle('hidden', !tl || !!tl.isTemplate || _tlLocalUnplacedHidden);
-}
 if (tlBtnToggleUnplaced) {
   tlBtnToggleUnplaced.addEventListener('click', () => {
     _tlLocalUnplacedHidden = !_tlLocalUnplacedHidden;
     saveUserPrefs({ tlUnplacedHidden: _tlLocalUnplacedHidden });
     tlEditorBody.classList.toggle('tl-unplaced-hidden', _tlLocalUnplacedHidden);
     _tlUpdateToggleUnplacedBtn();
-    _tlUpdateSplitSliderVisibility(tlActiveTierlist());
   });
 }
 
@@ -13085,7 +13083,7 @@ document.addEventListener('paste', e => {
   // invisible de tous, et listes du groupe désynchronisées en nombre d'éléments.
   const root = _tlGroupRoot(tl);
   if (!root.images) root.images = [];
-  const maxImages = tlEffectiveMaxImages(tl);
+  const maxImages = _tlEnsureCapacity(tl, imageItems.length);
   if (root.images.length >= maxImages) {
     alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
     return;
