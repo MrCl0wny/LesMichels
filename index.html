@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=315" />
+  <link rel="stylesheet" href="style.css?v=316" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -727,8 +727,6 @@
 
   <!-- Menu contextuel dossier (clic droit) -->
   <div id="ctx-menu-folder" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-folder-cancel" title="Fermer"><i data-lucide="x"></i></button>
-    <div class="ctx-menu-title" id="ctx-folder-title"></div>
     <button class="ctx-menu-item" id="ctx-folder-new-child"><i data-lucide="folder-closed"></i> Nouveau dossier enfant</button>
     <button class="ctx-menu-item" id="ctx-folder-rename"><i data-lucide="pencil"></i> Renommer</button>
     <button class="ctx-menu-item" id="ctx-folder-duplicate"><i data-lucide="copy-plus"></i> Dupliquer</button>
@@ -739,15 +737,11 @@
 
   <!-- Menu contextuel grille (clic droit) -->
   <div id="ctx-menu-grid" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-grid-cancel" title="Fermer"><i data-lucide="x"></i></button>
-    <div class="ctx-menu-title" id="ctx-grid-title"></div>
     <button class="ctx-menu-item" id="ctx-grid-rename"><i data-lucide="pencil"></i> Renommer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-grid-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
 
   <div id="ctx-menu-element" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-element-cancel" title="Fermer"><i data-lucide="x"></i></button>
-    <div class="ctx-menu-title" id="ctx-element-title"></div>
     <button class="ctx-menu-item" id="ctx-element-edit"><i data-lucide="pencil"></i> Modifier</button>
     <button class="ctx-menu-item" id="ctx-element-add-to-preset"><i data-lucide="tag"></i> Ajouter à un preset</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-archive"><i data-lucide="package"></i> Archiver</button>
@@ -755,8 +749,6 @@
   </div>
 
   <div id="ctx-menu-element-archived" class="ctx-menu hidden">
-    <button class="ctx-close-btn" id="ctx-element-archived-cancel" title="Fermer"><i data-lucide="x"></i></button>
-    <div class="ctx-menu-title" id="ctx-element-archived-title"></div>
     <button class="ctx-menu-item" id="ctx-element-restore"><i data-lucide="undo-2"></i> Restaurer</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-element-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
@@ -1214,6 +1206,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=453"></script>
+  <script src="app.js?v=454"></script>
 </body>
 </html>

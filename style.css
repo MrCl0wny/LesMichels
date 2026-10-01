@@ -2380,7 +2380,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   min-width: 160px;
   overflow: visible;
   animation: ctx-appear 0.1s ease;
-  padding-top: 20px;
+  padding-top: 6px;
 }
 .ctx-menu:not(.hidden) { position: fixed; }
 /* Menu "Chemin" (Bingo + Tier List) : hauteur bornée par JS (cf _positionPathMenu, le haut ne
@@ -2389,34 +2389,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 @keyframes ctx-appear {
   from { opacity: 0; transform: scale(0.95); }
   to   { opacity: 1; transform: scale(1); }
-}
-.ctx-close-btn {
-  position: absolute;
-  top: 5px;
-  right: 7px;
-  background: none;
-  border: none;
-  color: #666;
-  font-size: 0.78rem;
-  cursor: pointer;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 3px;
-  transition: color 0.12s;
-}
-.ctx-close-btn:hover { color: var(--danger); }
-.ctx-close-btn [data-lucide] { margin-right: 0; }
-.ctx-menu-title {
-  font-weight: 700;
-  font-size: 0.85rem;
-  color: var(--text);
-  padding: 0 28px 8px 16px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 260px;
 }
 .ctx-menu-item {
   display: block;

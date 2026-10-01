@@ -2479,8 +2479,7 @@ function _ensurePathMenuSortBtn(menu, storageKey, rerender) {
       localStorage.setItem(storageKey, _PATH_SORT_MODES[(idx + 1) % _PATH_SORT_MODES.length][0]);
       rerender();
     });
-    const titleEl = menu.querySelector('.ctx-menu-title');
-    if (titleEl) titleEl.after(btn); else menu.prepend(btn);
+    menu.prepend(btn);
   }
   const mode = _folderSortMode(storageKey);
   const label = (_PATH_SORT_MODES.find(m => m[0] === mode) || _PATH_SORT_MODES[0])[1];
@@ -2600,7 +2599,7 @@ function _renderRecentFolderPaths() {
 // Menu ⋮ / clic droit d'un dossier bingo — partagé entre la vue liste et la vue icônes.
 function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder, browseThisFolder) {
   e.stopPropagation();
-  const { addItem, addSep } = _tlMakeCtxMenu(anchor, e, { title: f.name });
+  const { addItem, addSep } = _tlMakeCtxMenu(anchor, e);
   if (_isFolderBingo(f)) {
     // Dossier-bingo (contient des grilles) : Statistiques, Dupliquer, soirée en cours, puis le reste.
     addItem('bar-chart-2', 'Statistiques',       false, () => openBingoStatsModal(f));
@@ -5382,11 +5381,6 @@ function closeCtxMenuTheme() { closeCtxMenuFolder(); }
 function openCtxMenuFolder(id, e, anchorEl) {
   closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
   _ctxThemeId = id;
-  const _titleEl = document.getElementById('ctx-folder-title');
-  if (_titleEl) {
-    const folder = findFolderById(state.folders, id);
-    _titleEl.textContent = folder ? folder.name : '';
-  }
   const _ceBtn = document.getElementById('ctx-folder-set-current-event');
   if (_ceBtn) {
     const isCurrentEvent = state.currentEventFolderId === id;
@@ -5431,9 +5425,6 @@ if (_ctxFolderSetCurrentEventBtn) _ctxFolderSetCurrentEventBtn.addEventListener(
   if (id) confirmSetCurrentEventFolder(id);
 });
 
-const _ctxFolderCancelBtn = document.getElementById('ctx-folder-cancel');
-if (_ctxFolderCancelBtn) _ctxFolderCancelBtn.addEventListener('click', () => closeCtxMenuFolder());
-
 // ──────────────────────────────────────────────
 // Menu contextuel — Grilles
 // ──────────────────────────────────────────────
@@ -5444,12 +5435,6 @@ let _ctxGridId = null;
 function openCtxMenuGrid(id, e, anchorEl) {
   closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuElement();
   _ctxGridId = id;
-  const _titleEl = document.getElementById('ctx-grid-title');
-  if (_titleEl) {
-    const s = activeSubtheme();
-    const g = s && s.grids.find(g => g.id === id);
-    _titleEl.textContent = g ? g.name : '';
-  }
   positionCtxMenu(ctxMenuGrid, e, anchorEl);
   ctxMenuGrid.classList.remove('hidden');
 }
@@ -5467,7 +5452,6 @@ document.getElementById('ctx-grid-delete').addEventListener('click', () => {
   if (_ctxGridId) deleteGrid(_ctxGridId);
   closeCtxMenuGrid();
 });
-document.getElementById('ctx-grid-cancel').addEventListener('click', () => closeCtxMenuGrid());
 
 // ── Menu contextuel cases ──
 const ctxMenuElement  = document.getElementById('ctx-menu-element');
@@ -5480,8 +5464,6 @@ function openCtxMenuElement(id, span, e, anchorEl) {
   closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuGrid();
   _ctxElementId = id;
   _ctxElementSpan = span;
-  const _titleEl = document.getElementById('ctx-element-title');
-  if (_titleEl) _titleEl.textContent = span ? span.textContent : '';
   positionCtxMenu(ctxMenuElement, e, anchorEl);
   ctxMenuElement.classList.remove('hidden');
 }
@@ -5499,7 +5481,6 @@ document.getElementById('ctx-element-delete-active').addEventListener('click', (
   if (_ctxElementId) deleteElement(_ctxElementId);
   closeCtxMenuElement();
 });
-document.getElementById('ctx-element-cancel').addEventListener('click', () => closeCtxMenuElement());
 
 // Ajoute le texte de la case au preset choisi (existant ou nouveau) — le tag apparaît ensuite tout
 // seul dans le panneau Cases (détection dynamique par comparaison de texte, voir getElementTags).
@@ -5527,7 +5508,7 @@ document.getElementById('ctx-element-add-to-preset').addEventListener('click', e
   const anchorEl = _ctxElementSpan ? _ctxElementSpan.closest('.element-item') : null;
   closeCtxMenuElement();
   if (!elementId) return;
-  const { addItem } = _tlMakeCtxMenu(anchorEl, e, { title: 'Ajouter à un preset' });
+  const { addItem } = _tlMakeCtxMenu(anchorEl, e);
   const presets = getElementPresets().slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   presets.forEach(p => addItem('tag', p.name, false, () => _addElementToPreset(elementId, p.id, null)));
   addItem('plus', 'Nouveau preset...', false, () => {
@@ -5545,12 +5526,6 @@ let _ctxElementArchivedId    = null;
 function openCtxMenuElementArchived(id, e, anchorEl) {
   closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
   _ctxElementArchivedId = id;
-  const _titleEl = document.getElementById('ctx-element-archived-title');
-  if (_titleEl) {
-    const s = activeSubtheme();
-    const el = s && (s.elements || []).find(e => e.id === id);
-    _titleEl.textContent = el ? el.text : '';
-  }
   positionCtxMenu(ctxMenuElementArchived, e, anchorEl);
   ctxMenuElementArchived.classList.remove('hidden');
 }
@@ -5564,7 +5539,6 @@ ctxElDelete.addEventListener('click', () => {
   if (_ctxElementArchivedId) deleteElement(_ctxElementArchivedId);
   closeCtxMenuElementArchived();
 });
-document.getElementById('ctx-element-archived-cancel').addEventListener('click', () => closeCtxMenuElementArchived());
 
 // Positionnement dédié au menu "Chemin" (Bingo + Tier List) : contrairement à positionCtxMenu
 // (utilisé par les menus contextuels classiques), le haut ne doit JAMAIS être réajusté selon la
@@ -9002,7 +8976,7 @@ function _tlInlineRenameTier(spanEl, tl, tier, caretOffset) {
 // close() supprime le menu + retire les listeners document
 let _tlActiveCtxMenu = null; // un seul menu TL ouvert à la fois
 
-function _tlMakeCtxMenu(anchorEl, e, opts) {
+function _tlMakeCtxMenu(anchorEl, e) {
   // Capturer la position de l'ancre AVANT de fermer un menu TL déjà ouvert : si anchorEl est
   // lui-même un élément de ce menu (ex. bouton ⋮ d'un dropdown), le retirer du DOM d'abord
   // ferait perdre son rect (tout à 0,0) et positionnerait le nouveau menu en haut à gauche.
@@ -9016,23 +8990,6 @@ function _tlMakeCtxMenu(anchorEl, e, opts) {
 
   const menu = document.createElement('div');
   menu.className = 'ctx-menu';
-
-  if (opts && opts.title) {
-    const titleEl = document.createElement('div');
-    titleEl.className = 'ctx-menu-title';
-    titleEl.textContent = opts.title;
-    titleEl.title = opts.title;
-    menu.appendChild(titleEl);
-  }
-
-  if (!opts || !opts.noCloseBtn) {
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'ctx-close-btn';
-    closeBtn.title = 'Fermer';
-    closeBtn.innerHTML = '<i data-lucide="x"></i>';
-    menu.appendChild(closeBtn);
-    closeBtn.addEventListener('click', e => { e.stopPropagation(); close(); });
-  }
 
   // Tous les appelants ajoutent leurs items via addItem()/addSep() de façon synchrone juste après
   // l'appel à _tlMakeCtxMenu() (jamais après un await), donc un seul scan Lucide scopé au menu,
@@ -9086,7 +9043,7 @@ function _tlMakeCtxMenu(anchorEl, e, opts) {
 
 // ── Menu contextuel tier ──────────────────────────────────────────────────────
 function _tlShowTierCtxMenu(e, tl, tier, tierIdx, labelSpan) {
-  const { addItem, addSep } = _tlMakeCtxMenu(null, e, { title: tier.label });
+  const { addItem, addSep } = _tlMakeCtxMenu(null, e);
 
   addItem('pencil', 'Renommer', false, () => {
     if (labelSpan && document.body.contains(labelSpan)) _tlInlineRenameTier(labelSpan, tl, tier);
@@ -9698,7 +9655,7 @@ function _tlInlineRenameImg(labelEl, tl, img, size, caretOffset) {
 
 // ── Menu contextuel image ─────────────────────────────────────────────────────
 function _tlShowImgCtxMenu(e, tl, img) {
-  const { addItem } = _tlMakeCtxMenu(null, e, { title: img.name });
+  const { addItem } = _tlMakeCtxMenu(null, e);
   const isText = (img.type || 'image') === 'text';
   if (!isText) addItem('zoom-in', 'Zoomer', false, () => _tlOpenImgZoom(img, tl));
   if (!tl.isTemplate) addItem('pin', 'À placer', false, () => _tlSetImageToPlace(tl, img.id));
@@ -11682,7 +11639,7 @@ function tlConfirmTierModal() {
 function tlOpenFolderManageModal(id, anchorEl) {
   const folder = (tlState.folders || []).find(f => f.id === id);
   if (!folder) return;
-  const { addItem } = _tlMakeCtxMenu(anchorEl, null, { title: folder.name });
+  const { addItem } = _tlMakeCtxMenu(anchorEl, null);
   addItem('pencil', 'Renommer', false, () => tlOpenFolderModal('edit', id));
   addItem('move', 'Déplacer', false, () => tlOpenMoveFolderModal(id));
   addItem('package', 'Archiver', true, () => tlArchiveFolder(id));
@@ -11942,7 +11899,7 @@ function tlOpenManageModal(id, anchorEl, context) {
   const tl = tlState.tierlists.find(t => t.id === id);
   if (!tl) return;
   const ctx = context || 'folders'; // 'folders' | 'dropdown'
-  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null, { title: tl.name });
+  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, null);
   if (tl.isTemplate) {
     addItem('copy-plus', 'Dupliquer', false, () => tlCopy(id));
     const ceRoot = typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
@@ -12173,7 +12130,7 @@ const _tlBtnPathDropdown = document.getElementById('tl-btn-path-dropdown');
 if (_tlBtnPathDropdown) {
   _tlBtnPathDropdown.addEventListener('click', e => {
     e.stopPropagation();
-    const { menu, close } = _tlMakeCtxMenu(_tlBtnPathDropdown, null, { noCloseBtn: true, title: 'Aller à un dossier' });
+    const { menu, close } = _tlMakeCtxMenu(_tlBtnPathDropdown, null);
     menu.classList.add('path-menu');
     const activeFolders = (tlState.folders || []).filter(f => !f.archived);
     _tlRenderPathMenuRows(menu, activeFolders, close, true);
@@ -12191,7 +12148,7 @@ if (_tlBtnTierlistDropdown) {
     const { tl, root } = _tlActiveGroupContext();
     if (!root) return;
     const members = tlState.tierlists.filter(t => !t.archived && t.templateId === root.id);
-    const { menu, addItem, addSep, close } = _tlMakeCtxMenu(_tlBtnTierlistDropdown, null, { noCloseBtn: true });
+    const { menu, addItem, addSep, close } = _tlMakeCtxMenu(_tlBtnTierlistDropdown, null);
     // En plein écran, un template ne peut pas s'afficher (voir _applySoloTierlistModeIfNeeded) :
     // on ne propose donc que les listes générées, jamais le template lui-même.
     if (!document.body.classList.contains('solo-tierlist-mode')) {
