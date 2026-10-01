@@ -334,7 +334,6 @@ function setupAuth() {
       _selectedGridsByFolder = {};
       _mainGridByFolder = {};
       _selectedGridIds = [];
-      _localFontScale  = 1;
       _localShowNewBadge = true;
       _tlLocalShowLabels       = null;
       _tlLocalImgSize          = null;
@@ -379,10 +378,7 @@ function loadUserPrefs() {
   _prefsReady = false;
   ref.once('value').then(snap => {
     const prefs = snap.val() || {};
-    if (prefs.fontScale        != null) _localFontScale        = prefs.fontScale;
     if (prefs.showNewBadge     != null) _localShowNewBadge     = !!prefs.showNewBadge;
-    if (prefs.foldersViewMode  != null) _foldersViewMode       = prefs.foldersViewMode;
-    if (prefs.tlFoldersViewMode != null) _tlFoldersViewMode    = prefs.tlFoldersViewMode;
     // Prefs dossiers (nouvelle structure)
     if (prefs.activeFolderId   != null) _localActiveFolderId   = prefs.activeFolderId;
     if (prefs.selectedGrids    != null) {
@@ -418,10 +414,6 @@ function loadUserPrefs() {
     // sans prévenir (bug constaté : "Dossiers > Tier List" cliqué tôt ne s'affichait jamais).
     if (window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId && !_userNavigated) _switchPage('folders');
     _prefsReady = true;
-    // Appliquer les prefs visuelles
-    fontScaleInput.value = Math.round(_localFontScale * 100);
-    const fsValueInput = document.getElementById('font-scale-value-input');
-    if (fsValueInput) fsValueInput.value = Math.round(_localFontScale * 100);
     // Re-render seulement si les données Bingo sont déjà chargées
     if (_firebaseReady) {
       _applyPrefsAndRender();
@@ -459,7 +451,7 @@ async function _applySoloGridModeIfNeeded() {
 // #tl-btn-undo, #tl-btn-toggle-unplaced, #tl-list-options-frame et le
 // wrapper du bouton Liste vivent dans la toolbar du mode normal (lignes 1 et 2) et dans la barre
 // plein écran (.tl-solo-toolbar) en solo-tierlist-mode — mêmes éléments physiques déplacés en JS,
-// jamais deux jeux de contrôles désynchronisés (comme #font-scale-label côté Bingo). En plein
+// jamais deux jeux de contrôles désynchronisés (comme #btn-grids-dropdown côté Bingo). En plein
 // écran, un template ne peut pas s'afficher : le bouton Liste y remplace Tiers/Reset (masqués via
 // body.solo-tierlist-mode, voir CSS) pour permettre de changer de liste sans repasser en mode normal.
 function _tlEnterSoloToolbarLayout() {
@@ -694,15 +686,10 @@ async function _tlLoadActivePageContent() {
 // ──────────────────────────────────────────────
 
 // Préférences visuelles — stockées dans Firebase /users/{uid}/prefs
-let _localFontScale  = 1;
 let _localShowNewBadge = true;
 
 function _saveLocalActiveFolderId(id) { saveUserPrefs({ activeFolderId: id || null }); }
 
-function saveLocalFontScale(scale) {
-  _localFontScale = Math.max(0.5, Math.min(3, scale));
-  saveUserPrefs({ fontScale: _localFontScale });
-}
 
 function saveLocalShowNewBadge(shown) {
   _localShowNewBadge = !!shown;
@@ -968,14 +955,15 @@ let _tlIndexReady = false;
 let _prefsReady    = false;
 // activeFolderId est chargé depuis Firebase /users/{uid}/prefs
 let _localActiveFolderId   = null;
-// Vue du panneau Dossiers Bingo : 'list' (façon Explorateur, lignes) ou 'icons' (façon Explorateur,
-// tuiles) — les deux partagent la même navigation par niveau (_foldersNavFolderId), seule la
-// présentation change. Chargé depuis prefs.
-let _foldersViewMode = 'list';
-// Dossier actuellement ouvert dans le panneau Dossiers (null = racine), partagé entre vue liste et
-// vue icônes — indépendant de _localActiveFolderId : naviguer dans le panneau ne doit pas changer
+// Dossier actuellement ouvert dans le panneau Dossiers (null = racine) — indépendant de
+// _localActiveFolderId : naviguer dans le panneau ne doit pas changer
 // le dossier bingo actif tant qu'on n'a pas explicitement "ouvert" un dossier-bingo.
 let _foldersNavFolderId = null;
+// Bouton "Création" (page Bingo) ouvert ? Remplace l'ancien système de cadenas (t.locked/g.locked,
+// désormais ignorés) : grilles modifiables uniquement Création ouvert. Toujours fermé au chargement
+// et à chaque changement de bingo (cf _setBingoCreationOpen).
+let _bingoCreationOpen = false;
+function _bingoEditLocked() { return !_bingoCreationOpen; }
 
 function initState() {
   return { folders: [], trash: [], currentEventFolderId: null, currentEventTierlistId: null, elementPresets: [] };
@@ -1126,7 +1114,7 @@ function renderCurrentEventButton() {
 }
 
 // Un seul bouton physique "Définir soirée en cours" (#btn-ce-set-header), déplacé en JS selon
-// la page active — même pattern que #font-scale-label (Bingo) / #tl-btn-undo (Tier
+// la page active — même pattern que #btn-grids-dropdown (Bingo) / #tl-btn-undo (Tier
 // List) : jamais deux jeux de contrôles désynchronisés. Sur Bingo, il vit dans le groupe Création
 // (#bingo-creation-group), juste avant Dupliquer (#btn-new-grid-main) ; sur Tier List, tout à droite
 // de la ligne 1 du panneau tierlist, juste avant le bouton Tiers (#tl-btn-add-tier). Masqué sur Accueil/
@@ -1292,6 +1280,8 @@ function createFolder(name, parentId = null, numbering = null, type = 'folder') 
 // pour NEW/Stats) AVANT de rendre l'UI qui en dépend — cf plan §2 "Déclenchement". Ne fait jamais
 // d'écriture (aucun saveState/_bingoSave* dans cette chaîne), uniquement lecture + fusion mémoire.
 async function switchFolder(id) {
+  // Changer de bingo referme toujours "Création" (grilles non modifiables par défaut).
+  _setBingoCreationOpen(false, false);
   if (_localActiveFolderId === id) {
     _localActiveFolderId = null;
     _saveLocalActiveFolderId(null);
@@ -2018,19 +2008,7 @@ const btnGenerate      = document.getElementById('btn-generate');
 const btnReset         = document.getElementById('btn-reset');
 const gridError        = document.getElementById('grid-error');
 const btnNewGrid       = document.getElementById('btn-new-grid');
-const fontScaleInput     = document.getElementById('font-scale-input');
 const gridWrapper        = document.getElementById('grid-wrapper');
-const chkLockGenerate          = document.getElementById('chk-lock-generate');
-// chkLockGenerate est un <button> (icône verrou cliquable) — état stocké via aria-pressed
-function _setLockGenerateChecked(locked) {
-  chkLockGenerate.setAttribute('aria-pressed', locked ? 'true' : 'false');
-  const icon = chkLockGenerate.querySelector('[data-lucide]');
-  if (icon) icon.setAttribute('data-lucide', locked ? 'lock-keyhole' : 'lock-keyhole-open');
-  if (window.lucide) lucide.createIcons({ root: chkLockGenerate });
-}
-function _isLockGenerateChecked() {
-  return chkLockGenerate.getAttribute('aria-pressed') === 'true';
-}
 // Bouton "New" (visible seulement quand le dossier actif est un épisode ayant un épisode
 // précédent parmi ses frères) : bascule l'affichage du badge NEW sur les cases nouvelles.
 const btnToggleNewBadge = document.getElementById('btn-toggle-new-badge');
@@ -2178,11 +2156,7 @@ function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
   li.appendChild(content);
 
   // Poignée drag & drop si l'élément est absent d'au moins une grille visible non bloquée
-  const _t = activeTheme();
-  const canDragToAny = !isArchived && visGrids.some(gx => {
-    const gLocked = gx.locked || (!!_t && _t.locked);
-    return !gLocked && !gx.grid.some(c => c.elementId === el.id);
-  });
+  const canDragToAny = !isArchived && !_bingoEditLocked() && visGrids.some(gx => !gx.grid.some(c => c.elementId === el.id));
   if (canDragToAny) {
     const handle = document.createElement('span');
     handle.className = 'elem-drag-handle';
@@ -2421,6 +2395,7 @@ function renderGridsBreadcrumb() {
 // dossiers bingo sont imbriqués (folder.folders), pas une liste plate avec parentId comme tlState.
 function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
   menu.querySelectorAll('.tl-path-menu-row').forEach(el => el.remove());
+  const sortMode = _ensurePathMenuSortBtn(menu, 'bingoPathSortMode', () => _renderPathMenuRows(menu, state.folders));
 
   const currentPathIds = _localActiveFolderId
     ? getFolderPath(rootFolders, _localActiveFolderId).map(f => f.id)
@@ -2432,7 +2407,7 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
   if (resetPathExpansion) currentPathIds.forEach(id => sessionStorage.removeItem('bingo_folder_open_' + id));
 
   const buildRow = (folder, depth) => {
-    const children = (folder.folders || []).filter(f => !f.archived);
+    const children = _sortFoldersList((folder.folders || []).filter(f => !f.archived), sortMode);
     const hasChildren = children.length > 0;
     const key = 'bingo_folder_open_' + folder.id;
     const isOnCurrentPath = currentPathIds.includes(folder.id);
@@ -2443,23 +2418,13 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
 
     const row = document.createElement('div');
     row.className = 'tl-path-menu-row' + (isOnCurrentPath ? ' active' : '');
-    row.style.paddingLeft = (depth * 14) + 'px';
+    row.style.paddingLeft = (8 + depth * 14) + 'px';
 
-    const arrow = document.createElement('span');
-    arrow.className = 'tl-path-menu-arrow' + (isOpen ? ' open' : '');
-    arrow.innerHTML = hasChildren ? '<i data-lucide="chevron-right"></i>' : '';
-    if (hasChildren) {
-      arrow.addEventListener('click', ev => {
-        ev.stopPropagation();
-        sessionStorage.setItem(key, isOpen ? '0' : '1');
-        _renderPathMenuRows(menu, rootFolders);
-      });
-    }
-    row.appendChild(arrow);
-
+    // Plus de chevron : l'icône passe en folder-open quand le dossier est déplié.
     const icon = document.createElement('span');
     icon.className = 'tl-path-menu-icon';
-    icon.innerHTML = _isFolderBingo(folder) ? '<i data-lucide="grid-3x3"></i>' : '<i data-lucide="folder"></i>';
+    icon.innerHTML = _isFolderBingo(folder) ? '<i data-lucide="grid-3x3"></i>'
+      : `<i data-lucide="${hasChildren && isOpen ? 'folder-open' : 'folder'}"></i>`;
     row.appendChild(icon);
 
     const name = document.createElement('span');
@@ -2467,8 +2432,8 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
     name.textContent = folder.name;
     row.appendChild(name);
 
-    // Cliquer sur la ligne (hors flèche) affiche la page ET (dé)plie ce dossier, sans fermer le
-    // menu — seul un clic à l'extérieur du menu le referme (cf listener document plus bas).
+    // Cliquer sur la ligne affiche la page ET (dé)plie ce dossier, sans fermer le menu — seul un
+    // clic à l'extérieur du menu le referme (cf listener document plus bas).
     row.addEventListener('click', () => {
       if (_localActiveFolderId !== folder.id) switchFolder(folder.id);
       if (hasChildren) {
@@ -2481,7 +2446,7 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
     if (hasChildren && isOpen) children.forEach(f => buildRow(f, depth + 1));
   };
 
-  const roots = (rootFolders || []).filter(f => !f.archived);
+  const roots = _sortFoldersList((rootFolders || []).filter(f => !f.archived), sortMode);
   roots.forEach(f => buildRow(f, 0));
 
   if (roots.length === 0) {
@@ -2492,6 +2457,35 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
     menu.appendChild(empty);
   }
   if (window.lucide) lucide.createIcons();
+}
+
+// Petit bouton de tri en haut du menu Chemin (Bingo + Tier List) : chaque clic passe au mode
+// suivant (A→Z, Z→A, récent→ancien, ancien→récent). Mémorisé dans le navigateur (comme le tri du
+// panneau Dossiers, cf _folderSortMode) mais indépendant de lui. Créé une seule fois par menu,
+// seul son libellé est mis à jour à chaque rendu. Retourne le mode de tri courant.
+const _PATH_SORT_MODES = [
+  ['alpha', 'A→Z'], ['alpha-desc', 'Z→A'], ['updatedAt', 'Récent→ancien'], ['updatedAt-asc', 'Ancien→récent'],
+];
+function _ensurePathMenuSortBtn(menu, storageKey, rerender) {
+  let btn = menu.querySelector('.path-menu-sort-btn');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'path-menu-sort-btn';
+    btn.title = 'Changer le tri';
+    btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const idx = _PATH_SORT_MODES.findIndex(m => m[0] === _folderSortMode(storageKey));
+      localStorage.setItem(storageKey, _PATH_SORT_MODES[(idx + 1) % _PATH_SORT_MODES.length][0]);
+      rerender();
+    });
+    const titleEl = menu.querySelector('.ctx-menu-title');
+    if (titleEl) titleEl.after(btn); else menu.prepend(btn);
+  }
+  const mode = _folderSortMode(storageKey);
+  const label = (_PATH_SORT_MODES.find(m => m[0] === mode) || _PATH_SORT_MODES[0])[1];
+  btn.innerHTML = `<i data-lucide="arrow-down-up"></i> ${label}`;
+  return mode;
 }
 
 const _btnPathDropdown = document.getElementById('btn-path-dropdown');
@@ -2630,19 +2624,7 @@ function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder, browseThisFolder)
   addItem('trash-2', 'Supprimer',           true,  () => deleteFolder(f.id));
 }
 
-// Bascule vue liste / vue icônes du panneau Dossiers Bingo (préférence mémorisée).
-function _setFoldersViewMode(mode) {
-  if (_foldersViewMode === mode) return;
-  _foldersViewMode = mode;
-  saveUserPrefs({ foldersViewMode: mode });
-  renderAllFolders();
-}
-
-document.getElementById('fp-view-toggle-list').addEventListener('click', () => _setFoldersViewMode('list'));
-document.getElementById('fp-view-toggle-icons').addEventListener('click', () => _setFoldersViewMode('icons'));
-
-// Fil d'Ariane partagé entre vue liste et vue icônes du panneau Dossiers Bingo — navigue via
-// _foldersNavFolderId, le même niveau courant que consomment les deux fonctions de rendu ci-dessous.
+// Fil d'Ariane du panneau Dossiers Bingo — navigue via _foldersNavFolderId (niveau courant).
 function _renderFoldersBreadcrumb(onNavigate) {
   const crumbContainer = document.getElementById('fp-icons-breadcrumb');
   if (!crumbContainer) return { currentFolder: null, path: [] };
@@ -2673,83 +2655,8 @@ function _renderFoldersBreadcrumb(onNavigate) {
   return { currentFolder, path };
 }
 
-// Vue icônes du panneau Dossiers Bingo (façon Explorateur de fichiers) : grille de tuiles pour le
-// seul niveau courant (_foldersNavFolderId, null = racine), navigation par double-clic + fil d'Ariane.
-function _renderFoldersPanelIcons() {
-  const treeContainer = document.getElementById('folders-panel-icons');
-  if (!treeContainer) return;
-  treeContainer.innerHTML = '';
-
-  const sortMode = _folderSortMode('bingoFoldersSortMode');
-  const sortSelect = document.getElementById('folders-sort-select');
-  if (sortSelect) sortSelect.value = sortMode;
-
-  const { currentFolder } = _renderFoldersBreadcrumb(_renderFoldersPanelIcons);
-
-  const listSource = currentFolder ? (currentFolder.folders || []) : (state.folders || []);
-  const items = _sortFoldersList(listSource.filter(f => !f.archived), sortMode);
-
-  if (items.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'fp-icon-tile-empty';
-    empty.textContent = 'Aucun dossier ici.';
-    treeContainer.appendChild(empty);
-    if (window.lucide) lucide.createIcons();
-    return;
-  }
-
-  items.forEach(f => {
-    const isBingoFolder = _isFolderBingo(f);
-    const isActive = f.id === _localActiveFolderId;
-
-    const tile = document.createElement('div');
-    tile.className = 'fp-icon-tile' + (isBingoFolder ? ' is-bingo' : '') + (isActive ? ' active' : '');
-    tile.dataset.folderId = f.id;
-
-    const iconEl = document.createElement('div');
-    iconEl.className = 'fp-icon-tile-icon';
-    iconEl.innerHTML = isBingoFolder ? '<i data-lucide="grid-3x3"></i>' : '<i data-lucide="folder"></i>';
-
-    const nameEl = document.createElement('div');
-    nameEl.className = 'fp-icon-tile-name';
-    nameEl.textContent = f.name;
-    nameEl.addEventListener('mouseenter', () => _showAppTooltipIfTruncated(nameEl));
-    nameEl.addEventListener('mouseleave', _hideAppTooltip);
-
-    const ctxBtn = document.createElement('button');
-    ctxBtn.className = 'fp-icon-tile-ctx-btn';
-    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-    ctxBtn.title = 'Options';
-
-    tile.appendChild(ctxBtn);
-    tile.appendChild(iconEl);
-    tile.appendChild(nameEl);
-
-    const openThisFolder = () => { if (_localActiveFolderId !== f.id) switchFolder(f.id); _switchPage('bingo'); };
-    const browseThisFolder = () => { _foldersNavFolderId = f.id; _renderFoldersPanelIcons(); };
-    const openMenu = e => _openBingoFolderCtxMenu(f, e, tile, openThisFolder, browseThisFolder);
-
-    // Simple clic : un dossier contenant des grilles (is-bingo) s'ouvre directement, même s'il a
-    // aussi des sous-dossiers — sinon (dossier "conteneur" pur) on descend dedans façon Explorateur.
-    tile.addEventListener('click', e => {
-      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
-      e.stopPropagation();
-      treeContainer.querySelectorAll('.fp-icon-tile.selected').forEach(t => t.classList.remove('selected'));
-      tile.classList.add('selected');
-      if (isBingoFolder) openThisFolder();
-      else { _foldersNavFolderId = f.id; _renderFoldersPanelIcons(); }
-    });
-    ctxBtn.addEventListener('click', openMenu);
-    tile.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(e); });
-
-    treeContainer.appendChild(tile);
-  });
-
-  if (window.lucide) lucide.createIcons();
-}
-
 // Vue liste du panneau Dossiers Bingo, façon Explorateur de fichiers en mode "Liste" : lignes
-// plates du seul niveau courant (même navigation que la vue icônes, _foldersNavFolderId), plus
+// plates du seul niveau courant (_foldersNavFolderId), plus
 // d'arborescence dépliable — double-clic descend d'un niveau, le fil d'Ariane remonte.
 // Reconstruire le panneau Dossiers Bingo est coûteux sur beaucoup de dossiers (tri par
 // getFolderPath/ancestorIdsOf, cf _renderRecentFolderPaths) : inutile de le faire quand la page
@@ -2765,14 +2672,7 @@ function renderFoldersPanelTree() {
   const container = document.getElementById('folders-panel-tree');
   if (!container) return;
 
-  document.getElementById('fp-view-toggle-list').classList.toggle('active', _foldersViewMode === 'list');
-  document.getElementById('fp-view-toggle-icons').classList.toggle('active', _foldersViewMode === 'icons');
-  container.classList.toggle('hidden', _foldersViewMode !== 'list');
-  document.getElementById('folders-panel-icons').classList.toggle('hidden', _foldersViewMode !== 'icons');
-
   _renderRecentFolderPaths();
-
-  if (_foldersViewMode === 'icons') { _renderFoldersPanelIcons(); return; }
 
   container.innerHTML = '';
 
@@ -3252,7 +3152,7 @@ function confirmRenameGrid() {
 // Grille — actions
 // ──────────────────────────────────────────────
 function generateOneGrid(t, g, fillOnlyEmpty = false) {
-  if (g.locked) return false;
+  if (_bingoEditLocked()) return false;
   const n = g.gridSize;
   const cellCount = n * n;
   const s = activeSubtheme();
@@ -3322,7 +3222,7 @@ function generateOneGrid(t, g, fillOnlyEmpty = false) {
 
 function changeSize(delta) {
   const t = activeTheme();
-  if (!t || t.locked) return;
+  if (!t || _bingoEditLocked()) return;
   const grids = getVisibleGrids();
   if (grids.length === 0) return;
   // Redimensionner toutes les grilles affichées ensemble, à partir de la taille de la première
@@ -3349,43 +3249,71 @@ function changeSize(delta) {
 }
 
 
-function applyFontScale() {
-  const scale = _localFontScale;
-  const pct = Math.round(scale * 100);
-  fontScaleInput.value = pct;
-  const fsValueInput = document.getElementById('font-scale-value-input');
-  if (fsValueInput) fsValueInput.value = pct;
-
-  const t = activeTheme();
-  const s = activeSubtheme();
-  if (!t || !s) return;
-  // Map(gridId → grille) et Map(elementId → élément) construites une fois, au lieu d'un .find()
-  // par case affichée (O(cases) par cellule → O(1) ici) — significatif avec plusieurs grilles.
-  const gridsById = new Map(s.grids.map(g => [g.id, g]));
-  const elementsById = new Map((s.elements || []).map(e => [e.id, e]));
-  const fallbackGrid = activeGrid();
-  gridWrapper.querySelectorAll('.bingo-cell:not(.empty)').forEach(div => {
-    const idx = parseInt(div.dataset.index);
-    if (isNaN(idx)) return;
-    const gridId = div.closest('[data-grid-id]')?.dataset.gridId;
-    const g = gridId ? gridsById.get(gridId) : fallbackGrid;
-    if (!g) return;
-    const cell = g.grid[idx];
-    if (!cell || !cell.elementId) return;
-    const el = elementsById.get(cell.elementId);
-    if (el) div.style.fontSize = getCellFontSize(el.text, scale);
-  });
+// Taille du texte des cases ajustée automatiquement : la plus grande police pour laquelle tout le
+// texte tient dans la case, sans jamais couper un mot (cf .bingo-cell-word). Calcul arithmétique :
+// largeur de chaque mot mesurée une fois au canvas à 100px puis mise à l'échelle, retour à la ligne
+// "glouton" simulé comme le fait le navigateur, recherche dichotomique de la taille. Une seule
+// lecture de layout pour toutes les cases, aucune boucle d'essais dans le DOM.
+const _CELL_LINE_HEIGHT = 1.2; // = line-height de .bingo-cell
+const _CELL_FIT_MARGIN = 0.96; // marge de sécurité (arrondis subpixel du navigateur)
+let _cellMeasureCtx = null;
+const _cellWordWidthCache = new Map(); // mot → largeur en px à 100px de police
+function _cellTextWidth100(str) {
+  let w = _cellWordWidthCache.get(str);
+  if (w === undefined) {
+    if (!_cellMeasureCtx) {
+      _cellMeasureCtx = document.createElement('canvas').getContext('2d');
+      _cellMeasureCtx.font = '400 100px Arial, sans-serif'; // = police de .bingo-cell
+    }
+    w = _cellMeasureCtx.measureText(str).width;
+    _cellWordWidthCache.set(str, w);
+  }
+  return w;
 }
-
-function getCellFontSize(text, scale) {
-  const len = text.length;
-  let base;
-  if (len <= 6)  base = 1.4;
-  else if (len <= 12) base = 1.1;
-  else if (len <= 22) base = 0.85;
-  else if (len <= 40) base = 0.7;
-  else base = 0.58;
-  return (base * scale).toFixed(2) + 'rem';
+function _fitCellFontPx(words, W, H) {
+  const widths = words.map(_cellTextWidth100);
+  const space = _cellTextWidth100(' ');
+  const maxWord = Math.max(...widths);
+  // Borne haute : le mot le plus long tient sur la largeur, une ligne tient sur la hauteur.
+  let hi = Math.min(W * 100 / maxWord, H / _CELL_LINE_HEIGHT);
+  let lo = 4;
+  if (hi <= lo) return lo;
+  const fits = f => {
+    const k = f / 100;
+    let lines = 1;
+    let lineW = widths[0] * k;
+    for (let i = 1; i < widths.length; i++) {
+      const next = lineW + (space + widths[i]) * k;
+      if (next <= W) lineW = next;
+      else { lines++; lineW = widths[i] * k; }
+    }
+    return lines * f * _CELL_LINE_HEIGHT <= H;
+  };
+  if (fits(hi)) return hi;
+  for (let it = 0; it < 16; it++) {
+    const mid = (lo + hi) / 2;
+    if (fits(mid)) lo = mid; else hi = mid;
+  }
+  return lo;
+}
+function _fitBingoCellTexts() {
+  // Lecture groupée de toutes les dimensions d'abord (un seul reflow), écriture ensuite.
+  const jobs = [];
+  gridWrapper.querySelectorAll('.bingo-cell > .bingo-cell-text').forEach(textEl => {
+    const cell = textEl.parentElement;
+    // Grilles secondaires : texte masqué par CSS (font-size:0 !important), rien à ajuster.
+    if (cell.closest('.grid-wrapper-secondary-col')) return;
+    const cs = getComputedStyle(cell);
+    const W = (cell.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) * _CELL_FIT_MARGIN;
+    const H = (cell.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) * _CELL_FIT_MARGIN;
+    jobs.push([textEl, W, H]);
+  });
+  jobs.forEach(([textEl, W, H]) => {
+    if (W <= 0 || H <= 0) return; // page masquée : rattrapé au prochain _adjustBingoGridSizes()
+    const words = Array.from(textEl.children, w => w.textContent);
+    if (!words.length) return;
+    textEl.style.fontSize = Math.floor(_fitCellFontPx(words, W, H) * 10) / 10 + 'px';
+  });
 }
 
 // Mode placement manuel supprimé
@@ -3401,9 +3329,8 @@ function openClearCellConfirm(label, callback) {
 
 // Mise à jour ciblée du DOM après avoir coché/décoché une case, SANS reconstruire toute la grille
 // (renderGrid() recrée normalement chaque cellule de chaque grille visible à chaque clic — coûteux
-// sur machine lente). N'est utilisée que dans le cas courant (sameBingoState : le nombre de lignes
-// de bingo ne change pas), sinon on retombe sur renderGrid() classique (badge à faire apparaître/
-// disparaître, cas plus rare et plus simple à laisser au rendu complet).
+// sur machine lente). Utilisée à chaque clic, y compris quand une ligne de bingo apparaît ou
+// disparaît (aucune taille ne change dans ce cas, cf le click handler).
 // Doit rester strictement équivalente à ce que buildSingleGrid() aurait produit pour les classes
 // 'checked'/'bingo-line'/title sur les cellules concernées, dans TOUTES les grilles visibles (cocher
 // une case coche le même elementId dans toutes les grilles du dossier, cf le click handler).
@@ -3422,7 +3349,7 @@ function _patchCellsAfterCheck(elementId) {
       div.classList.toggle('checked', !!cell.checked);
       div.classList.toggle('bingo-line', bingoIndices.has(i));
       if (cell.elementId === elementId) {
-        const gridLocked = gx.locked || (!!activeTheme() && activeTheme().locked);
+        const gridLocked = _bingoEditLocked();
         div.title = cell.checked ? 'Désactiver cette case' : 'Valider cette case' + (!gridLocked ? ' · Clic droit : vider' : '');
       }
     });
@@ -3431,7 +3358,6 @@ function _patchCellsAfterCheck(elementId) {
 
 function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
   const n = g.gridSize;
-  const scale = _localFontScale;
   const s = activeSubtheme();
   const { indices: bingoIndices, lines: bingoLines } = getBingoResult(n, g.grid.slice(0, n * n));
   const prevEpisodeTexts = _localShowNewBadge ? _previousEpisodeActiveTextSet(s) : null;
@@ -3509,31 +3435,9 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
   //   titleRow.appendChild(msg);
   // }
 
-  // Contrôles par grille (ordre : Bloquer | Générer | Vider | Capture), à côté du nom
-  const globalLocked = !!t.locked;
-  const gridLocked = g.locked || globalLocked;
-
-  const lblLock = document.createElement('button');
-  lblLock.type = 'button';
-  lblLock.className = 'subgrid-lock-label';
-  lblLock.title = 'Bloquer la génération aléatoire de cette grille';
-  lblLock.disabled = globalLocked;
-  lblLock.setAttribute('aria-pressed', gridLocked ? 'true' : 'false');
-  const lockIcon = document.createElement('i');
-  lockIcon.setAttribute('data-lucide', gridLocked ? 'lock-keyhole' : 'lock-keyhole-open');
-  lblLock.appendChild(lockIcon);
-  lblLock.addEventListener('click', () => {
-    const tNow = activeTheme();
-    const sNow = activeSubtheme();
-    if (!tNow || tNow.locked || !sNow) return;
-    const gNow = sNow.grids.find(x => x.id === g.id);
-    if (gNow) {
-      gNow.locked = !gNow.locked;
-      // g.locked dupliqué dans l'index (métadonnées allégées) — même raison que le titre ci-dessus.
-      _bingoSave(sNow.id);
-      renderGrid();
-    }
-  });
+  // Contrôles par grille (ordre : Générer | Vider | Capture), à côté du nom. Grille modifiable
+  // uniquement quand "Création" est ouvert (cf _bingoEditLocked).
+  const gridLocked = _bingoEditLocked();
 
   // Vérifier si assez d'éléments pour cette grille
   const sActive = activeSubtheme();
@@ -3574,9 +3478,9 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
   btnSubClear.addEventListener('click', () => {
     const tNow = activeTheme();
     const sNow = activeSubtheme();
-    if (!tNow || tNow.locked || !sNow) return;
+    if (!tNow || _bingoEditLocked() || !sNow) return;
     const gNow = sNow.grids.find(x => x.id === g.id);
-    if (!gNow || gNow.locked) return;
+    if (!gNow) return;
     // Conserver les IDs validés avant de vider
     if (!sNow.persistentCheckedIds) sNow.persistentCheckedIds = [];
     gNow.grid.forEach(c => {
@@ -3590,10 +3494,9 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
     renderElements();
   });
 
-  // Cadre discret autour de Bloquer + Générer + Vider
+  // Cadre discret autour de Générer + Vider
   const lockGenGroup = document.createElement('div');
   lockGenGroup.className = 'subgrid-lock-gen-group';
-  lockGenGroup.appendChild(lblLock);
   lockGenGroup.appendChild(btnSubGen);
   lockGenGroup.appendChild(btnSubClear);
   titleRow.appendChild(lockGenGroup);
@@ -3649,7 +3552,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
           const sNow = activeSubtheme();
           if (!sNow) return;
           const gNow = sNow.grids.find(x => x.id === g.id);
-          if (!gNow || gNow.locked) return;
+          if (!gNow) return;
           [gNow.grid[srcIdx], gNow.grid[targetIdx]] = [gNow.grid[targetIdx], gNow.grid[srcIdx]];
           _bingoSaveFolder(sNow.id);
           renderGrid();
@@ -3675,8 +3578,18 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
     } else {
       const el = (s && s.elements ? s.elements : []).find(e => e.id === cell.elementId);
       const cellText = el ? el.text : '?';
-      div.textContent = cellText;
-      div.style.fontSize = getCellFontSize(cellText, scale);
+      // Un <span> nowrap par mot : un mot n'est jamais coupé sur deux lignes. Taille de police
+      // fixée ensuite par _fitBingoCellTexts(), une fois la taille réelle des cases connue.
+      const textEl = document.createElement('span');
+      textEl.className = 'bingo-cell-text';
+      cellText.split(/\s+/).filter(Boolean).forEach((word, wi) => {
+        if (wi > 0) textEl.appendChild(document.createTextNode(' '));
+        const wordEl = document.createElement('span');
+        wordEl.className = 'bingo-cell-word';
+        wordEl.textContent = word;
+        textEl.appendChild(wordEl);
+      });
+      div.appendChild(textEl);
       if (cell.checked)        div.classList.add('checked');
       if (bingoIndices.has(i)) div.classList.add('bingo-line');
       if (prevEpisodeTexts && el && !prevEpisodeTexts.has((el.text || '').trim().toLowerCase())) {
@@ -3692,12 +3605,6 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
         const newChecked = !cell.checked;
         const tNow = activeTheme();
         const sNow = activeSubtheme();
-        // Cocher une case ne change la taille des grilles affichées QUE si ça complète ou casse
-        // une ligne de bingo (le badge "BINGO !" modifie la hauteur de l'en-tête). On compare le
-        // nombre de lignes de bingo de chaque grille visible avant/après pour le détecter, et
-        // sauter le reflow coûteux de _adjustBingoGridSizes() dans le cas courant (aucun bingo).
-        const visibleGridsBefore = getVisibleGrids();
-        const lineCountsBefore = visibleGridsBefore.map(gx => getBingoResult(gx.gridSize, gx.grid.slice(0, gx.gridSize * gx.gridSize)).lines.length);
         if (tNow && sNow) {
           (sNow.grids || []).filter(gx => !gx.archived).forEach(gx => {
             const matchCell = gx.grid.find(c => c.elementId === cell.elementId);
@@ -3721,22 +3628,18 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
         // se resynchronise dès la prochaine action qui écrit réellement l'index (créer/renommer/etc).
         // AUCUN autre dossier-bingo (ex. un épisode frère chargé pour NEW/Stats) n'est jamais transmis
         // à un .set(), même si plusieurs sont en mémoire en même temps (cf plan §2, point central).
-        if (sNow) { _bingoSaveFolder(sNow.id); }
-        const visibleGridsAfter = getVisibleGrids();
-        const lineCountsAfter = visibleGridsAfter.map(gx => getBingoResult(gx.gridSize, gx.grid.slice(0, gx.gridSize * gx.gridSize)).lines.length);
-        const sameBingoState = visibleGridsBefore.length === visibleGridsAfter.length
-          && lineCountsBefore.every((n, idx) => n === lineCountsAfter[idx]);
-        // Cas courant (aucun badge BINGO à faire apparaître/disparaître) : mise à jour ciblée des
-        // seules cellules affectées au lieu de reconstruire toute la grille (cf _patchCellsAfterCheck).
-        // Sinon (bingo qui apparaît/disparaît, plus rare) : rendu complet classique, plus simple et
-        // déjà correct pour ce cas (badge, hauteur, icônes à réinsérer).
-        if (sameBingoState && sNow) {
-          _patchCellsAfterCheck(cell.elementId);
-          _patchElementsListAfterCheck(cell.elementId);
-        } else {
-          renderGrid(sameBingoState);
-          renderElements();
-        }
+        if (!sNow) return;
+        _bingoSaveFolder(sNow.id);
+        // Toujours une mise à jour ciblée des seules cellules affectées (cf _patchCellsAfterCheck),
+        // jamais de reconstruction de la grille : cocher une case, même en complétant ou cassant une
+        // ligne de bingo, ne change ni la taille des cases ni celle du texte. Les effets BINGO
+        // (son/confettis), d'habitude déclenchés par renderGrid(), le sont donc ici —
+        // triggerBingoEffectIfNew ne réagit que si le nombre de lignes d'une grille a augmenté.
+        _patchCellsAfterCheck(cell.elementId);
+        _patchElementsListAfterCheck(cell.elementId);
+        getVisibleGrids().forEach(gx => {
+          triggerBingoEffectIfNew(gx.id, getBingoResult(gx.gridSize, gx.grid.slice(0, gx.gridSize * gx.gridSize)).lines.length);
+        });
       });
 
       if (!gridLocked && !isSecondary) {
@@ -3748,7 +3651,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
             const sNow = activeSubtheme();
             if (!sNow) return;
             const gNow = sNow.grids.find(x => x.id === g.id);
-            if (!gNow || gNow.locked) return;
+            if (!gNow) return;
             // Conserver la validation dans persistentCheckedIds avant de vider
             if (cell.checked && cell.elementId) {
               if (!sNow.persistentCheckedIds) sNow.persistentCheckedIds = [];
@@ -3818,7 +3721,7 @@ function _hideSecondaryCellPreview() {
 function updateResetButton() {
   const t = activeTheme();
   const s = activeSubtheme();
-  if (!t || t.locked || !s) {
+  if (!t || _bingoEditLocked() || !s) {
     btnReset.disabled = true;
     btnReset.classList.add('btn-disabled');
     return;
@@ -3873,7 +3776,6 @@ function renderGrid(skipSizeRecalc = false) {
     bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
-    _setLockGenerateChecked(false);
     return;
   }
   bingoLayout.classList.remove('no-theme-layout');
@@ -3893,7 +3795,6 @@ function renderGrid(skipSizeRecalc = false) {
     bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
-    _setLockGenerateChecked(false);
     return;
   }
 
@@ -3940,9 +3841,7 @@ function renderGrid(skipSizeRecalc = false) {
   const n = (g || s.grids.find(x => !x.archived)).gridSize;
   sizeDisplay.textContent = `${n}×${n}`;
 
-  // Synchroniser l'icône verrou avec l'état du thème
-  const locked = !!t.locked;
-  _setLockGenerateChecked(locked);
+  const locked = _bingoEditLocked();
   btnSizeMinus.disabled = locked || n <= MIN_SIZE;
   btnSizePlus.disabled = locked || n >= MAX_SIZE;
 
@@ -4042,9 +3941,6 @@ function renderGrid(skipSizeRecalc = false) {
   // de gridsToShow, pour garantir "principale à gauche, secondaires à droite" dans tous les cas.
   if (secondaryCol) gridWrapper.appendChild(secondaryCol);
 
-  // applyFontScale() n'est PAS rappelé ici : buildSingleGrid() applique déjà getCellFontSize()
-  // à la construction de chaque cellule (avec le même _localFontScale) — un second passage sur
-  // tout le gridWrapper juste après serait un travail redondant à chaque case cochée.
   // lucide.createIcons() re-scanne TOUT le document (pas seulement le DOM neuf) : coûteux sur
   // machine lente, donc sauté quand skipSizeRecalc est vrai (aucune icône ne peut avoir changé
   // dans ce cas — cf commentaire sur skipSizeRecalc plus bas).
@@ -4061,6 +3957,9 @@ function renderGrid(skipSizeRecalc = false) {
     // redéclenche renderGrid(). requestAnimationFrame garantit un recalcul après paint.
     requestAnimationFrame(_adjustBingoGridSizes);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(_adjustBingoGridSizes);
+  } else {
+    // Cases reconstruites mais dimensions inchangées : seul le texte est à réajuster.
+    _fitBingoCellTexts();
   }
 
   // Déclencher après que les wrappers sont dans le DOM et que le layout est calculé
@@ -4148,6 +4047,7 @@ function _adjustBingoGridSizes() {
     }
 
     secWrappers.forEach(wrapper => _sizeSingleGridWrapper(wrapper, secAvailableHeight));
+    _fitBingoCellTexts();
     return;
   }
 
@@ -4160,6 +4060,7 @@ function _adjustBingoGridSizes() {
   const wrapperGapV = parseFloat(getComputedStyle(gridWrapper).rowGap || getComputedStyle(gridWrapper).gap) || 0;
   const availableHeight = (totalAvailableHeight - wrapperGapV * (rowCount - 1)) / rowCount;
   wrappers.forEach(wrapper => _sizeSingleGridWrapper(wrapper, availableHeight));
+  _fitBingoCellTexts();
 }
 
 function _sizeSingleGridWrapper(wrapper, availableHeight, availableWidth = null) {
@@ -5146,44 +5047,6 @@ if (_elementsFilterTagSelect) {
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
 btnSizePlus.addEventListener('click',  () => changeSize(+1));
 
-// L'event 'input' peut se déclencher plus vite que 60fps pendant un glissement de curseur ;
-// applyFontScale() reparcourt toutes les cases affichées, donc throttlé à 1x/frame via
-// requestAnimationFrame — même principe que _tlWireImgSizeControls (Tier List) pour éviter des
-// dizaines d'appels inutiles par seconde pendant le drag.
-let _fontScaleRafPending = false;
-fontScaleInput.addEventListener('input', () => {
-  const pct = Math.max(50, Math.min(200, parseInt(fontScaleInput.value) || 100));
-  _localFontScale = pct / 100;
-  if (_fontScaleRafPending) return;
-  _fontScaleRafPending = true;
-  requestAnimationFrame(() => {
-    _fontScaleRafPending = false;
-    applyFontScale();
-  });
-});
-fontScaleInput.addEventListener('change', () => {
-  const pct = Math.max(50, Math.min(200, parseInt(fontScaleInput.value) || 100));
-  saveLocalFontScale(pct / 100);
-});
-const fontScaleValueInput = document.getElementById('font-scale-value-input');
-if (fontScaleValueInput) {
-  fontScaleValueInput.addEventListener('change', () => {
-    const pct = Math.max(50, Math.min(200, parseInt(fontScaleValueInput.value) || 100));
-    _localFontScale = pct / 100;
-    applyFontScale();
-    saveLocalFontScale(pct / 100);
-  });
-}
-
-chkLockGenerate.addEventListener('click', () => {
-  const t = activeTheme();
-  if (t) {
-    t.locked = !_isLockGenerateChecked();
-    _bingoSaveIndex(); // folder.locked est un champ d'index (dossier racine)
-  }
-  renderGrid();
-});
-
 let _isDraggingElement = false;
 
 // Plafonne .cases-sidebar à l'espace réellement visible sous sa position actuelle
@@ -5762,23 +5625,22 @@ document.getElementById('btn-open-grids-window').addEventListener('click', () =>
   if (grids.length === 0) return;
   document.title = getFolderPath(state.folders, _localActiveFolderId).map(f => f.name).join(' \\ ');
   document.body.classList.add('solo-grid-mode');
-  // En plein écran, tout doit tenir sur une seule rangée : #btn-grids-dropdown (ligne 1, mode
-  // normal), #font-scale-label, #btn-toggle-new-badge et le bouton Capture (2e rangée, mode normal)
-  // sont déplacés en JS dans #bingo-solo-toolbar-center, dans cet ordre (Grilles/New/Taille/Capture,
-  // même ordre New/Taille qu'en mode normal)
+  // En plein écran, tout doit tenir sur une seule rangée : #btn-grids-dropdown, #btn-toggle-new-badge,
+  // le bouton Capture et Stats (2e rangée, mode normal) sont déplacés en JS dans
+  // #bingo-solo-toolbar-center, dans le même ordre qu'en mode normal (Grilles/New/Capture/Stats)
   // — mêmes éléments physiques, jamais deux jeux de contrôles désynchronisés. Le chemin
   // (#bingo-fullscreen-breadcrumb) reste un frère indépendant de ce groupe, centré par position
   // absolue (voir CSS), pas dans ce conteneur — sinon un groupe trop large le pousse hors de son centrage.
   const soloCenter = document.getElementById('bingo-solo-toolbar-center');
   const gridsDropdown = document.getElementById('btn-grids-dropdown');
-  const fontScaleLabel = document.getElementById('font-scale-label');
   const newBadgeBtn = document.getElementById('btn-toggle-new-badge');
   const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
+  const statsBtn = document.getElementById('btn-bingo-stats');
   if (soloCenter) {
     if (gridsDropdown) soloCenter.appendChild(gridsDropdown);
     if (newBadgeBtn) soloCenter.appendChild(newBadgeBtn);
-    if (fontScaleLabel) soloCenter.appendChild(fontScaleLabel);
     if (captureBtn) soloCenter.appendChild(captureBtn);
+    if (statsBtn) soloCenter.appendChild(statsBtn);
   }
   // Fermer le panneau Cases : affichage cassé s'il est laissé ouvert en plein écran.
   // Sa fermeture anime une transition CSS de largeur (0.22s, voir .cases-sidebar) : recalculer
@@ -5796,19 +5658,16 @@ document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
   document.body.classList.remove('solo-grid-mode');
   document.title = 'LesMichels';
   requestAnimationFrame(_adjustBingoGridSizes);
-  // Rendre #btn-grids-dropdown au groupe Création (1er bouton, ligne 1), #font-scale-label puis
-  // #btn-toggle-new-badge (début de la 2e rangée, ordre du HTML : New puis Taille) et Capture
-  // juste avant Stats (mode normal).
-  const gridsDropdown = document.getElementById('btn-grids-dropdown');
-  const creationGroup = document.getElementById('bingo-creation-group');
-  if (gridsDropdown && creationGroup) creationGroup.prepend(gridsDropdown);
+  // Rendre à la 2e rangée (ordre du HTML) : Grilles puis New au début, Stats en fin de rangée et
+  // Capture juste avant Stats (mode normal).
   const optionsRow = document.getElementById('bingo-grids-options-row');
-  const fontScaleLabel = document.getElementById('font-scale-label');
-  if (fontScaleLabel && optionsRow) optionsRow.prepend(fontScaleLabel);
   const newBadgeBtn = document.getElementById('btn-toggle-new-badge');
   if (newBadgeBtn && optionsRow) optionsRow.prepend(newBadgeBtn);
+  const gridsDropdown = document.getElementById('btn-grids-dropdown');
+  if (gridsDropdown && optionsRow) optionsRow.prepend(gridsDropdown);
   const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
   const statsBtn = document.getElementById('btn-bingo-stats');
+  if (statsBtn && optionsRow) optionsRow.appendChild(statsBtn);
   if (captureBtn && optionsRow) optionsRow.insertBefore(captureBtn, statsBtn && statsBtn.parentNode === optionsRow ? statsBtn : null);
 });
 // Modale de choix "Capture" (plein écran) : toutes les grilles affichées ou une grille précise
@@ -5843,7 +5702,7 @@ function generateAllVisibleGrids() {
   if (manualMode) return;
   const t = activeTheme();
   const s = activeSubtheme();
-  if (!t || t.locked || !s) return;
+  if (!t || _bingoEditLocked() || !s) return;
   const grids = getVisibleGrids();
   if (grids.length === 0) return;
   const n = activeGrid()?.gridSize || 4;
@@ -5867,7 +5726,7 @@ function generateEmptyCellsVisibleGrids() {
   if (manualMode) return;
   const t = activeTheme();
   const s = activeSubtheme();
-  if (!t || t.locked || !s) return;
+  if (!t || _bingoEditLocked() || !s) return;
   const grids = getVisibleGrids();
   if (grids.length === 0) return;
 
@@ -5881,9 +5740,9 @@ function generateSingleGrid(gridId, emptyOnly) {
   if (manualMode) return;
   const tNow = activeTheme();
   const sNow = activeSubtheme();
-  if (!tNow || tNow.locked || !sNow) return;
+  if (!tNow || _bingoEditLocked() || !sNow) return;
   const gNow = sNow.grids.find(x => x.id === gridId);
-  if (!gNow || gNow.locked) return;
+  if (!gNow) return;
   const ok = generateOneGrid(tNow, gNow, emptyOnly);
   if (!ok) {
     const n = gNow.gridSize;
@@ -5946,7 +5805,7 @@ document.getElementById('btn-generate-choice-empty').addEventListener('click', (
 function canFillEmptyCellsVisibleGrids() {
   const t = activeTheme();
   const s = activeSubtheme();
-  if (!t || t.locked || !s) return false;
+  if (!t || _bingoEditLocked() || !s) return false;
 
   const grids = getVisibleGrids();
   if (grids.length === 0) return false;
@@ -5982,7 +5841,7 @@ document.getElementById('btn-confirm-signout').addEventListener('click', () => {
 btnReset.addEventListener('click', () => {
   const t = activeTheme();
   const s = activeSubtheme();
-  if (!t || t.locked || !s) return;
+  if (!t || _bingoEditLocked() || !s) return;
   document.getElementById('modal-confirm-reset').classList.remove('hidden');
 });
 
@@ -6011,8 +5870,8 @@ function updateClearGridsButton() {
   const btn = document.getElementById('btn-clear-grids');
   if (!btn) return;
   const t = activeTheme();
-  const locked = !t || t.locked;
-  const grids = locked ? [] : getVisibleGrids().filter(gx => !gx.locked);
+  const locked = !t || _bingoEditLocked();
+  const grids = locked ? [] : getVisibleGrids();
   const nothingToClear = locked || grids.every(gx => gx.grid.every(c => !c.elementId));
   btn.disabled = nothingToClear;
   btn.classList.toggle('btn-disabled', nothingToClear);
@@ -6027,16 +5886,27 @@ function updateCreationButton() {
   const needsGenerate = getVisibleGrids().some(gx => gx.grid.slice(0, gx.gridSize * gx.gridSize).some(c => !c || !c.elementId));
   btn.classList.toggle('btn-creation-needed', needsGenerate);
 }
-document.getElementById('btn-bingo-creation')?.addEventListener('click', () => {
+// Ouvre/ferme "Création" — rend aussi les grilles modifiables ou non (cf _bingoEditLocked), d'où le
+// re-rendu des grilles et des cases (drag & drop, titre, clic droit dépendent de cet état).
+// render=false : l'appelant re-rend lui-même juste après (ex. switchFolder).
+function _setBingoCreationOpen(open, render = true) {
+  if (_bingoCreationOpen === open) return;
   const group = document.getElementById('bingo-creation-group');
   if (!group) return;
-  const open = !group.classList.toggle('hidden');
-  document.getElementById('btn-bingo-creation').setAttribute('aria-expanded', open ? 'true' : 'false');
-  // Les boutons par grille (cadenas/générer/vider) ne sont visibles que Création ouvert (cf CSS).
+  _bingoCreationOpen = open;
+  group.classList.toggle('hidden', !open);
+  document.getElementById('btn-bingo-creation')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  // Les boutons par grille (générer/vider) ne sont visibles que Création ouvert (cf CSS).
   document.getElementById('page-bingo')?.classList.toggle('creation-open', open);
+  // Le panneau Cases (modification des cases) n'a plus de sens Création fermé.
+  if (!open) closeCasesPanel();
+  if (!render) return;
+  renderGrid();
+  renderElements();
   // L'ouverture peut faire passer la ligne 1 sur deux rangées : la hauteur dispo des grilles change.
   requestAnimationFrame(_adjustBingoGridSizes);
-});
+}
+document.getElementById('btn-bingo-creation')?.addEventListener('click', () => _setBingoCreationOpen(!_bingoCreationOpen));
 
 function updateOpenGridsWindowButton() {
   const btn = document.getElementById('btn-open-grids-window');
@@ -6048,9 +5918,9 @@ function updateOpenGridsWindowButton() {
 
 btnClearGrids.addEventListener('click', () => {
   const t = activeTheme();
-  if (!t || t.locked) return;
+  if (!t || _bingoEditLocked()) return;
   _clearGridsTarget = 'visible';
-  const grids = getVisibleGrids().filter(gx => !gx.locked);
+  const grids = getVisibleGrids();
   const count = grids.length;
   document.getElementById('modal-clear-msg').textContent =
     count === 1 ? 'Vider la grille affichée ?' : `Vider les ${count} grilles affichées ?`;
@@ -6077,9 +5947,9 @@ document.getElementById('btn-confirm-clear').addEventListener('click', () => {
     return;
   }
   const t = activeTheme();
-  if (!t || t.locked) return;
+  if (!t || _bingoEditLocked()) return;
   const sNow = activeSubtheme();
-  const grids = getVisibleGrids().filter(gx => !gx.locked);
+  const grids = getVisibleGrids();
   // Conserver les IDs validés avant de vider
   if (sNow) {
     if (!sNow.persistentCheckedIds) sNow.persistentCheckedIds = [];
@@ -6668,11 +6538,8 @@ let _tlLocalSplit          = null; // % de largeur allouée aux tiers (le reste 
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
 let _tlLocalActiveFolderId  = null; // dossier sélectionné (vide) sans tierlist active
 let _tlLocalNoSelection     = false; // true = l'utilisateur a délibérément désélectionné
-// Vue du panneau Dossiers Tier List : 'list' (façon Explorateur, lignes) ou 'icons' (façon
-// Explorateur, tuiles) — mêmes principes que côté Bingo (_foldersViewMode/_foldersNavFolderId).
-let _tlFoldersViewMode = 'list';
-// Dossier actuellement ouvert dans le panneau Dossiers (null = racine), partagé entre vue liste et
-// vue icônes — indépendant de _tlLocalActiveFolderId : naviguer dans le panneau ne doit pas changer
+// Dossier actuellement ouvert dans le panneau Dossiers (null = racine) — indépendant de
+// _tlLocalActiveFolderId : naviguer dans le panneau ne doit pas changer
 // le dossier/tierlist actifs tant qu'on n'a pas explicitement "ouvert" quelque chose.
 let _tlFoldersNavFolderId = null;
 
@@ -8804,19 +8671,7 @@ function _tlRenderRecentFolderPaths() {
   if (window.lucide) lucide.createIcons();
 }
 
-// Bascule vue liste / vue icônes du panneau Dossiers Tier List (préférence mémorisée).
-function _tlSetFoldersViewMode(mode) {
-  if (_tlFoldersViewMode === mode) return;
-  _tlFoldersViewMode = mode;
-  saveUserPrefs({ tlFoldersViewMode: mode });
-  tlRenderList();
-}
-
-document.getElementById('tl-fp-view-toggle-list').addEventListener('click', () => _tlSetFoldersViewMode('list'));
-document.getElementById('tl-fp-view-toggle-icons').addEventListener('click', () => _tlSetFoldersViewMode('icons'));
-
-// Fil d'Ariane partagé entre vue liste et vue icônes du panneau Dossiers Tier List — navigue via
-// _tlFoldersNavFolderId, le même niveau courant que consomment les deux fonctions de rendu.
+// Fil d'Ariane du panneau Dossiers Tier List — navigue via _tlFoldersNavFolderId (niveau courant).
 function _tlRenderFoldersBreadcrumb(onNavigate) {
   const crumbContainer = document.getElementById('tl-icons-breadcrumb');
   if (!crumbContainer) return { currentFolder: null, path: [] };
@@ -8848,123 +8703,6 @@ function _tlRenderFoldersBreadcrumb(onNavigate) {
   });
 
   return { currentFolder, path };
-}
-
-// Vue icônes du panneau Dossiers Tier List (façon Explorateur de fichiers), même principe que
-// _renderFoldersPanelIcons côté Bingo : grille de tuiles pour le seul niveau courant
-// (_tlFoldersNavFolderId, null = racine), navigation par double-clic + fil d'Ariane. Contrairement à
-// Bingo, un niveau peut aussi contenir des templates/tierlists isolées (pas que des sous-dossiers) —
-// elles deviennent aussi des tuiles (icône différente), au prix du glisser-déposer/regroupement de
-// templates que seule la vue liste conserve.
-function _renderTlFoldersPanelIcons() {
-  const treeContainer = document.getElementById('tl-folders-panel-icons');
-  if (!treeContainer) return;
-  treeContainer.innerHTML = '';
-
-  const sortMode = _folderSortMode('tlFoldersSortMode');
-  const sortSelect = document.getElementById('tl-folders-sort-select');
-  if (sortSelect) sortSelect.value = sortMode;
-
-  const { currentFolder } = _tlRenderFoldersBreadcrumb(_renderTlFoldersPanelIcons);
-  const parentId = currentFolder ? currentFolder.id : null;
-  const subFolders = _sortFoldersList((tlState.folders || []).filter(f => !f.archived && (f.parentId || null) === parentId), sortMode);
-  // Tierlists/templates de ce niveau — les tierlists rattachées à un template vivant n'apparaissent
-  // jamais à plat, seulement via leur template (même filtrage que la vue liste).
-  const levelTierlists = tlState.tierlists.filter(tl => !tl.archived && (tl.folderId || null) === parentId && !_tlHasLiveTemplate(tl));
-
-  if (subFolders.length === 0 && levelTierlists.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'fp-icon-tile-empty';
-    empty.textContent = 'Vide.';
-    treeContainer.appendChild(empty);
-    if (window.lucide) lucide.createIcons();
-    return;
-  }
-
-  subFolders.forEach(f => {
-    const isActive = f.id === _tlLocalActiveFolderId;
-    const tile = document.createElement('div');
-    tile.className = 'fp-icon-tile' + (isActive ? ' active' : '');
-    tile.dataset.folderId = f.id;
-
-    const iconEl = document.createElement('div');
-    iconEl.className = 'fp-icon-tile-icon';
-    iconEl.innerHTML = '<i data-lucide="folder"></i>';
-
-    const nameEl = document.createElement('div');
-    nameEl.className = 'fp-icon-tile-name';
-    nameEl.textContent = f.name;
-    nameEl.addEventListener('mouseenter', () => _showAppTooltipIfTruncated(nameEl));
-    nameEl.addEventListener('mouseleave', _hideAppTooltip);
-
-    const ctxBtn = document.createElement('button');
-    ctxBtn.className = 'fp-icon-tile-ctx-btn';
-    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-    ctxBtn.title = 'Options';
-
-    tile.appendChild(ctxBtn);
-    tile.appendChild(iconEl);
-    tile.appendChild(nameEl);
-
-    const openMenu = e => { e.stopPropagation(); tlOpenFolderManageModal(f.id, tile); };
-    // Simple clic = entrer dans le dossier (façon Explorateur), jamais l'ouvrir comme dossier actif
-    // — cette action-là reste réservée au menu ⋮ ("Ouvrir"), pour ne pas changer le contexte actif
-    // juste en naviguant dans la vue icônes.
-    tile.addEventListener('click', e => {
-      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
-      e.stopPropagation();
-      treeContainer.querySelectorAll('.fp-icon-tile.selected').forEach(t => t.classList.remove('selected'));
-      tile.classList.add('selected');
-      _tlFoldersNavFolderId = f.id; _renderTlFoldersPanelIcons();
-    });
-    ctxBtn.addEventListener('click', openMenu);
-    tile.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(e); });
-
-    treeContainer.appendChild(tile);
-  });
-
-  levelTierlists.forEach(tl => {
-    const isActive = tl.id === _tlLocalActiveTierlistId;
-    const tile = document.createElement('div');
-    tile.className = 'fp-icon-tile is-bingo' + (isActive ? ' active' : '');
-    tile.dataset.tierlistId = tl.id;
-
-    const iconEl = document.createElement('div');
-    iconEl.className = 'fp-icon-tile-icon';
-    iconEl.innerHTML = tl.isTemplate ? '<i data-lucide="scroll"></i>' : '<i data-lucide="scroll-text"></i>';
-
-    const nameEl = document.createElement('div');
-    nameEl.className = 'fp-icon-tile-name';
-    nameEl.textContent = tl.name;
-    nameEl.addEventListener('mouseenter', () => _showAppTooltipIfTruncated(nameEl));
-    nameEl.addEventListener('mouseleave', _hideAppTooltip);
-
-    const ctxBtn = document.createElement('button');
-    ctxBtn.className = 'fp-icon-tile-ctx-btn';
-    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-    ctxBtn.title = 'Options';
-
-    tile.appendChild(ctxBtn);
-    tile.appendChild(iconEl);
-    tile.appendChild(nameEl);
-
-    const openThisTierlist = async () => { await tlSwitch(tl.id, false); _switchPage('tierlist'); };
-    const openMenu = e => { e.stopPropagation(); tlOpenManageModal(tl.id, tile, 'folders'); };
-    // Même logique que les tuiles dossier : simple clic = sélectionner visuellement puis ouvrir.
-    tile.addEventListener('click', e => {
-      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
-      e.stopPropagation();
-      treeContainer.querySelectorAll('.fp-icon-tile.selected').forEach(t => t.classList.remove('selected'));
-      tile.classList.add('selected');
-      openThisTierlist();
-    });
-    ctxBtn.addEventListener('click', openMenu);
-    tile.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(e); });
-
-    treeContainer.appendChild(tile);
-  });
-
-  if (window.lucide) lucide.createIcons();
 }
 
 // Ligne d'un sous-dossier en vue liste Tier List — même structure/classes que .fp-folder-row côté
@@ -9050,17 +8788,7 @@ function _tlBuildTierlistListRow(tl, container) {
 function tlRenderList() {
   if (!tlState.folders) tlState.folders = [];
 
-  document.getElementById('tl-fp-view-toggle-list').classList.toggle('active', _tlFoldersViewMode === 'list');
-  document.getElementById('tl-fp-view-toggle-icons').classList.toggle('active', _tlFoldersViewMode === 'icons');
-  tlList.classList.toggle('hidden', _tlFoldersViewMode !== 'list');
-  document.getElementById('tl-folders-panel-icons').classList.toggle('hidden', _tlFoldersViewMode !== 'icons');
-
-  // #tl-folders-panel-recent ("Templates récents") est commun aux deux vues (hors du cadre
-  // liste/icônes, cf HTML) — doit se rendre avant le early-return du mode icônes, sinon il reste
-  // vide indéfiniment dans ce mode (bug constaté : jamais affiché en vue icônes).
   _tlRenderRecentFolderPaths();
-
-  if (_tlFoldersViewMode === 'icons') { _renderTlFoldersPanelIcons(); if (window.lucide) lucide.createIcons(); return; }
 
   tlList.innerHTML = '';
   const tlSortMode = _folderSortMode('tlFoldersSortMode');
@@ -12326,10 +12054,11 @@ async function _tlGoToFolder(folderId) {
 // ── Dropdown Chemin : arborescence des dossiers ──────────────────────────────────
 // Dessine les lignes de dossiers dans le menu Chemin (pliable/depliable comme le drawer Dossiers,
 // meme sessionStorage tl_folder_open_<id> - un dossier ouvert dans l'un reste ouvert dans l'autre).
-// Lignes construites a la main (chevron separe du nom) plutot qu'avec addItem, qui ne gere qu'une
-// ligne plate sans sous-comportement cliquable.
+// Lignes construites a la main plutot qu'avec addItem, qui ne gere qu'une ligne plate sans
+// sous-comportement cliquable.
 function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
   menu.querySelectorAll('.tl-path-menu-row').forEach(el => el.remove());
+  const sortMode = _ensurePathMenuSortBtn(menu, 'tlPathSortMode', () => _tlRenderPathMenuRows(menu, activeFolders, close));
 
   // Le dossier réellement affiché (celui du breadcrumb en haut) : celui de la tierlist/template actif
   // s'il y en a un, sinon _tlLocalActiveFolderId — même source que _tlActiveGroupContext(), utilisée
@@ -12346,17 +12075,14 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
 
   // Un dossier reste toujours un dossier (jamais confondu avec son template, même s'il n'en a qu'un) :
   // ses templates sont listés dessous quand il est déplié.
-  const templatesOf = folderId => tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === folderId);
+  const templatesOf = folderId => _sortFoldersList(tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === folderId), sortMode);
   const activeTl = tlActiveTierlist();
   const activeRootId = activeTl ? _tlGroupRoot(activeTl).id : null;
 
   const buildTemplateRow = (tpl, depth) => {
     const row = document.createElement('div');
     row.className = 'tl-path-menu-row' + (tpl.id === activeRootId ? ' active' : '');
-    row.style.paddingLeft = (depth * 14) + 'px';
-    const arrow = document.createElement('span');
-    arrow.className = 'tl-path-menu-arrow';
-    row.appendChild(arrow);
+    row.style.paddingLeft = (8 + depth * 14) + 'px';
     const icon = document.createElement('span');
     icon.className = 'tl-path-menu-icon';
     icon.innerHTML = '<i data-lucide="scroll"></i>';
@@ -12388,23 +12114,12 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
 
     const row = document.createElement('div');
     row.className = 'tl-path-menu-row' + (isOnCurrentPath ? ' active' : '');
-    row.style.paddingLeft = (depth * 14) + 'px';
+    row.style.paddingLeft = (8 + depth * 14) + 'px';
 
-    const arrow = document.createElement('span');
-    arrow.className = 'tl-path-menu-arrow' + (isOpen ? ' open' : '');
-    arrow.innerHTML = hasChildren ? '<i data-lucide="chevron-right"></i>' : '';
-    if (hasChildren) {
-      arrow.addEventListener('click', ev => {
-        ev.stopPropagation();
-        sessionStorage.setItem(key, isOpen ? '0' : '1');
-        _tlRenderPathMenuRows(menu, activeFolders, close);
-      });
-    }
-    row.appendChild(arrow);
-
+    // Plus de chevron : l'icône passe en folder-open quand le dossier est déplié.
     const icon = document.createElement('span');
     icon.className = 'tl-path-menu-icon';
-    icon.innerHTML = '<i data-lucide="folder"></i>';
+    icon.innerHTML = `<i data-lucide="${hasChildren && isOpen ? 'folder-open' : 'folder'}"></i>`;
     row.appendChild(icon);
 
     const name = document.createElement('span');
@@ -12412,7 +12127,7 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
     name.textContent = folder.name;
     row.appendChild(name);
 
-    // Cliquer sur la ligne (hors flèche) affiche la page ET (dé)plie ce dossier, sans fermer le
+    // Cliquer sur la ligne affiche la page ET (dé)plie ce dossier, sans fermer le
     // menu — stopPropagation empêche le clic d'atteindre le onDocClick de _tlMakeCtxMenu, qui
     // fermerait sinon le menu à chaque clic (close() n'est plus appelé ici, seul un clic extérieur
     // au menu le referme).
@@ -12430,8 +12145,7 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
   };
 
   const addFolderRows = (parentId, depth) => {
-    activeFolders
-      .filter(f => (f.parentId || null) === (parentId || null))
+    _sortFoldersList(activeFolders.filter(f => (f.parentId || null) === (parentId || null)), sortMode)
       .forEach(f => {
         menu.appendChild(buildRow(f, depth));
         const stored = sessionStorage.getItem('tl_folder_open_' + f.id);

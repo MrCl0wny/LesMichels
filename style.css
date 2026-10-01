@@ -159,7 +159,7 @@ body {
 }
 
 /* Dossier conteneur actif (jamais de grilles à gérer) : ne garder que Chemin (ligne 1) et
-   Stats (ligne 2), masquer tout le reste (création/cases/taille/capture/plein écran/etc). */
+   Stats (ligne 2), masquer tout le reste (grilles/création/cases/capture/plein écran/etc). */
 .bingo-control-panel.folder-mode #btn-grids-dropdown,
 .bingo-control-panel.folder-mode #btn-new-grid-main,
 .bingo-control-panel.folder-mode #btn-cases-panel,
@@ -182,7 +182,7 @@ body {
 /* min-height = hauteur du cadre .lock-group (42px, le plus haut du groupe Création) : la ligne 1
    garde la même hauteur que le groupe soit affiché ou non. */
 #bingo-control-panel .ctrl-row-grids-right { flex: 1 0 auto; min-height: 42px; }
-/* Boutons par grille (cadenas/générer/vider) masqués tant que Création est fermé
+/* Boutons par grille (générer/vider) masqués tant que Création est fermé
    (classe posée sur #page-bingo par le bouton Création). */
 #page-bingo:not(.creation-open) .subgrid-lock-gen-group { display: none; }
 /* Bouton Création : grisé (btn-neutral-action) sauf tant qu'une grille affichée a une case vide */
@@ -511,31 +511,6 @@ body {
   cursor: pointer;
 }
 
-/* Bascule vue liste / vue icônes du panneau Dossiers */
-.fp-view-toggle {
-  flex-shrink: 0;
-  display: flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.fp-view-toggle-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  background: var(--surface-2);
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  transition: var(--transition);
-}
-.fp-view-toggle-btn + .fp-view-toggle-btn { border-left: 1px solid var(--border); }
-.fp-view-toggle-btn:hover { color: var(--text); background: var(--surface-3); }
-.fp-view-toggle-btn.active { color: #93c5fd; background: rgba(59,130,246,0.18); }
-.fp-view-toggle-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
-
 /* Cadre englobant l'arbre de dossiers, avec titre — lui seul scrolle en interne, pour que Récents
    et le tri restent toujours visibles en haut du panneau même avec beaucoup de dossiers. */
 .fp-tree-frame {
@@ -743,8 +718,7 @@ body {
 .fp-folder-row.selected { border-color: #3b82f6; background: rgba(59,130,246,0.18); }
 .fp-folder-icon { font-size: 0.8rem; flex-shrink: 0; }
 .fp-folder-icon [data-lucide] { margin-right: 0; }
-/* Ligne tierlist/template en vue liste — icône teintée en bleu, même code couleur que
-   .fp-icon-tile.is-bingo en vue icônes (dossiers-bingo Bingo / templates-tierlists Tier List). */
+/* Ligne tierlist/template en vue liste — icône teintée en bleu. */
 .fp-list-item .fp-folder-icon { color: #60a5fa; }
 .fp-folder-name {
   flex: 1;
@@ -832,79 +806,6 @@ body {
 .fp-icons-crumb.current:hover { background: none; }
 .fp-icons-crumb-sep { color: var(--text-faint); }
 
-.folders-panel-icons {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-  padding: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  gap: 4px;
-}
-.folders-panel-icons.hidden { display: none; }
-.fp-icon-tile {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 184px;
-  padding: 14px 8px;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  cursor: pointer;
-  user-select: none;
-  transition: var(--transition);
-  text-align: center;
-}
-.fp-icon-tile:hover { background: var(--surface-3); }
-.fp-icon-tile.selected { border-color: #3b82f6; background: rgba(59,130,246,0.18); }
-.fp-icon-tile.active { border-color: #3b82f6; }
-.fp-icon-tile-ctx-btn {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  font-size: 0.85rem;
-  color: var(--text-dim);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
-  opacity: 0;
-  transition: opacity var(--transition), color var(--transition);
-}
-.fp-icon-tile:hover .fp-icon-tile-ctx-btn { opacity: 0.8; }
-.fp-icon-tile-ctx-btn:hover { color: var(--text); background: var(--surface-2); opacity: 1; }
-.fp-icon-tile-ctx-btn [data-lucide] { width: 13px; height: 13px; margin-right: 0; vertical-align: middle; }
-.fp-icon-tile-icon {
-  font-size: 4.8rem;
-  line-height: 1;
-  color: #f5c744;
-}
-.fp-icon-tile-icon [data-lucide] { width: 80px; height: 80px; margin-right: 0; }
-.fp-icon-tile.is-bingo .fp-icon-tile-icon { color: #60a5fa; }
-.fp-icon-tile-name {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text);
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.fp-icon-tile-empty {
-  width: 100%;
-  padding: 24px 8px;
-  text-align: center;
-  color: var(--text-faint);
-  font-style: italic;
-  font-size: 0.85rem;
-}
-
 .fp-empty {
   color: var(--text-faint);
   font-size: 0.82rem;
@@ -913,14 +814,16 @@ body {
   font-style: italic;
 }
 
-/* ── Chemins récents (haut du drawer dossiers, bingo + tierlist) — mis en évidence dans un cadre ── */
+/* ── Chemins récents (haut du drawer dossiers, bingo + tierlist) — cadre marron terne pour le
+   distinguer légèrement du reste, sans couleur vive (cf hiérarchie visuelle : seul le bouton
+   soirée en cours est vif). ── */
 .fp-recent:empty { display: none; }
 .fp-recent {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
+  border: 1px solid rgba(150, 115, 80, 0.45);
+  background: rgba(120, 90, 60, 0.16);
   border-radius: var(--radius-lg);
   padding: 10px;
 }
@@ -929,7 +832,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #7dd3fc;
+  color: #b49a7e;
   padding: 0 2px;
 }
 /* Limité à 5 entrées en JS (cf _renderRecentFolderPaths/_tlRenderRecentFolderPaths) : toutes
@@ -952,7 +855,7 @@ body {
   transition: var(--transition);
   flex-shrink: 0;
 }
-.fp-recent-row:hover { border-color: #60a5fa; background: var(--surface-3); }
+.fp-recent-row:hover { border-color: rgba(180, 140, 100, 0.7); background: var(--surface-3); }
 .fp-recent-row .fp-recent-icon { font-size: 0.8rem; flex-shrink: 0; color: var(--text-dim); }
 .fp-recent-row .fp-recent-icon [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
 .fp-recent-path {
@@ -1077,7 +980,7 @@ body.solo-grid-mode .grid-view-wrapper {
 body.solo-grid-mode .bingo-grid {
   max-height: 100%;
 }
-/* Plein écran : tout tient sur une seule rangée — Grilles/Taille/Capture à gauche (déplacés en
+/* Plein écran : tout tient sur une seule rangée — Grilles/New/Capture/Stats à gauche (déplacés en
    JS dans #bingo-solo-toolbar-center, voir btn-open-grids-window), chemin centré (position absolue,
    indépendant de ce groupe), Quitter à droite. #bingo-grids-options-row (.ctrl-row-toolbar-left)
    est entièrement masqué par .btn-hide-solo-mode, ses enfants utiles ayant été déplacés avant que
@@ -1670,7 +1573,7 @@ textarea.element-edit-input {
 /* Chemin d'accès Bingo (titre, 2e rangée) : visible uniquement en plein écran (sert de titre
    là-bas), plus affiché en mode normal. Centré par rapport à TOUTE la ligne (position absolue),
    pas par flex, pour rester centré quelle que soit la largeur du contenu de chaque côté — Grilles/
-   Taille/Capture (déplacés en JS dans #bingo-solo-toolbar-center) restent groupés à gauche plutôt
+   New/Capture/Stats (déplacés en JS dans #bingo-solo-toolbar-center) restent groupés à gauche plutôt
    que centrés, donc plus de risque de chevauchement avec ce titre (contrairement à une tentative
    précédente où Capture vivait dans la même zone que le titre, voir historique). */
 #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
@@ -1696,8 +1599,8 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 .ctrl-row-toolbar-right {
   justify-content: flex-end;
 }
-/* Contrôles dégroupés de l'ex-"Options Grilles" (Taille/Bloquer+Dimension+Générer/Vider/
-   Reset/Capture), masqués en plein écran — #btn-grids-dropdown reste seul visible à gauche. */
+/* 2e rangée mode normal : Grilles (tout à gauche) / New / Capture / Stats — déplacés en JS dans
+   #bingo-solo-toolbar-center en plein écran, cette rangée y étant masquée. */
 #bingo-grids-options-row {
   display: flex;
   align-items: center;
@@ -1983,24 +1886,6 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   box-sizing: border-box;
 }
 
-/* ── Bouton bloquer génération (icône verrou cliquable) ── */
-.lock-generate-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  background: none;
-  border: none;
-  padding: 0;
-}
-.lock-generate-label[aria-pressed="true"] { color: var(--accent); }
-.lock-generate-label [data-lucide] { margin-right: 0; }
-
 /* ── Modal renommage grand ── */
 .modal-rename-input {
   font-size: 1.3rem !important;
@@ -2242,26 +2127,7 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   min-width: 0;
 }
 
-.subgrid-lock-label {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  cursor: pointer;
-  user-select: none;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 3px 7px;
-  transition: var(--transition);
-}
-.subgrid-lock-label:hover { border-color: var(--accent-dim); color: var(--accent); }
-.subgrid-lock-label[aria-pressed="true"] { color: var(--accent); }
-.subgrid-lock-label:disabled { cursor: not-allowed; opacity: 0.6; }
-.subgrid-lock-label [data-lucide] { margin-right: 0; }
-
-/* Cadre discret autour de Bloquer + Générer (par grille) — à gauche du nom, pas centré avec lui */
+/* Cadre discret autour de Générer + Vider (par grille) — à gauche du nom, pas centré avec lui */
 .subgrid-lock-gen-group {
   position: absolute;
   left: 0;
@@ -2349,6 +2215,14 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   min-width: 0;
   min-height: 0;
 }
+/* Texte d'une case : taille calculée en JS (_fitBingoCellTexts) pour remplir la case ; chaque mot
+   est nowrap pour ne jamais être coupé sur deux lignes. */
+.bingo-cell-text {
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+}
+.bingo-cell-word { white-space: nowrap; }
 .bingo-cell:hover:not(.checked):not(.empty) {
   border-color: var(--accent-dim);
   color: var(--text);
@@ -2358,7 +2232,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   background: var(--surface-3);
   border-color: var(--accent-dim);
   color: var(--accent);
-  transform: scale(0.97);
 }
 .bingo-cell.checked::after {
   content: '';
@@ -2580,7 +2453,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 .tl-dropdown-item .grid-tab-name { flex: 1; cursor: pointer; }
 
 /* ── Menu déroulant Chemin : arborescence pliable/dépliable (même look que .tl-folder-header
-   dans le drawer Dossiers), chevron séparé du nom pour ne pas naviguer en voulant déplier. ── */
+   dans le drawer Dossiers). Pas de chevron : icône folder / folder-open selon l'état déplié. ── */
 .tl-path-menu-row {
   display: flex;
   align-items: center;
@@ -2596,15 +2469,25 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .tl-path-menu-row:hover { background: var(--surface-3); }
 .tl-path-menu-row.active { background: rgba(59,130,246,0.18); color: #93c5fd; }
-.tl-path-menu-arrow {
-  font-size: 0.6rem;
+/* Petit bouton de tri en haut du menu Chemin (cf _ensurePathMenuSortBtn). */
+.path-menu-sort-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin: 0 8px 4px auto;
+  padding: 2px 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   color: var(--text-dim);
-  transition: transform 0.15s;
-  flex-shrink: 0;
-  width: 14px;
-  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
 }
-.tl-path-menu-arrow.open { transform: rotate(90deg); }
+.path-menu-sort-btn:hover { color: var(--text); border-color: var(--text-dim); }
+.path-menu-sort-btn [data-lucide] { width: 12px; height: 12px; margin-right: 0; }
 .tl-path-menu-icon { font-size: 0.85rem; flex-shrink: 0; }
 .tl-path-menu-icon [data-lucide] { margin-right: 0; }
 .tl-path-menu-name {
