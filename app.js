@@ -5159,8 +5159,10 @@ function renderBingoStatsModal(folder) {
 
   _bingoStatsScope = root;
   _bingoStatsAllEpisodes = _collectEpisodeFolders(root);
-  // Par défaut, tous les épisodes sont inclus
-  _bingoStatsSelectedIds = new Set(_bingoStatsAllEpisodes.map(ep => ep.id));
+  // Par défaut, seuls les épisodes ayant au moins une case validée (grille non archivée) sont inclus
+  const _hasCheckedCell = ep => (ep.grids || []).some(g =>
+    !g.archived && (g.grid || []).some(c => c && c.checked));
+  _bingoStatsSelectedIds = new Set(_bingoStatsAllEpisodes.filter(_hasCheckedCell).map(ep => ep.id));
 
   _renderBingoStatsRows();
 }
