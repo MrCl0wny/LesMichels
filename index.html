@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=316" />
+  <link rel="stylesheet" href="style.css?v=325" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -44,7 +44,12 @@
 
       <!-- Badge profil dans le header -->
       <div id="user-badge" class="user-badge hidden">
-        <button id="btn-signout" class="btn-signout-header" title="Se déconnecter"><i data-lucide="log-out"></i> Se déconnecter</button>
+        <button id="btn-profile" class="btn-profile-header" title="Profil"><i data-lucide="user"></i> Profil</button>
+      </div>
+      <!-- Menu Profil (clic sur #btn-profile) -->
+      <div id="profile-menu" class="ctx-menu hidden">
+        <button class="ctx-menu-item" id="btn-open-prefs"><i data-lucide="settings"></i> Préférences</button>
+        <button class="ctx-menu-item ctx-danger" id="btn-signout"><i data-lucide="log-out"></i> Se déconnecter</button>
       </div>
 
     </div>
@@ -73,7 +78,6 @@
             <span class="folders-panel-title"><i data-lucide="grid-3x3"></i> Dossiers Bingo</span>
             <button class="btn-new-grid hidden" id="btn-new-grid" title="Nouvelle grille"><span class="btn-plus-green">+ Grille</span></button>
             <button class="folders-page-btn-presets" id="folders-page-btn-presets-cases" title="Preset cases"><i data-lucide="settings"></i> Preset cases</button>
-            <button class="folders-page-btn-archives" id="folders-page-btn-archives-bingo" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
             <button class="folders-page-btn-trash" id="folders-page-btn-trash-bingo" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
           </div>
           <div class="folders-panel-scroll">
@@ -104,7 +108,6 @@
           <div class="folders-panel-header">
             <span class="folders-panel-title"><i data-lucide="scroll"></i> Dossiers Tier List</span>
             <button class="folders-page-btn-presets" id="folders-page-btn-presets-tiers" title="Preset tiers"><i data-lucide="settings"></i> Preset tiers</button>
-            <button class="folders-page-btn-archives" id="folders-page-btn-archives-tl" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
             <button class="folders-page-btn-trash" id="folders-page-btn-trash-tl" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
           </div>
           <div class="folders-panel-scroll">
@@ -228,8 +231,8 @@
 
       <div class="tl-layout">
 
-        <!-- Boutons legacy Archives/Corbeille tierlist : cachés (stubs de compat JS), remplacés
-             par #folders-page-btn-archives/#folders-page-btn-trash sur la page Dossiers. -->
+        <!-- Boutons legacy Archives/Corbeille tierlist : cachés (stubs de compat JS). Corbeille accessible
+             via #folders-page-btn-trash-tl sur la page Dossiers ; plus aucun accès Archives dans l'UI. -->
         <button class="hidden" id="tl-btn-archives-unified" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
         <button class="hidden" id="tl-btn-trash-unified" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
 
@@ -379,7 +382,7 @@
       </div>
 
       <!-- Menu déroulant Grilles (mode normal) : cocher/décocher pour afficher,
-           + Grille, et bouton ⋮ par grille pour Renommer/Archiver/Supprimer. -->
+           + Grille, et bouton ⋮ par grille pour Renommer/Supprimer. -->
       <div id="grids-dropdown-menu" class="ctx-menu hidden"></div>
 
       <!-- Menu déroulant Chemin (mode normal) : arborescence pliable/dépliable des dossiers,
@@ -388,8 +391,8 @@
 
       <div class="bingo-layout" id="bingo-layout">
 
-        <!-- Boutons legacy Archives/Corbeille bingo : cachés (stubs de compat JS), remplacés
-             par #folders-page-btn-archives/#folders-page-btn-trash sur la page Dossiers. -->
+        <!-- Boutons legacy Archives/Corbeille bingo : cachés (stubs de compat JS). Corbeille accessible
+             via #folders-page-btn-trash-bingo sur la page Dossiers ; plus aucun accès Archives dans l'UI. -->
         <button class="hidden" id="btn-archives-unified" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
         <button class="hidden" id="btn-trash-unified" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
 
@@ -731,7 +734,6 @@
     <button class="ctx-menu-item" id="ctx-folder-rename"><i data-lucide="pencil"></i> Renommer</button>
     <button class="ctx-menu-item" id="ctx-folder-duplicate"><i data-lucide="copy-plus"></i> Dupliquer</button>
     <button class="ctx-menu-item" id="ctx-folder-set-current-event"><i data-lucide="party-popper"></i> Définir comme soirée en cours</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-folder-archive"><i data-lucide="package"></i> Archiver</button>
     <button class="ctx-menu-item ctx-danger" id="ctx-folder-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
 
@@ -1030,6 +1032,43 @@
     </div>
   </div>
 
+  <!-- Modal Préférences (bouton Profil > Préférences) — prefs propres à l'utilisateur -->
+  <div id="modal-prefs" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Préférences</h3>
+      </div>
+      <div class="modal-body">
+        <div class="prefs-section">
+          <div class="prefs-section-title"><i data-lucide="star"></i> Grille favorite par défaut</div>          <div class="prefs-chips" id="prefs-fav-title-chips">
+            <button type="button" class="prefs-chip" data-value="">Aucune</button>
+            <button type="button" class="prefs-chip" data-value="Jérôme">Jérôme</button>
+            <button type="button" class="prefs-chip" data-value="Adrien">Adrien</button>
+            <button type="button" class="prefs-chip" data-value="Damien">Damien</button>
+          </div>
+          <input type="text" id="prefs-fav-title-input" class="modal-text-input" placeholder="Ou saisir un autre titre..." maxlength="60" />
+        </div>
+        <div class="prefs-section">
+          <div class="prefs-section-title">Position de la grille favorite</div>
+          <div class="prefs-side-options">
+            <button type="button" class="prefs-side-option" data-side="left" data-valign="top" title="Favorite à gauche, autres grilles en haut">
+              <span class="prefs-side-schema"><span class="pss-main"><i data-lucide="star"></i></span><span class="pss-col"><span></span></span></span>
+            </button>
+            <button type="button" class="prefs-side-option" data-side="left" data-valign="bottom" title="Favorite à gauche, autres grilles en bas">
+              <span class="prefs-side-schema pss-bottom"><span class="pss-main"><i data-lucide="star"></i></span><span class="pss-col"><span></span></span></span>
+            </button>
+            <button type="button" class="prefs-side-option" data-side="right" data-valign="top" title="Favorite à droite, autres grilles en haut">
+              <span class="prefs-side-schema pss-reverse"><span class="pss-main"><i data-lucide="star"></i></span><span class="pss-col"><span></span></span></span>
+            </button>
+            <button type="button" class="prefs-side-option" data-side="right" data-valign="bottom" title="Favorite à droite, autres grilles en bas">
+              <span class="prefs-side-schema pss-reverse pss-bottom"><span class="pss-main"><i data-lucide="star"></i></span><span class="pss-col"><span></span></span></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal confirmation Reset -->
   <div id="modal-confirm-signout" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -1152,6 +1191,21 @@
     </div>
   </div>
 
+  <!-- Modal confirmation suppression → corbeille (dossier, bingo, grille, template, liste) -->
+  <div id="modal-confirm-delete" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3>Confirmer la suppression</h3>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;" id="modal-delete-msg"></p>
+        <div class="modal-actions">
+          <button class="btn-action btn-danger-action" id="btn-confirm-delete"><i data-lucide="trash-2"></i> Supprimer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal confirmation Reset Tier List -->
   <div id="tl-modal-confirm-reset" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -1206,6 +1260,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=455"></script>
+  <script src="app.js?v=465"></script>
 </body>
 </html>

@@ -185,8 +185,10 @@ body {
 /* Boutons par grille (générer/vider) masqués tant que Création est fermé
    (classe posée sur #page-bingo par le bouton Création). */
 #page-bingo:not(.creation-open) .subgrid-lock-gen-group { display: none; }
-/* Bouton Création : grisé (btn-neutral-action) sauf tant qu'une grille affichée a une case vide */
-#btn-bingo-creation.btn-creation-needed {
+/* Bouton Création : grisé (btn-neutral-action) sauf tant qu'une grille affichée a une case vide,
+   ou quand Création est ouvert (bouton "Quitter création") */
+#btn-bingo-creation.btn-creation-needed,
+#btn-bingo-creation[aria-expanded="true"] {
   border-color: #60a5fa !important;
   color: #dbeafe !important;
   background: rgba(96,165,250,0.28) !important;
@@ -1911,7 +1913,7 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 .grid-wrapper {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-start;
+  justify-content: center;
   align-items: flex-start;
   gap: 12px;
   width: 100%;
@@ -1939,11 +1941,18 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   transition: opacity 0.15s, border-color 0.15s;
   overflow: hidden;
 }
-/* Avec 1 ou 2 grilles affichées, garder le comportement précédent (elles se partagent
-   toute la largeur également plutôt que de rester bloquées à 260px). */
+/* Avec 1 à 3 grilles affichées (maximum, cf MAX_VISIBLE_GRIDS), elles se partagent la rangée
+   également pendant la mesure — jamais de retour à la ligne pour 3 grilles. */
 .grid-views-1 .grid-view-wrapper,
-.grid-views-2 .grid-view-wrapper {
+.grid-views-2 .grid-view-wrapper,
+.grid-views-3 .grid-view-wrapper {
   flex-basis: 0;
+}
+/* Sans grille favorite : une fois les grilles dimensionnées (_adjustBingoGridSizes), chaque cadre
+   épouse sa grille comme le cadre d'une grille favorite, au lieu de s'étirer sur toute la largeur. */
+.grid-wrapper.grid-wrapper-fit { flex-wrap: nowrap; }
+.grid-wrapper.grid-wrapper-fit .grid-view-wrapper {
+  flex: 0 1 auto; /* largeur inline posée en JS = taille de la grille + padding */
 }
 
 .grid-view-wrapper.grid-wrapper-dragging {
@@ -1962,6 +1971,14 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 .grid-wrapper.grid-wrapper-has-main {
   flex-wrap: nowrap;
   align-items: stretch;
+}
+/* Préférence "favorite à droite" (modal Préférences) : la colonne secondaire passe à gauche. */
+.grid-wrapper.grid-wrapper-has-main.grid-wrapper-main-right {
+  flex-direction: row-reverse;
+}
+/* Préférence "autres grilles en bas" : collées en bas de leur colonne (visible avec une seule). */
+.grid-wrapper.grid-wrapper-has-main.grid-wrapper-sec-bottom .grid-wrapper-secondary-col {
+  justify-content: flex-end;
 }
 .grid-wrapper.grid-wrapper-has-main .grid-view-wrapper {
   flex: 0 0 auto;
@@ -2844,7 +2861,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   flex-shrink: 0;
 }
 
-.btn-signout-header {
+.btn-profile-header {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2859,8 +2876,92 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-.btn-signout-header:hover { border-color: var(--danger); color: var(--danger); background: rgba(232,91,71,0.1); }
-.btn-signout-header [data-lucide] { width: 16px; height: 16px; margin-right: 0; }
+.btn-profile-header:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+.btn-profile-header [data-lucide] { width: 16px; height: 16px; margin-right: 0; }
+#profile-menu .ctx-menu-item [data-lucide] { margin-right: 6px; }
+
+/* ── Modal Préférences ── */
+.prefs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prefs-section-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.prefs-section-title [data-lucide] { fill: #f5c518; stroke: #f5c518; }
+.prefs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.prefs-chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.prefs-chip:hover { border-color: var(--accent-dim); color: var(--text); }
+.prefs-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+.prefs-side-options {
+  display: flex;
+  gap: 6px;
+}
+.prefs-side-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.prefs-side-option:hover { border-color: var(--accent-dim); color: var(--text); }
+.prefs-side-option.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+/* Schéma : grande case (favorite, étoile) + petite case (autres grilles) collée en haut ou en bas
+   de sa colonne (pss-bottom) ; pss-reverse = favorite à droite. */
+.prefs-side-schema {
+  display: flex;
+  gap: 4px;
+  height: 40px;
+}
+.prefs-side-schema.pss-reverse { flex-direction: row-reverse; }
+.prefs-side-schema.pss-bottom .pss-col { justify-content: flex-end; }
+.pss-main {
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+}
+.pss-main [data-lucide] { width: 16px; height: 16px; margin-right: 0; fill: #f5c518; stroke: #f5c518; }
+.pss-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pss-col > span {
+  width: 18px;
+  height: 18px;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  opacity: 0.6;
+}
 
 /* ══════════════════════════════════════════════════
    TIER LIST

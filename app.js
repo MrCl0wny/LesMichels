@@ -130,6 +130,7 @@ const MODAL_CLOSE_FNS = {
   'modal-rename-subtheme': () => closeRenameSubthemeModal(),
   'modal-new-grid': () => closeNewGridModal(),
   'modal-confirm-signout': () => document.getElementById('modal-confirm-signout').classList.add('hidden'),
+  'modal-prefs': () => closePrefsModal(),
   'modal-confirm-reset': () => document.getElementById('modal-confirm-reset').classList.add('hidden'),
   'modal-capture-choice': () => closeCaptureChoiceModal(),
   'modal-tl-capture-choice': () => closeTlCaptureChoiceModal(),
@@ -142,6 +143,7 @@ const MODAL_CLOSE_FNS = {
   },
   'modal-confirm-toplace': () => _tlCloseConfirmToPlaceModal(),
   'modal-confirm-current-event': () => closeConfirmCurrentEventModal(),
+  'modal-confirm-delete': () => closeConfirmDeleteModal(),
 };
 document.addEventListener('mousedown', (e) => {
   if (!e.target.classList.contains('modal-overlay') || e.target.id === 'modal-auth') return;
@@ -303,6 +305,22 @@ function setupAuth() {
     document.getElementById('modal-confirm-signout').classList.remove('hidden');
   });
 
+  // Menu Profil : Préférences + Se déconnecter (#btn-signout ci-dessus). Positionné en fixed sous le
+  // bouton, aligné à droite ; tout clic ailleurs (y compris sur un item) le referme.
+  const btnProfile  = document.getElementById('btn-profile');
+  const profileMenu = document.getElementById('profile-menu');
+  btnProfile.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!profileMenu.classList.contains('hidden')) { profileMenu.classList.add('hidden'); return; }
+    const r = btnProfile.getBoundingClientRect();
+    profileMenu.style.top = (r.bottom + 6) + 'px';
+    profileMenu.style.left = 'auto';
+    profileMenu.style.right = (window.innerWidth - r.right) + 'px';
+    profileMenu.classList.remove('hidden');
+  });
+  document.addEventListener('click', () => profileMenu.classList.add('hidden'));
+  document.getElementById('btn-open-prefs').addEventListener('click', openPrefsModal);
+
   const ALLOWED_UIDS = [
     'qvXEXn9zarMPaK0l9AH4PDtxsVG3',
     'VDpOI5BckhR7cmu3Bl7lzWj0wpH2',
@@ -333,6 +351,9 @@ function setupAuth() {
       _localActiveFolderId   = null;
       _selectedGridsByFolder = {};
       _mainGridByFolder = {};
+      _localFavGridTitle = '';
+      _localFavGridSide = 'left';
+      _localFavGridVAlign = 'top';
       _selectedGridIds = [];
       _localShowNewBadge = true;
       _tlLocalShowLabels       = null;
@@ -389,6 +410,9 @@ function loadUserPrefs() {
       try { _mainGridByFolder = typeof prefs.mainGridByFolder === 'object' ? prefs.mainGridByFolder : JSON.parse(prefs.mainGridByFolder); }
       catch { _mainGridByFolder = {}; }
     }
+    if (typeof prefs.favGridTitle === 'string') _localFavGridTitle = prefs.favGridTitle;
+    if (prefs.favGridSide === 'left' || prefs.favGridSide === 'right') _localFavGridSide = prefs.favGridSide;
+    if (prefs.favGridVAlign === 'top' || prefs.favGridVAlign === 'bottom') _localFavGridVAlign = prefs.favGridVAlign;
     // Migration prefs anciens formats vers nouvelle structure
     if (!prefs.activeFolderId && prefs.activeThemeId) {
       _localActiveFolderId = prefs.activeThemeId;
@@ -430,7 +454,7 @@ async function _applySoloGridModeIfNeeded() {
   const firstFolder = findParentFolder(state.folders, _soloGridIds[0]);
   if (!firstFolder) return;
   const folderGridIds = new Set((firstFolder.grids || []).map(gx => gx.id));
-  const validIds = _soloGridIds.filter(id => folderGridIds.has(id));
+  const validIds = _soloGridIds.filter(id => folderGridIds.has(id)).slice(0, MAX_VISIBLE_GRIDS);
   if (validIds.length === 0) return;
   _localActiveFolderId = firstFolder.id;
   _selectedGridIds = validIds;
@@ -700,12 +724,15 @@ function saveLocalShowNewBadge(shown) {
 // Stocké par dossier : { [folderId]: [gridId, ...] }
 let _selectedGridIds = [];
 let _selectedGridsByFolder = {};
+// Nombre maximum de grilles affichées simultanément (au-delà : tronqué à la sauvegarde et à
+// l'affichage, cases à cocher du menu Grilles désactivées une fois la limite atteinte).
+const MAX_VISIBLE_GRIDS = 3;
 let _draggingGridWrapper = false;
 
 const _EMPTY_SELECTION = '__empty__';
 
 function saveLocalSelectedGrids(ids) {
-  _selectedGridIds = ids.slice();
+  _selectedGridIds = ids.slice(0, MAX_VISIBLE_GRIDS);
   const folder = activeFolder();
   if (folder) {
     // Firebase supprime les tableaux vides — on stocke un marqueur pour distinguer
@@ -727,8 +754,33 @@ function loadLocalSelectedGridsForFolder(folderId) {
 // Stocké par dossier : { [folderId]: gridId }
 let _mainGridByFolder = {};
 
+// Préférences "grille favorite" (= grille principale) — modal Préférences :
+// _localFavGridTitle : titre de grille mis en favori par défaut dans chaque bingo ('' = aucun).
+// _localFavGridSide  : 'left' | 'right' — position de la favorite par rapport aux autres grilles.
+// _localFavGridVAlign : 'top' | 'bottom' — autres grilles collées en haut ou en bas de leur colonne.
+// Un choix explicite (étoile) dans un dossier prime toujours sur le titre par défaut ; retirer l'étoile
+// stocke _MAIN_GRID_NONE (et non une suppression), sinon le titre par défaut la remettrait aussitôt.
+let _localFavGridTitle = '';
+let _localFavGridSide = 'left';
+let _localFavGridVAlign = 'top';
+const _MAIN_GRID_NONE = '__none__';
+
+function _normalizeGridTitle(str) {
+  return String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+}
+
+function _defaultFavGridId(folderId) {
+  const wanted = _normalizeGridTitle(_localFavGridTitle);
+  if (!wanted) return null;
+  const folder = findFolderById(state.folders, folderId);
+  const match = (folder?.grids || []).find(gx => !gx.archived && _normalizeGridTitle(gx.title || gx.name) === wanted);
+  return match ? match.id : null;
+}
+
 function getMainGridId(folderId) {
-  return _mainGridByFolder[folderId] || null;
+  const explicit = _mainGridByFolder[folderId];
+  if (explicit) return explicit === _MAIN_GRID_NONE ? null : explicit;
+  return _defaultFavGridId(folderId);
 }
 
 function setMainGridId(folderId, gridId) {
@@ -2610,8 +2662,7 @@ function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder, browseThisFolder)
     addSep();
     addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
     addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
-    addItem('package', 'Archiver',            true,  () => archiveFolder(f.id));
-    addItem('trash-2', 'Supprimer',           true,  () => deleteFolder(f.id));
+    addItem('trash-2', 'Supprimer',           true,  () => confirmDelete(`le bingo "${f.name}"`, () => deleteFolder(f.id)));
     return;
   }
   // Dossier conteneur (pas de grilles directement) : Statistiques puis menu épuré, jamais de soirée en cours.
@@ -2619,8 +2670,7 @@ function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder, browseThisFolder)
   addSep();
   addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
   addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
-  addItem('package', 'Archiver',            true,  () => archiveFolder(f.id));
-  addItem('trash-2', 'Supprimer',           true,  () => deleteFolder(f.id));
+  addItem('trash-2', 'Supprimer',           true,  () => confirmDelete(`le dossier "${f.name}" et tout son contenu`, () => deleteFolder(f.id)));
 }
 
 // Fil d'Ariane du panneau Dossiers Bingo — navigue via _foldersNavFolderId (niveau courant).
@@ -2771,11 +2821,8 @@ document.getElementById('btn-new-bingo-folder').addEventListener('click', () => 
 document.getElementById('btn-new-bingo-folder-small').addEventListener('click', () => document.getElementById('btn-new-bingo-folder').click());
 document.getElementById('tl-btn-new-template-small').addEventListener('click', () => document.getElementById('tl-btn-new-template').click());
 
-// Archives/Corbeille : une paire de boutons par colonne, câblés directement (plus de notion
-// d'onglet actif à consulter).
-document.getElementById('folders-page-btn-archives-bingo').addEventListener('click', openArchivesUnified);
+// Corbeille : un bouton par colonne, câblé directement (plus de bouton Archives).
 document.getElementById('folders-page-btn-trash-bingo').addEventListener('click', openTrashUnified);
-document.getElementById('folders-page-btn-archives-tl').addEventListener('click', tlOpenArchivesUnified);
 document.getElementById('folders-page-btn-trash-tl').addEventListener('click', tlOpenTrashUnified);
 
 function renderThemesList() {
@@ -2943,8 +2990,8 @@ function getVisibleGrids() {
   const activeGrids = s.grids.filter(x => !x.archived);
   if (activeGrids.length === 0) return [];
 
-  // Nettoyer les ids sélectionnés qui n'existent plus
-  _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id));
+  // Nettoyer les ids sélectionnés qui n'existent plus (et appliquer la limite d'affichage)
+  _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id)).slice(0, MAX_VISIBLE_GRIDS);
 
   // Retourner dans l'ordre de _selectedGridIds, filtré par grilles existantes
   return _selectedGridIds.map(id => activeGrids.find(x => x.id === id)).filter(Boolean);
@@ -3413,7 +3460,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
   titleStar.addEventListener('click', () => {
     const sNow = activeSubtheme();
     if (!sNow) return;
-    setMainGridId(sNow.id, (getMainGridId(sNow.id) === g.id) ? null : g.id);
+    setMainGridId(sNow.id, (getMainGridId(sNow.id) === g.id) ? _MAIN_GRID_NONE : g.id);
     renderGrid();
   });
   titleRow.appendChild(titleStar);
@@ -3581,7 +3628,25 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
       // fixée ensuite par _fitBingoCellTexts(), une fois la taille réelle des cases connue.
       const textEl = document.createElement('span');
       textEl.className = 'bingo-cell-text';
-      cellText.split(/\s+/).filter(Boolean).forEach((word, wi) => {
+      // Un "mot" fait uniquement de ponctuation (ex. le "!" de "là !") est collé à son voisin par une
+      // espace insécable, pour ne jamais se retrouver seul sur une ligne : au mot précédent, sauf
+      // ponctuation ouvrante (« ( [ …) ou en début de texte, collée au mot suivant.
+      const cellWords = [];
+      let pendingOpen = '';
+      cellText.split(/\s+/).filter(Boolean).forEach(tok => {
+        if (/^[^\p{L}\p{N}]+$/u.test(tok)) {
+          if (!cellWords.length || /^[«(\[{¿¡“‘"']+$/.test(tok)) pendingOpen += tok + ' ';
+          else cellWords[cellWords.length - 1] += ' ' + tok;
+          return;
+        }
+        cellWords.push(pendingOpen + tok);
+        pendingOpen = '';
+      });
+      if (pendingOpen) {
+        if (cellWords.length) cellWords[cellWords.length - 1] += ' ' + pendingOpen.trim();
+        else cellWords.push(pendingOpen.trim());
+      }
+      cellWords.forEach((word, wi) => {
         if (wi > 0) textEl.appendChild(document.createTextNode(' '));
         const wordEl = document.createElement('span');
         wordEl.className = 'bingo-cell-word';
@@ -3696,13 +3761,16 @@ function _showSecondaryCellPreview(cellDiv, cellText, cell) {
   preview.classList.toggle('bingo-line', cellDiv.classList.contains('bingo-line'));
   preview.classList.remove('hidden');
 
-  // Positionné à droite de la colonne secondaire (espace toujours libre dans ce mode, cf largeur
-  // dynamique calculée par _adjustBingoGridSizes), centré verticalement sur la case survolée.
+  // Positionné du côté de la colonne secondaire opposé à la grille favorite (à droite par défaut,
+  // à gauche si la favorite est affichée à droite), centré verticalement sur la case survolée.
   const colRect = secondaryCol.getBoundingClientRect();
   const cellRect = cellDiv.getBoundingClientRect();
   preview.style.left = (colRect.right + 16) + 'px';
   preview.style.top = '0px'; // mesuré puis recentré ci-dessous une fois la hauteur réelle connue
   const previewHeight = preview.getBoundingClientRect().height;
+  if (gridWrapper.classList.contains('grid-wrapper-main-right')) {
+    preview.style.left = Math.max(8, colRect.left - 16 - preview.getBoundingClientRect().width) + 'px';
+  }
   let top = cellRect.top + cellRect.height / 2 - previewHeight / 2;
   const viewportMargin = 8;
   top = Math.max(viewportMargin, Math.min(top, window.innerHeight - previewHeight - viewportMargin));
@@ -3870,7 +3938,9 @@ function renderGrid(skipSizeRecalc = false) {
 
   const mainGridId = getMainGridId(s.id);
   const hasMainGrid = gridsToShow.length > 1 && !!mainGridId && gridsToShow.some(gx => gx.id === mainGridId);
-  gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}` + (hasMainGrid ? ' grid-wrapper-has-main' : '');
+  gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}` + (hasMainGrid ? ' grid-wrapper-has-main' : '')
+    + (hasMainGrid && _localFavGridSide === 'right' ? ' grid-wrapper-main-right' : '')
+    + (hasMainGrid && _localFavGridVAlign === 'bottom' ? ' grid-wrapper-sec-bottom' : '');
 
   // Le message global est désormais remplacé par des messages individuels par grille
   bingoMsg.classList.add('hidden');
@@ -3989,7 +4059,11 @@ function _adjustBingoGridSizes() {
   wrappers.forEach(wrapper => {
     const gridEl = wrapper.querySelector('.bingo-grid');
     if (gridEl) { gridEl.style.width = ''; gridEl.style.maxHeight = ''; }
+    wrapper.style.width = '';
   });
+  // Même raison : les cadres repassent en flex (largeur "naturelle") le temps de la mesure, puis
+  // sont resserrés autour de leur grille à la fin (cf .grid-wrapper-fit, sans grille favorite).
+  gridWrapper.classList.remove('grid-wrapper-fit');
 
   // Basé sur le viewport (pas le parent, qui s'étire librement avec son contenu)
   // pour garantir qu'il ne faut jamais scroller pour voir le bas de la grille.
@@ -4009,7 +4083,10 @@ function _adjustBingoGridSizes() {
     // au calcul rowTops ci-dessous qui suppose un flex-wrap classique à plat.
     const secWrappers = secondaryCol.querySelectorAll('.grid-view-wrapper');
     const secGapV = parseFloat(getComputedStyle(secondaryCol).rowGap || getComputedStyle(secondaryCol).gap) || 0;
-    const secAvailableHeight = (totalAvailableHeight - secGapV * Math.max(0, secWrappers.length - 1)) / Math.max(1, secWrappers.length);
+    // Toujours au moins 2 "parts" de hauteur : avec une seule grille secondaire, elle garde la taille
+    // réduite qu'elle aurait à 2 (au lieu d'occuper toute la hauteur comme la favorite).
+    const secSlots = Math.max(2, secWrappers.length);
+    const secAvailableHeight = (totalAvailableHeight - secGapV * (secSlots - 1)) / secSlots;
 
     // secondaryCol n'a plus de largeur CSS fixe (cf .grid-wrapper-secondary-col) : on lui donne ici
     // la largeur exacte que ferait une grille secondaire carrée occupant toute sa hauteur allouée
@@ -4058,7 +4135,12 @@ function _adjustBingoGridSizes() {
   const rowCount = Math.max(1, rowTops.size);
   const wrapperGapV = parseFloat(getComputedStyle(gridWrapper).rowGap || getComputedStyle(gridWrapper).gap) || 0;
   const availableHeight = (totalAvailableHeight - wrapperGapV * (rowCount - 1)) / rowCount;
-  wrappers.forEach(wrapper => _sizeSingleGridWrapper(wrapper, availableHeight));
+  // Largeur de cadre fixée d'après la grille (et non width:fit-content) : le padding de 190px de
+  // .grid-view-title-row élargirait sinon chaque cadre au-delà de sa part de la rangée, et 3 grilles
+  // passeraient à la ligne. Appliquée après toutes les mesures (sans effet tant que flex-basis:0).
+  const fitWidths = Array.from(wrappers).map(wrapper => _sizeSingleGridWrapper(wrapper, availableHeight));
+  wrappers.forEach((wrapper, i) => { if (fitWidths[i]) wrapper.style.width = fitWidths[i] + 'px'; });
+  gridWrapper.classList.add('grid-wrapper-fit');
   _fitBingoCellTexts();
 }
 
@@ -4075,11 +4157,17 @@ function _sizeSingleGridWrapper(wrapper, availableHeight, availableWidth = null)
   const wrapperGap = parseFloat(wrapperStyle.rowGap || wrapperStyle.gap) || 0;
   const gapCount = wrapper.children.length - 1;
   const maxH = Math.max(80, availableHeight - headerHeight - wrapperPaddingV - wrapperGap * gapCount - 4);
+  const wrapperBorderH = parseFloat(wrapperStyle.borderLeftWidth) + parseFloat(wrapperStyle.borderRightWidth);
   const rawWidth = availableWidth !== null ? availableWidth : wrapper.getBoundingClientRect().width;
-  const maxW = Math.max(80, rawWidth - wrapperPaddingH);
-  const side = Math.min(maxH, maxW);
+  // rawWidth inclut la bordure du cadre : la retirer aussi, sinon le cadre resserré (cf
+  // .grid-wrapper-fit) dépasse sa part de la rangée de 2px et la 3e grille passe à la ligne.
+  // Arrondi à l'inférieur pour la même raison (sous-pixels cumulés sur 3 grilles).
+  const maxW = Math.max(80, rawWidth - wrapperPaddingH - wrapperBorderH);
+  const side = Math.floor(Math.min(maxH, maxW));
   gridEl.style.maxHeight = side + 'px';
   gridEl.style.width = side + 'px';
+  // Largeur extérieure du cadre qui épouse exactement la grille (box-sizing: border-box)
+  return side + wrapperPaddingH + wrapperBorderH;
 }
 
 window.addEventListener('resize', () => {
@@ -5262,7 +5350,7 @@ function _renderBingoStatsEpisodesMenu() {
 }
 
 // ── Menu déroulant "Grilles" (mode normal) : cocher/décocher pour afficher, + Grille,
-// et bouton ⋮ par grille (Renommer/Archiver/Supprimer, pas de Dupliquer). ──
+// et bouton ⋮ par grille (Renommer/Supprimer, pas de Dupliquer). ──
 const _btnGridsDropdown = document.getElementById('btn-grids-dropdown');
 if (_btnGridsDropdown) {
   _btnGridsDropdown.addEventListener('click', e => {
@@ -5286,7 +5374,8 @@ function _renderGridsDropdownMenu() {
 
   if (!s) { if (window.lucide) lucide.createIcons(); return; }
   const activeGrids = s.grids.filter(g => !g.archived);
-  _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id));
+  _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id)).slice(0, MAX_VISIBLE_GRIDS);
+  const selectionFull = _selectedGridIds.length >= MAX_VISIBLE_GRIDS;
 
   activeGrids.forEach(g => {
     const isSelected = _selectedGridIds.includes(g.id);
@@ -5296,7 +5385,9 @@ function _renderGridsDropdownMenu() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = isSelected;
-    cb.title = isSelected ? 'Masquer cette grille' : 'Afficher cette grille';
+    cb.disabled = !isSelected && selectionFull;
+    cb.title = isSelected ? 'Masquer cette grille'
+      : (cb.disabled ? `${MAX_VISIBLE_GRIDS} grilles maximum affichées` : 'Afficher cette grille');
     cb.addEventListener('click', e => e.stopPropagation());
     cb.addEventListener('change', () => {
       const sNow = activeSubtheme();
@@ -5311,6 +5402,13 @@ function _renderGridsDropdownMenu() {
         }
       }
       saveLocalSelectedGrids(_selectedGridIds);
+      // Limite d'affichage atteinte (ou libérée) : (dés)activer les cases non cochées du menu ouvert
+      const fullNow = _selectedGridIds.length >= MAX_VISIBLE_GRIDS;
+      menu.querySelectorAll('.grid-tab > input[type="checkbox"]').forEach(other => {
+        if (other.checked) return;
+        other.disabled = fullNow;
+        other.title = fullNow ? `${MAX_VISIBLE_GRIDS} grilles maximum affichées` : 'Afficher cette grille';
+      });
       _bingoSaveFolder(sNow.id);
       renderGridsList();
       renderGrid();
@@ -5332,7 +5430,7 @@ function _renderGridsDropdownMenu() {
       e.stopPropagation();
       const sNow = activeSubtheme();
       if (!sNow) return;
-      setMainGridId(sNow.id, (getMainGridId(sNow.id) === g.id) ? null : g.id);
+      setMainGridId(sNow.id, (getMainGridId(sNow.id) === g.id) ? _MAIN_GRID_NONE : g.id);
       _renderGridsDropdownMenu();
       renderGrid();
     });
@@ -5411,8 +5509,10 @@ if (ctxThemeArchive) ctxThemeArchive.addEventListener('click', () => {
 });
 const _ctxFolderDeleteBtn = document.getElementById('ctx-folder-delete');
 if (_ctxFolderDeleteBtn) _ctxFolderDeleteBtn.addEventListener('click', () => {
-  if (_ctxThemeId) deleteFolder(_ctxThemeId);
+  const id = _ctxThemeId;
   closeCtxMenuFolder();
+  const f = id && findFolderById(state.folders, id);
+  if (f) confirmDelete(`"${f.name}"`, () => deleteFolder(id));
 });
 const _ctxFolderNewChildBtn = document.getElementById('ctx-folder-new-child');
 if (_ctxFolderNewChildBtn) _ctxFolderNewChildBtn.addEventListener('click', () => {
@@ -5451,8 +5551,10 @@ ctxGridRename.addEventListener('click', () => {
   closeCtxMenuGrid();
 });
 document.getElementById('ctx-grid-delete').addEventListener('click', () => {
-  if (_ctxGridId) deleteGrid(_ctxGridId);
+  const id = _ctxGridId;
   closeCtxMenuGrid();
+  const g = id && (activeSubtheme()?.grids || []).find(x => x.id === id);
+  if (g) confirmDelete(`la grille "${g.name}"`, () => deleteGrid(id));
 });
 
 // ── Menu contextuel cases ──
@@ -5814,6 +5916,64 @@ document.getElementById('btn-confirm-signout').addEventListener('click', () => {
   document.getElementById('modal-confirm-signout').classList.add('hidden');
   _auth.signOut();
 });
+
+// ──────────────────────────────────────────────
+// Modal Préférences (Profil > Préférences) — chaque changement est enregistré immédiatement
+// dans les prefs utilisateur, puis la grille est re-rendue.
+// ──────────────────────────────────────────────
+const modalPrefs        = document.getElementById('modal-prefs');
+const prefsFavTitleInput = document.getElementById('prefs-fav-title-input');
+
+function _refreshPrefsModal() {
+  const chips = modalPrefs.querySelectorAll('.prefs-chip');
+  const isPreset = [...chips].some(c => c.dataset.value === _localFavGridTitle);
+  chips.forEach(c => c.classList.toggle('active', c.dataset.value === _localFavGridTitle));
+  prefsFavTitleInput.value = isPreset ? '' : _localFavGridTitle;
+  modalPrefs.querySelectorAll('.prefs-side-option').forEach(b => b.classList.toggle('active',
+    b.dataset.side === _localFavGridSide && b.dataset.valign === _localFavGridVAlign));
+}
+
+function _setFavGridPrefs(patch) {
+  if ('favGridTitle' in patch) _localFavGridTitle = patch.favGridTitle;
+  if ('favGridSide' in patch) _localFavGridSide = patch.favGridSide;
+  if ('favGridVAlign' in patch) _localFavGridVAlign = patch.favGridVAlign;
+  saveUserPrefs(patch);
+  _refreshPrefsModal();
+  if (_firebaseReady) renderGrid();
+}
+
+// Titre saisi à la main : validé à Entrée, à la perte de focus et à la fermeture du modal.
+function _commitFavTitleInput() {
+  const val = prefsFavTitleInput.value.trim();
+  if (!val || val === _localFavGridTitle) return;
+  _setFavGridPrefs({ favGridTitle: val });
+}
+
+function openPrefsModal() {
+  _refreshPrefsModal();
+  modalPrefs.classList.remove('hidden');
+}
+
+function closePrefsModal() {
+  _commitFavTitleInput();
+  modalPrefs.classList.add('hidden');
+}
+
+modalPrefs.querySelectorAll('.prefs-chip').forEach(chip => {
+  chip.addEventListener('click', () => _setFavGridPrefs({ favGridTitle: chip.dataset.value }));
+});
+modalPrefs.querySelectorAll('.prefs-side-option').forEach(btn => {
+  btn.addEventListener('click', () => _setFavGridPrefs({ favGridSide: btn.dataset.side, favGridVAlign: btn.dataset.valign }));
+});
+prefsFavTitleInput.addEventListener('input', () => {
+  // Pendant la saisie, aucune puce ne doit rester surlignée (le titre perso remplacera le preset)
+  if (prefsFavTitleInput.value.trim()) modalPrefs.querySelectorAll('.prefs-chip').forEach(c => c.classList.remove('active'));
+});
+prefsFavTitleInput.addEventListener('change', _commitFavTitleInput);
+prefsFavTitleInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { _commitFavTitleInput(); prefsFavTitleInput.blur(); }
+  if (e.key === 'Escape') closePrefsModal();
+});
 btnReset.addEventListener('click', () => {
   const t = activeTheme();
   const s = activeSubtheme();
@@ -5871,7 +6031,13 @@ function _setBingoCreationOpen(open, render = true) {
   if (!group) return;
   _bingoCreationOpen = open;
   group.classList.toggle('hidden', !open);
-  document.getElementById('btn-bingo-creation')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const btnCreation = document.getElementById('btn-bingo-creation');
+  if (btnCreation) {
+    // aria-expanded="true" = mise en évidence bleu clair (cf CSS, même style que .btn-creation-needed)
+    btnCreation.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btnCreation.innerHTML = `<i data-lucide="pickaxe"></i> ${open ? 'Quitter création' : 'Création'}`;
+    if (window.lucide) lucide.createIcons({ root: btnCreation });
+  }
   // Les boutons par grille (générer/vider) ne sont visibles que Création ouvert (cf CSS).
   document.getElementById('page-bingo')?.classList.toggle('creation-open', open);
   // Le panneau Cases (modification des cases) n'a plus de sens Création fermé.
@@ -5954,6 +6120,22 @@ document.getElementById('btn-confirm-current-event').addEventListener('click', (
   closeConfirmCurrentEventModal();
   if (folderId) setCurrentEventFolder(folderId);
   else if (tierlistId) setCurrentEventTierlist(tierlistId);
+});
+// Modal confirmation suppression (envoi en corbeille) — partagée Bingo / Tier List.
+let _pendingDeleteFn = null;
+function confirmDelete(label, onConfirm) {
+  _pendingDeleteFn = onConfirm;
+  document.getElementById('modal-delete-msg').textContent = `Supprimer ${label} ? Envoi dans la corbeille (restauration possible depuis la corbeille).`;
+  document.getElementById('modal-confirm-delete').classList.remove('hidden');
+}
+function closeConfirmDeleteModal() {
+  document.getElementById('modal-confirm-delete').classList.add('hidden');
+  _pendingDeleteFn = null;
+}
+document.getElementById('btn-confirm-delete').addEventListener('click', () => {
+  const fn = _pendingDeleteFn;
+  closeConfirmDeleteModal();
+  if (fn) fn();
 });
 // Modal nouvelle grille
 const modalNewGrid       = document.getElementById('modal-new-grid');
@@ -11644,8 +11826,7 @@ function tlOpenFolderManageModal(id, anchorEl) {
   const { addItem } = _tlMakeCtxMenu(anchorEl, null);
   addItem('pencil', 'Renommer', false, () => tlOpenFolderModal('edit', id));
   addItem('move', 'Déplacer', false, () => tlOpenMoveFolderModal(id));
-  addItem('package', 'Archiver', true, () => tlArchiveFolder(id));
-  addItem('trash-2', 'Supprimer', true, () => tlDeleteFolder(id));
+  addItem('trash-2', 'Supprimer', true, () => confirmDelete(`le dossier "${folder.name}" et les templates/listes qu'il contient`, () => tlDeleteFolder(id)));
 }
 
 // ── Modal nouveau/renommer dossier ────────────────────────────────────────────
@@ -11916,8 +12097,7 @@ function tlOpenManageModal(id, anchorEl, context) {
   if (!(ctx === 'dropdown' && tl.isTemplate) && !_tlHasLiveTemplate(tl)) addItem('move', 'Déplacer', false, () => tlOpenMoveModal(id));
   if (!tl.isTemplate && !tl.templateId) addItem('scroll', 'Convertir en template', false, () => tlConvertToTemplate(id));
   if (!tl.isTemplate) addSep();
-  addItem('package', 'Archiver', true, () => tlArchive(id));
-  addItem('trash-2', 'Supprimer', true, () => tlDelete(id));
+  addItem('trash-2', 'Supprimer', true, () => confirmDelete(tl.isTemplate ? `le template "${tl.name}" et toutes ses listes` : `la liste "${tl.name}"`, () => tlDelete(id)));
 }
 
 // ── Capture Tierlist (presse-papier) ─────────────────────────────────────────
