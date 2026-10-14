@@ -1976,10 +1976,10 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 .grid-wrapper.grid-wrapper-has-main.grid-wrapper-main-right {
   flex-direction: row-reverse;
 }
-/* Préférence "autres grilles en bas" : collées en bas de leur colonne (visible avec une seule). */
-.grid-wrapper.grid-wrapper-has-main.grid-wrapper-sec-bottom .grid-wrapper-secondary-col {
-  justify-content: flex-end;
-}
+/* Autres grilles centrées verticalement dans leur colonne (marges auto plutôt que
+   justify-content:center, qui rendrait le haut inaccessible si la colonne déborde et défile). */
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col > .grid-view-wrapper:first-child { margin-top: auto; }
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col > .grid-view-wrapper:last-child { margin-bottom: auto; }
 .grid-wrapper.grid-wrapper-has-main .grid-view-wrapper {
   flex: 0 0 auto;
 }
@@ -2932,15 +2932,13 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .prefs-side-option:hover { border-color: var(--accent-dim); color: var(--text); }
 .prefs-side-option.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
-/* Schéma : grande case (favorite, étoile) + petite case (autres grilles) collée en haut ou en bas
-   de sa colonne (pss-bottom) ; pss-reverse = favorite à droite. */
+/* Schéma : grande case (favorite, étoile) + petites cases (autres grilles) ; pss-reverse = favorite à droite. */
 .prefs-side-schema {
   display: flex;
   gap: 4px;
   height: 40px;
 }
 .prefs-side-schema.pss-reverse { flex-direction: row-reverse; }
-.prefs-side-schema.pss-bottom .pss-col { justify-content: flex-end; }
 .pss-main {
   width: 40px;
   display: flex;

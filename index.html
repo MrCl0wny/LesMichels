@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=325" />
+  <link rel="stylesheet" href="style.css?v=326" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -1051,17 +1051,11 @@
         <div class="prefs-section">
           <div class="prefs-section-title">Position de la grille favorite</div>
           <div class="prefs-side-options">
-            <button type="button" class="prefs-side-option" data-side="left" data-valign="top" title="Favorite à gauche, autres grilles en haut">
-              <span class="prefs-side-schema"><span class="pss-main"><i data-lucide="star"></i></span><span class="pss-col"><span></span></span></span>
+            <button type="button" class="prefs-side-option" data-side="left" title="Favorite à gauche, autres grilles à droite">
+              <span class="prefs-side-schema"><span class="pss-main"><i data-lucide="star"></i></span><span class="pss-col"><span></span><span></span></span></span>
             </button>
-            <button type="button" class="prefs-side-option" data-side="left" data-valign="bottom" title="Favorite à gauche, autres grilles en bas">
-              <span class="prefs-side-schema pss-bottom"><span class="pss-main"><i data-lucide="star"></i></span><span class="pss-col"><span></span></span></span>
-            </button>
-            <button type="button" class="prefs-side-option" data-side="right" data-valign="top" title="Favorite à droite, autres grilles en haut">
-              <span class="prefs-side-schema pss-reverse"><span class="pss-main"><i data-lucide="star"></i></span><span class="pss-col"><span></span></span></span>
-            </button>
-            <button type="button" class="prefs-side-option" data-side="right" data-valign="bottom" title="Favorite à droite, autres grilles en bas">
-              <span class="prefs-side-schema pss-reverse pss-bottom"><span class="pss-main"><i data-lucide="star"></i></span><span class="pss-col"><span></span></span></span>
+            <button type="button" class="prefs-side-option" data-side="right" title="Favorite à droite, autres grilles à gauche">
+              <span class="prefs-side-schema pss-reverse"><span class="pss-main"><i data-lucide="star"></i></span><span class="pss-col"><span></span><span></span></span></span>
             </button>
           </div>
         </div>
@@ -1260,6 +1254,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=465"></script>
+  <script src="app.js?v=466"></script>
 </body>
 </html>

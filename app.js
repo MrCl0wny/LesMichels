@@ -353,7 +353,6 @@ function setupAuth() {
       _mainGridByFolder = {};
       _localFavGridTitle = '';
       _localFavGridSide = 'left';
-      _localFavGridVAlign = 'top';
       _selectedGridIds = [];
       _localShowNewBadge = true;
       _tlLocalShowLabels       = null;
@@ -412,7 +411,6 @@ function loadUserPrefs() {
     }
     if (typeof prefs.favGridTitle === 'string') _localFavGridTitle = prefs.favGridTitle;
     if (prefs.favGridSide === 'left' || prefs.favGridSide === 'right') _localFavGridSide = prefs.favGridSide;
-    if (prefs.favGridVAlign === 'top' || prefs.favGridVAlign === 'bottom') _localFavGridVAlign = prefs.favGridVAlign;
     // Migration prefs anciens formats vers nouvelle structure
     if (!prefs.activeFolderId && prefs.activeThemeId) {
       _localActiveFolderId = prefs.activeThemeId;
@@ -757,12 +755,10 @@ let _mainGridByFolder = {};
 // Préférences "grille favorite" (= grille principale) — modal Préférences :
 // _localFavGridTitle : titre de grille mis en favori par défaut dans chaque bingo ('' = aucun).
 // _localFavGridSide  : 'left' | 'right' — position de la favorite par rapport aux autres grilles.
-// _localFavGridVAlign : 'top' | 'bottom' — autres grilles collées en haut ou en bas de leur colonne.
 // Un choix explicite (étoile) dans un dossier prime toujours sur le titre par défaut ; retirer l'étoile
 // stocke _MAIN_GRID_NONE (et non une suppression), sinon le titre par défaut la remettrait aussitôt.
 let _localFavGridTitle = '';
 let _localFavGridSide = 'left';
-let _localFavGridVAlign = 'top';
 const _MAIN_GRID_NONE = '__none__';
 
 function _normalizeGridTitle(str) {
@@ -3939,8 +3935,7 @@ function renderGrid(skipSizeRecalc = false) {
   const mainGridId = getMainGridId(s.id);
   const hasMainGrid = gridsToShow.length > 1 && !!mainGridId && gridsToShow.some(gx => gx.id === mainGridId);
   gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}` + (hasMainGrid ? ' grid-wrapper-has-main' : '')
-    + (hasMainGrid && _localFavGridSide === 'right' ? ' grid-wrapper-main-right' : '')
-    + (hasMainGrid && _localFavGridVAlign === 'bottom' ? ' grid-wrapper-sec-bottom' : '');
+    + (hasMainGrid && _localFavGridSide === 'right' ? ' grid-wrapper-main-right' : '');
 
   // Le message global est désormais remplacé par des messages individuels par grille
   bingoMsg.classList.add('hidden');
@@ -5929,14 +5924,12 @@ function _refreshPrefsModal() {
   const isPreset = [...chips].some(c => c.dataset.value === _localFavGridTitle);
   chips.forEach(c => c.classList.toggle('active', c.dataset.value === _localFavGridTitle));
   prefsFavTitleInput.value = isPreset ? '' : _localFavGridTitle;
-  modalPrefs.querySelectorAll('.prefs-side-option').forEach(b => b.classList.toggle('active',
-    b.dataset.side === _localFavGridSide && b.dataset.valign === _localFavGridVAlign));
+  modalPrefs.querySelectorAll('.prefs-side-option').forEach(b => b.classList.toggle('active', b.dataset.side === _localFavGridSide));
 }
 
 function _setFavGridPrefs(patch) {
   if ('favGridTitle' in patch) _localFavGridTitle = patch.favGridTitle;
   if ('favGridSide' in patch) _localFavGridSide = patch.favGridSide;
-  if ('favGridVAlign' in patch) _localFavGridVAlign = patch.favGridVAlign;
   saveUserPrefs(patch);
   _refreshPrefsModal();
   if (_firebaseReady) renderGrid();
@@ -5963,7 +5956,7 @@ modalPrefs.querySelectorAll('.prefs-chip').forEach(chip => {
   chip.addEventListener('click', () => _setFavGridPrefs({ favGridTitle: chip.dataset.value }));
 });
 modalPrefs.querySelectorAll('.prefs-side-option').forEach(btn => {
-  btn.addEventListener('click', () => _setFavGridPrefs({ favGridSide: btn.dataset.side, favGridVAlign: btn.dataset.valign }));
+  btn.addEventListener('click', () => _setFavGridPrefs({ favGridSide: btn.dataset.side }));
 });
 prefsFavTitleInput.addEventListener('input', () => {
   // Pendant la saisie, aucune puce ne doit rester surlignée (le titre perso remplacera le preset)
