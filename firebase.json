@@ -4,7 +4,10 @@
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "tests/**",
+      "database.rules.json",
+      "CLAUDE.md"
     ],
     "headers": [
       {
