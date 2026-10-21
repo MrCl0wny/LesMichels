@@ -1619,6 +1619,14 @@ function getElementPresetFolders() {
   return state.elementPresetFolders;
 }
 
+// Nom affiché d'un preset rangé dans un dossier : "<dossier> <preset>" (ex. "KL Classique"). Calculé à
+// chaque affichage, jamais stocké — renommer le dossier renomme donc tous ses presets partout (liste,
+// tags du panneau Cases, menu "Ajouter au preset"). Un dossier de presets (pas de folderId) garde son nom.
+function _elementPresetDisplayName(item) {
+  const folder = item.folderId && getElementPresetFolders().find(f => f.id === item.folderId);
+  return folder ? `${folder.name} ${item.name}` : item.name;
+}
+
 // Met à jour la date de modification du preset et de son dossier (comme touchFolderChain côté Dossiers).
 function _touchElementPreset(preset) {
   const now = Date.now();
@@ -1669,7 +1677,7 @@ function getElementTags(text) {
   if (!norm) return [];
   return getElementPresets()
     .filter(p => (p.elements || []).some(t => (t || '').trim().toLowerCase() === norm))
-    .map(p => p.name)
+    .map(_elementPresetDisplayName)
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
@@ -4840,7 +4848,7 @@ function _sortElementPresetItems(items) {
     const date = x => x.updatedAt || x.createdAt || 0;
     sorted.sort((a, b) => date(b) - date(a));
   } else {
-    sorted.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr', { sensitivity: 'base' }));
+    sorted.sort((a, b) => (_elementPresetDisplayName(a) || '').localeCompare(_elementPresetDisplayName(b) || '', 'fr', { sensitivity: 'base' }));
   }
   if (mode === 'alpha-desc' || mode === 'updatedAt-asc') sorted.reverse();
   return sorted;
@@ -4875,6 +4883,8 @@ function renderElementPresetList() {
     empty.textContent = 'Aucun preset';
     list.appendChild(empty);
   }
+  // Titre du volet : le nom complet change si le dossier du preset ouvert est renommé/changé.
+  if (_elementPresetPaneOpen()) _updateElementPresetEditTitle();
   _refreshElementPresetsButtons();
   if (window.lucide) lucide.createIcons({ root: list });
 }
@@ -4948,7 +4958,7 @@ function _buildElementPresetRow(p) {
   cb.addEventListener('click', e => e.stopPropagation());
   cb.addEventListener('change', () => {
     if (cb.checked) _elementPresetsChecked.add(p.id); else _elementPresetsChecked.delete(p.id);
-    _refreshElementPresetsButtons();
+    renderElementPresetList(); // met aussi à jour la case du dossier (cochée / à moitié)
   });
 
   const isFav = _isFavElementPreset(p.id);
@@ -4964,7 +4974,7 @@ function _buildElementPresetRow(p) {
 
   const name = document.createElement('span');
   name.className = 'fp-folder-name';
-  name.textContent = p.name;
+  name.textContent = _elementPresetDisplayName(p);
 
   const count = document.createElement('span');
   count.className = 'element-preset-count';
@@ -4985,7 +4995,7 @@ function _buildElementPresetRow(p) {
 
   frag.appendChild(row);
   if (_elementPresetPendingDelete === p.id) {
-    frag.appendChild(_buildElementPresetDeleteConfirm(`Supprimer le preset « ${p.name} » ?`, () => _deleteElementPresetConfirmed(p.id)));
+    frag.appendChild(_buildElementPresetDeleteConfirm(`Supprimer le preset « ${_elementPresetDisplayName(p)} » ?`, () => _deleteElementPresetConfirmed(p.id)));
   }
   return frag;
 }
@@ -4996,8 +5006,24 @@ function _buildElementPresetFolderRow(f, presets) {
   const collapsed = localStorage.getItem(collapseKey) === '1';
 
   const row = document.createElement('div');
-  row.className = 'fp-folder-row';
+  row.className = 'fp-folder-row element-preset-row';
   row.dataset.itemId = f.id;
+
+  // Cochée si tous ses presets le sont, "à moitié" si seulement certains. Clic = tout cocher, ou tout
+  // décocher si tout était déjà coché.
+  const allIds = getElementPresets().filter(p => p.folderId === f.id).map(p => p.id);
+  const nChecked = allIds.filter(id => _elementPresetsChecked.has(id)).length;
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.disabled = allIds.length === 0;
+  cb.checked = allIds.length > 0 && nChecked === allIds.length;
+  cb.indeterminate = nChecked > 0 && nChecked < allIds.length;
+  cb.addEventListener('click', e => e.stopPropagation());
+  cb.addEventListener('change', () => {
+    const checkAll = nChecked < allIds.length;
+    allIds.forEach(id => { if (checkAll) _elementPresetsChecked.add(id); else _elementPresetsChecked.delete(id); });
+    renderElementPresetList();
+  });
 
   const arrow = document.createElement('span');
   arrow.className = 'fp-folder-arrow' + (collapsed ? ' collapsed' : '');
@@ -5015,6 +5041,7 @@ function _buildElementPresetFolderRow(f, presets) {
   count.className = 'element-preset-count';
   count.textContent = presets.length;
 
+  row.appendChild(cb);
   row.appendChild(arrow);
   row.appendChild(icon);
   row.appendChild(name);
@@ -5092,7 +5119,7 @@ function _startRenameElementPresetItem(item) {
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'element-preset-rename-input';
-  input.value = item.name;
+  input.value = item.name; // nom court : le préfixe du dossier n'est jamais stocké
   input.maxLength = 40;
   input.addEventListener('click', e => e.stopPropagation());
   const commit = () => {
@@ -5199,7 +5226,8 @@ let _elementPresetEditDates = []; // date de modification de chaque case (même 
 function _updateElementPresetEditTitle() {
   const titleEl = document.getElementById('element-preset-edit-title');
   if (!titleEl) return;
-  const base = _elementPresetEditId ? 'Modifier le preset' : 'Nouveau preset';
+  const preset = _elementPresetEditId && getElementPresets().find(p => p.id === _elementPresetEditId);
+  const base = preset ? `Modifier « ${_elementPresetDisplayName(preset)} »` : 'Nouveau preset';
   titleEl.textContent = `${base} (${_elementPresetEditTexts.length})`;
 }
 
@@ -5348,8 +5376,8 @@ function _commitElementPresetEdit() {
     getElementPresets().push(created);
     _bingoSaveIndex();
     _elementPresetEditId = created.id;
-    _updateElementPresetEditTitle();
   }
+  _updateElementPresetEditTitle(); // le nom peut avoir changé
   renderElementPresetList(); // nom/nombre de cases à jour dans la liste de gauche
 }
 
@@ -5926,8 +5954,8 @@ document.getElementById('ctx-element-add-to-preset').addEventListener('click', e
   closeCtxMenuElement();
   if (!elementId) return;
   const { addItem } = _tlMakeCtxMenu(anchorEl, e);
-  const presets = getElementPresets().slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  presets.forEach(p => addItem('tag', p.name, false, () => _addElementToPreset(elementId, p.id, null)));
+  const presets = getElementPresets().slice().sort((a, b) => _elementPresetDisplayName(a).localeCompare(_elementPresetDisplayName(b), undefined, { sensitivity: 'base' }));
+  presets.forEach(p => addItem('tag', _elementPresetDisplayName(p), false, () => _addElementToPreset(elementId, p.id, null)));
   addItem('plus', 'Nouveau preset...', false, () => {
     const name = prompt('Nom du nouveau preset :');
     if (name && name.trim()) _addElementToPreset(elementId, null, name.trim());
