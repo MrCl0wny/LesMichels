@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=326" />
+  <link rel="stylesheet" href="style.css?v=328" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -865,56 +865,62 @@
     </div>
   </div>
 
-  <!-- Modal "Preset cases" (fusion Importer cases + Presets) : importer depuis un autre dossier
-       OU depuis un preset enregistré (clic direct = import), + gestion (modifier/supprimer/créer). -->
+  <!-- Modal "Preset cases" (pleine hauteur) : liste des presets enregistrés, rangés dans des dossiers
+       (1 niveau) à gauche ; volet droit d'édition déplié par "+ Preset", "Depuis la cible" ou un clic
+       sur un preset. Les presets cochés sont importés dans le dossier cible. -->
   <div id="modal-element-presets" class="modal-overlay hidden">
-    <div class="modal-box modal-box-md">
-      <div class="modal-header">
-        <h3>Preset cases</h3>
+    <div class="modal-box element-presets-box">
+      <div class="element-presets-main">
+        <div class="modal-header">
+          <h3>Preset cases</h3>
+        </div>
+        <label class="element-presets-label">Dossier cible</label>
+        <div class="element-presets-row">
+          <button type="button" class="btn-action btn-neutral-action btn-path element-preset-target-btn" id="element-preset-target-btn"><i data-lucide="road"></i> <span id="element-preset-target-label"></span></button>
+        </div>
+        <div class="element-presets-row">
+          <button class="btn-action btn-secondary" id="btn-new-element-preset">+ Preset</button>
+          <button class="btn-action btn-secondary" id="btn-new-element-preset-folder">+ Dossier</button>
+        </div>
+        <div class="folders-panel-sort element-presets-row">
+          <label for="element-presets-sort-select">Trier par</label>
+          <select id="element-presets-sort-select" class="folders-sort-select element-presets-sort-select">
+            <option value="alpha">A→Z</option>
+            <option value="alpha-desc">Z→A</option>
+            <option value="updatedAt">Récent→ancien</option>
+            <option value="updatedAt-asc">Ancien→récent</option>
+          </select>
+        </div>
+        <div id="element-presets-list" class="element-presets-list"></div>
+        <button class="btn-action" id="btn-import-element-presets">Importer</button>
       </div>
-      <div class="modal-body">
-        <div class="tl-preset-target-only">
-          <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Dossier cible</label>
-          <div style="display:flex;gap:6px;margin-bottom:12px;">
-            <select id="import-elements-target-select" class="modal-folder-select hidden"></select>
-            <button type="button" class="folder-tree-dropdown-btn" id="import-elements-target-dropdown-btn" style="flex:1;"><i data-lucide="folder-closed"></i> <span></span></button>
-          </div>
-
-          <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;cursor:pointer;">
-            <input type="checkbox" id="element-preset-replace-checkbox" />
-            Remplacer les cases existantes (au lieu de les compléter)
-          </label>
-
-          <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Importer depuis un autre dossier</label>
-          <div style="display:flex;gap:6px;margin-bottom:16px;">
-            <select id="import-elements-source-select" class="modal-folder-select hidden"></select>
-            <button type="button" class="folder-tree-dropdown-btn" id="import-elements-source-dropdown-btn" style="flex:1;"><i data-lucide="folder-closed"></i> <span></span></button>
-            <button class="btn-action" id="btn-confirm-import-elements">Importer</button>
+      <div class="element-presets-pane">
+        <div class="modal-header">
+          <h3 id="element-preset-edit-title">Modifier le preset</h3>
+        </div>
+        <input type="text" id="element-preset-edit-name" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" />
+        <div class="element-presets-row element-presets-pane-tools">
+          <button class="btn-action btn-secondary" id="btn-element-preset-from-target" title="Ajouter les cases du dossier cible">+ Depuis la cible</button>
+          <div class="folders-panel-sort">
+            <label for="element-preset-cases-sort-select">Trier par</label>
+            <select id="element-preset-cases-sort-select" class="folders-sort-select element-presets-sort-select">
+              <option value="alpha">A→Z</option>
+              <option value="alpha-desc">Z→A</option>
+              <option value="updatedAt">Récent→ancien</option>
+              <option value="updatedAt-asc">Ancien→récent</option>
+            </select>
           </div>
         </div>
-
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-          <label for="element-preset-select" style="font-size:0.78rem;color:var(--text-muted);">Presets enregistrés</label>
-          <button class="btn-action btn-secondary" id="btn-new-element-preset" style="padding:3px 10px;font-size:0.78rem;">+ Nouveau preset</button>
+        <div class="add-element-form">
+          <input type="text" id="element-preset-edit-input" placeholder="Ajouter ou rechercher une case..." maxlength="80" />
+          <button id="btn-element-preset-edit-add" class="btn-icon" title="Ajouter une case">+</button>
         </div>
-        <div style="display:flex;gap:6px;margin-bottom:16px;">
-          <select id="element-preset-select" class="modal-folder-select" style="flex:1;"></select>
-          <button class="btn-action tl-preset-target-only" id="btn-import-element-preset" title="Importer ce preset dans le dossier cible">Importer</button>
-          <button class="btn-action btn-secondary btn-icon-square" id="btn-edit-element-preset" title="Modifier ce preset"><i data-lucide="pencil"></i></button>
-          <button class="btn-action btn-secondary btn-icon-square" id="btn-delete-element-preset" title="Supprimer ce preset"><i data-lucide="trash-2"></i></button>
-        </div>
-
-        <div class="tl-preset-target-only">
-          <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin:12px 0 4px;">Sauvegarder les cases actuelles comme preset</label>
-          <div style="display:flex;gap:6px;">
-            <input type="text" id="element-preset-save-input" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" style="flex:1;" />
-            <button class="btn-action" id="btn-save-current-as-element-preset">Sauvegarder</button>
-          </div>
-        </div>
-
+        <ul id="element-preset-edit-list" class="elements-list"></ul>
       </div>
     </div>
   </div>
+
+  <div id="element-preset-target-menu" class="ctx-menu path-menu hidden"></div>
 
   <!-- Modal Statistiques des cases (winrate sur la saison) -->
   <div id="modal-bingo-stats" class="modal-overlay hidden">
@@ -933,23 +939,6 @@
 
   <!-- Menu déroulant "Épisodes" de la modale Stats : cocher/décocher les épisodes à inclure. -->
   <div id="bingo-stats-episodes-menu" class="ctx-menu hidden"></div>
-
-  <!-- Modal édition d'un preset de cases (nom + liste de cases individuelles, comme le panneau Cases) -->
-  <div id="modal-element-preset-edit" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3 id="element-preset-edit-title">Modifier le preset</h3>
-      </div>
-      <div class="modal-body">
-        <input type="text" id="element-preset-edit-name" class="modal-text-input" placeholder="Nom du preset..." maxlength="40" />
-        <div class="add-element-form" style="margin-top:10px;">
-          <input type="text" id="element-preset-edit-input" placeholder="Ajouter ou rechercher une case..." maxlength="80" />
-          <button id="btn-element-preset-edit-add" class="btn-icon" title="Ajouter une case">+</button>
-        </div>
-        <ul id="element-preset-edit-list" class="elements-list" style="margin-top:8px;"></ul>
-      </div>
-    </div>
-  </div>
 
   <!-- Modal renommer dossier -->
   <div id="modal-rename-folder" class="modal-overlay hidden">
@@ -1254,6 +1243,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=466"></script>
+  <script src="app.js?v=469"></script>
 </body>
 </html>

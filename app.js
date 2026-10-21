@@ -125,7 +125,6 @@ const MODAL_CLOSE_FNS = {
   'modal-move-folder': () => closeMoveFolderModal(),
   'modal-element-presets': () => closeElementPresetsModal(),
   'modal-bingo-stats': () => closeBingoStatsModal(),
-  'modal-element-preset-edit': () => closeElementPresetEditModal(),
   'modal-rename-grid': () => closeRenameGridModal(),
   'modal-rename-subtheme': () => closeRenameSubthemeModal(),
   'modal-new-grid': () => closeNewGridModal(),
@@ -353,6 +352,7 @@ function setupAuth() {
       _mainGridByFolder = {};
       _localFavGridTitle = '';
       _localFavGridSide = 'left';
+      _favElementPresetIds = {};
       _selectedGridIds = [];
       _localShowNewBadge = true;
       _tlLocalShowLabels       = null;
@@ -410,6 +410,7 @@ function loadUserPrefs() {
       catch { _mainGridByFolder = {}; }
     }
     if (typeof prefs.favGridTitle === 'string') _localFavGridTitle = prefs.favGridTitle;
+    _favElementPresetIds = (prefs.favElementPresets && typeof prefs.favElementPresets === 'object') ? prefs.favElementPresets : {};
     if (prefs.favGridSide === 'left' || prefs.favGridSide === 'right') _localFavGridSide = prefs.favGridSide;
     // Migration prefs anciens formats vers nouvelle structure
     if (!prefs.activeFolderId && prefs.activeThemeId) {
@@ -1014,7 +1015,7 @@ let _bingoCreationOpen = false;
 function _bingoEditLocked() { return !_bingoCreationOpen; }
 
 function initState() {
-  return { folders: [], trash: [], currentEventFolderId: null, currentEventTierlistId: null, elementPresets: [] };
+  return { folders: [], trash: [], currentEventFolderId: null, currentEventTierlistId: null, elementPresets: [], elementPresetFolders: [] };
 }
 
 // ──────────────────────────────────────────────
@@ -1571,43 +1572,6 @@ function moveFolder(id, targetParentId) {
   renderGrid();
 }
 
-// async : source ET cible peuvent être des dossiers-bingo hors contexte actif (ex. import depuis un
-// dossier jamais ouvert cette session) — les deux doivent être chargés en lourd avant de lire
-// src.elements / dst.grids (plan §3, pattern 3f). Note : en pratique le point d'entrée de cette
-// fonction (confirmImportElements, via la modale ouverte par openElementPresetsModal) a déjà chargé
-// TOUS les dossiers-bingo de l'arbre (Pattern 4) — cet await reste une garde défensive peu coûteuse
-// (no-op si déjà chargé).
-async function importElements(sourceId, targetId, replace = false) {
-  await _bingoEnsureFoldersLoaded([sourceId, targetId]);
-  const src = findFolderById(state.folders, sourceId);
-  const dst = findFolderById(state.folders, targetId);
-  if (!src || !dst) return;
-  const srcElements = src.elements || [];
-  if (srcElements.length === 0) return;
-  if (replace) {
-    dst.elements = [];
-    dst.archivedElementIds = [];
-    (dst.grids || []).forEach(g => {
-      g.grid = g.grid.map(cell => ({ elementId: null, checked: false, color: null }));
-    });
-  }
-  if (!dst.elements) dst.elements = [];
-  // Ajouter uniquement les éléments non déjà présents (comparaison par texte)
-  const existingTexts = new Set(dst.elements.map(e => e.text.trim().toLowerCase()));
-  let added = 0;
-  srcElements.forEach(e => {
-    if (!existingTexts.has(e.text.trim().toLowerCase())) {
-      dst.elements.push({ id: uid(), text: e.text });
-      added++;
-    }
-  });
-  // La source n'est pas modifiée : seul le dossier cible a besoin d'être réécrit.
-  _bingoSaveFolder(targetId);
-  renderElements();
-  renderGrid();
-  return added;
-}
-
 // Importe une liste de textes (preset) dans un dossier, avec option de remplacement.
 // Le tag d'origine affiché dans le panneau Cases (voir buildElementItem/getElementTags) est
 // recalculé dynamiquement par comparaison de texte — rien à stocker ici.
@@ -1647,16 +1611,49 @@ function getElementPresets() {
   return state.elementPresets;
 }
 
+// Dossiers de presets (1 seul niveau) : { id, name, createdAt, updatedAt }. Un preset rangé porte
+// `folderId`. Chaque preset a aussi `updatedAt` et `elementDates` (date de modification de chaque case,
+// tableau parallèle à `elements` — les cases restent de simples textes, cf getElementTags).
+function getElementPresetFolders() {
+  if (!Array.isArray(state.elementPresetFolders)) state.elementPresetFolders = [];
+  return state.elementPresetFolders;
+}
+
+// Met à jour la date de modification du preset et de son dossier (comme touchFolderChain côté Dossiers).
+function _touchElementPreset(preset) {
+  const now = Date.now();
+  preset.updatedAt = now;
+  const folder = preset.folderId && getElementPresetFolders().find(f => f.id === preset.folderId);
+  if (folder) folder.updatedAt = now;
+}
+
+// Nettoie textes + dates ensemble (une case vide retirée emporte sa date, l'alignement est conservé).
+function _cleanElementPresetEntries(texts, dates) {
+  const elements = [];
+  const elementDates = [];
+  texts.forEach((t, i) => {
+    const text = (t || '').trim();
+    if (!text) return;
+    elements.push(text);
+    elementDates.push((dates && dates[i]) || 0);
+  });
+  return { elements, elementDates };
+}
+
 function saveElementPreset(name, texts) {
-  getElementPresets().push({ id: uid(), name: name.trim(), elements: texts.map(t => t.trim()).filter(Boolean) });
+  const now = Date.now();
+  const preset = { id: uid(), name: name.trim(), ..._cleanElementPresetEntries(texts, texts.map(() => now)), createdAt: now };
+  _touchElementPreset(preset);
+  getElementPresets().push(preset);
   _bingoSaveIndex();
 }
 
-function updateElementPreset(id, name, texts) {
+function updateElementPreset(id, name, texts, dates) {
   const preset = getElementPresets().find(p => p.id === id);
   if (!preset) return;
   preset.name = name.trim();
-  preset.elements = texts.map(t => t.trim()).filter(Boolean);
+  Object.assign(preset, _cleanElementPresetEntries(texts, dates));
+  _touchElementPreset(preset);
   _bingoSaveIndex();
 }
 
@@ -1779,6 +1776,7 @@ function _bingoBuildIndexPayload() {
     currentEventFolderId: state.currentEventFolderId || null,
     currentEventTierlistId: state.currentEventTierlistId || null,
     elementPresets: state.elementPresets || [],
+    elementPresetFolders: state.elementPresetFolders || [],
   };
 }
 
@@ -4705,198 +4703,498 @@ function confirmMoveFolder() {
 })();
 
 // ──────────────────────────────────────────────
-// Modale — importer les cases d'un autre dossier
+// Modale "Preset cases" (même modale depuis la page Dossiers et le panneau Cases) : liste des presets
+// enregistrés, rangés dans des dossiers à 1 niveau, + volet droit d'édition. Les presets cochés sont
+// importés dans le dossier cible (menu au même rendu que le menu Chemin, seuls les bingos sont choisissables).
 // ──────────────────────────────────────────────
-let _elementPresetsTargetId = null;
+const _elementPresetsChecked = new Set(); // ids des presets cochés pour l'import
+let _elementPresetsTarget = null;         // id du dossier-bingo cible
+let _elementPresetPendingDelete = null;   // id du preset/dossier dont la confirmation de suppression est affichée
 
-// Reconstruit un arbre filtré ne gardant que les dossiers éligibles (cases présentes, pas la
-// cible) et leurs ancêtres (nécessaires pour l'affichage hiérarchique, même sans case propre) —
-// pour réutiliser _setupFolderTreeDropdown (dropdown "Emplacement" arborescent générique).
-function _buildImportElementsSourceTree(folders, targetId) {
+// Favoris : personnels (prefs Firebase par utilisateur), { [presetId]: true }. Toujours en haut de la
+// liste, sortis de leur dossier.
+let _favElementPresetIds = {};
+
+function _isFavElementPreset(id) { return !!_favElementPresetIds[id]; }
+
+function _setFavElementPreset(id, fav) {
+  if (fav) _favElementPresetIds[id] = true; else delete _favElementPresetIds[id];
+  // Un objet vide est supprimé par Firebase : on écrit null explicitement dans ce cas.
+  saveUserPrefs({ favElementPresets: Object.keys(_favElementPresetIds).length ? _favElementPresetIds : null });
+}
+
+// Arbre du menu "Dossier cible" : seuls les dossiers-bingo ont des cases, on ne garde donc que les
+// branches qui en contiennent (les dossiers conteneurs restent affichés pour la hiérarchie).
+function _buildElementPresetTargetTree(folders) {
   return (folders || []).filter(f => !f.archived).map(f => {
-    const children = _buildImportElementsSourceTree(f.folders, targetId);
-    const eligible = f.id !== targetId && (f.elements || []).length > 0;
-    if (!eligible && children.length === 0) return null;
-    return { id: f.id, name: f.name, folders: children };
+    const children = _buildElementPresetTargetTree(f.folders);
+    const isBingo = _isFolderBingo(f);
+    if (!isBingo && children.length === 0) return null;
+    return { id: f.id, name: f.name, updatedAt: f.updatedAt, isBingo, folders: children };
   }).filter(Boolean);
 }
 
-// Arbre complet (tous dossiers bingo, sans filtre) pour le select "Dossier cible".
-function _buildFolderTreeAll(folders) {
-  return (folders || []).filter(f => !f.archived).map(f => ({
-    id: f.id,
-    name: f.name,
-    folders: _buildFolderTreeAll(f.folders)
-  }));
+function _elementPresetsTargetId() {
+  return _elementPresetsTarget || '';
 }
 
-// _setupFolderTreeDropdown pilote uniquement le dropdown custom (survol/clic visuel) — le <select>
-// natif sous-jacent n'a de vraie <option> que si on les crée nous-mêmes (comme le fait déjà
-// new-folder-parent-select). Sans ça, `selectEl.value = id` échoue silencieusement (un <select> HTML
-// ignore toute valeur sans <option> correspondante) : c'était le bug du dossier cible/source ignoré.
-function _populateFolderSelectOptions(selectEl, tree, placeholderLabel) {
-  selectEl.innerHTML = '';
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = placeholderLabel;
-  selectEl.appendChild(placeholder);
-  function addOptions(folders, depth) {
-    (folders || []).forEach(f => {
-      const opt = document.createElement('option');
-      opt.value = f.id;
-      opt.textContent = '  '.repeat(depth) + f.name;
-      selectEl.appendChild(opt);
-      addOptions(f.folders, depth + 1);
+function _setElementPresetsTarget(id) {
+  _elementPresetsTarget = id || null;
+  const path = _elementPresetsTarget ? getFolderPath(state.folders, _elementPresetsTarget) : [];
+  document.getElementById('element-preset-target-label').textContent =
+    path.length ? path.map(f => f.name).join(' \\ ') : '— Choisir un bingo —';
+  _refreshElementPresetsButtons();
+}
+
+// Menu "Dossier cible" : même rendu et même comportement que le menu Chemin du Bingo
+// (_renderPathMenuRows) — clic sur une ligne = choisir ce bingo / (dé)plier ce dossier, sans fermer
+// le menu ; seul un clic à l'extérieur le referme. Même bouton de tri (4 modes), mémorisé à part.
+const _elementPresetTargetMenu = document.getElementById('element-preset-target-menu');
+const _elementPresetTargetBtn = document.getElementById('element-preset-target-btn');
+
+function _renderElementPresetTargetMenuRows(menu, resetPathExpansion) {
+  menu.querySelectorAll('.tl-path-menu-row').forEach(el => el.remove());
+  const sortMode = _ensurePathMenuSortBtn(menu, 'elementPresetTargetSortMode', () => _renderElementPresetTargetMenuRows(menu));
+  const sortList = list => _sortFoldersList(list, sortMode);
+
+  const targetId = _elementPresetsTargetId();
+  const currentPathIds = targetId ? getFolderPath(state.folders, targetId).map(f => f.id) : [];
+  if (resetPathExpansion) currentPathIds.forEach(id => sessionStorage.removeItem('presetTarget_folder_open_' + id));
+
+  const buildRow = (folder, depth) => {
+    const children = sortList(folder.folders || []);
+    const hasChildren = children.length > 0;
+    const key = 'presetTarget_folder_open_' + folder.id;
+    const isOnCurrentPath = currentPathIds.includes(folder.id);
+    const stored = sessionStorage.getItem(key);
+    const isOpen = stored !== null ? stored === '1' : isOnCurrentPath;
+
+    const row = document.createElement('div');
+    row.className = 'tl-path-menu-row' + (isOnCurrentPath ? ' active' : '');
+    row.style.paddingLeft = (8 + depth * 14) + 'px';
+
+    const icon = document.createElement('span');
+    icon.className = 'tl-path-menu-icon';
+    icon.innerHTML = folder.isBingo ? '<i data-lucide="grid-3x3"></i>'
+      : `<i data-lucide="${hasChildren && isOpen ? 'folder-open' : 'folder'}"></i>`;
+    row.appendChild(icon);
+
+    const name = document.createElement('span');
+    name.className = 'tl-path-menu-name';
+    name.textContent = folder.name;
+    row.appendChild(name);
+
+    row.addEventListener('click', () => {
+      if (folder.isBingo) _setElementPresetsTarget(folder.id);
+      if (hasChildren) sessionStorage.setItem(key, isOpen ? '0' : '1');
+      _renderElementPresetTargetMenuRows(menu);
     });
+
+    menu.appendChild(row);
+    if (hasChildren && isOpen) children.forEach(f => buildRow(f, depth + 1));
+  };
+
+  const roots = sortList(_buildElementPresetTargetTree(state.folders));
+  roots.forEach(f => buildRow(f, 0));
+
+  if (roots.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'tl-path-menu-row';
+    empty.style.cssText = 'opacity:0.6;cursor:default;';
+    empty.textContent = 'Aucun bingo';
+    menu.appendChild(empty);
   }
-  addOptions(tree, 0);
+  if (window.lucide) lucide.createIcons({ root: menu });
 }
 
-// Reconstruit le select "Importer depuis" en excluant le dossier cible actuellement choisi (on ne
-// peut pas importer un dossier dans lui-même) — appelé à l'ouverture et à chaque changement de cible.
-function _refreshImportElementsSourceSelect(currentTargetId) {
-  const sel = document.getElementById('import-elements-source-select');
-  const dropdownBtn = document.getElementById('import-elements-source-dropdown-btn');
-  if (!sel || !dropdownBtn) return;
-  const tree = _buildImportElementsSourceTree(state.folders, currentTargetId);
-  _populateFolderSelectOptions(sel, tree, '— Choisir un dossier —');
-  _setupFolderTreeDropdown(sel, dropdownBtn, tree, '— Choisir un dossier —', 'fp_importelements_collapsed');
-}
-
-function openImportElementsModal(targetId) {
-  _elementPresetsTargetId = targetId;
-
-  const targetSel = document.getElementById('import-elements-target-select');
-  const targetDropdownBtn = document.getElementById('import-elements-target-dropdown-btn');
-  if (targetSel && targetDropdownBtn) {
-    const fullTree = _buildFolderTreeAll(state.folders);
-    _populateFolderSelectOptions(targetSel, fullTree, '— Choisir un dossier —');
-    targetSel.value = targetId || '';
-    _setupFolderTreeDropdown(targetSel, targetDropdownBtn, fullTree, '— Choisir un dossier —', 'fp_importelements_target_collapsed');
-    targetSel.onchange = () => _refreshImportElementsSourceSelect(targetSel.value || null);
-  }
-
-  _refreshImportElementsSourceSelect(targetId);
-  const replaceCb = document.getElementById('element-preset-replace-checkbox');
-  if (replaceCb) replaceCb.checked = false;
-}
-
-// Le dossier cible réellement choisi par l'utilisateur (select "Dossier cible"), avec repli sur
-// le dossier actif au moment de l'ouverture si le select est vide/absent.
-function _currentImportTargetId() {
-  const targetSel = document.getElementById('import-elements-target-select');
-  return (targetSel && targetSel.value) ? targetSel.value : _elementPresetsTargetId;
-}
-
-async function confirmImportElements() {
-  const targetId = _currentImportTargetId();
-  if (!targetId) return;
-  const sel = document.getElementById('import-elements-source-select');
-  const sourceRootId = sel ? sel.value : '';
-  if (!sourceRootId) return;
-  const replaceCb = document.getElementById('element-preset-replace-checkbox');
-  const replace = replaceCb ? replaceCb.checked : false;
-  const added = await importElements(sourceRootId, targetId, replace);
-  closeElementPresetsModal();
-  if (added === 0 && !replace) {
-    alert('Toutes les cases existent déjà dans ce dossier.');
-  }
-}
-
-document.getElementById('btn-confirm-import-elements').addEventListener('click', confirmImportElements);
-
-// ──────────────────────────────────────────────
-// Modale "Preset cases" — fusion import depuis un autre dossier + gestion des presets
-// enregistrés : cliquer un preset l'importe directement dans le dossier actif.
-// ──────────────────────────────────────────────
-function renderElementPresetList() {
-  const select = document.getElementById('element-preset-select');
-  if (!select) return;
-  const prevValue = select.value;
-  select.innerHTML = '';
-  const presets = getElementPresets().slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  const hasPresets = presets.length > 0;
-  ['btn-import-element-preset', 'btn-edit-element-preset', 'btn-delete-element-preset'].forEach(id => {
-    const btn = document.getElementById(id);
-    if (btn) btn.disabled = !hasPresets;
-  });
-  if (!hasPresets) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = 'Aucun preset';
-    select.appendChild(opt);
+_elementPresetTargetBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (!_elementPresetTargetMenu.classList.contains('hidden')) {
+    _elementPresetTargetMenu.classList.add('hidden');
     return;
   }
-  presets.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = `${p.name} (${(p.elements || []).length})`;
-    select.appendChild(opt);
+  _elementPresetTargetMenu.classList.remove('hidden');
+  _positionPathMenu(_elementPresetTargetMenu, _elementPresetTargetBtn);
+  _renderElementPresetTargetMenuRows(_elementPresetTargetMenu, true);
+});
+_elementPresetTargetMenu.addEventListener('click', e => e.stopPropagation());
+document.addEventListener('click', () => _elementPresetTargetMenu.classList.add('hidden'));
+
+function _elementPresetsBox() {
+  return document.querySelector('#modal-element-presets .modal-box');
+}
+
+function _elementPresetPaneOpen() {
+  return _elementPresetsBox().classList.contains('pane-open');
+}
+
+// Tri commun aux dossiers et aux presets (dans chaque dossier) — choix mémorisé sur l'appareil.
+function _elementPresetsSortMode() {
+  return _folderSortMode('elementPresetsSortMode');
+}
+
+function _sortElementPresetItems(items) {
+  const mode = _elementPresetsSortMode();
+  const sorted = items.slice();
+  if (mode === 'updatedAt' || mode === 'updatedAt-asc') {
+    const date = x => x.updatedAt || x.createdAt || 0;
+    sorted.sort((a, b) => date(b) - date(a));
+  } else {
+    sorted.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr', { sensitivity: 'base' }));
+  }
+  if (mode === 'alpha-desc' || mode === 'updatedAt-asc') sorted.reverse();
+  return sorted;
+}
+
+function _refreshElementPresetsButtons() {
+  const targetId = _elementPresetsTargetId();
+  const n = getElementPresets().filter(p => _elementPresetsChecked.has(p.id)).length;
+  const importBtn = document.getElementById('btn-import-element-presets');
+  importBtn.disabled = !targetId || n === 0;
+  importBtn.textContent = n > 0 ? `Importer (${n})` : 'Importer';
+  document.getElementById('btn-element-preset-from-target').disabled = !targetId;
+}
+
+function renderElementPresetList() {
+  const list = document.getElementById('element-presets-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const presets = getElementPresets();
+  const folders = getElementPresetFolders();
+  const folderIds = new Set(folders.map(f => f.id));
+  const favs = presets.filter(p => _isFavElementPreset(p.id));
+  const others = presets.filter(p => !_isFavElementPreset(p.id));
+  _sortElementPresetItems(favs).forEach(p => list.appendChild(_buildElementPresetRow(p)));
+  _sortElementPresetItems(folders).forEach(f => {
+    list.appendChild(_buildElementPresetFolderRow(f, _sortElementPresetItems(others.filter(p => p.folderId === f.id))));
   });
-  select.value = presets.some(p => p.id === prevValue) ? prevValue : presets[0].id;
+  _sortElementPresetItems(others.filter(p => !folderIds.has(p.folderId))).forEach(p => list.appendChild(_buildElementPresetRow(p)));
+  if (!presets.length && !folders.length) {
+    const empty = document.createElement('div');
+    empty.className = 'element-presets-empty';
+    empty.textContent = 'Aucun preset';
+    list.appendChild(empty);
+  }
+  _refreshElementPresetsButtons();
+  if (window.lucide) lucide.createIcons({ root: list });
+}
+
+function _buildElementPresetCtxBtn(onOpen) {
+  const ctxBtn = document.createElement('button');
+  ctxBtn.className = 'fp-folder-ctx-btn';
+  ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+  ctxBtn.addEventListener('click', e => { e.stopPropagation(); onOpen(ctxBtn, e); });
+  return ctxBtn;
+}
+
+// Bloc "Supprimer … ? [Supprimer] [Annuler]" affiché sous la ligne concernée (pas de confirm() natif).
+function _buildElementPresetDeleteConfirm(message, onConfirm) {
+  const box = document.createElement('div');
+  box.className = 'element-preset-delete-confirm';
+  box.addEventListener('click', e => e.stopPropagation());
+
+  const text = document.createElement('div');
+  text.textContent = message;
+  box.appendChild(text);
+
+  const actions = document.createElement('div');
+  actions.className = 'element-preset-delete-confirm-actions';
+  const yes = document.createElement('button');
+  yes.className = 'btn-action btn-reset';
+  yes.textContent = 'Supprimer';
+  yes.addEventListener('click', () => { _elementPresetPendingDelete = null; onConfirm(); });
+  const no = document.createElement('button');
+  no.className = 'btn-action btn-secondary';
+  no.textContent = 'Annuler';
+  no.addEventListener('click', () => { _elementPresetPendingDelete = null; renderElementPresetList(); });
+  actions.appendChild(yes);
+  actions.appendChild(no);
+  box.appendChild(actions);
+  return box;
+}
+
+function _deleteElementPresetConfirmed(id) {
+  deleteElementPreset(id);
+  _elementPresetsChecked.delete(id);
+  if (_isFavElementPreset(id)) _setFavElementPreset(id, false);
+  if (_elementPresetEditId === id) _closeElementPresetPane();
+  renderElementPresetList();
+}
+
+function _deleteElementPresetFolderConfirmed(folderId) {
+  const inside = getElementPresets().filter(p => p.folderId === folderId);
+  inside.forEach(p => {
+    _elementPresetsChecked.delete(p.id);
+    if (_isFavElementPreset(p.id)) delete _favElementPresetIds[p.id];
+  });
+  if (inside.length) saveUserPrefs({ favElementPresets: Object.keys(_favElementPresetIds).length ? _favElementPresetIds : null });
+  if (inside.some(p => p.id === _elementPresetEditId)) _closeElementPresetPane();
+  state.elementPresets = getElementPresets().filter(p => p.folderId !== folderId);
+  state.elementPresetFolders = getElementPresetFolders().filter(x => x.id !== folderId);
+  _bingoSaveIndex();
+  renderElementPresetList();
+}
+
+// Retourne un fragment : la ligne + (éventuellement) sa confirmation de suppression juste dessous.
+function _buildElementPresetRow(p) {
+  const frag = document.createDocumentFragment();
+  const row = document.createElement('div');
+  row.className = 'fp-folder-row element-preset-row' + (_elementPresetPaneOpen() && _elementPresetEditId === p.id ? ' selected' : '');
+  row.dataset.itemId = p.id;
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = _elementPresetsChecked.has(p.id);
+  cb.addEventListener('click', e => e.stopPropagation());
+  cb.addEventListener('change', () => {
+    if (cb.checked) _elementPresetsChecked.add(p.id); else _elementPresetsChecked.delete(p.id);
+    _refreshElementPresetsButtons();
+  });
+
+  const isFav = _isFavElementPreset(p.id);
+  const favBtn = document.createElement('button');
+  favBtn.type = 'button';
+  favBtn.className = 'element-preset-fav-btn' + (isFav ? ' active' : '');
+  favBtn.innerHTML = '<i data-lucide="star"></i>';
+  favBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    _setFavElementPreset(p.id, !isFav);
+    renderElementPresetList();
+  });
+
+  const name = document.createElement('span');
+  name.className = 'fp-folder-name';
+  name.textContent = p.name;
+
+  const count = document.createElement('span');
+  count.className = 'element-preset-count';
+  count.textContent = (p.elements || []).length;
+
+  row.appendChild(cb);
+  row.appendChild(favBtn);
+  row.appendChild(name);
+  row.appendChild(count);
+  row.appendChild(_buildElementPresetCtxBtn((btn, e) => _openElementPresetCtxMenu(p, btn, e)));
+
+  // Clic sur la ligne : ouvre le preset dans le volet droit (re-clic sur le preset ouvert = replie).
+  row.addEventListener('click', () => {
+    if (_elementPresetPaneOpen() && _elementPresetEditId === p.id) { _closeElementPresetPane(); renderElementPresetList(); }
+    else _openElementPresetPane(p.id);
+  });
+  row.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); _openElementPresetCtxMenu(p, null, e); });
+
+  frag.appendChild(row);
+  if (_elementPresetPendingDelete === p.id) {
+    frag.appendChild(_buildElementPresetDeleteConfirm(`Supprimer le preset « ${p.name} » ?`, () => _deleteElementPresetConfirmed(p.id)));
+  }
+  return frag;
+}
+
+function _buildElementPresetFolderRow(f, presets) {
+  const wrapper = document.createElement('div');
+  const collapseKey = 'elementPresetFolderCollapsed_' + f.id;
+  const collapsed = localStorage.getItem(collapseKey) === '1';
+
+  const row = document.createElement('div');
+  row.className = 'fp-folder-row';
+  row.dataset.itemId = f.id;
+
+  const arrow = document.createElement('span');
+  arrow.className = 'fp-folder-arrow' + (collapsed ? ' collapsed' : '');
+  arrow.innerHTML = '<i data-lucide="chevron-down"></i>';
+
+  const icon = document.createElement('span');
+  icon.className = 'fp-folder-icon';
+  icon.innerHTML = collapsed ? '<i data-lucide="folder-closed"></i>' : '<i data-lucide="folder-open"></i>';
+
+  const name = document.createElement('span');
+  name.className = 'fp-folder-name';
+  name.textContent = f.name;
+
+  const count = document.createElement('span');
+  count.className = 'element-preset-count';
+  count.textContent = presets.length;
+
+  row.appendChild(arrow);
+  row.appendChild(icon);
+  row.appendChild(name);
+  row.appendChild(count);
+  row.appendChild(_buildElementPresetCtxBtn((btn, e) => _openElementPresetFolderCtxMenu(f, btn, e)));
+
+  row.addEventListener('click', () => {
+    localStorage.setItem(collapseKey, collapsed ? '0' : '1');
+    renderElementPresetList();
+  });
+  row.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); _openElementPresetFolderCtxMenu(f, null, e); });
+
+  wrapper.appendChild(row);
+  if (_elementPresetPendingDelete === f.id) {
+    // Compte tous les presets du dossier, favoris compris (ils sont affichés en haut mais supprimés aussi).
+    const inside = getElementPresets().filter(p => p.folderId === f.id);
+    const favCount = inside.filter(p => _isFavElementPreset(p.id)).length;
+    let msg = `Supprimer le dossier « ${f.name} »`;
+    if (inside.length) {
+      msg += ` et ses ${inside.length} preset${inside.length > 1 ? 's' : ''}`;
+      if (favCount) msg += ` (dont ${favCount} favori${favCount > 1 ? 's' : ''})`;
+    }
+    wrapper.appendChild(_buildElementPresetDeleteConfirm(msg + ' ?', () => _deleteElementPresetFolderConfirmed(f.id)));
+  }
+
+  const children = document.createElement('div');
+  children.className = 'fp-children' + (collapsed ? ' collapsed' : '');
+  presets.forEach(p => children.appendChild(_buildElementPresetRow(p)));
+  wrapper.appendChild(children);
+  return wrapper;
+}
+
+function _openElementPresetCtxMenu(p, anchorEl, e) {
+  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, e);
+  addItem('list', 'Modifier', false, () => _openElementPresetPane(p.id));
+  addItem('pencil', 'Renommer', false, () => _startRenameElementPresetItem(p));
+  if (getElementPresetFolders().length > 0) addItem('move', 'Déplacer', false, () => _openElementPresetMoveMenu(p));
+  addSep();
+  addItem('trash-2', 'Supprimer', true, () => { _elementPresetPendingDelete = p.id; renderElementPresetList(); });
+}
+
+// Sous-menu "Déplacer" : ancré sur la ligne du preset (le 1er menu est déjà fermé à ce stade).
+function _openElementPresetMoveMenu(p) {
+  const row = document.querySelector(`#element-presets-list [data-item-id="${p.id}"]`);
+  const { addItem } = _tlMakeCtxMenu(row, null);
+  const folders = getElementPresetFolders();
+  const moveTo = folderId => {
+    // Relu par id : chaque snapshot d'index Firebase (y compris l'écho de nos propres écritures)
+    // remplace state.elementPresets par de nouveaux objets — `p` peut être périmé à ce stade.
+    const live = getElementPresets().find(x => x.id === p.id);
+    if (!live) return;
+    if (folderId) live.folderId = folderId; else delete live.folderId;
+    _touchElementPreset(live);
+    _bingoSaveIndex();
+    renderElementPresetList();
+  };
+  if (folders.some(f => f.id === p.folderId)) addItem('house', 'Hors dossier', false, () => moveTo(null));
+  _sortElementPresetItems(folders).filter(f => f.id !== p.folderId)
+    .forEach(f => addItem('folder-closed', f.name, false, () => moveTo(f.id)));
+}
+
+function _openElementPresetFolderCtxMenu(f, anchorEl, e) {
+  const { addItem, addSep } = _tlMakeCtxMenu(anchorEl, e);
+  addItem('pencil', 'Renommer', false, () => _startRenameElementPresetItem(f));
+  addSep();
+  addItem('trash-2', 'Supprimer', true, () => { _elementPresetPendingDelete = f.id; renderElementPresetList(); });
+}
+
+// Renommage inline (preset ou dossier) : le nom de la ligne devient un champ texte, Enter/clic
+// ailleurs valide, Escape annule.
+function _startRenameElementPresetItem(item) {
+  const row = document.querySelector(`#element-presets-list [data-item-id="${item.id}"]`);
+  const span = row && row.querySelector('.fp-folder-name');
+  if (!span) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'element-preset-rename-input';
+  input.value = item.name;
+  input.maxLength = 40;
+  input.addEventListener('click', e => e.stopPropagation());
+  const commit = () => {
+    const newName = input.value.trim();
+    // Relu par id (cf _openElementPresetMoveMenu) : `item` peut être périmé après un snapshot d'index.
+    const live = getElementPresets().find(x => x.id === item.id) || getElementPresetFolders().find(x => x.id === item.id);
+    if (live && newName && newName !== live.name) {
+      live.name = newName;
+      if (getElementPresets().includes(live)) _touchElementPreset(live); else live.updatedAt = Date.now();
+      _bingoSaveIndex();
+      if (_elementPresetPaneOpen() && _elementPresetEditId === item.id) {
+        document.getElementById('element-preset-edit-name').value = newName;
+      }
+    }
+    renderElementPresetList();
+  };
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { input.removeEventListener('blur', commit); renderElementPresetList(); }
+  });
+  span.replaceWith(input);
+  input.focus();
+  input.select();
 }
 
 function openElementPresetsModal(targetId) {
-  openImportElementsModal(targetId);
+  const tree = _buildElementPresetTargetTree(state.folders);
+  const isEligible = (folders, id) => (folders || []).some(f => (f.isBingo && f.id === id) || isEligible(f.folders, id));
+  _setElementPresetsTarget(targetId && isEligible(tree, targetId) ? targetId : null);
+  document.getElementById('element-presets-sort-select').value = _elementPresetsSortMode();
+  _elementPresetsChecked.clear();
+  _elementPresetPendingDelete = null;
+  _closeElementPresetPane();
   renderElementPresetList();
-  const saveInput = document.getElementById('element-preset-save-input');
-  if (saveInput) saveInput.value = '';
   document.getElementById('modal-element-presets').classList.remove('hidden');
 }
 
 function closeElementPresetsModal() {
   document.getElementById('modal-element-presets').classList.add('hidden');
-  document.querySelector('#modal-element-presets .modal-box').classList.remove('preset-standalone');
-  _elementPresetsTargetId = null;
+  _elementPresetTargetMenu.classList.add('hidden');
+  _closeElementPresetPane();
+  _elementPresetsChecked.clear();
+  _elementPresetPendingDelete = null;
+  // Les tags du panneau Cases sont les noms des presets : à rafraîchir après toute modification.
+  renderElements();
 }
 
-document.getElementById('btn-new-element-preset').addEventListener('click', () => openElementPresetEditModal(null));
-
-document.getElementById('btn-import-element-preset').addEventListener('click', () => {
-  const select = document.getElementById('element-preset-select');
-  const presetId = select ? select.value : '';
-  const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
-  if (!preset) return;
-  const targetId = _currentImportTargetId();
-  if (!targetId) return;
-  const replaceCb = document.getElementById('element-preset-replace-checkbox');
-  const replace = replaceCb ? replaceCb.checked : false;
-  const added = importElementTexts(preset.elements || [], targetId, replace);
-  closeElementPresetsModal();
-  if (added === 0 && !replace) {
-    alert('Toutes les cases existent déjà dans ce dossier.');
-  }
-});
-document.getElementById('btn-edit-element-preset').addEventListener('click', () => {
-  const select = document.getElementById('element-preset-select');
-  const presetId = select ? select.value : '';
-  if (!presetId) return;
-  openElementPresetEditModal(presetId);
-});
-document.getElementById('btn-delete-element-preset').addEventListener('click', () => {
-  const select = document.getElementById('element-preset-select');
-  const presetId = select ? select.value : '';
-  const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
-  if (!preset) return;
-  if (confirm(`Supprimer le preset "${preset.name}" ?`)) { deleteElementPreset(preset.id); renderElementPresetList(); }
-});
-document.getElementById('btn-save-current-as-element-preset').addEventListener('click', () => {
-  const input = document.getElementById('element-preset-save-input');
-  const name = input.value.trim();
-  if (!name) return;
-  const s = activeSubtheme();
-  const texts = s ? (s.elements || []).map(e => e.text) : [];
-  if (texts.length === 0) { alert('Ce dossier ne contient aucune case à sauvegarder.'); return; }
-  saveElementPreset(name, texts);
-  input.value = '';
+document.getElementById('element-presets-sort-select').addEventListener('change', e => {
+  localStorage.setItem('elementPresetsSortMode', e.target.value);
   renderElementPresetList();
 });
 
+document.getElementById('btn-new-element-preset').addEventListener('click', () => _openElementPresetPane(null));
+
+document.getElementById('btn-new-element-preset-folder').addEventListener('click', () => {
+  const now = Date.now();
+  const folder = { id: uid(), name: 'Nouveau dossier', createdAt: now, updatedAt: now };
+  getElementPresetFolders().push(folder);
+  _bingoSaveIndex();
+  renderElementPresetList();
+  _startRenameElementPresetItem(folder);
+});
+
+// Volet droit : ajoute au preset ouvert (nouveau ou existant) les cases du dossier cible qu'il ne
+// contient pas encore (comparaison insensible à la casse). Sauvegarde auto via _commitElementPresetEdit
+// (un nouveau preset n'est créé qu'une fois un nom saisi).
+document.getElementById('btn-element-preset-from-target').addEventListener('click', async () => {
+  const targetId = _elementPresetsTargetId();
+  if (!targetId) return;
+  await _bingoEnsureFoldersLoaded([targetId]);
+  const f = findFolderById(state.folders, targetId);
+  const existing = new Set(_elementPresetEditTexts.map(t => t.trim().toLowerCase()));
+  ((f && f.elements) || []).forEach(e => {
+    const text = (e.text || '').trim();
+    if (text && !existing.has(text.toLowerCase())) {
+      _elementPresetEditTexts.push(text);
+      _elementPresetEditDates.push(Date.now());
+      existing.add(text.toLowerCase());
+    }
+  });
+  _renderElementPresetEditList();
+  _commitElementPresetEdit();
+});
+
+document.getElementById('btn-import-element-presets').addEventListener('click', async () => {
+  const targetId = _elementPresetsTargetId();
+  const presets = getElementPresets().filter(p => _elementPresetsChecked.has(p.id));
+  if (!targetId || presets.length === 0) return;
+  await _bingoEnsureFoldersLoaded([targetId]);
+  const added = importElementTexts(presets.flatMap(p => p.elements || []), targetId);
+  closeElementPresetsModal();
+  if (added === 0) alert('Toutes les cases existent déjà dans ce dossier.');
+});
+
 // ──────────────────────────────────────────────
-// Modale — édition d'un preset de cases (nom + liste de cases individuelles, comme le panneau Cases)
+// Volet droit de la modale "Preset cases" — édition d'un preset (nom + liste de cases individuelles,
+// comme le panneau Cases)
 // ──────────────────────────────────────────────
 let _elementPresetEditId = null; // null = nouveau preset
 let _elementPresetEditTexts = [];
+let _elementPresetEditDates = []; // date de modification de chaque case (même index que _elementPresetEditTexts)
 
 function _updateElementPresetEditTitle() {
   const titleEl = document.getElementById('element-preset-edit-title');
@@ -4912,13 +5210,17 @@ function _renderElementPresetEditList() {
 
   // Le champ d'ajout sert aussi de recherche (même principe que le panneau Cases, cf. renderElements) :
   // filtre la liste affichée sans toucher à _elementPresetEditTexts (les index d'origine restent
-  // valides pour éditer/supprimer). Ordre alphabétique, comme le panneau Cases.
+  // valides pour éditer/supprimer). Tri : mêmes 4 modes que Dossiers (date = modification de la case ;
+  // à date égale, l'ordre d'ajout départage).
   const searchInput = document.getElementById('element-preset-edit-input');
   const searchText = searchInput ? searchInput.value.trim().toLowerCase() : '';
+  const mode = _folderSortMode('elementPresetCasesSortMode');
   const entries = _elementPresetEditTexts
-    .map((text, idx) => ({ text, idx }))
-    .filter(e => !searchText || e.text.toLowerCase().includes(searchText))
-    .sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
+    .map((text, idx) => ({ text, idx, date: _elementPresetEditDates[idx] || 0 }))
+    .filter(e => !searchText || e.text.toLowerCase().includes(searchText));
+  if (mode === 'updatedAt' || mode === 'updatedAt-asc') entries.sort((a, b) => (b.date - a.date) || (b.idx - a.idx));
+  else entries.sort((a, b) => a.text.localeCompare(b.text, 'fr', { sensitivity: 'base' }));
+  if (mode === 'alpha-desc' || mode === 'updatedAt-asc') entries.reverse();
 
   list.innerHTML = '';
   entries.forEach(({ text, idx }) => list.appendChild(_buildElementPresetEditItem(text, idx)));
@@ -4943,6 +5245,7 @@ function _buildElementPresetEditItem(text, idx) {
   del.addEventListener('click', e => {
     e.stopPropagation();
     _elementPresetEditTexts.splice(idx, 1);
+    _elementPresetEditDates.splice(idx, 1);
     _renderElementPresetEditList();
     _commitElementPresetEdit();
   });
@@ -4969,7 +5272,10 @@ function _startEditElementPresetEditText(idx, span, clickEvent) {
 
   const commit = () => {
     const newText = textarea.value.trim();
-    if (newText) _elementPresetEditTexts[idx] = newText;
+    if (newText && newText !== text) {
+      _elementPresetEditTexts[idx] = newText;
+      _elementPresetEditDates[idx] = Date.now();
+    }
     _renderElementPresetEditList();
     _commitElementPresetEdit();
   };
@@ -5001,22 +5307,30 @@ function _startEditElementPresetEditText(idx, span, clickEvent) {
   }
 }
 
-function openElementPresetEditModal(presetId) {
+// presetId null = nouveau preset, éventuellement pré-rempli (initialTexts, ex. "Depuis la cible").
+function _openElementPresetPane(presetId, initialTexts = null) {
   _elementPresetEditId = presetId;
   const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
-  _elementPresetEditTexts = preset ? (preset.elements || []).slice() : [];
-  document.getElementById('element-preset-edit-name').value = preset ? preset.name : '';
+  _elementPresetEditTexts = preset ? (preset.elements || []).slice() : (initialTexts || []).slice();
+  _elementPresetEditDates = preset
+    ? _elementPresetEditTexts.map((t, i) => (preset.elementDates && preset.elementDates[i]) || 0)
+    : _elementPresetEditTexts.map(() => Date.now());
+  const nameInput = document.getElementById('element-preset-edit-name');
+  nameInput.value = preset ? preset.name : '';
   const editInput = document.getElementById('element-preset-edit-input');
   if (editInput) editInput.value = '';
+  document.getElementById('element-preset-cases-sort-select').value = _folderSortMode('elementPresetCasesSortMode');
   _renderElementPresetEditList();
-  document.getElementById('modal-element-presets').classList.add('hidden');
-  document.getElementById('modal-element-preset-edit').classList.remove('hidden');
+  _elementPresetsBox().classList.add('pane-open');
+  renderElementPresetList(); // surbrillance du preset ouvert
+  if (!preset) nameInput.focus();
 }
 
-function closeElementPresetEditModal() {
-  document.getElementById('modal-element-preset-edit').classList.add('hidden');
-  document.getElementById('modal-element-presets').classList.remove('hidden');
-  renderElementPresetList();
+function _closeElementPresetPane() {
+  _elementPresetsBox().classList.remove('pane-open');
+  _elementPresetEditId = null;
+  _elementPresetEditTexts = [];
+  _elementPresetEditDates = [];
 }
 
 // Sauvegarde automatique : appelée après chaque modification (ajout/suppression/renommage case ou
@@ -5027,13 +5341,16 @@ function _commitElementPresetEdit() {
   const name = document.getElementById('element-preset-edit-name').value.trim();
   if (!name) return;
   if (_elementPresetEditId) {
-    updateElementPreset(_elementPresetEditId, name, _elementPresetEditTexts);
+    updateElementPreset(_elementPresetEditId, name, _elementPresetEditTexts, _elementPresetEditDates);
   } else {
-    const created = { id: uid(), name, elements: _elementPresetEditTexts.map(t => t.trim()).filter(Boolean) };
+    const now = Date.now();
+    const created = { id: uid(), name, ..._cleanElementPresetEntries(_elementPresetEditTexts, _elementPresetEditDates), createdAt: now, updatedAt: now };
     getElementPresets().push(created);
     _bingoSaveIndex();
     _elementPresetEditId = created.id;
+    _updateElementPresetEditTitle();
   }
+  renderElementPresetList(); // nom/nombre de cases à jour dans la liste de gauche
 }
 
 function _addElementPresetEditText() {
@@ -5042,6 +5359,7 @@ function _addElementPresetEditText() {
   const text = input.value.trim();
   if (!text) return;
   _elementPresetEditTexts.push(text);
+  _elementPresetEditDates.push(Date.now());
   input.value = '';
   _renderElementPresetEditList();
   _commitElementPresetEdit();
@@ -5052,6 +5370,10 @@ document.getElementById('element-preset-edit-input').addEventListener('keydown',
   if (e.key === 'Enter') _addElementPresetEditText();
 });
 document.getElementById('element-preset-edit-input').addEventListener('input', _renderElementPresetEditList);
+document.getElementById('element-preset-cases-sort-select').addEventListener('change', e => {
+  localStorage.setItem('elementPresetCasesSortMode', e.target.value);
+  _renderElementPresetEditList();
+});
 document.getElementById('element-preset-edit-name').addEventListener('input', _commitElementPresetEdit);
 
 // ──────────────────────────────────────────────
@@ -5080,24 +5402,15 @@ btnAdd.addEventListener('click', addElement);
 inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') addElement(); });
 inputEl.addEventListener('input', renderElements);
 
-document.getElementById('btn-presets-elements-panel').addEventListener('click', async () => {
+// Panneau Cases : dossier cible pré-sélectionné = bingo actif.
+document.getElementById('btn-presets-elements-panel').addEventListener('click', () => {
   const s = activeSubtheme();
   if (!s) return;
-  // La modale "Presets cases" permet d'importer les cases de N'IMPORTE QUEL dossier de l'arbre
-  // (_buildImportElementsSourceTree lit elements[] de tous les dossiers) — charger tous les
-  // dossiers-bingo avant de l'ouvrir (plan §3, pattern 4). Action volontaire et rare, coût acceptable.
-  await _bingoEnsureFoldersLoaded(_collectAllBingoFolderIds(state.folders));
   openElementPresetsModal(s.id);
 });
 
-// Bouton "Preset cases" de la page Dossiers (pas de dossier bingo actif dans ce contexte) : ouvre
-// la même modale en mode "standalone" (classe .preset-standalone sur .modal-box), qui masque en CSS
-// tout ce qui suppose une cible (Dossier cible/Importer/Sauvegarder) — ne reste que la gestion des
-// presets enregistrés (créer/modifier/supprimer), valable indépendamment de tout dossier.
-document.getElementById('folders-page-btn-presets-cases').addEventListener('click', () => {
-  document.querySelector('#modal-element-presets .modal-box').classList.add('preset-standalone');
-  openElementPresetsModal(null);
-});
+// Page Dossiers : même modale, sans dossier cible pré-sélectionné.
+document.getElementById('folders-page-btn-presets-cases').addEventListener('click', () => openElementPresetsModal(null));
 
 document.getElementById('btn-clear-elements-panel').addEventListener('click', () => {
   const s = activeSubtheme();
@@ -5589,8 +5902,13 @@ function _addElementToPreset(elementId, presetId, presetName) {
   if (!el) return;
   const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
   if (preset) {
+    if (!Array.isArray(preset.elements)) preset.elements = [];
     if (!preset.elements.some(t => t.trim().toLowerCase() === el.text.trim().toLowerCase())) {
+      const dates = preset.elements.map((t, i) => (preset.elementDates && preset.elementDates[i]) || 0);
       preset.elements.push(el.text);
+      dates.push(Date.now());
+      preset.elementDates = dates;
+      _touchElementPreset(preset);
     }
     _bingoSaveIndex();
   } else if (presetName) {
@@ -13183,6 +13501,7 @@ function _bingoStartListeners() {
     state.currentEventFolderId = rawIndex.currentEventFolderId !== undefined ? rawIndex.currentEventFolderId : null;
     state.currentEventTierlistId = rawIndex.currentEventTierlistId !== undefined ? rawIndex.currentEventTierlistId : null;
     state.elementPresets = Array.isArray(rawIndex.elementPresets) ? rawIndex.elementPresets : [];
+    state.elementPresetFolders = Array.isArray(rawIndex.elementPresetFolders) ? rawIndex.elementPresetFolders : [];
     if (!state.trash) state.trash = [];
     state.folders.forEach(_bingoNormalizeFolderShallow);
 

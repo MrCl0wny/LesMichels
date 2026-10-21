@@ -1771,7 +1771,9 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
    boutons "+" de l'app (voir .btn-plus-green), plus marquée que le 700 hérité de .btn-action. */
 #tl-tiers-source-new-preset-btn,
 #tl-modal-preset-edit-add-tier,
-#btn-new-element-preset {
+#btn-new-element-preset,
+#btn-new-element-preset-folder,
+#btn-element-preset-from-target {
   font-weight: 900;
 }
 /* Générer / Vider / Reset (panneau global ET boutons par grille individuelle) : même opacité au
@@ -2507,16 +2509,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
 }
 
-/* Modal "Modifier le preset" : ancrée en haut de l'écran (pas centrée verticalement comme les
-   autres modales) — sa hauteur varie avec le nombre de cases (ajout/suppression/recherche), donc
-   la centrer ferait bouger son bord supérieur à chaque changement. */
-#modal-element-preset-edit {
-  align-items: flex-start;
-}
-#modal-element-preset-edit .modal-box {
-  margin-top: 60px;
-}
-
 .modal-header {
   display: flex;
   align-items: center;
@@ -2703,6 +2695,160 @@ body.solo-grid-mode .subgrid-lock-gen-group {
    sauvegarder les éléments actuels) — ne reste que la gestion des presets enregistrés. */
 .modal-box.preset-standalone .tl-preset-target-only {
   display: none;
+}
+
+/* Modal "Preset cases" : pleine hauteur (overlay en stretch, sans vh) — colonne liste à gauche,
+   volet d'édition à droite affiché par .pane-open. Le bord gauche reste fixe à l'ouverture du volet
+   (la modale s'élargit vers la droite) ; sur écran étroit, elle se décale juste assez pour tenir. */
+#modal-element-presets {
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 20px 0;
+}
+.element-presets-box {
+  display: flex;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  padding: 20px;
+  margin-left: max(16px, calc(50% - 200px));
+}
+.element-presets-box.pane-open {
+  margin-left: max(16px, min(calc(50% - 200px), calc(100% - 836px)));
+}
+.element-presets-main {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.element-presets-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 4px;
+}
+.element-presets-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.element-presets-row .btn-action {
+  padding: 0 10px;
+  font-size: 0.78rem;
+}
+.element-presets-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+  padding-right: 4px;
+}
+.element-presets-empty {
+  font-size: 0.82rem;
+  color: var(--text-faint);
+  padding: 8px 4px;
+}
+.element-preset-row input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.element-preset-count {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.element-preset-rename-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 2px 6px;
+  outline: none;
+}
+#btn-import-element-presets {
+  justify-content: center;
+  flex-shrink: 0;
+}
+.element-presets-pane {
+  display: none;
+  width: 400px;
+  margin-left: 20px;
+  padding-left: 20px;
+  border-left: 1px solid var(--border);
+  flex-direction: column;
+  min-height: 0;
+}
+.element-presets-box.pane-open .element-presets-pane { display: flex; }
+/* Bouton "Dossier cible" : même rendu que le bouton Chemin du Bingo (.btn-path), sur toute la largeur. */
+.element-preset-target-btn {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+#element-preset-target-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Menus de tri du modal : largeur réduite au contenu. */
+.folders-sort-select.element-presets-sort-select {
+  flex: none;
+  width: auto;
+}
+.element-presets-pane-tools {
+  margin-top: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+.element-preset-fav-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0 2px;
+  display: inline-flex;
+}
+.element-preset-fav-btn:hover { color: var(--text); }
+.element-preset-fav-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
+.element-preset-fav-btn.active { color: #f5c518; }
+.element-preset-fav-btn.active [data-lucide] { fill: #f5c518; }
+/* Confirmation de suppression inline, affichée juste sous la ligne concernée. */
+.element-preset-delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #a82015;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.element-preset-delete-confirm-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.element-preset-delete-confirm .btn-action {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 0.75rem;
+}
+.element-presets-pane .elements-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  margin-top: 8px;
 }
 
 .bingo-stats-list .modal-item-row {
