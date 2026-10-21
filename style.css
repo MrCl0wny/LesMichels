@@ -931,6 +931,12 @@ body {
   min-width: 0;
 }
 .bingo-layout > .cases-sidebar.open { margin-left: 12px; }
+/* Panneau Suggestions : seule la liste défile (le champ d'ajout reste en haut), sa hauteur étant
+   plafonnée par _adjustSidebarMaxHeight. En plein écran (seul panneau disponible), pas de sticky :
+   son top:70px le décalerait sous la barre, .main ne défilant pas dans ce mode. */
+.suggestions-sidebar .panel-elements-body { overflow: hidden; }
+.suggestions-sidebar .elements-list { max-height: none; flex: 1; min-height: 0; }
+body.solo-grid-mode .suggestions-sidebar { position: relative; top: auto; }
 
 /* ── Mode "plein écran grille(s)" (overlay interne, plus de popup) ── */
 /* On garde uniquement Grille / Texte / Capture / Quitter */

@@ -1112,7 +1112,7 @@ function renderCurrentEventButton() {
       btn.style.display = 'flex';
       if (lbl) {
         // Remonter le chemin du dossier si la TL est dans un dossier
-        const parts = ['Liste'];
+        const parts = ['Tier list'];
         if (tl.folderId && typeof tlState !== 'undefined') {
           const folderParts = [];
           let current = (tlState.folders || []).find(f => f.id === tl.folderId);
@@ -1735,6 +1735,13 @@ function sanitizeForFirebase(obj) {
 const _dbBingoIndex = window._db.ref('bingo/index');
 const _dbBingoData  = window._db.ref('bingo/data');
 const _dbBingoTrash = window._db.ref('bingo/trash');
+// Suggestions de cases : bingo/suggestions/<id du dossier périmètre>/<id suggestion> = { text, createdAt }.
+// Objet indexé par id (pas un tableau) : chaque ajout/renommage/suppression n'écrit que sa propre
+// entrée, donc plusieurs utilisateurs peuvent modifier la liste en même temps sans s'écraser.
+const _dbBingoSuggestions = window._db.ref('bingo/suggestions');
+let _bingoSuggestions = [];            // [{ id, text, createdAt }] du périmètre actif
+let _bingoSuggestionsScopeId = null;   // id du dossier périmètre actuellement écouté
+let _bingoSuggestionsHandler = null;
 
 // Parcourt récursivement un noeud dossier (et ses sous-dossiers) et retourne les ids de tous les
 // dossiers-bingo rencontrés (grilles.length > 0) — utilisé par duplicateFolder/deleteFolder/
@@ -2052,6 +2059,7 @@ const inputEl          = document.getElementById('new-element-input');
 const btnAdd           = document.getElementById('btn-add-element');
 const listActive       = document.getElementById('elements-list');
 const listArchived     = document.getElementById('elements-archived');
+const listSuggestions  = document.getElementById('elements-suggestions');
 const elementCount     = document.getElementById('element-count');
 const tabBtns          = document.querySelectorAll('.tab-btn');
 const bingoMsg         = document.getElementById('bingo-message');
@@ -2109,6 +2117,7 @@ function renderElements() {
   if (!t || !s) {
     listActive.innerHTML = '';
     listArchived.innerHTML = '';
+    listSuggestions.innerHTML = '';
     elementCount.textContent = '0';
     return;
   }
@@ -2166,6 +2175,15 @@ function renderElements() {
   archived.forEach(el => {
     listArchived.appendChild(buildElementItem(el, true, nonArchivedGrids, visGrids));
   });
+
+  // Onglet Suggestions : liste partagée du dossier (filtrée par la recherche, pas par tag).
+  const suggestions = _bingoSortedSuggestions(searchText);
+  const tabSuggestions = document.querySelector('.tab-btn[data-tab="suggestions"]');
+  if (tabSuggestions) tabSuggestions.textContent = `Suggestions (${suggestions.length})`;
+  if (!_suggestionEditingIn(listSuggestions)) {
+    listSuggestions.innerHTML = '';
+    suggestions.forEach(sg => listSuggestions.appendChild(_buildSuggestionItem(sg, true)));
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -5413,13 +5431,9 @@ tabBtns.forEach(btn => {
     btn.classList.add('active');
 
     const tab = btn.dataset.tab;
-    if (tab === 'active') {
-      listActive.classList.remove('hidden');
-      listArchived.classList.add('hidden');
-    } else {
-      listActive.classList.add('hidden');
-      listArchived.classList.remove('hidden');
-    }
+    listActive.classList.toggle('hidden', tab !== 'active');
+    listArchived.classList.toggle('hidden', tab !== 'archived');
+    listSuggestions.classList.toggle('hidden', tab !== 'suggestions');
   });
 });
 
@@ -5488,6 +5502,7 @@ window.addEventListener('resize', () => {
 });
 
 function openCasesPanel() {
+  closeSuggestionsPanel(); // Cases et Suggestions ne sont jamais ouverts ensemble
   const panel = document.getElementById('cases-panel');
   panel.classList.add('open');
   if (_casesPanelDirty) renderElements();
@@ -5506,6 +5521,238 @@ document.getElementById('cases-panel-close').addEventListener('click', () => {
   _isDraggingElement = false;
   document.getElementById('cases-panel').classList.remove('open');
 });
+
+// ── Suggestions de cases ──
+// Liste partagée par tous les épisodes d'un même dossier (périmètre = celui des Stats, cf
+// _findStatsScopeFolder : le parent direct du bingo actif, ou le bingo lui-même s'il est à la racine).
+// Temps réel : un .on('value') sur le seul périmètre actif, rebranché à chaque changement de bingo
+// (appelé depuis _bingoUpdateActiveSeasonSubscription). Gardé actif même panneau fermé, pour le
+// compteur de l'onglet Suggestions du panneau Cases (données très légères, texte seul).
+// État (_bingoSuggestions/_bingoSuggestionsScopeId/_bingoSuggestionsHandler) : déclaré à côté de
+// _dbBingoSuggestions.
+function _bingoUpdateSuggestionsSubscription() {
+  const folder = activeFolder();
+  const scope = _isFolderBingo(folder) ? _findStatsScopeFolder(folder) : null;
+  const scopeId = scope ? scope.id : null;
+  if (scopeId === _bingoSuggestionsScopeId) return;
+  if (_bingoSuggestionsHandler) _dbBingoSuggestions.child(_bingoSuggestionsScopeId).off('value', _bingoSuggestionsHandler);
+  _bingoSuggestionsHandler = null;
+  _bingoSuggestionsScopeId = scopeId;
+  _bingoSuggestions = [];
+  if (!scopeId) closeSuggestionsPanel(); // dossier conteneur : bouton masqué, panneau sans objet
+  renderSuggestions();
+  renderElements();
+  if (!scopeId) return;
+  _bingoSuggestionsHandler = snapshot => {
+    const val = snapshot.val() || {};
+    _bingoSuggestions = Object.keys(val)
+      .filter(id => val[id] && val[id].text)
+      .map(id => ({ id, text: val[id].text, createdAt: val[id].createdAt || 0 }));
+    renderSuggestions();
+    renderElements();
+  };
+  _dbBingoSuggestions.child(scopeId).on('value', _bingoSuggestionsHandler);
+}
+
+function _bingoSortedSuggestions(searchText) {
+  return _bingoSuggestions
+    .filter(sg => !searchText || sg.text.toLowerCase().includes(searchText))
+    .sort((a, b) => a.text.localeCompare(b.text, 'fr', { sensitivity: 'base' }));
+}
+
+// Une mise à jour distante reconstruit la liste : on la saute si l'utilisateur est en train d'y
+// renommer une suggestion (sinon sa saisie disparaîtrait) — le commit re-rend la liste ensuite.
+function _suggestionEditingIn(list) {
+  const a = document.activeElement;
+  return !!(list && a && a.tagName === 'TEXTAREA' && list.contains(a));
+}
+
+function addSuggestion() {
+  const input = document.getElementById('new-suggestion-input');
+  const text = input.value.trim();
+  if (!text || !_bingoSuggestionsScopeId) return;
+  // Doublon (insensible casse/espaces) : rien n'est ajouté, la recherche affiche déjà l'existante.
+  const key = text.toLowerCase();
+  if (_bingoSuggestions.some(sg => sg.text.trim().toLowerCase() === key)) return;
+  input.value = '';
+  _dbBingoSuggestions.child(_bingoSuggestionsScopeId).child(uid())
+    .set(sanitizeForFirebase({ text, createdAt: Date.now() }))
+    .catch(e => console.warn('Suggestion add error:', e));
+}
+
+function _renameSuggestion(id, text) {
+  if (!_bingoSuggestionsScopeId) return;
+  _dbBingoSuggestions.child(_bingoSuggestionsScopeId).child(id)
+    .update(sanitizeForFirebase({ text }))
+    .catch(e => console.warn('Suggestion rename error:', e));
+}
+
+function _deleteSuggestion(id) {
+  if (!_bingoSuggestionsScopeId) return;
+  _dbBingoSuggestions.child(_bingoSuggestionsScopeId).child(id).remove()
+    .catch(e => console.warn('Suggestion delete error:', e));
+}
+
+// Place la suggestion dans les cases du bingo actif (Actives ou Archivées), puis la retire de la
+// liste partagée pour tout le monde. Si une case de même texte existe déjà dans ce bingo, pas de
+// doublon : elle est juste passée dans l'onglet demandé.
+function _placeSuggestion(id, archived) {
+  const s = activeSubtheme();
+  const sg = _bingoSuggestions.find(x => x.id === id);
+  if (!s || !sg) return;
+  const key = sg.text.trim().toLowerCase();
+  const existing = (s.elements || []).find(e => e.text.trim().toLowerCase() === key);
+  if (existing) {
+    const isArchived = (s.archivedElementIds || []).includes(existing.id);
+    if (archived && !isArchived) archiveElement(existing.id);
+    else if (!archived && isArchived) restoreElement(existing.id);
+  } else {
+    if (!s.elements) s.elements = [];
+    const newId = uid();
+    s.elements.push({ id: newId, text: sg.text });
+    if (archived) {
+      if (!s.archivedElementIds) s.archivedElementIds = [];
+      s.archivedElementIds.push(newId);
+    }
+    _bingoSaveFolder(s.id);
+    renderElements();
+  }
+  _deleteSuggestion(id);
+}
+
+// inCasesPanel : onglet Suggestions du panneau Cases (menu ⋯ / clic droit : placer, renommer,
+// supprimer) ; sinon panneau Suggestions (croix de suppression, comme les cases d'un preset).
+// Dans les deux cas, clic gauche sur la ligne = renommer.
+function _buildSuggestionItem(sg, inCasesPanel) {
+  const li = document.createElement('li');
+  li.className = 'element-item';
+  li.dataset.id = sg.id;
+
+  const span = document.createElement('span');
+  span.className = 'element-text';
+  span.textContent = sg.text;
+  span.style.cursor = 'text';
+  li.appendChild(span);
+
+  const btn = document.createElement('button');
+  btn.className = 'elem-menu-btn';
+  if (inCasesPanel) {
+    btn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+    const openMenu = e => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeCtxMenuElement(); closeCtxMenuElementArchived();
+      const { addItem } = _tlMakeCtxMenu(li, e);
+      addItem('circle-plus', 'Ajouter aux actives', false, () => _placeSuggestion(sg.id, false));
+      addItem('package', 'Ajouter aux archivées', false, () => _placeSuggestion(sg.id, true));
+      addItem('pencil', 'Renommer', false, () => {
+        const sp = li.querySelector('.element-text');
+        if (sp) _startEditSuggestion(sg, sp);
+      });
+      addItem('trash-2', 'Supprimer', true, () => _deleteSuggestion(sg.id));
+    };
+    btn.addEventListener('click', openMenu);
+    li.addEventListener('contextmenu', openMenu);
+  } else {
+    btn.innerHTML = '<i data-lucide="x"></i>';
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      _deleteSuggestion(sg.id);
+    });
+  }
+  li.appendChild(btn);
+
+  li.addEventListener('click', e => {
+    e.stopPropagation();
+    if (span.isConnected) _startEditSuggestion(sg, span, e);
+  });
+  return li;
+}
+
+// Même édition inline que startEditElement() (textarea à la place du texte, Entrée valide, Échap annule).
+function _startEditSuggestion(sg, span, clickEvent) {
+  const textarea = document.createElement('textarea');
+  textarea.className = 'element-edit-input';
+  textarea.textContent = sg.text;
+  textarea.maxLength = 80;
+
+  const commit = () => {
+    const newText = textarea.value.trim();
+    if (newText && newText !== sg.text) _renameSuggestion(sg.id, newText);
+    renderSuggestions();
+    renderElements();
+  };
+
+  textarea.addEventListener('blur', commit);
+  textarea.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); textarea.blur(); }
+    if (e.key === 'Escape') { textarea.value = sg.text; textarea.blur(); }
+  });
+  textarea.addEventListener('click', e => e.stopPropagation());
+
+  const autoResize = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  };
+  textarea.addEventListener('input', autoResize);
+
+  const rect = span.getBoundingClientRect();
+  span.replaceWith(textarea);
+  textarea.focus();
+  autoResize();
+
+  if (clickEvent) {
+    const charWidth = rect.width / sg.text.length;
+    const position = Math.round((clickEvent.clientX - rect.left) / charWidth);
+    textarea.setSelectionRange(position, position);
+  } else {
+    textarea.select();
+  }
+}
+
+function renderSuggestions() {
+  const scope = _bingoSuggestionsScopeId ? findFolderById(state.folders, _bingoSuggestionsScopeId) : null;
+  const nameEl = document.getElementById('suggestions-panel-folder-name');
+  if (nameEl) nameEl.textContent = scope ? `(${scope.name})` : '';
+  // Compteur du bouton principal : nombre total (sans filtre de recherche), même panneau fermé.
+  const countEl = document.getElementById('bingo-suggestions-count');
+  if (countEl) countEl.textContent = scope ? ` (${_bingoSuggestions.length})` : '';
+  const panel = document.getElementById('suggestions-panel');
+  const list = document.getElementById('suggestions-list');
+  if (!panel || !list || !panel.classList.contains('open')) return;
+  if (_suggestionEditingIn(list)) return;
+  const searchText = document.getElementById('new-suggestion-input').value.trim().toLowerCase();
+  list.innerHTML = '';
+  _bingoSortedSuggestions(searchText).forEach(sg => list.appendChild(_buildSuggestionItem(sg, false)));
+  if (window.lucide) lucide.createIcons({ root: list });
+}
+
+// Ouvrir/fermer change la largeur laissée aux grilles (transition 0.22s de .cases-sidebar) :
+// recalcul de leur taille une fois la transition finie (nécessaire en plein écran, où les grilles
+// ont une taille fixée en px).
+function openSuggestionsPanel() {
+  closeCasesPanel();
+  const panel = document.getElementById('suggestions-panel');
+  panel.classList.add('open');
+  renderSuggestions();
+  _adjustSidebarMaxHeight(panel);
+  setTimeout(_adjustBingoGridSizes, 240);
+}
+function closeSuggestionsPanel() {
+  const panel = document.getElementById('suggestions-panel');
+  if (!panel || !panel.classList.contains('open')) return;
+  panel.classList.remove('open');
+  setTimeout(_adjustBingoGridSizes, 240);
+}
+document.getElementById('btn-bingo-suggestions').addEventListener('click', () => {
+  const panel = document.getElementById('suggestions-panel');
+  if (panel.classList.contains('open')) closeSuggestionsPanel();
+  else openSuggestionsPanel();
+});
+document.getElementById('suggestions-panel-close').addEventListener('click', closeSuggestionsPanel);
+document.getElementById('btn-add-suggestion').addEventListener('click', addSuggestion);
+document.getElementById('new-suggestion-input').addEventListener('keydown', e => { if (e.key === 'Enter') addSuggestion(); });
+document.getElementById('new-suggestion-input').addEventListener('input', renderSuggestions);
 
 // ── Statistiques des cases (winrate sur la saison) ──
 // Un "épisode" = tout dossier non archivé possédant au moins une grille non archivée.
@@ -13430,6 +13677,7 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
 // Calcule et applique le périmètre de souscription active : la "saison" du dossier bingo actuellement
 // actif (même périmètre que _bingoEnsureSeasonLoaded, cf plan §4).
 function _bingoUpdateActiveSeasonSubscription() {
+  _bingoUpdateSuggestionsSubscription(); // même déclencheur : changement de bingo actif / d'arbre
   const folder = activeFolder();
   if (!folder) { _bingoSetActiveSeasonSubscription([]); return; }
   const scope = _findStatsScopeFolder(folder);
@@ -13480,7 +13728,7 @@ _dbBingoIndex.once('value').then(indexSnapshot => {
         // Effacer les anciennes clés racine (jamais data/index/trash, déjà réécrits ci-dessus avec le
         // bon contenu) : sinon elles polluent `raw` indéfiniment et redéclenchent cette migration à
         // chaque démarrage, écrasant toute modification faite depuis avec le vieux snapshot figé.
-        ...Object.keys(raw).filter(k => k !== 'index' && k !== 'data' && k !== 'trash').map(k => _dbBingo.child(k).set(null)),
+        ...Object.keys(raw).filter(k => k !== 'index' && k !== 'data' && k !== 'trash' && k !== 'suggestions').map(k => _dbBingo.child(k).set(null)),
       ];
       return Promise.all(writes).catch(e => console.warn('Bingo migration write error:', e));
     }
@@ -13769,7 +14017,7 @@ function _homeRenderHero() {
       btn.style.display = 'inline-flex';
       if (lbl) {
         // Même construction de chemin que renderCurrentEventButton() (header) : Tier List | dossiers | nom
-        const parts = ['Liste'];
+        const parts = ['Tier list'];
         if (tl.folderId) {
           const folderParts = [];
           let current = (tlState.folders || []).find(f => f.id === tl.folderId);

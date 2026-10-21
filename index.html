@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=328" />
+  <link rel="stylesheet" href="style.css?v=329" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -373,6 +373,8 @@
             <div class="ctrl-row-toolbar-center btn-fullscreen-only" id="bingo-solo-toolbar-center"></div>
             <div id="bingo-fullscreen-breadcrumb" class="bingo-fullscreen-breadcrumb bingo-breadcrumb-title"></div>
             <div class="ctrl-row-toolbar-right">
+              <!-- Suggestions : visible aussi en plein écran (pas de .btn-hide-solo-mode). -->
+              <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-bingo-suggestions" title="Suggestions de cases (partagées entre les épisodes du dossier)"><i data-lucide="lightbulb"></i> <span>Suggestions<span id="bingo-suggestions-count"></span></span></button>
               <button class="btn-action btn-open-grids-window btn-hide-solo-mode" id="btn-open-grids-window" title="Afficher les grilles en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
               <button class="btn-action btn-exit-solo-mode" id="btn-exit-solo-grid" title="Quitter le mode plein écran"><i data-lucide="x"></i> Quitter plein écran</button>
             </div>
@@ -433,9 +435,27 @@
             <div class="elements-tabs">
               <button class="tab-btn active" data-tab="active" title="Clic gauche : afficher les cases actives">Actives</button>
               <button class="tab-btn" data-tab="archived" title="Clic gauche : afficher les cases archivées">Archivées</button>
+              <button class="tab-btn" data-tab="suggestions" title="Clic gauche : afficher les suggestions du dossier">Suggestions</button>
             </div>
             <ul id="elements-list" class="elements-list"></ul>
             <ul id="elements-archived" class="elements-list hidden"></ul>
+            <ul id="elements-suggestions" class="elements-list hidden"></ul>
+          </div>
+        </div>
+
+        <!-- Panneau Suggestions (même sidebar que Cases, l'un ferme l'autre). Liste partagée par tous
+             les épisodes du dossier parent (bingo/suggestions/<id du dossier>), en temps réel. -->
+        <div id="suggestions-panel" class="folders-panel cases-panel cases-sidebar suggestions-sidebar">
+          <div class="folders-panel-header">
+            <span class="folders-panel-title"><i data-lucide="lightbulb"></i> Suggestions <span id="suggestions-panel-folder-name" class="cases-panel-folder-name"></span></span>
+            <button class="modal-close" id="suggestions-panel-close"><i data-lucide="x"></i></button>
+          </div>
+          <div class="folders-panel-tree panel-elements-body">
+            <div class="add-element-form">
+              <input type="text" id="new-suggestion-input" placeholder="Ajouter ou rechercher une suggestion..." maxlength="80" />
+              <button id="btn-add-suggestion" class="btn-icon" title="Ajouter une suggestion">+</button>
+            </div>
+            <ul id="suggestions-list" class="elements-list"></ul>
           </div>
         </div>
 
@@ -1243,6 +1263,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=470"></script>
+  <script src="app.js?v=473"></script>
 </body>
 </html>
