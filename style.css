@@ -2631,10 +2631,9 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   flex-wrap: wrap;
   gap: 6px;
 }
-.tl-preset-color-popover .tl-color-custom-label {
+.tl-preset-color-popover .color-picker-field {
   border-top: 1px solid var(--border);
   padding-top: 8px;
-  justify-content: space-between;
 }
 
 .tl-preset-edit-row {
@@ -4126,25 +4125,89 @@ body.tl-split-dragging { cursor: ew-resize; user-select: none; }
 .tl-swatch:hover { transform: scale(1.15); }
 .tl-swatch.selected { border-color: var(--text); transform: scale(1.1); }
 
-.tl-color-custom-label {
+/* Sélecteur de couleur maison (buildColorPicker) — remplace <input type="color"> et sa fenêtre Windows */
+.color-picker-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.color-picker-toggle {
   display: flex;
   align-items: center;
   gap: 5px;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
-  flex-shrink: 0;
 }
-.tl-color-input-sm {
+.color-picker-toggle:hover { color: var(--text); }
+.color-picker-dot {
   width: 30px;
   height: 26px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-2);
-  cursor: pointer;
-  padding: 1px;
 }
+.color-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.color-picker-sv {
+  position: relative;
+  height: 120px;
+  border-radius: var(--radius);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+.color-picker-sv-cursor {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.color-picker-hue {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  border-radius: 6px;
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  cursor: pointer;
+}
+.color-picker-hue::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6);
+}
+.color-picker-hue::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6);
+}
+.color-picker-hex {
+  font-family: monospace;
+  font-size: 0.85rem;
+  padding: 6px 10px;
+}
+
+/* Modal générique (uiAlert/uiConfirm/uiPrompt) : peut s'ouvrir par-dessus une autre modale ou un popover */
+#modal-dialog { z-index: 3000; }
 
 
 .tl-btn-new-folder {

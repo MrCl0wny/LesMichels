@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=330" />
+  <link rel="stylesheet" href="style.css?v=331" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -528,10 +528,7 @@
         <div class="tl-color-picker">
           <span class="tl-color-picker-label">Couleur</span>
           <div class="tl-color-swatches" id="tl-color-swatches"></div>
-          <label class="tl-color-custom-label" title="Couleur personnalisée">
-            <span>Autre</span>
-            <input type="color" id="tl-modal-tier-color" class="tl-color-input-sm" value="#e85b47" />
-          </label>
+          <!-- "Autre" : sélecteur de couleur maison ajouté ici en JS (cf. buildColorPicker / tlModalTierColor) -->
         </div>
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-tier-confirm">Ajouter</button>
@@ -1229,6 +1226,22 @@
     </div>
   </div>
 
+  <!-- Modal générique message / confirmation / saisie (remplace alert/confirm/prompt natifs, cf. uiAlert/uiConfirm/uiPrompt) -->
+  <div id="modal-dialog" class="modal-overlay hidden">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header">
+        <h3 id="modal-dialog-title"></h3>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;white-space:pre-line;" id="modal-dialog-msg"></p>
+        <input type="text" id="modal-dialog-input" class="modal-text-input modal-rename-input hidden" maxlength="60" />
+        <div class="modal-actions">
+          <button class="btn-action" id="btn-modal-dialog-ok"></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal connexion -->
   <div id="modal-auth" class="modal-overlay">
     <div class="modal-box modal-box-sm">
@@ -1268,6 +1281,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=480"></script>
+  <script src="app.js?v=482"></script>
 </body>
 </html>

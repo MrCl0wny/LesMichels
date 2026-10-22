@@ -143,6 +143,7 @@ const MODAL_CLOSE_FNS = {
   'modal-confirm-toplace': () => _tlCloseConfirmToPlaceModal(),
   'modal-confirm-current-event': () => closeConfirmCurrentEventModal(),
   'modal-confirm-delete': () => closeConfirmDeleteModal(),
+  'modal-dialog': () => _uiDialogClose(false),
 };
 document.addEventListener('mousedown', (e) => {
   if (!e.target.classList.contains('modal-overlay') || e.target.id === 'modal-auth') return;
@@ -282,7 +283,7 @@ function setupAuth() {
     const provider = new firebase.auth.GoogleAuthProvider();
     _auth.signInWithPopup(provider).catch(err => {
       console.error('Erreur connexion Google:', err);
-      alert('Erreur lors de la connexion. Réessaie.');
+      uiAlert('Erreur lors de la connexion. Réessaie.', 'Connexion');
     });
   });
 
@@ -5278,7 +5279,7 @@ document.getElementById('btn-import-element-presets').addEventListener('click', 
   await _bingoEnsureFoldersLoaded([targetId]);
   const added = importElementTexts(presets.flatMap(p => p.elements || []), targetId);
   closeElementPresetsModal();
-  if (added === 0) alert('Toutes les cases existent déjà dans ce dossier.');
+  if (added === 0) uiAlert('Toutes les cases existent déjà dans ce dossier.', 'Preset cases');
 });
 
 // ──────────────────────────────────────────────
@@ -6291,8 +6292,8 @@ document.getElementById('ctx-element-add-to-preset').addEventListener('click', e
   const { addItem } = _tlMakeCtxMenu(anchorEl, e);
   const presets = getElementPresets().slice().sort((a, b) => _elementPresetDisplayName(a).localeCompare(_elementPresetDisplayName(b), undefined, { sensitivity: 'base' }));
   presets.forEach(p => addItem('tag', _elementPresetDisplayName(p), false, () => _addElementToPreset(elementId, p.id, null)));
-  addItem('plus', 'Nouveau preset...', false, () => {
-    const name = prompt('Nom du nouveau preset :');
+  addItem('plus', 'Nouveau preset...', false, async () => {
+    const name = await uiPrompt('Nouveau preset', { okLabel: 'Créer', placeholder: 'Nom du preset...' });
     if (name && name.trim()) _addElementToPreset(elementId, null, name.trim());
   });
 });
@@ -6811,6 +6812,138 @@ document.getElementById('btn-confirm-delete').addEventListener('click', () => {
   closeConfirmDeleteModal();
   if (fn) fn();
 });
+
+// Modal générique — remplace alert/confirm/prompt natifs (fenêtres Windows). Renvoie une Promise :
+// uiAlert → undefined, uiConfirm → true/false, uiPrompt → texte saisi ou null.
+// Clic hors de la fenêtre ou Échap = annuler (même convention que les autres modales).
+// ⚠ Contrairement au natif, le code continue pendant que la modale est ouverte : après l'await,
+// re-résoudre les objets d'état (tierlist, dossier) — un snapshot Firebase a pu les recréer.
+let _uiDialogResolve = null;
+let _uiDialogMode = null;
+function _uiDialogOpen(mode, message, { title, okLabel, danger = false, defaultValue = '', placeholder = '' }) {
+  if (_uiDialogResolve) _uiDialogClose(false); // une seule à la fois : la précédente est annulée
+  _uiDialogMode = mode;
+  document.getElementById('modal-dialog-title').textContent = title;
+  const msgEl = document.getElementById('modal-dialog-msg');
+  msgEl.textContent = message;
+  msgEl.classList.toggle('hidden', !message);
+  const input = document.getElementById('modal-dialog-input');
+  input.classList.toggle('hidden', mode !== 'prompt');
+  input.value = defaultValue;
+  input.placeholder = placeholder;
+  const okBtn = document.getElementById('btn-modal-dialog-ok');
+  okBtn.textContent = okLabel;
+  okBtn.classList.toggle('btn-danger-action', danger);
+  document.getElementById('modal-dialog').classList.remove('hidden');
+  setTimeout(() => { if (mode === 'prompt') { input.focus(); input.select(); } else okBtn.focus(); }, 50);
+  return new Promise(resolve => { _uiDialogResolve = resolve; });
+}
+function _uiDialogClose(confirmed) {
+  document.getElementById('modal-dialog').classList.add('hidden');
+  const resolve = _uiDialogResolve;
+  _uiDialogResolve = null;
+  if (!resolve) return;
+  if (_uiDialogMode === 'prompt') resolve(confirmed ? document.getElementById('modal-dialog-input').value : null);
+  else if (_uiDialogMode === 'confirm') resolve(!!confirmed);
+  else resolve();
+}
+function uiAlert(message, title = 'Information') {
+  return _uiDialogOpen('alert', message, { title, okLabel: 'OK' });
+}
+function uiConfirm(message, { title = 'Confirmer', okLabel = 'Continuer', danger = false } = {}) {
+  return _uiDialogOpen('confirm', message, { title, okLabel, danger });
+}
+function uiPrompt(title, { message = '', okLabel = 'OK', defaultValue = '', placeholder = '' } = {}) {
+  return _uiDialogOpen('prompt', message, { title, okLabel, defaultValue, placeholder });
+}
+document.getElementById('btn-modal-dialog-ok').addEventListener('click', () => _uiDialogClose(true));
+document.getElementById('modal-dialog').addEventListener('keydown', e => {
+  e.stopPropagation(); // pas de raccourcis de la page (Ctrl+Z…) pendant la modale
+  if (e.key === 'Enter') { e.preventDefault(); _uiDialogClose(true); }
+  if (e.key === 'Escape') _uiDialogClose(false);
+});
+
+// Sélecteur de couleur maison — remplace <input type="color"> (qui ouvre la fenêtre Windows).
+// Bouton "Autre" + pastille de la couleur courante, qui déplie un carré saturation/luminosité, une
+// barre de teinte et un champ hexa. Se comporte comme l'input natif : propriété .value (#rrggbb,
+// modifiable sans déclencher d'événement), 'input' pendant le réglage, 'change' au relâchement ou
+// à la validation du code hexa.
+function buildColorPicker(initial = '#e85b47') {
+  const el = document.createElement('div');
+  el.className = 'color-picker-field';
+  el.innerHTML = '<button type="button" class="color-picker-toggle" title="Couleur personnalisée"><span>Autre</span><span class="color-picker-dot"></span></button>'
+    + '<div class="color-picker hidden">'
+    + '<div class="color-picker-sv"><div class="color-picker-sv-cursor"></div></div>'
+    + '<input type="range" class="color-picker-hue" min="0" max="359" step="1" />'
+    + '<input type="text" class="modal-text-input color-picker-hex" maxlength="7" spellcheck="false" />'
+    + '</div>';
+  const panel    = el.querySelector('.color-picker');
+  const dot      = el.querySelector('.color-picker-dot');
+  const sv       = el.querySelector('.color-picker-sv');
+  const cursor   = el.querySelector('.color-picker-sv-cursor');
+  const hueInput = el.querySelector('.color-picker-hue');
+  const hexInput = el.querySelector('.color-picker-hex');
+  let h = 0, s = 0, v = 0, hex = '#000000';
+
+  const toHex = () => {
+    const f = n => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+    return '#' + [f(5), f(3), f(1)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+  };
+  // Lit un code hexa (#rrggbb) dans h/s/v ; garde la teinte courante pour un gris (teinte indéfinie).
+  const fromHex = str => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(str).trim());
+    if (!m) return false;
+    const n = parseInt(m[1], 16);
+    const r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+    const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+    v = max;
+    s = max ? d / max : 0;
+    if (d) h = 60 * (max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4);
+    hex = '#' + m[1].toLowerCase();
+    return true;
+  };
+  const render = () => {
+    sv.style.background = `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent), hsl(${h}, 100%, 50%)`;
+    cursor.style.left = (s * 100) + '%';
+    cursor.style.top  = ((1 - v) * 100) + '%';
+    cursor.style.background = hex;
+    dot.style.background = hex;
+    hueInput.value = Math.round(h);
+    if (document.activeElement !== hexInput) hexInput.value = hex;
+  };
+  const emit = type => el.dispatchEvent(new Event(type));
+
+  el.querySelector('.color-picker-toggle').addEventListener('click', () => panel.classList.toggle('hidden'));
+
+  const pickSv = e => {
+    const r = sv.getBoundingClientRect();
+    s = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    v = 1 - Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    hex = toHex(); render(); emit('input');
+  };
+  sv.addEventListener('pointerdown', e => { e.preventDefault(); sv.setPointerCapture(e.pointerId); pickSv(e); });
+  sv.addEventListener('pointermove', e => { if (sv.hasPointerCapture(e.pointerId)) pickSv(e); });
+  sv.addEventListener('pointerup', e => { if (sv.hasPointerCapture(e.pointerId)) emit('change'); });
+
+  // stopPropagation : les événements natifs des champs internes ne doivent pas remonter jusqu'aux
+  // écouteurs posés sur le sélecteur (qui reçoivent déjà ceux émis par emit()).
+  hueInput.addEventListener('input', e => { e.stopPropagation(); h = +hueInput.value; hex = toHex(); render(); emit('input'); });
+  hueInput.addEventListener('change', e => { e.stopPropagation(); emit('change'); });
+  hexInput.addEventListener('input', e => { e.stopPropagation(); if (fromHex(hexInput.value)) { render(); emit('input'); } });
+  hexInput.addEventListener('change', e => { e.stopPropagation(); hexInput.value = hex; emit('change'); });
+  hexInput.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); hexInput.blur(); }
+  });
+
+  Object.defineProperty(el, 'value', {
+    get: () => hex,
+    set: val => { if (fromHex(val)) render(); },
+  });
+  el.close = () => panel.classList.add('hidden');
+  el.value = initial;
+  return el;
+}
 // Modal nouvelle grille
 const modalNewGrid       = document.getElementById('modal-new-grid');
 const newGridNameInput   = document.getElementById('new-grid-name-input');
@@ -8537,7 +8670,8 @@ const tlModalNewConfirm   = document.getElementById('tl-modal-new-confirm');
 
 const tlModalTier         = document.getElementById('tl-modal-tier');
 const tlModalTierLabel    = document.getElementById('tl-modal-tier-label');
-const tlModalTierColor    = document.getElementById('tl-modal-tier-color');
+const tlModalTierColor    = buildColorPicker(); // "Autre" (sélecteur maison, mêmes .value/'input' que l'ancien <input type="color">)
+tlModalTier.querySelector('.tl-color-picker').appendChild(tlModalTierColor);
 const tlModalTierConfirm  = document.getElementById('tl-modal-tier-confirm');
 
 const tlModalArchived     = document.getElementById('tl-modal-archived');
@@ -10338,14 +10472,15 @@ function _tlShowImportMenu(anchorEl) {
 
 function _tlPasteFromClipboard(tl) {
   if (!tl) return;
-  navigator.clipboard.read().then(items => {
+  navigator.clipboard.read().then(async items => {
     const imageItems = items.filter(item => item.types.some(t => t.startsWith('image/')));
-    if (imageItems.length === 0) { alert('Aucune image dans le presse-papier.'); return; }
+    if (imageItems.length === 0) { uiAlert('Aucune image dans le presse-papier.'); return; }
+    const maxImages = await _tlEnsureCapacity(tl, imageItems.length);
+    tl = tlState.tierlists.find(t => t.id === tl.id) || tl; // re-résoudre après l'await (cf. tlCopy/tlDelete)
     const root = _tlGroupRoot(tl);
     if (!root.images) root.images = [];
-    const maxImages = _tlEnsureCapacity(tl, imageItems.length);
     if (root.images.length >= maxImages) {
-      alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`); return;
+      uiAlert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`, 'Limite atteinte'); return;
     }
     const now = new Date();
     const addedImgs = [];
@@ -10372,9 +10507,9 @@ function _tlPasteFromClipboard(tl) {
       _tlNameNewImgsSequentially(tl, addedImgs);
     }).catch(e => {
       console.warn('TL clipboard paste error:', e);
-      alert('Impossible de lire le presse-papier. Essaie Ctrl+V à la place.');
+      uiAlert('Impossible de lire le presse-papier. Essaie Ctrl+V à la place.', 'Presse-papier');
     });
-  }).catch(() => alert('Impossible de lire le presse-papier. Essaie Ctrl+V à la place.'));
+  }).catch(() => uiAlert('Impossible de lire le presse-papier. Essaie Ctrl+V à la place.', 'Presse-papier'));
 }
 
 function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false) {
@@ -10646,8 +10781,9 @@ async function tlConvertToTemplate(id) {
   tl = tlState.tierlists.find(t => t.id === id) || tl;
   const placedCount = tl.tiers.reduce((n, t) => n + t.items.length, 0);
   if (placedCount > 0) {
-    const ok = confirm(`Convertir "${tl.name}" en template va renvoyer ses ${placedCount} image(s) classée(s) en zone non placée (un template n'a jamais d'image dans un tier). Continuer ?`);
+    const ok = await uiConfirm(`Convertir "${tl.name}" en template va renvoyer ses ${placedCount} image(s) classée(s) en zone non placée (un template n'a jamais d'image dans un tier). Continuer ?`, { title: 'Convertir en template', okLabel: 'Convertir' });
     if (!ok) return;
+    tl = tlState.tierlists.find(t => t.id === id) || tl; // re-résoudre après l'await
   }
   tl.tiers.forEach(t => {
     t.items.forEach(imgId => { if (!tl.unplaced.includes(imgId)) tl.unplaced.push(imgId); });
@@ -10757,11 +10893,13 @@ function tlAddTier(label, color) {
   tlRender();
 }
 
-function tlDeleteTier(tl, tierId) {
-  const tier = tl.tiers.find(t => t.id === tierId);
+async function tlDeleteTier(tl, tierId) {
+  let tier = tl.tiers.find(t => t.id === tierId);
   if (tier && tier.items.length > 0) {
-    const confirmed = confirm(`Ce tier contient ${tier.items.length} image(s). Les supprimer quand même ? (Elles seront renvoyées dans "Images non placées")`);
+    const confirmed = await uiConfirm(`Ce tier contient ${tier.items.length} image(s). Les supprimer quand même ? (Elles seront renvoyées dans "Images non placées")`, { title: 'Supprimer le tier', okLabel: 'Supprimer', danger: true });
     if (!confirmed) return;
+    tl = tlState.tierlists.find(t => t.id === tl.id) || tl; // re-résoudre après l'await
+    tier = tl.tiers.find(t => t.id === tierId);
   }
   if (tier) {
     const tierIdx = tl.tiers.findIndex(t => t.id === tierId);
@@ -10781,11 +10919,12 @@ function tlEditTier(tl, tier) {
 
 // Remplace entièrement les tiers d'une tierlist/template par une nouvelle liste (label+couleur).
 // Les images déjà placées dans les tiers actuels sont renvoyées en zone "non placées" avant remplacement.
-function _tlReplaceTiers(tl, newTiersSpec, confirmMessage) {
+async function _tlReplaceTiers(tl, newTiersSpec, confirmMessage) {
   const placedCount = tl.tiers.reduce((n, t) => n + t.items.length, 0);
   if (placedCount > 0) {
-    const ok = confirm(confirmMessage || `Remplacer les tiers va renvoyer ${placedCount} image(s) classée(s) en zone non placée. Continuer ?`);
+    const ok = await uiConfirm(confirmMessage || `Remplacer les tiers va renvoyer ${placedCount} image(s) classée(s) en zone non placée. Continuer ?`, { title: 'Remplacer les tiers', okLabel: 'Remplacer' });
     if (!ok) return false;
+    tl = tlState.tierlists.find(t => t.id === tl.id) || tl; // re-résoudre après l'await
   }
   _tlPushUndoOp({
     tierlistId: tl.id,
@@ -10805,7 +10944,7 @@ function _tlReplaceTiers(tl, newTiersSpec, confirmMessage) {
 function tlApplyPreset(tl, presetId) {
   const preset = tlGetAllPresets().find(p => p.id === presetId);
   if (!preset) return;
-  _tlReplaceTiers(tl, preset.tiers);
+  return _tlReplaceTiers(tl, preset.tiers); // Promise<boolean> : false si l'utilisateur annule
 }
 
 function tlSaveCurrentAsPreset(tl, name) {
@@ -10889,25 +11028,29 @@ function tlSetMaxImages(tl, value) {
 }
 
 // Si l'ajout de `incoming` éléments dépasse la limite du groupe, propose de la passer à 500.
-// Retourne la limite effective après la réponse (inchangée si refus : l'excédent est ignoré).
-function _tlEnsureCapacity(tl, incoming) {
+// Retourne (Promise) la limite effective après la réponse (inchangée si refus : l'excédent est ignoré).
+// Appelants : re-résoudre la tierlist après l'await (cf. uiConfirm).
+async function _tlEnsureCapacity(tl, incoming) {
   const max = tlEffectiveMaxImages(tl);
   const total = (_tlGroupRoot(tl).images || []).length + incoming;
   if (total <= max || max >= TL_MAX_IMAGES_CAP) return max;
-  if (!confirm(`Cet ajout dépasse la limite de ${max} éléments (${total} au total).\n\nAugmenter la limite à ${TL_MAX_IMAGES_CAP} éléments ?`)) return max;
+  if (!await uiConfirm(`Cet ajout dépasse la limite de ${max} éléments (${total} au total).\n\nAugmenter la limite à ${TL_MAX_IMAGES_CAP} éléments ?`, { title: 'Limite d\'éléments', okLabel: 'Augmenter la limite' })) return max;
+  tl = tlState.tierlists.find(t => t.id === tl.id) || tl; // re-résoudre après l'await
   return tlSetMaxImages(tl, TL_MAX_IMAGES_CAP);
 }
 
-function tlImportImages(files) {
-  const tl = tlActiveTierlist();
+async function tlImportImages(files) {
+  files = Array.from(files); // copie avant l'await : la FileList (input fichier / dépôt) est vidée juste après l'appel
+  let tl = tlActiveTierlist();
   if (!tl) return;
+  const maxImages = await _tlEnsureCapacity(tl, files.length);
+  tl = tlState.tierlists.find(t => t.id === tl.id) || tl; // re-résoudre après l'await (cf. tlCopy/tlDelete)
   const root = _tlGroupRoot(tl);
   if (!root.images) root.images = [];
 
-  const maxImages = _tlEnsureCapacity(tl, files.length);
   const remaining = maxImages - root.images.length;
   if (remaining <= 0) {
-    alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
+    uiAlert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`, 'Limite atteinte');
     return;
   }
 
@@ -10936,7 +11079,7 @@ function tlImportImages(files) {
     const msgs = [];
     if (ignoredByLimit > 0) msgs.push(`${ignoredByLimit} élément${ignoredByLimit > 1 ? 's ignorés' : ' ignoré'} — limite de ${maxImages} éléments atteinte.`);
     if (ignoredByDuplicate > 0) msgs.push(`${ignoredByDuplicate} élément${ignoredByDuplicate > 1 ? 's déjà présents ignorés' : ' déjà présent ignoré'} (doublon).`);
-    if (msgs.length) alert(msgs.join('\n'));
+    if (msgs.length) uiAlert(msgs.join('\n'), 'Import');
   }).catch(e => console.warn('TL import error:', e));
 }
 
@@ -11525,7 +11668,7 @@ function tlExportImages() {
   const tl = tlActiveTierlist();
   if (!tl || !tl.isTemplate) return;
   const images = (tl.images || []).filter(img => (img.type || 'image') !== 'text' && img.src);
-  if (images.length === 0) { alert('Aucune image à exporter.'); return; }
+  if (images.length === 0) { uiAlert('Aucune image à exporter.', 'Export'); return; }
   const zip = new JSZip();
   const usedNames = new Set();
   images.forEach((img, i) => {
@@ -11849,21 +11992,38 @@ function _tlSyncCustomPresetDropdown(customPresets, tl, id) {
   renderBtn();
   btn.onclick = () => list.classList.toggle('hidden');
 
-  applyBtn.onclick = () => {
+  applyBtn.onclick = async () => {
     if (!_tlCustomPresetDropdownValue) return;
-    if (tlApplyPreset(tl, _tlCustomPresetDropdownValue) !== false) tlModalTiersSource.classList.add('hidden');
+    if (await tlApplyPreset(tl, _tlCustomPresetDropdownValue) !== false) tlModalTiersSource.classList.add('hidden');
   };
   editBtn.onclick = () => {
     if (_tlCustomPresetDropdownValue) tlOpenPresetEditModal(_tlCustomPresetDropdownValue, id);
   };
+  // Confirmation inline sous la ligne (jamais de modal empilé pour une suppression), même bloc que
+  // Preset cases (cf. _buildElementPresetDeleteConfirm) ; retirée à chaque réouverture/rafraîchissement.
+  const delRow = delBtn.parentElement;
+  const removeDelConfirm = () => {
+    if (delRow.nextElementSibling && delRow.nextElementSibling.classList.contains('element-preset-delete-confirm')) delRow.nextElementSibling.remove();
+  };
+  removeDelConfirm();
   delBtn.onclick = () => {
     const preset = customPresets.find(p => p.id === _tlCustomPresetDropdownValue);
     if (!preset) return;
-    if (confirm(`Supprimer le preset "${preset.name}" ?`)) {
+    removeDelConfirm();
+    const box = document.createElement('div');
+    box.className = 'element-preset-delete-confirm';
+    box.style.marginBottom = '8px';
+    box.innerHTML = '<div></div><div class="element-preset-delete-confirm-actions">'
+      + '<button class="btn-action btn-reset">Supprimer</button><button class="btn-action btn-secondary">Annuler</button></div>';
+    box.firstChild.textContent = `Supprimer le preset "${preset.name}" ?`;
+    const [yes, no] = box.querySelectorAll('button');
+    yes.onclick = () => {
       tlDeletePreset(preset.id);
       _tlCustomPresetDropdownValue = null;
       tlOpenTiersSourceModal(id);
-    }
+    };
+    no.onclick = removeDelConfirm;
+    delRow.after(box);
   };
 }
 let _tlCustomPresetDropdownValue = null;
@@ -11905,8 +12065,8 @@ function tlOpenTiersSourceModal(id) {
         nameSpan.textContent = p.name;
         btn.appendChild(nameSpan);
         btn.appendChild(_tlBuildPresetDotsRow(p));
-        btn.addEventListener('click', () => {
-          if (tlApplyPreset(tl, p.id) !== false) tlModalTiersSource.classList.add('hidden');
+        btn.addEventListener('click', async () => {
+          if (await tlApplyPreset(tl, p.id) !== false) tlModalTiersSource.classList.add('hidden');
         });
         protectedList.appendChild(btn);
       });
@@ -12039,35 +12199,29 @@ function _tlOpenPresetColorPopover(dotEl, tier) {
   });
   popover.appendChild(swatchesRow);
 
-  const customLabel = document.createElement('label');
-  customLabel.className = 'tl-color-custom-label';
-  customLabel.title = 'Couleur personnalisée';
-  const customText = document.createElement('span');
-  customText.textContent = 'Autre';
-  const customInput = document.createElement('input');
-  customInput.type = 'color';
-  customInput.className = 'tl-color-input-sm';
-  customInput.value = tier.color;
+  const customInput = buildColorPicker(tier.color);
   customInput.addEventListener('input', () => {
     tier.color = customInput.value;
     dotEl.style.background = customInput.value;
   });
-  customInput.addEventListener('change', () => {
-    _tlClosePresetColorPopover();
-    _tlRenderPresetEditTiers();
-    _tlCommitPresetEdit();
-  });
-  customLabel.appendChild(customText);
-  customLabel.appendChild(customInput);
-  popover.appendChild(customLabel);
+  // Enregistre à chaque relâchement sans fermer le popover (l'ancien input natif n'émettait 'change'
+  // qu'à la fermeture de la fenêtre Windows) : on peut ajuster plusieurs fois, clic ailleurs pour fermer.
+  customInput.addEventListener('change', () => _tlCommitPresetEdit());
+  popover.appendChild(customInput);
 
   // position:fixed calculé en JS plutôt que absolute : la liste de tiers a overflow-y:auto et
   // couperait visuellement tout popover positionné relativement à elle.
   document.body.appendChild(popover);
   const dotRect = dotEl.getBoundingClientRect();
   popover.style.position = 'fixed';
-  popover.style.top = (dotRect.bottom + 6) + 'px';
   popover.style.left = dotRect.left + 'px';
+  // Sous la pastille, ou au-dessus si le sélecteur déplié dépasse du bas de l'écran.
+  const placePopover = () => {
+    const below = dotRect.bottom + 6;
+    popover.style.top = (below + popover.offsetHeight > window.innerHeight - 8 ? Math.max(8, dotRect.top - 6 - popover.offsetHeight) : below) + 'px';
+  };
+  placePopover();
+  customInput.querySelector('.color-picker-toggle').addEventListener('click', placePopover);
 
   setTimeout(() => document.addEventListener('click', _tlClosePresetColorPopover, { once: true }), 0);
 }
@@ -12472,6 +12626,7 @@ function tlOpenTierModal(ctx = { mode: 'create' }) {
     tlSelectColor(TL_PRESET_COLORS[0], null);
     tlModalTierColor.value = TL_PRESET_COLORS[0];
   }
+  tlModalTierColor.close();
   tlModalTier.classList.remove('hidden');
   if (ctx.mode !== 'color') setTimeout(() => { tlModalTierLabel.focus(); tlModalTierLabel.select(); }, 50);
 }
@@ -13165,12 +13320,13 @@ tlInitSwatches();
 // ── Ajout rapide d'une carte texte (barre inline, couleur fixe) ──────────────
 const TL_TEXT_CARD_COLOR = '#3a3a42';
 
-function _tlAddTextCard(tl, text) {
+async function _tlAddTextCard(tl, text) {
+  const maxImages = await _tlEnsureCapacity(tl, 1);
+  tl = tlState.tierlists.find(t => t.id === tl.id) || tl; // re-résoudre après l'await (cf. tlCopy/tlDelete)
   const root = _tlGroupRoot(tl);
   if (!root.images) root.images = [];
-  const maxImages = _tlEnsureCapacity(tl, 1);
   if (root.images.length >= maxImages) {
-    alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
+    uiAlert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`, 'Limite atteinte');
     return;
   }
   const img = { id: uid(), type: 'text', name: text, color: TL_TEXT_CARD_COLOR, updatedAt: Date.now() };
@@ -13618,8 +13774,8 @@ tlAddTextInput.addEventListener('input', () => {
 });
 
 // ── Coller depuis le presse-papier ────────────────────────────────────────────
-document.addEventListener('paste', e => {
-  const tl = tlActiveTierlist();
+document.addEventListener('paste', async e => {
+  let tl = tlActiveTierlist();
   if (!tl) return;
   // Vérifier qu'on est sur la page tierlist
   const tlPage = document.getElementById('page-tierlist');
@@ -13632,23 +13788,25 @@ document.addEventListener('paste', e => {
   if (!items) return;
   const imageItems = Array.from(items).filter(it => it.type.startsWith('image/'));
   if (imageItems.length === 0) return;
+  // getAsFile() avant l'await : le presse-papier de l'événement n'est plus lisible ensuite.
+  const imageFiles = imageItems.map(it => it.getAsFile());
 
   // Les images appartiennent au groupe (template), pas à une tierlist individuelle — sans passer
   // par root.images + _tlGetGroupMembers (comme tlImportImages / _tlPasteFromClipboard / _tlAddTextCard),
   // l'image collée n'était visible que dans tl.images (jamais lu par tlFindImage, qui lit toujours
   // _tlGetGroupImages = root.images) et jamais ajoutée aux autres membres du groupe : image "fantôme"
   // invisible de tous, et listes du groupe désynchronisées en nombre d'éléments.
+  const maxImages = await _tlEnsureCapacity(tl, imageItems.length);
+  tl = tlState.tierlists.find(t => t.id === tl.id) || tl; // re-résoudre après l'await (cf. tlCopy/tlDelete)
   const root = _tlGroupRoot(tl);
   if (!root.images) root.images = [];
-  const maxImages = _tlEnsureCapacity(tl, imageItems.length);
   if (root.images.length >= maxImages) {
-    alert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`);
+    uiAlert(`Limite atteinte — maximum ${maxImages} éléments par groupe.`, 'Limite atteinte');
     return;
   }
   const now = new Date();
   const addedImgs = [];
-  const promises = imageItems.map(it => {
-    const file = it.getAsFile();
+  const promises = imageFiles.map(file => {
     if (!file) return Promise.resolve();
     const name = `capture_${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
     return _tlCompressToBase64(file).then(src => {
