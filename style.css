@@ -512,6 +512,11 @@ body {
   outline: none;
   cursor: pointer;
 }
+/* Page Dossiers : menu de tri réduit à la largeur de son contenu. */
+.folders-panel-sort .folders-sort-select {
+  flex: none;
+  width: auto;
+}
 
 /* Cadre englobant l'arbre de dossiers, avec titre — lui seul scrolle en interne, pour que Récents
    et le tri restent toujours visibles en haut du panneau même avec beaucoup de dossiers. */
@@ -837,18 +842,21 @@ body {
   color: #b49a7e;
   padding: 0 2px;
 }
-/* Limité à 5 entrées en JS (cf _renderRecentFolderPaths/_tlRenderRecentFolderPaths) : toutes
-   affichées sans scroll interne. */
+/* Sans limite en JS (cf _renderRecentFolderPaths/_tlRenderRecentFolderPaths) : 5 lignes visibles à
+   la fois (hauteur de ligne fixe), scroll interne pour les plus anciennes. */
 .fp-recent-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  max-height: calc(5 * 30px + 4 * 6px);
+  overflow-y: auto;
 }
 .fp-recent-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px;
+  height: 30px;
+  padding: 0 4px 0 8px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -860,6 +868,7 @@ body {
 .fp-recent-row:hover { border-color: rgba(180, 140, 100, 0.7); background: var(--surface-3); }
 .fp-recent-row .fp-recent-icon { font-size: 0.8rem; flex-shrink: 0; color: var(--text-dim); }
 .fp-recent-row .fp-recent-icon [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
+.fp-recent-row:hover .fp-folder-ctx-btn { opacity: 1; }
 .fp-recent-path {
   flex: 1;
   font-size: 0.78rem;
@@ -4387,7 +4396,25 @@ body.tl-split-dragging { cursor: ew-resize; user-select: none; }
 }
 .modal-numbering-wrap {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
+/* Texte affiché avant le numéro (S, Ep...) — même look que le champ numéro, sans gras. */
+.modal-numbering-label {
+  width: 64px;
+  min-width: 0;
+  text-align: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 5px 4px;
+  outline: none;
+  transition: var(--transition);
+}
+.modal-numbering-label:focus { border-color: var(--accent); }
 .modal-numbering-wrap.hidden {
   display: none;
 }

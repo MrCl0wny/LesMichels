@@ -790,8 +790,11 @@ function setMainGridId(folderId, gridId) {
 // (numéro toujours affiché sur 2 chiffres minimum : 01, 02, ... 10, 11...).
 // numbering.subtitle est conservé (à part de folder.name) pour pouvoir reformater le nom lors d'une
 // duplication (auto-incrément du numéro en gardant le même sous-titre si aucun nouveau n'est fourni).
+// numbering.label : texte affiché avant le numéro, choisi dans la modal (espaces gardés tels quels) —
+// absent sur les anciens dossiers, qui retombent sur "S"/"Ep".
+function _defaultNumberingLabel(type) { return type === 'episode' ? 'Ep' : 'S'; }
 function formatNumberedFolderName(numbering) {
-  const prefix = numbering.type === 'episode' ? 'Ep' : 'S';
+  const prefix = typeof numbering.label === 'string' ? numbering.label : _defaultNumberingLabel(numbering.type);
   const base = prefix + String(numbering.number).padStart(2, '0');
   return numbering.subtitle ? `${base} ${numbering.subtitle}` : base;
 }
@@ -1289,8 +1292,28 @@ function defaultSubtheme(name, withGrid = false) {
 // CRUD Dossiers
 // ──────────────────────────────────────────────
 
-function createFolder(name, parentId = null, numbering = null, type = 'folder') {
+// keepActive : création depuis la page Dossiers — le dossier actif côté Bingo (et sa sélection de
+// grilles) ne change pas, seul l'arbre de la page Dossiers est re-rendu.
+// Retourne le dossier créé (jamais activeFolder(), qui vaut le parent quand parentId est fourni).
+function createFolder(name, parentId = null, numbering = null, type = 'folder', keepActive = false) {
   const folder = defaultFolder(name, false, numbering, type);
+  if (keepActive) {
+    if (!parentId) {
+      if (!state.folders) state.folders = [];
+      state.folders.push(folder);
+    } else {
+      const parent = findFolderById(state.folders, parentId);
+      if (!parent) return null;
+      if (!parent.folders) parent.folders = [];
+      parent.folders.push(folder);
+      if (!parent.children) parent.children = [];
+      parent.children.push({ type: 'folder', id: folder.id });
+      touchFolderChain(parentId);
+    }
+    _bingoSaveIndex();
+    renderAllFolders();
+    return folder;
+  }
   if (!parentId) {
     // Dossier racine
     if (!state.folders) state.folders = [];
@@ -1300,7 +1323,7 @@ function createFolder(name, parentId = null, numbering = null, type = 'folder') 
   } else {
     // Dossier enfant
     const parent = findFolderById(state.folders, parentId);
-    if (!parent) return;
+    if (!parent) return null;
     if (!parent.folders) parent.folders = [];
     parent.folders.push(folder);
     if (!parent.children) parent.children = [];
@@ -1323,6 +1346,7 @@ function createFolder(name, parentId = null, numbering = null, type = 'folder') 
   renderElements();
   renderGridsList();
   renderGrid();
+  return folder;
 }
 
 // async : activer un dossier-bingo doit charger son contenu lourd (et celui de ses frères-épisodes
@@ -1506,7 +1530,7 @@ async function duplicateFolder(id, name, explicitNumbering) {
     const parentForNumbering = findParentFolder(state.folders, id);
     const siblingsForNumbering = parentForNumbering ? (parentForNumbering.folders || []) : (state.folders || []);
     const subtitle = name || src.numbering.subtitle || '';
-    copy.numbering = { type: src.numbering.type, number: _nextFolderNumber(siblingsForNumbering, src.numbering.type), subtitle };
+    copy.numbering = { type: src.numbering.type, number: _nextFolderNumber(siblingsForNumbering, src.numbering.type), subtitle, label: src.numbering.label };
     copy.name = formatNumberedFolderName(copy.numbering);
   } else {
     copy.numbering = null;
@@ -2640,8 +2664,8 @@ function _renderRecentFolderPaths() {
     // À updatedAt égal (même événement, propagé par touchFolderChain à toute la chaîne), le dossier
     // le plus profond doit être considéré en premier pour que la déduplication le retienne, lui.
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || ancestorIdsOf(b.id).length - ancestorIdsOf(a.id).length);
-  // Limité aux 5 plus récents : pas de liste qui grandit indéfiniment ni de scroll interne à gérer.
-  const recent = _dedupeAncestorFolders(sorted, ancestorIdsOf).slice(0, 5);
+  // Sans limite : la liste affiche 5 lignes à la fois et scrolle pour les plus anciennes (CSS .fp-recent-list).
+  const recent = _dedupeAncestorFolders(sorted, ancestorIdsOf);
   if (recent.length === 0) return;
 
   const title = document.createElement('div');
@@ -2660,12 +2684,25 @@ function _renderRecentFolderPaths() {
     const path = document.createElement('span');
     path.className = 'fp-recent-path';
     path.textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' \\ ');
+    const ctxBtn = document.createElement('button');
+    ctxBtn.className = 'fp-folder-ctx-btn';
+    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+    ctxBtn.title = 'Options';
     row.appendChild(icon);
     row.appendChild(path);
-    row.addEventListener('click', () => { _homeGoToBingoFolder(f.id); });
+    row.appendChild(ctxBtn);
+    row.addEventListener('click', e => {
+      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
+      _homeGoToBingoFolder(f.id);
+    });
+    // Même menu d'options que les lignes de la liste Dossiers.
+    ctxBtn.addEventListener('click', e => _openBingoFolderCtxMenu(f, e, row));
+    row.addEventListener('contextmenu', e => { e.preventDefault(); _openBingoFolderCtxMenu(f, e, null); });
     list.appendChild(row);
   });
   container.appendChild(list);
+  // renderFoldersPanelTree sort avant son propre scan Lucide quand le niveau courant est vide.
+  if (window.lucide) lucide.createIcons({ root: container });
 }
 
 // Menu ⋮ / clic droit d'un dossier bingo — partagé entre la vue liste et la vue icônes.
@@ -2832,10 +2869,11 @@ function openTlSidebar() { openFoldersPage('tierlist'); }
 
 // "+ Bingo" : même mécanisme que "Nouveau Bingo" sur l'ancienne page d'accueil (_homeNewGridAfterFolder) —
 // la modal "Nouveau dossier" affiche en plus sa section grille, dossier + première grille créés en
-// une seule action. Racine par défaut (null) ; l'utilisateur choisit l'emplacement réel dans la modal.
+// une seule action. Emplacement prérempli = chemin affiché dans la colonne Dossiers Bingo ; on reste
+// sur la page Dossiers après création.
 document.getElementById('btn-new-bingo-folder').addEventListener('click', () => {
   _homeNewGridAfterFolder = true;
-  openNewThemeModal(null);
+  openNewThemeModal(_foldersNavFolderId || null, true);
 });
 // Petits "+ Bingo" / "+ Template" des cadres Dossiers : mêmes actions que les gros boutons du haut.
 document.getElementById('btn-new-bingo-folder-small').addEventListener('click', () => document.getElementById('btn-new-bingo-folder').click());
@@ -3102,20 +3140,27 @@ function bingoScreenshotOne(gId) {
 const MIN_SIZE = 3;
 const MAX_SIZE = 5;
 
-function createGrid(name) {
-  const s = activeSubtheme();
+// targetFolderId : bingo visé (ex. bingo tout juste créé via "+ Bingo") — par défaut le dossier actif.
+// S'il n'est pas le dossier actif, ni la sélection de grilles ni l'affichage Bingo ne sont touchés.
+// Toujours un id, résolu ici : chaque _bingoSaveIndex() redéclenche le listener d'index en synchrone,
+// qui recrée les objets dossiers — une référence gardée par l'appelant serait périmée (grilles perdues).
+// gridSize : taille imposée (premières grilles d'un nouveau bingo = 5x5), sinon celle de defaultGrid.
+function createGrid(name, targetFolderId = null, gridSize = null) {
+  const s = targetFolderId ? findFolderById(state.folders, targetFolderId) : activeSubtheme();
   if (!s) return;
+  const isActive = s.id === _localActiveFolderId;
   // Un dossier conteneur (type 'folder') ne peut jamais recevoir de grille directement — seul un
   // Bingo (type 'bingo') le peut. Garde centrale : protège tous les points d'entrée UI (+ Grille,
   // menu contextuel, empty states...) même s'ils ne vérifient pas eux-mêmes le type.
   if (!_isFolderBingo(s)) return;
   const g = defaultGrid(name);
+  if (gridSize) g.gridSize = gridSize;
   // Initialiser toujours MAX_SIZE² cases pour permettre la restauration lors d'un ré-agrandissement
   g.grid  = Array.from({ length: MAX_SIZE * MAX_SIZE }, () => ({ elementId: null, checked: false, color: null }));
   s.grids.push(g);
   s.activeGridId = g.id;
   // Sélectionner automatiquement la nouvelle grille
-  if (!_selectedGridIds.includes(g.id)) {
+  if (isActive && !_selectedGridIds.includes(g.id)) {
     _selectedGridIds.unshift(g.id);
     saveLocalSelectedGrids(_selectedGridIds);
   }
@@ -3125,6 +3170,7 @@ function createGrid(name) {
   // n'y verrait jamais cette modification (même règle que Tier List, tlSave() appelle toujours
   // tlSaveIndex() en plus de tlSaveGroup()).
   _bingoSave(s.id);
+  if (!isActive) return;
   renderGridsList();
   renderGrid();
 }
@@ -4244,6 +4290,9 @@ let _folderModalMode = 'create'; // 'create' | 'edit' | 'duplicate'
 // "Nouveau Bingo" depuis l'accueil : fait apparaître la section grille dans le modal "Nouveau
 // dossier" (fusion des deux modals) — voir openNewThemeModal / confirmNewTheme.
 let _homeNewGridAfterFolder = false;
+// Création lancée depuis la page Dossiers : on y reste (pas de bascule vers Bingo, dossier actif inchangé).
+// Fixé à chaque ouverture par openNewThemeModal, jamais hérité d'une ouverture précédente.
+let _folderModalStayOnFoldersPage = false;
 
 // Lit l'état des 2 checkboxes exclusives Saison/Épisode : retourne 'season' | 'episode' | null
 function _readNumberingType(seasonCb, episodeCb) {
@@ -4264,23 +4313,28 @@ function _applyNumberingChecksVisibility(isBingo, seasonCb, episodeCb) {
 
 // Rend les 2 checkboxes mutuellement exclusives (cocher l'une décoche l'autre) et met à jour
 // l'affichage du champ numéro + la prévisualisation du préfixe (S01/Ep01) sur le champ nom.
-function _wireNumberingChecks(seasonCb, episodeCb, wrap, numberInput, nameInput, prefixEl) {
+// labelInput (optionnel) : champ du texte affiché avant le numéro. En passant de Saison à Épisode
+// (modal Tier List, où les deux cases sont visibles), un texte encore par défaut ("S"/"Ep") suit le
+// type coché ; un texte personnalisé n'est jamais écrasé.
+function _wireNumberingChecks(seasonCb, episodeCb, wrap, numberInput, nameInput, prefixEl, labelInput = null) {
   const update = () => {
     const type = _readNumberingType(seasonCb, episodeCb);
+    if (type && labelInput && ['S', 'Ep'].includes(labelInput.value)) labelInput.value = _defaultNumberingLabel(type);
     if (wrap) wrap.classList.toggle('hidden', !type);
     if (type && numberInput) numberInput.focus();
-    _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, prefixEl);
+    _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, prefixEl, labelInput);
   };
   if (seasonCb) seasonCb.addEventListener('change', () => { if (seasonCb.checked && episodeCb) episodeCb.checked = false; update(); });
   if (episodeCb) episodeCb.addEventListener('change', () => { if (episodeCb.checked && seasonCb) seasonCb.checked = false; update(); });
-  if (numberInput) numberInput.addEventListener('input', () => _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, prefixEl));
+  if (numberInput) numberInput.addEventListener('input', () => _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, prefixEl, labelInput));
+  if (labelInput) labelInput.addEventListener('input', () => _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, prefixEl, labelInput));
 }
 
 // Affiche en grisé, superposé au champ nom, le préfixe S01/Ep01 qui sera ajouté au nom final —
 // et décale le padding du texte tapé pour qu'il ne chevauche pas le préfixe affiché. Le placeholder
 // n'annonce "(optionnel)" que quand une numérotation est cochée (le nom devient alors un sous-titre
 // facultatif) ; sans numérotation, le nom reste obligatoire et le placeholder ne doit pas le suggérer.
-function _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, prefixEl) {
+function _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, prefixEl, labelInput = null) {
   if (!nameInput) return;
   const type = _readNumberingType(seasonCb, episodeCb);
   nameInput.placeholder = type ? 'Nom (optionnel)...' : 'Nom...';
@@ -4291,7 +4345,8 @@ function _updateNamePrefixPreview(seasonCb, episodeCb, numberInput, nameInput, p
     nameInput.style.paddingLeft = '';
     return;
   }
-  const prefix = (type === 'episode' ? 'Ep' : 'S') + String(num).padStart(2, '0') + ' ';
+  const label = labelInput ? labelInput.value : _defaultNumberingLabel(type);
+  const prefix = label + String(num).padStart(2, '0') + ' ';
   prefixEl.textContent = prefix;
   requestAnimationFrame(() => {
     const w = prefixEl.getBoundingClientRect().width;
@@ -4313,7 +4368,8 @@ function _closeFolderTreeDropdown() {
 
 // rootFolders : tableau de dossiers racine (chacun avec sa propriété `.folders` pour les enfants)
 // rootLabel : texte affiché pour l'option racine (aucun parent)
-function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, storageKey, excludeFn = null) {
+// showFullPath : le bouton affiche le chemin complet ("Saison \ Sous-dossier") au lieu du seul nom.
+function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, storageKey, excludeFn = null, showFullPath = false) {
   const labelSpan = btnEl.querySelector('span');
   const iconEl = btnEl.querySelector('[data-lucide]');
 
@@ -4321,7 +4377,7 @@ function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, stora
     for (const f of (folders || [])) {
       if (f.id === id) return f.name;
       const found = findFolderLabel(f.folders, id);
-      if (found) return found;
+      if (found) return showFullPath ? f.name + ' \\ ' + found : found;
     }
     return null;
   }
@@ -4424,10 +4480,11 @@ function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, stora
   refreshBtn();
 }
 
-function openNewThemeModal(parentId = null) {
+function openNewThemeModal(parentId = null, stayOnFoldersPage = false) {
   if (!modalNewTheme) return;
   _editFolderId = null;
   _folderModalMode = 'create';
+  _folderModalStayOnFoldersPage = stayOnFoldersPage;
 
   const parentWrap = document.getElementById('new-folder-parent-wrap');
   if (parentWrap) parentWrap.style.display = '';
@@ -4458,7 +4515,7 @@ function openNewThemeModal(parentId = null) {
     _addOptions(state.folders, 0);
     sel.value = parentId || '';
     const dropdownBtn = document.getElementById('new-folder-parent-dropdown-btn');
-    if (dropdownBtn) _setupFolderTreeDropdown(sel, dropdownBtn, state.folders || [], '— Racine —', 'fp_newfolder_collapsed', _isFolderBingo);
+    if (dropdownBtn) _setupFolderTreeDropdown(sel, dropdownBtn, state.folders || [], '— Racine —', 'fp_newfolder_collapsed', _isFolderBingo, true);
   }
 
   newThemeNameInput.value = '';
@@ -4471,7 +4528,9 @@ function openNewThemeModal(parentId = null) {
   if (episodeCb) episodeCb.checked = false;
   if (numberingWrap) numberingWrap.classList.add('hidden');
   if (numberingNumber) numberingNumber.value = '';
-  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'));
+  const numberingLabel = document.getElementById('new-folder-numbering-label');
+  if (numberingLabel) numberingLabel.value = _defaultNumberingLabel(_homeNewGridAfterFolder ? 'episode' : 'season');
+  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'), numberingLabel);
 
   // Section grille (fusion avec le modal "Nouvelle grille") : visible uniquement pour
   // "Nouveau Bingo" (_homeNewGridAfterFolder) — pas pour "Nouveau dossier" simple.
@@ -4493,9 +4552,16 @@ function openNewThemeModal(parentId = null) {
 // état résiduel laissé par un précédent "+ Bingo" annulé (cf closeNewThemeModal). Le seul appelant
 // légitime de _homeNewGridAfterFolder=true (bouton "+ Bingo") ouvre le modal directement via
 // openNewThemeModal, sans passer par ce wrapper, pour ne jamais se faire écraser son propre flag.
-function openNewFolderModal(parentId = null) {
+function openNewFolderModal(parentId = null, stayOnFoldersPage = false) {
   _homeNewGridAfterFolder = false;
-  openNewThemeModal(parentId);
+  openNewThemeModal(parentId, stayOnFoldersPage);
+}
+
+// Texte avant le numéro à préremplir pour un dossier existant : le sien s'il en a un, sinon "S"/"Ep"
+// selon le seul type de numérotation proposé pour ce dossier (cf _applyNumberingChecksVisibility).
+function _folderNumberingLabel(folder) {
+  if (folder.numbering) return typeof folder.numbering.label === 'string' ? folder.numbering.label : _defaultNumberingLabel(folder.numbering.type);
+  return _defaultNumberingLabel(_isFolderBingo(folder) ? 'episode' : 'season');
 }
 
 // "Renommer" un dossier existant : réutilise la modal de création, pré-remplie (nom + numérotation),
@@ -4531,7 +4597,9 @@ function openEditFolderModal(id) {
     if (numberingNumber) numberingNumber.value = '';
     newThemeNameInput.value = folder.name;
   }
-  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'));
+  const numberingLabel = document.getElementById('new-folder-numbering-label');
+  if (numberingLabel) numberingLabel.value = _folderNumberingLabel(folder);
+  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'), numberingLabel);
   modalNewTheme.classList.remove('hidden');
   setTimeout(() => { newThemeNameInput.focus(); newThemeNameInput.select(); }, 50);
 }
@@ -4571,7 +4639,9 @@ function openDuplicateFolderModalFull(id) {
     if (numberingNumber) numberingNumber.value = '';
     newThemeNameInput.value = '';
   }
-  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'));
+  const numberingLabel = document.getElementById('new-folder-numbering-label');
+  if (numberingLabel) numberingLabel.value = _folderNumberingLabel(folder);
+  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, newThemeNameInput, document.getElementById('new-folder-name-prefix'), numberingLabel);
   modalNewTheme.classList.remove('hidden');
   setTimeout(() => { newThemeNameInput.focus(); newThemeNameInput.select(); }, 50);
 }
@@ -4596,7 +4666,9 @@ function confirmNewTheme() {
   if (type) {
     const num = parseInt(numberingNumber.value, 10);
     if (!num || num < 1) { numberingNumber.focus(); return; }
-    numbering = { type, number: num, subtitle };
+    // Texte avant le numéro gardé tel quel (pas de trim) : un espace final est voulu ("Saison " → "Saison 01").
+    const numberingLabel = document.getElementById('new-folder-numbering-label');
+    numbering = { type, number: num, subtitle, label: numberingLabel ? numberingLabel.value : _defaultNumberingLabel(type) };
     name = formatNumberedFolderName(numbering);
   } else {
     if (_folderModalMode !== 'duplicate' && !subtitle) { newThemeNameInput.focus(); return; }
@@ -4625,6 +4697,7 @@ function confirmNewTheme() {
   // "Nouveau Bingo" : lire la section grille fusionnée AVANT de fermer le modal (closeNewThemeModal
   // ne vide pas ces champs, mais autant lire pendant qu'ils sont là).
   const fromHome = _homeNewGridAfterFolder;
+  const stayOnFoldersPage = _folderModalStayOnFoldersPage;
   let gridNames = [];
   if (fromHome) {
     const checked = [...document.querySelectorAll('#new-folder-grid-wrap .grid-name-preset-check input:checked')].map(cb => cb.value);
@@ -4632,14 +4705,18 @@ function confirmNewTheme() {
     gridNames = checked.length > 0 ? checked : [(gridNameInput?.value.trim()) || 'Grille 1'];
   }
   closeNewThemeModal();
-  createFolder(name, parentId, numbering, fromHome ? 'bingo' : 'folder');
-  if (fromHome) {
-    _homeNewGridAfterFolder = false;
-    const folder = activeFolder();
-    if (folder) {
-      gridNames.forEach(gname => createGrid(gname));
+  const folder = createFolder(name, parentId, numbering, fromHome ? 'bingo' : 'folder', stayOnFoldersPage);
+  if (fromHome && folder) {
+    // Grilles créées dans le bingo retourné par createFolder — pas dans activeFolder(), qui vaut le
+    // parent quand un emplacement autre que la racine est choisi (les grilles n'étaient alors jamais créées).
+    // Par id : l'objet `folder` est déjà périmé après le _bingoSaveIndex() de createFolder.
+    gridNames.forEach(gname => createGrid(gname, folder.id, MAX_SIZE));
+    if (stayOnFoldersPage) {
+      // Le bingo a maintenant des grilles : re-rendre pour qu'il apparaisse dans "Bingos récents".
+      renderFoldersPanelTree();
+    } else if (typeof _homeGoToBingoFolder === 'function') {
       // Rejoindre directement le Bingo qu'on vient de créer (comme "Rejoindre Bingo").
-      if (typeof _homeGoToBingoFolder === 'function') _homeGoToBingoFolder(folder.id);
+      _homeGoToBingoFolder(folder.id);
     }
   }
 }
@@ -4656,7 +4733,8 @@ _wireNumberingChecks(
   document.getElementById('new-folder-numbering-wrap'),
   document.getElementById('new-folder-numbering-number'),
   newThemeNameInput,
-  document.getElementById('new-folder-name-prefix')
+  document.getElementById('new-folder-name-prefix'),
+  document.getElementById('new-folder-numbering-label')
 );
 
 // "Renommer" et "Dupliquer" utilisent tous deux désormais la modal complète (numérotation + nom),
@@ -4700,6 +4778,9 @@ function openMoveFolderModal(id) {
   // Sélectionner le parent actuel
   const curParent = findParentFolder(state.folders, id);
   if (sel) sel.value = curParent ? curParent.id : '';
+  // Arbre sans le dossier déplacé (donc sans ses descendants) ni les bingos — mêmes exclusions que le select.
+  const dropdownBtn = document.getElementById('move-folder-target-dropdown-btn');
+  if (sel && dropdownBtn) _setupFolderTreeDropdown(sel, dropdownBtn, state.folders || [], '— Racine —', 'fp_movefolder_collapsed', f => f.id === id || _isFolderBingo(f), true);
 
   const choiceDiv = document.getElementById('move-folder-elements-choice');
   if (choiceDiv) choiceDiv.style.display = 'none';
@@ -6814,7 +6895,8 @@ if (_btnCeSetHeader) {
 
 const _btnNewFolderInGrids = document.getElementById('btn-new-folder-in-grids');
 if (_btnNewFolderInGrids) {
-  _btnNewFolderInGrids.addEventListener('click', () => openNewFolderModal(_localActiveFolderId || null));
+  // Page Dossiers : emplacement prérempli = chemin affiché, et on reste sur la page après création.
+  _btnNewFolderInGrids.addEventListener('click', () => openNewFolderModal(_foldersNavFolderId || null, true));
 }
 
 // ── Archives unifiées ──────────────────────────────────────────────────────────
@@ -9372,8 +9454,8 @@ function _tlRenderRecentFolderPaths() {
     // À updatedAt égal (même événement, propagé par tlTouchFolderChain à toute la chaîne), le dossier
     // le plus profond doit être considéré en premier pour que la déduplication le retienne, lui.
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || _tlDepthOf(b.id) - _tlDepthOf(a.id));
-  // Limité aux 5 plus récents : pas de liste qui grandit indéfiniment ni de scroll interne à gérer.
-  const recent = _dedupeAncestorFolders(sorted, _tlAncestorIdsOf).slice(0, 5);
+  // Sans limite : la liste affiche 5 lignes à la fois et scrolle pour les plus anciennes (CSS .fp-recent-list).
+  const recent = _dedupeAncestorFolders(sorted, _tlAncestorIdsOf);
   if (recent.length === 0) return;
 
   const title = document.createElement('div');
@@ -9383,7 +9465,7 @@ function _tlRenderRecentFolderPaths() {
 
   // Une ligne par template (chemin complet jusqu'au template) : un dossier à plusieurs templates en
   // donne plusieurs, du plus récemment créé au plus ancien (ordre inverse de tlState.tierlists, où
-  // tlCreate ajoute en fin) — toujours plafonné à 5 lignes au total.
+  // tlCreate ajoute en fin).
   const rows = [];
   recent.forEach(f => {
     tlState.tierlists.filter(t => t.isTemplate && !t.archived && t.folderId === f.id).reverse()
@@ -9392,7 +9474,7 @@ function _tlRenderRecentFolderPaths() {
 
   const list = document.createElement('div');
   list.className = 'fp-recent-list';
-  rows.slice(0, 5).forEach(({ f, tpl }) => {
+  rows.forEach(({ f, tpl }) => {
     const row = document.createElement('div');
     row.className = 'fp-recent-row';
     const icon = document.createElement('span');
@@ -9401,14 +9483,24 @@ function _tlRenderRecentFolderPaths() {
     const path = document.createElement('span');
     path.className = 'fp-recent-path';
     path.textContent = _tlFolderPath(f.id) + ' \\ ' + tpl.name;
+    const ctxBtn = document.createElement('button');
+    ctxBtn.className = 'fp-folder-ctx-btn';
+    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
+    ctxBtn.title = 'Options';
     row.appendChild(icon);
     row.appendChild(path);
+    row.appendChild(ctxBtn);
     // Même ouverture que les tuiles template de la page Dossiers (tlSwitch charge le groupe avant rendu).
-    row.addEventListener('click', async () => {
+    row.addEventListener('click', async e => {
+      if (e.target === ctxBtn || ctxBtn.contains(e.target)) return;
       _tlExpandFolderAncestors(f.id);
       await tlSwitch(tpl.id, false);
       _switchPage('tierlist');
     });
+    // Même menu d'options que les lignes template de la liste Dossiers.
+    const openMenu = e => { e.stopPropagation(); tlOpenManageModal(tpl.id, row, 'folders'); };
+    ctxBtn.addEventListener('click', openMenu);
+    row.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(e); });
     list.appendChild(row);
   });
   container.appendChild(list);
@@ -12202,7 +12294,7 @@ function tlOpenNewModal(presetFolderId) {
     wrap.style.display = '';
     tlPopulateFolderSelect(tlModalNewFolderSelect, presetFolderId || '');
     const dropdownBtn = document.getElementById('tl-modal-new-folder-dropdown-btn');
-    if (dropdownBtn) _setupFolderTreeDropdown(tlModalNewFolderSelect, dropdownBtn, _tlBuildFolderTree(), '— Aucun dossier —', 'fp_tlnewmodal_collapsed');
+    if (dropdownBtn) _setupFolderTreeDropdown(tlModalNewFolderSelect, dropdownBtn, _tlBuildFolderTree(), '— Aucun dossier —', 'fp_tlnewmodal_collapsed', null, true);
   }
   const presetWrap = document.getElementById('tl-modal-new-preset-wrap');
   if (presetWrap) {
@@ -12227,7 +12319,7 @@ function tlOpenNewTemplateModal(presetFolderId, fromHome = false) {
     wrap.style.display = '';
     tlPopulateFolderSelect(tlModalNewFolderSelect, presetFolderId || '');
     const dropdownBtn = document.getElementById('tl-modal-new-folder-dropdown-btn');
-    if (dropdownBtn) _setupFolderTreeDropdown(tlModalNewFolderSelect, dropdownBtn, _tlBuildFolderTree(), '— Aucun dossier —', 'fp_tlnewmodal_collapsed');
+    if (dropdownBtn) _setupFolderTreeDropdown(tlModalNewFolderSelect, dropdownBtn, _tlBuildFolderTree(), '— Aucun dossier —', 'fp_tlnewmodal_collapsed', null, true);
   }
   const presetWrap = document.getElementById('tl-modal-new-preset-wrap');
   if (presetWrap) {
@@ -12495,6 +12587,8 @@ function tlOpenFolderModal(mode = 'create', id = null, currentName = '', presetP
       tlModalFolderParentWrap.style.display = '';
       tlPopulateFolderSelect(tlModalFolderParentSelect, presetParentId || '');
       tlModalFolderParentSelect.options[0].textContent = '— Aucun (racine) —';
+      const parentDropdownBtn = document.getElementById('tl-modal-folder-parent-dropdown-btn');
+      if (parentDropdownBtn) _setupFolderTreeDropdown(tlModalFolderParentSelect, parentDropdownBtn, _tlBuildFolderTree(), '— Aucun (racine) —', 'fp_tlfoldermodal_collapsed', null, true);
     }
     if (numberingCheckWrap) numberingCheckWrap.style.display = '';
     if (seasonCb) seasonCb.checked = false;
@@ -12502,7 +12596,14 @@ function tlOpenFolderModal(mode = 'create', id = null, currentName = '', presetP
     if (numberingWrap) numberingWrap.classList.add('hidden');
     if (numberingNumber) numberingNumber.value = '';
   }
-  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, tlModalFolderInput, prefixEl);
+  // Texte avant le numéro : celui du dossier édité/dupliqué, sinon "S" (devient "Ep" si Épisode est coché).
+  const numberingLabel = document.getElementById('tl-modal-folder-numbering-label');
+  if (numberingLabel) {
+    const srcFolder = (mode === 'edit' || mode === 'duplicate') ? (tlState.folders || []).find(f => f.id === id) : null;
+    const n = srcFolder && srcFolder.numbering;
+    numberingLabel.value = n ? (typeof n.label === 'string' ? n.label : _defaultNumberingLabel(n.type)) : _defaultNumberingLabel('season');
+  }
+  _updateNamePrefixPreview(seasonCb, episodeCb, numberingNumber, tlModalFolderInput, prefixEl, numberingLabel);
   tlModalFolder.classList.remove('hidden');
   setTimeout(() => { tlModalFolderInput.focus(); if (mode !== 'create') tlModalFolderInput.select(); }, 50);
 }
@@ -12519,7 +12620,9 @@ function tlConfirmFolderModal() {
     if (type) {
       const num = parseInt(numberingNumber.value, 10);
       if (!num || num < 1) { numberingNumber.focus(); return; }
-      numbering = { type, number: num, subtitle };
+      // Texte avant le numéro gardé tel quel (pas de trim) : un espace final est voulu.
+      const numberingLabel = document.getElementById('tl-modal-folder-numbering-label');
+      numbering = { type, number: num, subtitle, label: numberingLabel ? numberingLabel.value : _defaultNumberingLabel(type) };
       name = formatNumberedFolderName(numbering);
     } else {
       if (_tlFolderModalMode !== 'duplicate' && !subtitle) { tlModalFolderInput.focus(); return; }
@@ -12557,7 +12660,8 @@ _wireNumberingChecks(
   document.getElementById('tl-modal-folder-numbering-wrap'),
   document.getElementById('tl-modal-folder-numbering-number'),
   tlModalFolderInput,
-  document.getElementById('tl-modal-folder-name-prefix')
+  document.getElementById('tl-modal-folder-name-prefix'),
+  document.getElementById('tl-modal-folder-numbering-label')
 );
 
 tlModalFolderConfirm.addEventListener('click', tlConfirmFolderModal);
@@ -12567,7 +12671,8 @@ tlModalFolderInput.addEventListener('keydown', e => {
 });
 
 // Bouton + Dossier
-document.getElementById('tl-btn-new-folder').addEventListener('click', () => tlOpenFolderModal('create', null, '', _tlCurrentSelectedFolderId()));
+// Page Dossiers : emplacement prérempli = chemin affiché dans la colonne Dossiers Tier List.
+document.getElementById('tl-btn-new-folder').addEventListener('click', () => tlOpenFolderModal('create', null, '', _tlFoldersNavFolderId || null));
 
 // (tl-ctx-overlay supprimé — remplacé par menus contextuels dynamiques)
 
@@ -12965,7 +13070,8 @@ document.addEventListener('keydown', e => {
 // "+ Template" du panneau de contrôle (page d'accueil) : même mécanisme que "+ Bingo"
 // (_homeNewGridAfterFolder) — template + sa première liste générée en une seule action.
 // Racine par défaut (null) ; l'utilisateur choisit l'emplacement réel dans la modal.
-tlBtnNewTemplate.addEventListener('click', () => tlOpenNewTemplateModal(null, true));
+// Page Dossiers (gros "+ Template" et petit du cadre) : emplacement prérempli = chemin affiché.
+tlBtnNewTemplate.addEventListener('click', () => tlOpenNewTemplateModal(_tlFoldersNavFolderId || null, true));
 document.getElementById('tl-empty-btn-new').addEventListener('click', () => tlOpenNewTemplateModal(_tlCurrentSelectedFolderId()));
 document.getElementById('tl-empty-btn-folder').addEventListener('click', () => tlOpenFolderModal('create', null, '', _tlCurrentSelectedFolderId()));
 
@@ -12994,6 +13100,8 @@ function tlOpenMoveModal(id) {
   document.getElementById('tl-modal-move-title').textContent = 'Déplacer "' + tl.name + '"';
   tlPopulateFolderSelect(tlModalMoveSelect, tl.folderId || '');
   tlModalMoveSelect.options[0].textContent = '— Aucun dossier (racine) —';
+  const moveDropdownBtn = document.getElementById('tl-modal-move-dropdown-btn');
+  if (moveDropdownBtn) _setupFolderTreeDropdown(tlModalMoveSelect, moveDropdownBtn, _tlBuildFolderTree(), '— Aucun dossier (racine) —', 'fp_tlmovemodal_collapsed', null, true);
   tlModalMove.classList.remove('hidden');
 }
 
@@ -13005,6 +13113,9 @@ function tlOpenMoveFolderModal(id) {
   document.getElementById('tl-modal-move-title').textContent = 'Déplacer "' + folder.name + '"';
   tlPopulateFolderSelect(tlModalMoveSelect, folder.parentId || '', id);
   tlModalMoveSelect.options[0].textContent = '— Racine (aucun parent) —';
+  // Arbre sans le dossier déplacé ni ses descendants (mêmes exclusions que le select).
+  const moveDropdownBtn = document.getElementById('tl-modal-move-dropdown-btn');
+  if (moveDropdownBtn) _setupFolderTreeDropdown(tlModalMoveSelect, moveDropdownBtn, _tlBuildFolderTree(id), '— Racine (aucun parent) —', 'fp_tlmovemodal_collapsed', null, true);
   tlModalMove.classList.remove('hidden');
 }
 

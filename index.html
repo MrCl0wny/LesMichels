@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=329" />
+  <link rel="stylesheet" href="style.css?v=330" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -85,10 +85,10 @@
             <div class="folders-panel-sort">
               <label for="folders-sort-select">Trier par</label>
               <select id="folders-sort-select" class="folders-sort-select">
-                <option value="alpha">Alphabétique (A→Z)</option>
-                <option value="alpha-desc">Alphabétique (Z→A)</option>
-                <option value="updatedAt">Date de modification (récent→ancien)</option>
-                <option value="updatedAt-asc">Date de modification (ancien→récent)</option>
+                <option value="alpha">A→Z</option>
+                <option value="alpha-desc">Z→A</option>
+                <option value="updatedAt">Récent→Ancien</option>
+                <option value="updatedAt-asc">Ancien→Récent</option>
               </select>
             </div>
             <div class="fp-tree-frame">
@@ -115,10 +115,10 @@
             <div class="folders-panel-sort">
               <label for="tl-folders-sort-select">Trier par</label>
               <select id="tl-folders-sort-select" class="folders-sort-select">
-                <option value="alpha">Alphabétique (A→Z)</option>
-                <option value="alpha-desc">Alphabétique (Z→A)</option>
-                <option value="updatedAt">Date de modification (récent→ancien)</option>
-                <option value="updatedAt-asc">Date de modification (ancien→récent)</option>
+                <option value="alpha">A→Z</option>
+                <option value="alpha-desc">Z→A</option>
+                <option value="updatedAt">Récent→Ancien</option>
+                <option value="updatedAt-asc">Ancien→Récent</option>
               </select>
             </div>
             <div class="fp-tree-frame">
@@ -568,9 +568,10 @@
         <h3 id="tl-modal-move-title">Déplacer</h3>
       </div>
       <div class="modal-body">
-        <select id="tl-modal-move-select" class="modal-folder-select">
+        <select id="tl-modal-move-select" class="modal-folder-select hidden">
           <option value="">— Aucun dossier (racine) —</option>
         </select>
+        <button type="button" class="folder-tree-dropdown-btn" id="tl-modal-move-dropdown-btn"><i data-lucide="folder-closed"></i> <span></span></button>
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-move-confirm">Déplacer</button>
         </div>
@@ -595,6 +596,7 @@
             Épisode
           </label>
           <div id="tl-modal-folder-numbering-wrap" class="modal-numbering-wrap hidden">
+            <input type="text" id="tl-modal-folder-numbering-label" class="modal-numbering-label" maxlength="20" data-tooltip="Texte affiché avant le numéro" />
             <input type="number" id="tl-modal-folder-numbering-number" class="modal-numbering-number" placeholder="N°" min="1" />
           </div>
         </div>
@@ -603,8 +605,9 @@
           <input type="text" id="tl-modal-folder-input" class="modal-text-input" placeholder="Nom..." maxlength="60" />
         </div>
         <div id="tl-modal-folder-parent-wrap" style="margin-top:8px;">
-          <label style="font-size:0.78rem;color:var(--text-muted);display:block;margin-bottom:4px;">Dossier parent</label>
-          <select id="tl-modal-folder-parent-select" class="modal-folder-select"></select>
+          <span class="modal-folder-select-label">Emplacement</span>
+          <select id="tl-modal-folder-parent-select" class="modal-folder-select hidden"></select>
+          <button type="button" class="folder-tree-dropdown-btn" id="tl-modal-folder-parent-dropdown-btn"><i data-lucide="folder-closed"></i> <span></span></button>
         </div>
         <div class="modal-actions">
           <button class="btn-action" id="tl-modal-folder-confirm">Créer</button>
@@ -792,6 +795,7 @@
             Épisode
           </label>
           <div id="new-folder-numbering-wrap" class="modal-numbering-wrap hidden">
+            <input type="text" id="new-folder-numbering-label" class="modal-numbering-label" maxlength="20" data-tooltip="Texte affiché avant le numéro" />
             <input type="number" id="new-folder-numbering-number" class="modal-numbering-number" placeholder="N°" min="1" />
           </div>
         </div>
@@ -863,7 +867,8 @@
       <div class="modal-body">
         <div style="margin-bottom:12px">
           <span class="modal-folder-select-label">Déplacer vers</span>
-          <select id="move-folder-target-select" class="modal-folder-select"></select>
+          <select id="move-folder-target-select" class="modal-folder-select hidden"></select>
+          <button type="button" class="folder-tree-dropdown-btn" id="move-folder-target-dropdown-btn"><i data-lucide="folder-closed"></i> <span></span></button>
         </div>
         <div id="move-folder-elements-choice" class="move-folder-elements-choice">
           <span class="modal-folder-select-label">Cases du dossier d'arrivée</span>
@@ -894,7 +899,7 @@
         <div class="modal-header">
           <h3>Preset cases</h3>
         </div>
-        <label class="element-presets-label">Dossier cible</label>
+        <label class="element-presets-label">Emplacement</label>
         <div class="element-presets-row">
           <button type="button" class="btn-action btn-neutral-action btn-path element-preset-target-btn" id="element-preset-target-btn"><i data-lucide="road"></i> <span id="element-preset-target-label"></span></button>
         </div>
@@ -1263,6 +1268,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=473"></script>
+  <script src="app.js?v=478"></script>
 </body>
 </html>
