@@ -4028,40 +4028,7 @@ function renderGrid(skipSizeRecalc = false) {
     const isSecondary = hasMainGrid && gridItem.id !== mainGridId;
     const { wrapper, bingoLines } = buildSingleGrid(t, gridItem, isActive, gridsToShow.length, isSecondary);
 
-    // Drag & drop pour réordonner les grilles affichées — désactivé pour les grilles secondaires
-    // du mode "grille principale" (purement visuelles, pas de réordonnancement par glisser).
-    if (gridsToShow.length > 1 && !isSecondary) {
-      wrapper.draggable = true;
-      wrapper.style.cursor = 'grab';
-      wrapper.title = 'Déplace la grille';
-      wrapper.addEventListener('dragstart', e => {
-        e.dataTransfer.setData('text/plain', gridItem.id);
-        wrapper.classList.add('grid-wrapper-dragging');
-        _draggingGridWrapper = true;
-      });
-      wrapper.addEventListener('dragend', () => {
-        wrapper.classList.remove('grid-wrapper-dragging');
-        _draggingGridWrapper = false;
-      });
-      wrapper.addEventListener('dragover', e => {
-        e.preventDefault();
-        wrapper.classList.add('grid-wrapper-drag-over');
-      });
-      wrapper.addEventListener('dragleave', () => wrapper.classList.remove('grid-wrapper-drag-over'));
-      wrapper.addEventListener('drop', e => {
-        e.preventDefault();
-        wrapper.classList.remove('grid-wrapper-drag-over');
-        const srcId = e.dataTransfer.getData('text/plain');
-        if (srcId.startsWith('cell:')) return; // drag depuis une case → ignorer
-        if (srcId === gridItem.id) return;
-        const srcIdx = _selectedGridIds.indexOf(srcId);
-        const dstIdx = _selectedGridIds.indexOf(gridItem.id);
-        if (srcIdx === -1 || dstIdx === -1) return;
-        [_selectedGridIds[srcIdx], _selectedGridIds[dstIdx]] = [_selectedGridIds[dstIdx], _selectedGridIds[srcIdx]];
-        saveLocalSelectedGrids(_selectedGridIds);
-        renderGrid();
-      });
-    }
+    // Drag & drop des grilles affichées (réordonnancement) retiré à la demande de l'utilisateur.
 
     if (secondaryCol && !wrapper.classList.contains('grid-view-wrapper-main')) {
       secondaryCol.appendChild(wrapper);
@@ -5383,7 +5350,43 @@ function _buildElementPresetEditItem(text, idx) {
     _startEditElementPresetEditText(idx, span, e);
   });
 
+  li.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!getElementPresets().some(p => p.id !== _elementPresetEditId)) return; // aucun autre preset
+    const { addItem } = _tlMakeCtxMenu(null, e);
+    addItem('copy-plus', 'Ajouter à un autre preset', false, () => _openElementPresetEditTransferMenu(li, idx, false));
+    addItem('move', 'Déplacer vers un autre preset', false, () => _openElementPresetEditTransferMenu(li, idx, true));
+  });
+
   return li;
+}
+
+// Sous-menu "Ajouter à / Déplacer vers un autre preset" d'une case du volet droit : liste les autres
+// presets (même tri que la liste de gauche). Une case déjà présente dans la cible n'y est pas
+// dupliquée ; en déplacement, elle est quand même retirée du preset ouvert.
+function _openElementPresetEditTransferMenu(li, idx, move) {
+  const text = _elementPresetEditTexts[idx];
+  if (text === undefined) return;
+  const { addItem } = _tlMakeCtxMenu(li, null);
+  _sortElementPresetItems(getElementPresets().filter(p => p.id !== _elementPresetEditId)).forEach(p => {
+    addItem('tag', _elementPresetDisplayName(p), false, () => {
+      // Relu par id (cf _openElementPresetMoveMenu) : `p` peut être périmé après un snapshot d'index.
+      const target = getElementPresets().find(x => x.id === p.id);
+      if (!target || _elementPresetEditTexts[idx] !== text) return;
+      _pushTextToElementPreset(target, text);
+      // Une seule écriture d'index : _commitElementPresetEdit sauvegarde aussi la cible modifiée.
+      // Sans nom, le preset ouvert n'est pas encore persisté → sauvegarde directe de la cible.
+      const named = !!document.getElementById('element-preset-edit-name').value.trim();
+      if (move) {
+        _elementPresetEditTexts.splice(idx, 1);
+        _elementPresetEditDates.splice(idx, 1);
+        _renderElementPresetEditList();
+      }
+      if (move && named) _commitElementPresetEdit();
+      else { _bingoSaveIndex(); renderElementPresetList(); }
+    });
+  });
 }
 
 // Édition inline d'une case du preset en cours d'édition, même comportement que startEditElement()
@@ -6250,6 +6253,17 @@ document.getElementById('ctx-element-delete-active').addEventListener('click', (
   closeCtxMenuElement();
 });
 
+// Ajoute un texte à un preset s'il n'y est pas déjà (insensible à la casse) — sans sauvegarder.
+function _pushTextToElementPreset(preset, text) {
+  if (!Array.isArray(preset.elements)) preset.elements = [];
+  if (preset.elements.some(t => t.trim().toLowerCase() === text.trim().toLowerCase())) return;
+  const dates = preset.elements.map((t, i) => (preset.elementDates && preset.elementDates[i]) || 0);
+  preset.elements.push(text);
+  dates.push(Date.now());
+  preset.elementDates = dates;
+  _touchElementPreset(preset);
+}
+
 // Ajoute le texte de la case au preset choisi (existant ou nouveau) — le tag apparaît ensuite tout
 // seul dans le panneau Cases (détection dynamique par comparaison de texte, voir getElementTags).
 function _addElementToPreset(elementId, presetId, presetName) {
@@ -6258,14 +6272,7 @@ function _addElementToPreset(elementId, presetId, presetName) {
   if (!el) return;
   const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
   if (preset) {
-    if (!Array.isArray(preset.elements)) preset.elements = [];
-    if (!preset.elements.some(t => t.trim().toLowerCase() === el.text.trim().toLowerCase())) {
-      const dates = preset.elements.map((t, i) => (preset.elementDates && preset.elementDates[i]) || 0);
-      preset.elements.push(el.text);
-      dates.push(Date.now());
-      preset.elementDates = dates;
-      _touchElementPreset(preset);
-    }
+    _pushTextToElementPreset(preset, el.text);
     _bingoSaveIndex();
   } else if (presetName) {
     saveElementPreset(presetName, [el.text]);
