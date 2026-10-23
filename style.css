@@ -126,7 +126,7 @@ body {
   background: var(--surface-2);
 }
 .nav-btn.active {
-  color: rgba(232, 197, 71, 0.4);
+  color: #ffffff;
   border-color: rgba(168, 140, 40, 0.25);
   background: rgba(232, 197, 71, 0.03);
 }
