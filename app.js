@@ -127,7 +127,7 @@ const MODAL_CLOSE_FNS = {
   'modal-bingo-stats': () => closeBingoStatsModal(),
   'modal-rename-grid': () => closeRenameGridModal(),
   'modal-rename-subtheme': () => closeRenameSubthemeModal(),
-  'modal-new-grid': () => closeNewGridModal(),
+  'modal-grids': () => closeNewGridModal(),
   'modal-confirm-signout': () => document.getElementById('modal-confirm-signout').classList.add('hidden'),
   'modal-prefs': () => closePrefsModal(),
   'modal-confirm-reset': () => document.getElementById('modal-confirm-reset').classList.add('hidden'),
@@ -727,7 +727,6 @@ let _selectedGridsByFolder = {};
 // Nombre maximum de grilles affichées simultanément (au-delà : tronqué à la sauvegarde et à
 // l'affichage, cases à cocher du menu Grilles désactivées une fois la limite atteinte).
 const MAX_VISIBLE_GRIDS = 3;
-let _draggingGridWrapper = false;
 
 const _EMPTY_SELECTION = '__empty__';
 
@@ -1013,9 +1012,11 @@ let _localActiveFolderId   = null;
 // le dossier bingo actif tant qu'on n'a pas explicitement "ouvert" un dossier-bingo.
 let _foldersNavFolderId = null;
 // Bouton "Création" (page Bingo) ouvert ? Remplace l'ancien système de cadenas (t.locked/g.locked,
-// désormais ignorés) : grilles modifiables uniquement Création ouvert. Toujours fermé au chargement
-// et à chaque changement de bingo (cf _setBingoCreationOpen).
+// désormais ignorés) : grilles modifiables uniquement Création ouvert. À l'arrivée sur un bingo
+// (chargement ou changement), ouvert seulement s'il reste une grille affichée à générer (cf renderGrid),
+// et impossible à quitter tant que c'est le cas (cf updateCreationButton).
 let _bingoCreationOpen = false;
+let _bingoCreationAutoCheckedId = null; // bingo pour lequel l'ouverture automatique a déjà été évaluée
 function _bingoEditLocked() { return !_bingoCreationOpen; }
 
 function initState() {
@@ -1168,7 +1169,7 @@ function renderCurrentEventButton() {
 
 // Un seul bouton physique "Définir soirée en cours" (#btn-ce-set-header), déplacé en JS selon
 // la page active — même pattern que #btn-grids-dropdown (Bingo) / #tl-btn-undo (Tier
-// List) : jamais deux jeux de contrôles désynchronisés. Sur Bingo, il vit dans le groupe Création
+// List) : jamais deux jeux de contrôles désynchronisés. Sur Bingo, il vit dans le panneau Création
 // (#bingo-creation-group), juste avant Dupliquer (#btn-new-grid-main) ; sur Tier List, tout à droite
 // de la ligne 1 du panneau tierlist, juste avant le bouton Tiers (#tl-btn-add-tier). Masqué sur Accueil/
 // Dossiers (retombe dans le header, sa position d'origine dans le HTML).
@@ -1354,8 +1355,9 @@ function createFolder(name, parentId = null, numbering = null, type = 'folder', 
 // pour NEW/Stats) AVANT de rendre l'UI qui en dépend — cf plan §2 "Déclenchement". Ne fait jamais
 // d'écriture (aucun saveState/_bingoSave* dans cette chaîne), uniquement lecture + fusion mémoire.
 async function switchFolder(id) {
-  // Changer de bingo referme toujours "Création" (grilles non modifiables par défaut).
+  // Changer de bingo referme "Création" ; renderGrid() le rouvre s'il reste une grille à générer.
   _setBingoCreationOpen(false, false);
+  _bingoCreationAutoCheckedId = null;
   if (_localActiveFolderId === id) {
     _localActiveFolderId = null;
     _saveLocalActiveFolderId(null);
@@ -1546,7 +1548,11 @@ async function duplicateFolder(id, name, explicitNumbering) {
   }
   _localActiveFolderId = copy.folders[0]?.id || copy.id;
   _saveLocalActiveFolderId(_localActiveFolderId);
-  _selectedGridIds = [];
+  // Toutes les grilles de la copie affichées d'emblée (comme switchFolder sans sélection mémorisée) :
+  // sinon le 1er renderGrid() ne voit aucune grille et l'ouverture auto de Création ne se fait pas.
+  const activeCopy = findFolderById([copy], _localActiveFolderId);
+  _selectedGridIds = (activeCopy?.grids || []).filter(g => !g.archived).map(g => g.id).slice(0, MAX_VISIBLE_GRIDS);
+  saveLocalSelectedGrids(_selectedGridIds);
   // Chaque nouveau dossier-bingo de la copie a son propre noeud bingo/data/<id> à créer, en plus de
   // l'index (structure + métadonnées légères) — cf plan §3, pattern 3c.
   _collectBingoFolderIds(copy).forEach(_bingoSaveFolder);
@@ -2246,33 +2252,11 @@ function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
   li.dataset.id = el.id;
   li.title = 'Clic gauche : renommer · Clic droit : ' + (isArchived ? 'restaurer, supprimer' : 'archiver, supprimer');
 
-  // Colonne de gauche (grid) : poignée drag + texte, peut wrapper librement.
+  // Colonne de gauche (grid) : texte, peut wrapper librement.
   // Colonne de droite, réservée exclusivement au menu "..." (voir plus bas).
   const content = document.createElement('span');
   content.className = 'element-item-content';
   li.appendChild(content);
-
-  // Poignée drag & drop si l'élément est absent d'au moins une grille visible non bloquée
-  const canDragToAny = !isArchived && !_bingoEditLocked() && visGrids.some(gx => !gx.grid.some(c => c.elementId === el.id));
-  if (canDragToAny) {
-    const handle = document.createElement('span');
-    handle.className = 'elem-drag-handle';
-    handle.innerHTML = '<i data-lucide="grip"></i>';
-    handle.title = 'Glisser-déposer vers une case de la grille';
-    handle.draggable = true;
-    handle.addEventListener('dragstart', e => {
-      e.dataTransfer.setData('text/plain', el.id);
-      e.dataTransfer.effectAllowed = 'copy';
-      li.classList.add('elem-dragging');
-      _isDraggingElement = true;
-    });
-    handle.addEventListener('dragend', () => {
-      li.classList.remove('elem-dragging');
-      _isDraggingElement = false;
-    });
-    handle.addEventListener('click', e => e.stopPropagation());
-    content.appendChild(handle);
-  }
 
   const span = document.createElement('span');
   span.className = 'element-text';
@@ -2359,14 +2343,29 @@ function startEditElement(id, span, clickEvent) {
 // ──────────────────────────────────────────────
 // Actions sur les éléments
 // ──────────────────────────────────────────────
+// Ajoute dans l'onglet affiché du panneau Cases : Actives, Archivées ou Suggestions (liste partagée).
 function addElement() {
   const text = inputEl.value.trim();
   if (!text) return;
 
+  const tab = document.querySelector('.elements-tabs .tab-btn.active')?.dataset.tab || 'active';
+  if (tab === 'suggestions') {
+    if (_addSuggestionText(text)) {
+      inputEl.value = '';
+      renderElements();
+    }
+    return;
+  }
+
   const s = activeSubtheme();
   if (!s) return;
   if (!s.elements) s.elements = [];
-  s.elements.push({ id: uid(), text });
+  const newId = uid();
+  s.elements.push({ id: newId, text });
+  if (tab === 'archived') {
+    if (!s.archivedElementIds) s.archivedElementIds = [];
+    s.archivedElementIds.push(newId);
+  }
   inputEl.value = '';
   _bingoSaveFolder(s.id);
   renderElements();
@@ -3225,8 +3224,8 @@ function renameGrid(id, newName) {
   renderGrid();
 }
 
-// Le rendu visuel des grilles (cocher/afficher, ⋮ options) se fait à la demande dans le menu
-// déroulant "Grilles" (_renderGridsDropdownMenu) — cette fonction ne fait plus que garder l'état
+// Le rendu visuel des grilles (cocher/afficher, ⋮ options) se fait dans le modal "Grilles"
+// (_renderGridsModalList) — cette fonction ne fait plus que garder l'état
 // à jour (breadcrumb, bouton soirée en cours, nettoyage des sélections obsolètes).
 function renderGridsList() {
   renderGridsBreadcrumb();
@@ -3236,6 +3235,8 @@ function renderGridsList() {
   const activeGrids = s.grids.filter(g => !g.archived);
   // Nettoyer les ids sélectionnés obsolètes (grilles supprimées/archivées)
   _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id));
+  // Modal Grilles ouvert : sa liste suit les créations/renommages/suppressions.
+  if (!document.getElementById('modal-grids')?.classList.contains('hidden')) _renderGridsModalList();
 }
 
 function openRenameGridModal(id) {
@@ -3636,55 +3637,6 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
     div.className = 'bingo-cell';
     div.dataset.index = i;
 
-    // Drag & drop (actif si grille non bloquée) — désactivé sur les grilles secondaires
-    // (purement visuelles, cf isSecondary : pas d'interaction possible avec leurs cases).
-    if (!gridLocked && !isSecondary) {
-      div.draggable = true;
-      div.addEventListener('dragstart', e => {
-        e.stopPropagation();
-        e.dataTransfer.setData('text/plain', `cell:${g.id}:${i}`);
-        div.classList.add('cell-dragging');
-      });
-      div.addEventListener('dragend', () => div.classList.remove('cell-dragging'));
-      div.addEventListener('dragover', e => { if (_draggingGridWrapper) return; e.preventDefault(); div.classList.add('drag-over'); });
-      div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
-      div.addEventListener('drop', e => {
-        if (_draggingGridWrapper) return;
-        e.preventDefault();
-        div.classList.remove('drag-over');
-        const data = e.dataTransfer.getData('text/plain');
-        const targetIdx = parseInt(div.dataset.index);
-        if (isNaN(targetIdx)) return;
-
-        if (data.startsWith('cell:')) {
-          // Swap intra-grille
-          const parts = data.split(':');
-          if (parts[1] !== g.id) return; // grilles différentes → ignorer
-          const srcIdx = parseInt(parts[2]);
-          if (isNaN(srcIdx) || srcIdx === targetIdx) return;
-          const sNow = activeSubtheme();
-          if (!sNow) return;
-          const gNow = sNow.grids.find(x => x.id === g.id);
-          if (!gNow) return;
-          [gNow.grid[srcIdx], gNow.grid[targetIdx]] = [gNow.grid[targetIdx], gNow.grid[srcIdx]];
-          _bingoSaveFolder(sNow.id);
-          renderGrid();
-          renderElements();
-        } else {
-          // Drop depuis le drawer
-          const elId = data;
-          if (!elId) return;
-          const alreadyInGrid = g.grid.some(c => c.elementId === elId);
-          if (alreadyInGrid) return;
-          const prevChecked = g.grid[targetIdx]?.checked || false;
-          g.grid[targetIdx] = { elementId: elId, checked: prevChecked };
-          _bingoSaveFolder(s.id);
-          renderGrid();
-          renderElements();
-        }
-      });
-    }
-
     if (!cell.elementId) {
       div.classList.add('empty');
       div.textContent = '—';
@@ -3881,12 +3833,22 @@ function renderGrid(skipSizeRecalc = false) {
   // grilles/cases — seuls Chemin et Stats restent pertinents (cf .folder-mode en CSS).
   document.getElementById('bingo-control-panel')?.classList.toggle('folder-mode', !!s && !_isFolderBingo(s));
 
+  // Arrivée sur un bingo (chargement ou changement, y compris sans passer par switchFolder) : Création
+  // ouvert s'il reste une grille affichée à générer, fermé sinon. Évalué une seule fois par arrivée,
+  // une fois le contenu du bingo chargé (avant, ses grilles ne sont pas encore connues) — reset dans
+  // switchFolder (retour sur le même bingo).
+  // Aucune grille affichée (sélection pas encore remplie) : pas d'évaluation, elle se fera au rendu suivant.
+  if (s && _isFolderBingo(s) && _bingoLoadedFolders.has(s.id) && _bingoCreationAutoCheckedId !== s.id
+      && getVisibleGrids().length > 0) {
+    _bingoCreationAutoCheckedId = s.id;
+    _setBingoCreationOpen(_bingoVisibleGridsNeedGenerate(), false);
+  }
+
   updateClearGridsButton();
   updateCreationButton();
   updateOpenGridsWindowButton();
   updateResetButton();
   _updateNewBadgeButton();
-  document.getElementById('btn-cases-panel')?.classList.remove('btn-attention');
   _hideSecondaryCellPreview();
   gridWrapper.innerHTML = '';
   gridWrapper.style.justifyContent = '';
@@ -3998,10 +3960,8 @@ function renderGrid(skipSizeRecalc = false) {
   const canGenerate = !locked && (enoughElements || canFillEmptyCellsVisibleGrids());
   btnGenerate.disabled = !canGenerate;
   btnGenerate.classList.toggle('btn-disabled', !canGenerate);
-  // Surbrillance du bouton Cases pilotée uniquement par le nombre minimal de cases (enoughElements),
-  // pas par canGenerate : tant que ce seuil n'est pas atteint, la surbrillance reste affichée même
-  // si canFillEmptyCellsVisibleGrids() permettrait déjà de générer partiellement.
-  document.getElementById('btn-cases-panel')?.classList.toggle('btn-attention', !enoughElements);
+  // Grilles affichées toutes générées : Générer grisé, mais toujours cliquable (cf .btn-generate-done).
+  btnGenerate.classList.toggle('btn-generate-done', !_bingoVisibleGridsNeedGenerate());
 
   const mainGridId = getMainGridId(s.id);
   const hasMainGrid = gridsToShow.length > 1 && !!mainGridId && gridsToShow.some(gx => gx.id === mainGridId);
@@ -4083,6 +4043,11 @@ function renderGrid(skipSizeRecalc = false) {
 // et de la hauteur réellement disponibles) et fixer explicitement width ET height.
 function _adjustBingoGridSizes() {
   document.querySelectorAll('.cases-sidebar.open').forEach(_adjustSidebarMaxHeight);
+  // Le cadre des grilles (.panel-grid) reprend toute la largeur laissée par les panneaux le temps de
+  // la mesure, puis est resserré autour des grilles une fois dimensionnées (cf .bingo-layout-fit) —
+  // sinon la largeur disponible mesurée serait celle du cadre déjà resserré (spirale de rétrécissement).
+  const panelGrid = gridWrapper.closest('.panel-grid');
+  bingoLayout.classList.remove('bingo-layout-fit');
   const wrappers = gridWrapper.querySelectorAll('.grid-view-wrapper');
   if (!wrappers.length) return;
   // Réinitialiser AVANT de mesurer : .grid-view-wrapper est en flex:1 1 0 (min-width:0), donc
@@ -4103,7 +4068,7 @@ function _adjustBingoGridSizes() {
   // Il faut soustraire tout ce qui reste SOUS gridWrapper jusqu'au bas de page :
   // le padding-bottom de .panel-grid (hérité de .panel) et celui de .main, sinon
   // le total dépasse legèrement 100vh malgré ce calcul (débordement observé : ~19px).
-  const panelGridStyle = getComputedStyle(gridWrapper.closest('.panel-grid'));
+  const panelGridStyle = getComputedStyle(panelGrid);
   const mainStyle = getComputedStyle(document.querySelector('.main'));
   const bottomReserve = parseFloat(panelGridStyle.paddingBottom) + parseFloat(panelGridStyle.borderBottomWidth) + parseFloat(mainStyle.paddingBottom);
   const totalAvailableHeight = window.innerHeight - gridWrapper.getBoundingClientRect().top - bottomReserve;
@@ -4156,6 +4121,7 @@ function _adjustBingoGridSizes() {
     }
 
     secWrappers.forEach(wrapper => _sizeSingleGridWrapper(wrapper, secAvailableHeight));
+    bingoLayout.classList.add('bingo-layout-fit');
     _fitBingoCellTexts();
     return;
   }
@@ -4168,12 +4134,13 @@ function _adjustBingoGridSizes() {
   const rowCount = Math.max(1, rowTops.size);
   const wrapperGapV = parseFloat(getComputedStyle(gridWrapper).rowGap || getComputedStyle(gridWrapper).gap) || 0;
   const availableHeight = (totalAvailableHeight - wrapperGapV * (rowCount - 1)) / rowCount;
-  // Largeur de cadre fixée d'après la grille (et non width:fit-content) : le padding de 190px de
-  // .grid-view-title-row élargirait sinon chaque cadre au-delà de sa part de la rangée, et 3 grilles
-  // passeraient à la ligne. Appliquée après toutes les mesures (sans effet tant que flex-basis:0).
+  // Largeur de cadre fixée d'après la grille (et non width:fit-content) : un titre long élargirait
+  // sinon chaque cadre au-delà de sa part de la rangée, et 3 grilles passeraient à la ligne.
+  // Appliquée après toutes les mesures (sans effet tant que flex-basis:0).
   const fitWidths = Array.from(wrappers).map(wrapper => _sizeSingleGridWrapper(wrapper, availableHeight));
   wrappers.forEach((wrapper, i) => { if (fitWidths[i]) wrapper.style.width = fitWidths[i] + 'px'; });
   gridWrapper.classList.add('grid-wrapper-fit');
+  bingoLayout.classList.add('bingo-layout-fit');
   _fitBingoCellTexts();
 }
 
@@ -5569,8 +5536,6 @@ if (_elementsFilterTagSelect) {
 btnSizeMinus.addEventListener('click', () => changeSize(-1));
 btnSizePlus.addEventListener('click',  () => changeSize(+1));
 
-let _isDraggingElement = false;
-
 // Plafonne .cases-sidebar à l'espace réellement visible sous sa position actuelle
 // (mesurée, pas un calc(100vh - Npx) déconnecté du control-panel dont la hauteur varie
 // avec le nombre de grilles affichées) — sinon le sidebar peut dépasser le bas de
@@ -5593,19 +5558,10 @@ function openCasesPanel() {
   if (_casesPanelDirty) renderElements();
   _adjustSidebarMaxHeight(panel);
 }
+// Ouvert/fermé uniquement par le bouton Création (cf _setBingoCreationOpen), plus de bouton ni de croix dédiés.
 function closeCasesPanel() {
-  if (_isDraggingElement) return;
   document.getElementById('cases-panel').classList.remove('open');
 }
-document.getElementById('btn-cases-panel').addEventListener('click', () => {
-  const panel = document.getElementById('cases-panel');
-  if (panel.classList.contains('open')) closeCasesPanel();
-  else openCasesPanel();
-});
-document.getElementById('cases-panel-close').addEventListener('click', () => {
-  _isDraggingElement = false;
-  document.getElementById('cases-panel').classList.remove('open');
-});
 
 // ── Suggestions de cases ──
 // Liste partagée par tous les épisodes d'un même dossier (périmètre = celui des Stats, cf
@@ -5654,15 +5610,20 @@ function _suggestionEditingIn(list) {
 
 function addSuggestion() {
   const input = document.getElementById('new-suggestion-input');
-  const text = input.value.trim();
-  if (!text || !_bingoSuggestionsScopeId) return;
+  if (_addSuggestionText(input.value.trim())) input.value = '';
+}
+
+// Partagé par le panneau Suggestions et l'onglet Suggestions du panneau Cases (cf addElement).
+// Renvoie false si rien n'a été ajouté (champ vide, pas de saison, doublon).
+function _addSuggestionText(text) {
+  if (!text || !_bingoSuggestionsScopeId) return false;
   // Doublon (insensible casse/espaces) : rien n'est ajouté, la recherche affiche déjà l'existante.
   const key = text.toLowerCase();
-  if (_bingoSuggestions.some(sg => sg.text.trim().toLowerCase() === key)) return;
-  input.value = '';
+  if (_bingoSuggestions.some(sg => sg.text.trim().toLowerCase() === key)) return false;
   _dbBingoSuggestions.child(_bingoSuggestionsScopeId).child(uid())
     .set(sanitizeForFirebase({ text, createdAt: Date.now() }))
     .catch(e => console.warn('Suggestion add error:', e));
+  return true;
 }
 
 function _renameSuggestion(id, text) {
@@ -5830,6 +5791,13 @@ function closeSuggestionsPanel() {
   setTimeout(_adjustBingoGridSizes, 240);
 }
 document.getElementById('btn-bingo-suggestions').addEventListener('click', () => {
+  // Mode Création (hors plein écran, où le panneau Cases n'a pas sa place) : onglet Suggestions du
+  // panneau Cases plutôt que le panneau Suggestions séparé.
+  if (_bingoCreationOpen && !document.body.classList.contains('solo-grid-mode')) {
+    openCasesPanel();
+    document.querySelector('.tab-btn[data-tab="suggestions"]')?.click();
+    return;
+  }
   const panel = document.getElementById('suggestions-panel');
   if (panel.classList.contains('open')) closeSuggestionsPanel();
   else openSuggestionsPanel();
@@ -6017,28 +5985,16 @@ function _renderBingoStatsEpisodesMenu() {
   if (window.lucide) lucide.createIcons();
 }
 
-// ── Menu déroulant "Grilles" (mode normal) : cocher/décocher pour afficher, + Grille,
-// et bouton ⋮ par grille (Renommer/Supprimer, pas de Dupliquer). ──
-const _btnGridsDropdown = document.getElementById('btn-grids-dropdown');
-if (_btnGridsDropdown) {
-  _btnGridsDropdown.addEventListener('click', e => {
-    e.stopPropagation();
-    _renderGridsDropdownMenu();
-  });
-}
+// ── Modal "Grilles" (bouton Grilles du panneau Création) : liste des grilles du bingo — cocher/
+// décocher pour afficher, étoile favorite, bouton ⋮ (Renommer/Supprimer, pas de Dupliquer) — et, en
+// dessous, le formulaire de nouvelle grille (cf openNewGridModal). ──
+document.getElementById('btn-grids-dropdown')?.addEventListener('click', () => openNewGridModal());
 
-function _renderGridsDropdownMenu() {
-  const menu = document.getElementById('grids-dropdown-menu');
+function _renderGridsModalList() {
+  const menu = document.getElementById('grids-modal-list');
   if (!menu) return;
   const s = activeSubtheme();
   menu.innerHTML = '';
-  menu.classList.remove('hidden');
-  positionCtxMenu(menu, null, _btnGridsDropdown);
-
-  const closeMenu = () => menu.classList.add('hidden');
-  const onDocClick = () => closeMenu();
-  setTimeout(() => document.addEventListener('click', onDocClick, { once: true }), 0);
-  menu.addEventListener('click', e => e.stopPropagation());
 
   if (!s) { if (window.lucide) lucide.createIcons(); return; }
   const activeGrids = s.grids.filter(g => !g.archived);
@@ -6099,7 +6055,7 @@ function _renderGridsDropdownMenu() {
       const sNow = activeSubtheme();
       if (!sNow) return;
       setMainGridId(sNow.id, (getMainGridId(sNow.id) === g.id) ? _MAIN_GRID_NONE : g.id);
-      _renderGridsDropdownMenu();
+      _renderGridsModalList();
       renderGrid();
     });
     item.appendChild(mainBtn);
@@ -6111,25 +6067,11 @@ function _renderGridsDropdownMenu() {
     ctxBtn.addEventListener('click', e => {
       e.stopPropagation();
       openCtxMenuGrid(g.id, null, ctxBtn);
-      closeMenu();
     });
     item.appendChild(ctxBtn);
 
     menu.appendChild(item);
   });
-
-  // Un dossier conteneur (type 'folder') ne peut jamais recevoir de grille directement.
-  if (_isFolderBingo(s)) {
-    const sep = document.createElement('div');
-    sep.style.cssText = 'height:1px;background:var(--border);margin:4px 0;';
-    menu.appendChild(sep);
-
-    const addBtn = document.createElement('button');
-    addBtn.className = 'ctx-menu-item ctx-green';
-    addBtn.textContent = '+ Grille';
-    addBtn.addEventListener('click', () => { closeMenu(); openNewGridModal(); });
-    menu.appendChild(addBtn);
-  }
 
   if (window.lucide) lucide.createIcons();
 }
@@ -6380,19 +6322,17 @@ document.getElementById('btn-open-grids-window').addEventListener('click', () =>
   if (grids.length === 0) return;
   document.title = getFolderPath(state.folders, _localActiveFolderId).map(f => f.name).join(' \\ ');
   document.body.classList.add('solo-grid-mode');
-  // En plein écran, tout doit tenir sur une seule rangée : #btn-grids-dropdown, #btn-toggle-new-badge,
-  // le bouton Capture et Stats (2e rangée, mode normal) sont déplacés en JS dans
-  // #bingo-solo-toolbar-center, dans le même ordre qu'en mode normal (Grilles/New/Capture/Stats)
-  // — mêmes éléments physiques, jamais deux jeux de contrôles désynchronisés. Le chemin
+  // En plein écran, tout doit tenir sur une seule rangée : #btn-toggle-new-badge, le bouton Capture
+  // et Stats (2e rangée, mode normal) sont déplacés en JS dans #bingo-solo-toolbar-center, dans le
+  // même ordre qu'en mode normal (New/Capture/Stats) — mêmes éléments physiques, jamais deux jeux de
+  // contrôles désynchronisés. Grilles (panneau Création) n'est pas disponible en plein écran. Le chemin
   // (#bingo-fullscreen-breadcrumb) reste un frère indépendant de ce groupe, centré par position
   // absolue (voir CSS), pas dans ce conteneur — sinon un groupe trop large le pousse hors de son centrage.
   const soloCenter = document.getElementById('bingo-solo-toolbar-center');
-  const gridsDropdown = document.getElementById('btn-grids-dropdown');
   const newBadgeBtn = document.getElementById('btn-toggle-new-badge');
   const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
   const statsBtn = document.getElementById('btn-bingo-stats');
   if (soloCenter) {
-    if (gridsDropdown) soloCenter.appendChild(gridsDropdown);
     if (newBadgeBtn) soloCenter.appendChild(newBadgeBtn);
     if (captureBtn) soloCenter.appendChild(captureBtn);
     if (statsBtn) soloCenter.appendChild(statsBtn);
@@ -6413,13 +6353,16 @@ document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
   document.body.classList.remove('solo-grid-mode');
   document.title = 'LesMichels';
   requestAnimationFrame(_adjustBingoGridSizes);
-  // Rendre à la 2e rangée (ordre du HTML) : Grilles puis New au début, Stats en fin de rangée et
+  // Le panneau Cases, fermé à l'entrée du plein écran, revient avec le panneau Création s'il est ouvert.
+  if (_bingoCreationOpen) {
+    openCasesPanel();
+    setTimeout(_adjustBingoGridSizes, 240);
+  }
+  // Rendre à la 2e rangée (ordre du HTML) : New au début, Stats en fin de rangée et
   // Capture juste avant Stats (mode normal).
   const optionsRow = document.getElementById('bingo-grids-options-row');
   const newBadgeBtn = document.getElementById('btn-toggle-new-badge');
   if (newBadgeBtn && optionsRow) optionsRow.prepend(newBadgeBtn);
-  const gridsDropdown = document.getElementById('btn-grids-dropdown');
-  if (gridsDropdown && optionsRow) optionsRow.prepend(gridsDropdown);
   const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
   const statsBtn = document.getElementById('btn-bingo-stats');
   if (statsBtn && optionsRow) optionsRow.appendChild(statsBtn);
@@ -6688,24 +6631,33 @@ function updateClearGridsButton() {
   btn.classList.toggle('btn-disabled', nothingToClear);
 }
 
-// Bouton "Création" : révèle/masque le groupe #bingo-creation-group (Grilles, cadre Générer/Vider/
-// Reset, Définir soirée en cours, Dupliquer, Cases). Grisé par défaut, bleu clair tant qu'au moins une grille
+// Bouton "Création" : ouvre/ferme le panneau Création à gauche (#creation-panel : cadre Taille/Générer/
+// Vider/Reset, En cours, Dupliquer) et le panneau Cases à droite. Grisé par défaut, bleu clair tant qu'au moins une grille
 // affichée a encore une case vide (génération à faire ou incomplète).
+// Impossible de quitter Création tant qu'une grille affichée a une case vide : bouton grisé et désactivé.
+function _bingoVisibleGridsNeedGenerate() {
+  return getVisibleGrids().some(gx => gx.grid.slice(0, gx.gridSize * gx.gridSize).some(c => !c || !c.elementId));
+}
 function updateCreationButton() {
   const btn = document.getElementById('btn-bingo-creation');
   if (!btn) return;
-  const needsGenerate = getVisibleGrids().some(gx => gx.grid.slice(0, gx.gridSize * gx.gridSize).some(c => !c || !c.elementId));
+  const needsGenerate = _bingoVisibleGridsNeedGenerate();
   btn.classList.toggle('btn-creation-needed', needsGenerate);
+  const blocked = _bingoCreationOpen && needsGenerate;
+  btn.disabled = blocked;
+  btn.title = blocked
+    ? 'Génère toutes les grilles affichées pour pouvoir quitter le mode création'
+    : 'Afficher/masquer les outils de création des grilles et le panneau Cases';
 }
 // Ouvre/ferme "Création" — rend aussi les grilles modifiables ou non (cf _bingoEditLocked), d'où le
 // re-rendu des grilles et des cases (drag & drop, titre, clic droit dépendent de cet état).
 // render=false : l'appelant re-rend lui-même juste après (ex. switchFolder).
 function _setBingoCreationOpen(open, render = true) {
   if (_bingoCreationOpen === open) return;
-  const group = document.getElementById('bingo-creation-group');
-  if (!group) return;
+  const creationPanel = document.getElementById('creation-panel');
+  if (!creationPanel) return;
   _bingoCreationOpen = open;
-  group.classList.toggle('hidden', !open);
+  creationPanel.classList.toggle('open', open);
   const btnCreation = document.getElementById('btn-bingo-creation');
   if (btnCreation) {
     // aria-expanded="true" = mise en évidence bleu clair (cf CSS, même style que .btn-creation-needed)
@@ -6715,15 +6667,20 @@ function _setBingoCreationOpen(open, render = true) {
   }
   // Les boutons par grille (générer/vider) ne sont visibles que Création ouvert (cf CSS).
   document.getElementById('page-bingo')?.classList.toggle('creation-open', open);
-  // Le panneau Cases (modification des cases) n'a plus de sens Création fermé.
-  if (!open) closeCasesPanel();
+  // Le panneau Cases s'ouvre et se ferme avec Création.
+  if (open) openCasesPanel();
+  else closeCasesPanel();
+  // Les deux panneaux changent la largeur laissée aux grilles (transition 0.22s de .cases-sidebar) :
+  // recalcul une fois la transition finie (aussi quand l'appelant re-rend lui-même, render=false).
+  setTimeout(_adjustBingoGridSizes, 240);
   if (!render) return;
   renderGrid();
   renderElements();
-  // L'ouverture peut faire passer la ligne 1 sur deux rangées : la hauteur dispo des grilles change.
-  requestAnimationFrame(_adjustBingoGridSizes);
 }
-document.getElementById('btn-bingo-creation')?.addEventListener('click', () => _setBingoCreationOpen(!_bingoCreationOpen));
+document.getElementById('btn-bingo-creation')?.addEventListener('click', () => {
+  if (_bingoCreationOpen && _bingoVisibleGridsNeedGenerate()) return; // cf updateCreationButton
+  _setBingoCreationOpen(!_bingoCreationOpen);
+});
 
 function updateOpenGridsWindowButton() {
   const btn = document.getElementById('btn-open-grids-window');
@@ -6944,17 +6901,24 @@ function buildColorPicker(initial = '#e85b47') {
   el.value = initial;
   return el;
 }
-// Modal nouvelle grille
-const modalNewGrid       = document.getElementById('modal-new-grid');
+// Modal Grilles : liste des grilles (_renderGridsModalList) + formulaire de nouvelle grille. Reste
+// ouvert après une création : la nouvelle grille apparaît dans la liste, le formulaire est remis à zéro.
+const modalNewGrid       = document.getElementById('modal-grids');
 const newGridNameInput   = document.getElementById('new-grid-name-input');
 const btnConfirmNewGrid  = document.getElementById('btn-confirm-new-grid');
 
-function openNewGridModal() {
+function _resetNewGridForm() {
   const s = activeSubtheme();
   if (!s) return;
   const count = s.grids.filter(g => !g.archived).length + 1;
   newGridNameInput.value = `Grille ${count}`;
-  document.querySelectorAll('.grid-name-preset-check input').forEach(cb => { cb.checked = false; });
+  modalNewGrid.querySelectorAll('.grid-name-preset-check input').forEach(cb => { cb.checked = false; });
+}
+
+function openNewGridModal() {
+  if (!activeSubtheme()) return;
+  _resetNewGridForm();
+  _renderGridsModalList();
   modalNewGrid.classList.remove('hidden');
   setTimeout(() => { newGridNameInput.focus(); newGridNameInput.select(); }, 50);
 }
@@ -6964,16 +6928,15 @@ function closeNewGridModal() {
 }
 
 function confirmNewGrid() {
-  const checked = [...document.querySelectorAll('.grid-name-preset-check input:checked')].map(cb => cb.value);
+  const checked = [...modalNewGrid.querySelectorAll('.grid-name-preset-check input:checked')].map(cb => cb.value);
   if (checked.length > 0) {
-    closeNewGridModal();
     checked.forEach(name => createGrid(name));
   } else {
     const name = newGridNameInput.value.trim();
     if (!name) return;
-    closeNewGridModal();
     createGrid(name);
   }
+  _resetNewGridForm();
 }
 
 btnConfirmNewGrid.addEventListener('click', confirmNewGrid);

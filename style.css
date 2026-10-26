@@ -162,7 +162,6 @@ body {
    Stats (ligne 2), masquer tout le reste (grilles/création/cases/capture/plein écran/etc). */
 .bingo-control-panel.folder-mode #btn-grids-dropdown,
 .bingo-control-panel.folder-mode #btn-new-grid-main,
-.bingo-control-panel.folder-mode #btn-cases-panel,
 .bingo-control-panel.folder-mode #btn-ce-set-header,
 .bingo-control-panel.folder-mode #btn-bingo-creation,
 .bingo-control-panel.folder-mode #bingo-creation-group,
@@ -171,24 +170,33 @@ body {
   display: none !important;
 }
 
-/* Groupe révélé par le bouton Création (ligne 1, juste avant lui) */
-.bingo-creation-group {
+/* Outils du panneau Création (sidebar gauche, cf .creation-sidebar) : empilés en colonne */
+.creation-sidebar .bingo-creation-group {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
 }
+.bingo-creation-group .lock-group {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px;
+}
+.bingo-creation-group .btn-action,
+.bingo-creation-group .btn-ce-set,
+.bingo-creation-group .subgrid-size-control { justify-content: center; }
 /* Ligne 1 Bingo : pas d'élément centré à équilibrer — la zone droite prend d'abord la largeur de
-   son contenu (Cases + groupe Création ouvert), la zone gauche le reste. */
-/* min-height = hauteur du cadre .lock-group (42px, le plus haut du groupe Création) : la ligne 1
-   garde la même hauteur que le groupe soit affiché ou non. */
+   son contenu (bouton Création), la zone gauche le reste. */
 #bingo-control-panel .ctrl-row-grids-right { flex: 1 0 auto; min-height: 42px; }
 /* Boutons par grille (générer/vider) masqués tant que Création est fermé
    (classe posée sur #page-bingo par le bouton Création). */
 #page-bingo:not(.creation-open) .subgrid-lock-gen-group { display: none; }
 /* Bouton Création : grisé (btn-neutral-action) sauf tant qu'une grille affichée a une case vide,
    ou quand Création est ouvert (bouton "Quitter création") */
-#btn-bingo-creation.btn-creation-needed,
-#btn-bingo-creation[aria-expanded="true"] {
+/* Désactivé (impossible de quitter tant qu'une grille affichée n'est pas générée) : reste gris
+   (btn-neutral-action + opacité de .btn-action:disabled), sans la mise en évidence bleue. */
+#btn-bingo-creation.btn-creation-needed:not(:disabled),
+#btn-bingo-creation[aria-expanded="true"]:not(:disabled) {
   border-color: #60a5fa !important;
   color: #dbeafe !important;
   background: rgba(96,165,250,0.28) !important;
@@ -432,7 +440,7 @@ body {
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  box-shadow: none;
   /* masqué par défaut via transform hors écran */
   visibility: hidden;
   opacity: 0;
@@ -692,16 +700,17 @@ body {
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
-  transition: width 0.22s ease, border-width 0.22s ease;
+  /* Aucune animation : les panneaux apparaissent/disparaissent d'un coup (demandé). */
+  transition: none;
   align-self: flex-start;
 }
 .cases-sidebar.open {
   height: auto;
-  width: 400px;
+  width: 360px;
   border-width: 1px;
 }
 .cases-sidebar.open > * {
-  width: 400px;
+  width: 360px;
 }
 .cases-sidebar .folders-panel-header {
   cursor: default;
@@ -931,15 +940,36 @@ body {
 .btn-new-folder-in-grids .btn-plus-green { color: #60a5fa; }
 
 /* ── Bingo layout ── */
+/* 3 colonnes : panneau Création | cadre des grilles | panneau Cases ou Suggestions.
+   Pendant la mesure des grilles (_adjustBingoGridSizes), le cadre prend toute la place laissée par
+   les panneaux ; ensuite (.bingo-layout-fit) il est resserré autour des grilles et centré sur la
+   page : les deux colonnes latérales (1fr) sont égales tant qu'elles contiennent leur panneau, le
+   cadre n'est donc décalé que si un panneau ouvert le chevaucherait. */
 .bingo-layout {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: stretch;
   gap: 0;
   position: relative;
   width: 100%;
   min-width: 0;
 }
+.bingo-layout.bingo-layout-fit { grid-template-columns: 1fr auto 1fr; }
+.bingo-layout > #creation-panel { grid-column: 1; grid-row: 1; }
+.bingo-layout > .panel-grid { grid-column: 2; grid-row: 1; }
+.bingo-layout > #cases-panel,
+.bingo-layout > #suggestions-panel { grid-column: 3; grid-row: 1; justify-self: end; }
 .bingo-layout > .cases-sidebar.open { margin-left: 12px; }
+/* Panneau Création : même sidebar que Cases, mais à gauche et à la largeur de son contenu. Masqué
+   en plein écran (le bouton Création n'y est pas accessible). */
+.creation-sidebar.open { width: max-content; }
+.creation-sidebar.open > * { width: auto; }
+.creation-sidebar .panel-elements-body { padding: 8px; }
+.creation-sidebar .folders-panel-title { text-align: center; }
+/* Panneaux latéraux (Création, Cases, Suggestions) : sans l'ombre portée des drawers flottants. */
+.cases-sidebar { box-shadow: none; }
+.bingo-layout > .creation-sidebar.open { margin-left: 0; margin-right: 12px; }
+body.solo-grid-mode .creation-sidebar { display: none; }
 /* Panneau Suggestions : seule la liste défile (le champ d'ajout reste en haut), sa hauteur étant
    plafonnée par _adjustSidebarMaxHeight. En plein écran (seul panneau disponible), pas de sticky :
    son top:70px le décalerait sous la barre, .main ne défilant pas dans ce mode. */
@@ -979,6 +1009,7 @@ body.solo-grid-mode .bingo-control-panel {
 body.solo-grid-mode .bingo-layout {
   flex: 1;
   min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
 }
 body.solo-grid-mode .panel-grid {
   display: flex;
@@ -1346,15 +1377,17 @@ body.compare-tierlist-mode #page-tierlist.page.active {
   border-radius: var(--radius);
   padding: 3px;
 }
+/* Libellé toujours sur une seule rangée : chaque onglet prend la largeur de son texte (compteur compris). */
 .tab-btn {
-  flex: 1;
+  flex: 1 1 auto;
+  white-space: nowrap;
   background: none;
   border: none;
   color: var(--text-muted);
   font-family: Arial, sans-serif;
   font-size: 0.8rem;
   font-weight: 600;
-  padding: 5px 10px;
+  padding: 5px 6px;
   border-radius: 5px;
   cursor: pointer;
   transition: var(--transition);
@@ -1445,20 +1478,6 @@ textarea.element-edit-input {
 .element-text { cursor: pointer; }
 .element-item:not(.archived) .element-text:hover { color: var(--accent); }
 
-.elem-drag-handle {
-  color: var(--text-faint);
-  cursor: grab;
-  font-size: 1rem;
-  line-height: 1;
-  flex-shrink: 0;
-  user-select: none;
-  padding: 0 2px;
-  transition: color 0.15s;
-}
-.elem-drag-handle:hover { color: var(--accent); }
-.elem-drag-handle:active { cursor: grabbing; }
-.elem-drag-handle [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
-.element-item.elem-dragging { opacity: 0.45; }
 
 .elem-menu-btn {
   flex-shrink: 0;
@@ -1494,7 +1513,7 @@ textarea.element-edit-input {
   font-weight: 600;
   line-height: 1.3;
   pointer-events: none;
-  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  box-shadow: none;
   word-break: break-word;
 }
 #app-tooltip.hidden { display: none !important; }
@@ -1703,7 +1722,7 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   border-radius: var(--radius-lg);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  box-shadow: 0 2px 16px rgba(0,0,0,0.22);
+  box-shadow: none;
   max-width: 100%;
 }
 /* Ligne 2 : [cadre Options Liste + Annuler] à gauche / rien au centre / [Comparaison + Plein
@@ -1844,21 +1863,44 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 }
 .btn-action.btn-subgrid-gen:hover:not(:disabled) { background: #7c3aed; color: #fff; border-color: #8b5cf6; }
 
-/* Bouton Vider global */
-.btn-action.btn-clear-grids {
-  background: #7a3e00;
-  color: #ffd6a0;
-  border: 1px solid #c46000;
+/* Générer (panneau Création) quand toutes les grilles affichées sont déjà générées : grisé mais
+   gardant une teinte de son violet, et toujours cliquable (régénérer reste possible). */
+.btn-action.btn-generate-global.btn-generate-done {
+  background: #3b3350;
+  color: #c4b5fd;
+  border-color: #5b4a86;
 }
-.btn-action.btn-clear-grids:hover:not(:disabled) { background: #c46000; color: #fff; border-color: #e07800; }
+.btn-action.btn-generate-global.btn-generate-done:hover { background: #4c3d73; color: #ede9fe; border-color: #7c3aed; }
 
-/* Bouton Vider par grille (⊘) */
-.btn-action.btn-subgrid-clear {
-  background: #7a3e00;
-  color: #ffd6a0;
-  border: 1px solid #c46000;
+/* Bouton Vider global (panneau Création) : rose */
+.btn-action.btn-clear-grids {
+  background: #831843;
+  color: #fce7f3;
+  border: 1px solid #db2777;
 }
-.btn-action.btn-subgrid-clear:hover:not(:disabled) { background: #c46000; color: #fff; border-color: #e07800; }
+.btn-action.btn-clear-grids:hover:not(:disabled) { background: #be185d; color: #fff; border-color: #ec4899; }
+
+/* Panneau Création : Grilles en vert, Dupliquer en orange */
+.btn-action.btn-grids-green {
+  background: #14532d;
+  color: #dcfce7;
+  border: 1px solid #22c55e;
+}
+.btn-action.btn-grids-green:hover { background: #15803d; color: #fff; border-color: #4ade80; opacity: 1; }
+.btn-action.btn-duplicate-orange {
+  background: #7c2d12;
+  color: #ffedd5;
+  border: 1px solid #ea580c;
+}
+.btn-action.btn-duplicate-orange:hover { background: #c2410c; color: #fff; border-color: #fb923c; opacity: 1; }
+
+/* Bouton Vider par grille (⊘) : rose, comme Vider du panneau Création */
+.btn-action.btn-subgrid-clear {
+  background: #831843;
+  color: #fce7f3;
+  border: 1px solid #db2777;
+}
+.btn-action.btn-subgrid-clear:hover:not(:disabled) { background: #be185d; color: #fff; border-color: #ec4899; }
 .btn-action.btn-subgrid-clear:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -1954,7 +1996,7 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   border-radius: var(--radius-lg);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  box-shadow: 0 2px 16px rgba(0,0,0,0.22);
+  box-shadow: none;
   transition: opacity 0.15s, border-color 0.15s;
   overflow: hidden;
 }
@@ -2029,11 +2071,8 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   flex: 0 0 auto;
   width: 100%;
 }
-/* Grilles secondaires : wrapper trop étroit pour le groupe Bloquer/Générer/Vider en position
-   absolute (cf .subgrid-lock-gen-group) — masqué comme en plein écran (body.solo-grid-mode),
-   et le padding réservé pour lui (190px de chaque côté, cf .grid-view-title-row) réduit d'autant,
-   sinon le titre est poussé hors champ et invisible sur un wrapper de cette largeur. */
-.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .subgrid-lock-gen-group,
+/* Grilles secondaires : Générer/Vider restent affichés en mode Création (ils se réduisent avec la
+   largeur, cf .grid-view-title-row) ; Capture masqué. */
 .grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .grid-view-title-capture {
   display: none;
 }
@@ -2075,7 +2114,7 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   border-radius: var(--radius-lg);
   background: var(--surface-3);
   border: 1px solid var(--accent-dim);
-  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  box-shadow: none;
   color: var(--text);
   font-family: Arial, sans-serif;
   font-size: 1rem;
@@ -2087,18 +2126,32 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
 #bingo-secondary-cell-preview.checked { color: var(--accent); border-color: var(--accent); }
 #bingo-secondary-cell-preview.bingo-line { color: var(--bingo-green); border-color: var(--bingo-green); }
 
+/* Ligne de titre : Générer/Vider à gauche | titre + étoile centrés | (Capture) à droite. Les deux
+   colonnes latérales (1fr) restent égales tant qu'elles contiennent leurs boutons, le titre est donc
+   centré sur la grille ; sur une grille étroite il rétrécit (points de suspension). Conteneur de
+   requêtes (container-type) : titre et boutons se réduisent avec la largeur de la grille (unités cqi),
+   et la ligne n'élargit jamais le cadre de la grille. */
 .grid-view-title-row {
   width: 100%;
   position: relative;
-  display: flex;
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: 1fr minmax(0, auto) auto 1fr;
   align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 4px;
+  column-gap: 4px;
   margin-bottom: 4px;
-  padding: 0 190px;
   box-sizing: border-box;
 }
+.grid-view-title-row > .subgrid-lock-gen-group { grid-column: 1; grid-row: 1; justify-self: start; }
+.grid-view-title-row > .grid-view-title-input { grid-column: 2; grid-row: 1; }
+.grid-view-title-row > .grid-title-main-btn { grid-column: 3; grid-row: 1; }
+.grid-view-title-row > .grid-view-title-capture { grid-column: 4; grid-row: 1; justify-self: end; }
+.grid-view-title-row .btn-subgrid {
+  height: clamp(18px, 5cqi, 24px);
+  padding: 0 clamp(3px, 1cqi, 6px) !important;
+}
+.grid-view-title-row .btn-subgrid [data-lucide] { width: clamp(10px, 3cqi, 13px); height: clamp(10px, 3cqi, 13px); margin-right: 0; }
+.grid-view-title-row .subgrid-lock-gen-group { padding: 2px 4px; gap: 3px; }
 
 .grid-view-title-capture {
   display: none;
@@ -2126,9 +2179,9 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   cursor: default;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* Taille fixe (150%) — ne rétrécit que si la largeur de l'écran est trop étroite,
-     jamais en fonction du nombre de caractères du titre. */
-  font-size: clamp(0.9rem, 2vw, 1.5rem);
+  /* Taille fixe (150%) — ne rétrécit que si la grille est trop étroite (cqi = largeur de la ligne
+     de titre), jamais en fonction du nombre de caractères du titre. */
+  font-size: clamp(0.75rem, 6cqi, 1.5rem);
 }
 /* Étoile "grille principale" à côté du titre (même visuel que .grid-tab-main-btn du menu Grilles) */
 .grid-title-main-btn {
@@ -2145,10 +2198,14 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   transition: var(--transition);
 }
 .grid-title-main-btn:hover { opacity: 1; background: var(--surface-3); }
-.grid-title-main-btn [data-lucide] { width: 18px; height: 18px; margin-right: 0; }
+.grid-title-main-btn [data-lucide] { width: clamp(12px, 5cqi, 18px); height: clamp(12px, 5cqi, 18px); margin-right: 0; }
 .grid-title-main-btn.active { opacity: 1; color: #f5c518; }
 .grid-title-main-btn.active [data-lucide] { fill: #f5c518; }
 .grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .grid-title-main-btn [data-lucide] { width: 14px; height: 14px; }
+/* Générer/Vider des grilles secondaires : plus petits que ceux de la grille favorite */
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .subgrid-lock-gen-group { padding: 1px 3px; gap: 2px; }
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .btn-subgrid { height: 16px; padding: 0 3px !important; }
+.grid-wrapper.grid-wrapper-has-main .grid-wrapper-secondary-col .btn-subgrid [data-lucide] { width: 10px; height: 10px; }
 
 .grid-view-title-input::placeholder { color: var(--text-faint); font-weight: 400; font-style: italic; }
 .grid-view-title-input:hover { border-bottom-color: var(--border); cursor: text; }
@@ -2161,12 +2218,9 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   min-width: 0;
 }
 
-/* Cadre discret autour de Générer + Vider (par grille) — à gauche du nom, pas centré avec lui */
+/* Cadre discret autour de Générer + Vider (par grille) — à gauche du nom, pas centré avec lui
+   (1re colonne de .grid-view-title-row) */
 .subgrid-lock-gen-group {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2290,14 +2344,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .bingo-cell.empty:hover { border-color: var(--border); background: var(--surface-2); }
 
-.bingo-cell.drag-over {
-  border-color: var(--accent) !important;
-  background: var(--accent-glow) !important;
-}
-.bingo-cell.cell-dragging {
-  opacity: 0.4;
-  cursor: grabbing;
-}
 
 .bingo-cell-new-badge {
   position: absolute;
@@ -2312,7 +2358,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   border-radius: 999px;
   line-height: 1.3;
   pointer-events: none;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  box-shadow: none;
 }
 
 .no-grid-msg {
@@ -2346,10 +2392,6 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .btn-empty-state-blue:hover {
   background: #2563eb;
-}
-
-.bingo-layout.no-theme-layout {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 /* ── Message bingo ── */
@@ -2410,7 +2452,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  box-shadow: none;
   min-width: 160px;
   overflow: visible;
   animation: ctx-appear 0.1s ease;
@@ -2521,7 +2563,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   min-width: 340px;
   max-width: 500px;
   width: 100%;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: none;
 }
 
 .modal-header {
@@ -2624,7 +2666,7 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  box-shadow: none;
 }
 .tl-preset-color-popover-swatches {
   display: flex;
@@ -2926,6 +2968,27 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   cursor: pointer;
 }
 
+/* Modal Grilles : sous les autres modales (Renommer, Supprimer) qu'il ouvre via le menu ⋮ — même
+   z-index qu'elles sinon, et celles placées avant lui dans le HTML passeraient derrière. */
+#modal-grids { z-index: 199; }
+.grids-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.grids-modal-list .tl-dropdown-item { border-radius: var(--radius); padding: 6px 8px; }
+.grids-modal-list .tl-dropdown-item input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+.grids-modal-new-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-bottom: -6px;
+}
+
 .modal-actions {
   display: flex;
   gap: 10px;
@@ -2978,9 +3041,9 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   cursor: pointer;
   width: 100%;
   transition: var(--transition);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  box-shadow: none;
 }
-.btn-google:hover { background: #f0f0f0; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+.btn-google:hover { background: #f0f0f0; }
 
 .auth-separator {
   display: flex;
@@ -3737,7 +3800,7 @@ body.solo-tierlist-mode .tl-layout {
   background-position: center;
   background-size: contain;
   border-radius: var(--radius);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: none;
   background-color: var(--surface);
 }
 .tl-img-zoom-close {
@@ -3756,7 +3819,7 @@ body.solo-tierlist-mode .tl-layout {
   color: #fff;
   cursor: pointer;
   z-index: 1;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: none;
   transition: var(--transition);
 }
 .tl-img-zoom-close:hover { background: #ff6050; }
@@ -4413,7 +4476,7 @@ body.tl-split-dragging { cursor: ew-resize; user-select: none; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  box-shadow: none;
   padding: 6px;
   max-height: 320px;
   overflow-y: auto;
@@ -4555,7 +4618,7 @@ body.tl-split-dragging { cursor: ew-resize; user-select: none; }
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
 }
