@@ -6319,7 +6319,7 @@ window.addEventListener('scroll', () => {
 
 document.getElementById('btn-open-grids-window').addEventListener('click', () => {
   const grids = getVisibleGrids();
-  if (grids.length === 0) return;
+  if (grids.length === 0 || _bingoVisibleGridsNeedGenerate()) return;
   document.title = getFolderPath(state.folders, _localActiveFolderId).map(f => f.name).join(' \\ ');
   document.body.classList.add('solo-grid-mode');
   // En plein écran, tout doit tenir sur une seule rangée : #btn-toggle-new-badge, le bouton Capture
@@ -6686,8 +6686,13 @@ function updateOpenGridsWindowButton() {
   const btn = document.getElementById('btn-open-grids-window');
   if (!btn) return;
   const noGrids = getVisibleGrids().length === 0;
-  btn.disabled = noGrids;
-  btn.classList.toggle('btn-disabled', noGrids);
+  // Bloqué aussi tant qu'une grille affichée a une case vide (même règle que updateCreationButton).
+  const needsGenerate = !noGrids && _bingoVisibleGridsNeedGenerate();
+  btn.disabled = noGrids || needsGenerate;
+  btn.classList.toggle('btn-disabled', noGrids || needsGenerate);
+  btn.title = needsGenerate
+    ? 'Génère toutes les grilles affichées pour pouvoir passer en plein écran'
+    : 'Afficher les grilles en plein écran';
 }
 
 btnClearGrids.addEventListener('click', () => {
