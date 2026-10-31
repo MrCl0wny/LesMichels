@@ -2335,6 +2335,12 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   color: var(--bingo-green) !important;
   box-shadow: 0 0 14px rgba(80, 220, 140, 0.3);
 }
+/* Dernière case validée (cf _bingoLastCheckedElementId) : outline plutôt que border/box-shadow, peint
+   par-dessus le voile ::after des cases cochées et sans décaler le contenu. */
+.bingo-cell.last-checked {
+  outline: 3px solid #fff;
+  outline-offset: -3px;
+}
 .bingo-cell.empty {
   color: var(--text-faint);
   font-style: italic;
@@ -2808,11 +2814,15 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   color: var(--text-faint);
   padding: 8px 4px;
 }
-.element-preset-row input[type="checkbox"] {
+.element-preset-row input[type="checkbox"],
+.element-preset-case-check {
   accent-color: var(--accent);
   cursor: pointer;
   flex-shrink: 0;
 }
+/* Volet droit du modal Preset cases : case à cocher (import individuel) avant le texte. */
+.element-item.has-case-check { grid-template-columns: auto 1fr auto; }
+.element-preset-case-check { margin: 2px 0 0; }
 .element-preset-count {
   font-size: 0.75rem;
   color: var(--text-faint);

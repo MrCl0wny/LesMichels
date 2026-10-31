@@ -3450,6 +3450,7 @@ function openClearCellConfirm(label, callback) {
 // une case coche le même elementId dans toutes les grilles du dossier, cf le click handler).
 function _patchCellsAfterCheck(elementId) {
   const visibleGrids = getVisibleGrids();
+  const lastCheckedId = _bingoLastCheckedElementId(activeSubtheme());
   visibleGrids.forEach(gx => {
     const wrapperEl = gridWrapper.querySelector(`.grid-view-wrapper[data-grid-id="${gx.id}"]`);
     if (!wrapperEl) return;
@@ -3462,6 +3463,7 @@ function _patchCellsAfterCheck(elementId) {
       if (!div) return;
       div.classList.toggle('checked', !!cell.checked);
       div.classList.toggle('bingo-line', bingoIndices.has(i));
+      div.classList.toggle('last-checked', !!cell.checked && cell.elementId === lastCheckedId);
       if (cell.elementId === elementId) {
         const gridLocked = _bingoEditLocked();
         div.title = cell.checked ? 'Désactiver cette case' : 'Valider cette case' + (!gridLocked ? ' · Clic droit : vider' : '');
@@ -3470,11 +3472,27 @@ function _patchCellsAfterCheck(elementId) {
   });
 }
 
+// Dernière case validée (contour blanc, commun à tous les utilisateurs) : persistentCheckedIds est
+// déjà dans l'ordre de validation (ajout en fin au cochage, retrait au décochage, cf le click handler
+// de buildSingleGrid). On remonte depuis la fin jusqu'à une case encore cochée dans une grille non
+// archivée — décocher la dernière reporte donc le contour sur l'avant-dernière.
+function _bingoLastCheckedElementId(s) {
+  if (!s) return null;
+  const ids = s.persistentCheckedIds || [];
+  const grids = (s.grids || []).filter(gx => !gx.archived && gx.grid);
+  for (let k = ids.length - 1; k >= 0; k--) {
+    const id = ids[k];
+    if (grids.some(gx => gx.grid.slice(0, gx.gridSize * gx.gridSize).some(c => c.checked && c.elementId === id))) return id;
+  }
+  return null;
+}
+
 function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
   const n = g.gridSize;
   const s = activeSubtheme();
   const { indices: bingoIndices, lines: bingoLines } = getBingoResult(n, g.grid.slice(0, n * n));
   const prevEpisodeTexts = _localShowNewBadge ? _previousEpisodeActiveTextSet(s) : null;
+  const lastCheckedId = _bingoLastCheckedElementId(s);
 
   const wrapper = document.createElement('div');
   wrapper.className = 'grid-view-wrapper';
@@ -3675,6 +3693,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
       div.appendChild(textEl);
       if (cell.checked)        div.classList.add('checked');
       if (bingoIndices.has(i)) div.classList.add('bingo-line');
+      if (cell.checked && cell.elementId === lastCheckedId) div.classList.add('last-checked');
       if (prevEpisodeTexts && el && !prevEpisodeTexts.has((el.text || '').trim().toLowerCase())) {
         const newBadge = document.createElement('span');
         newBadge.className = 'bingo-cell-new-badge';
@@ -4750,6 +4769,9 @@ function confirmMoveFolder() {
 // importés dans le dossier cible (menu au même rendu que le menu Chemin, seuls les bingos sont choisissables).
 // ──────────────────────────────────────────────
 const _elementPresetsChecked = new Set(); // ids des presets cochés pour l'import
+// Presets cochés "à moitié" (cases cochées une à une dans le volet droit) : presetId → Set des textes
+// cochés (minuscules, trim). Un preset est soit entier (_elementPresetsChecked), soit ici, soit aucun.
+const _elementPresetsPartial = new Map();
 let _elementPresetsTarget = null;         // id du dossier-bingo cible
 let _elementPresetPendingDelete = null;   // id du preset/dossier dont la confirmation de suppression est affichée
 
@@ -4888,9 +4910,65 @@ function _sortElementPresetItems(items) {
   return sorted;
 }
 
+const _elementPresetCaseKey = text => (text || '').trim().toLowerCase();
+
+// Textes cochés d'un preset (tous s'il est coché entier, sinon ceux cochés un à un encore présents).
+function _elementPresetCheckedTexts(p) {
+  const texts = (p.elements || []).filter(t => _elementPresetCaseKey(t));
+  if (_elementPresetsChecked.has(p.id)) return texts;
+  const part = _elementPresetsPartial.get(p.id);
+  return part ? texts.filter(t => part.has(_elementPresetCaseKey(t))) : [];
+}
+
+// 'full' | 'partial' | 'none' — calculé sur les cases réelles (une case cochée supprimée ou toutes
+// les cases cochées une à une donnent le bon état sans renormaliser les Sets).
+function _elementPresetCheckState(p) {
+  const total = (p.elements || []).filter(t => _elementPresetCaseKey(t)).length;
+  const n = _elementPresetCheckedTexts(p).length;
+  if (_elementPresetsChecked.has(p.id) || (total > 0 && n === total)) return 'full';
+  return n > 0 ? 'partial' : 'none';
+}
+
+function _isElementPresetCaseChecked(presetId, text) {
+  if (_elementPresetsChecked.has(presetId)) return true;
+  const part = _elementPresetsPartial.get(presetId);
+  return !!part && part.has(_elementPresetCaseKey(text));
+}
+
+function _uncheckElementPreset(id) {
+  _elementPresetsChecked.delete(id);
+  _elementPresetsPartial.delete(id);
+}
+
+// Coche/décoche une case du preset : le preset passe entier si toutes ses cases sont cochées,
+// "à moitié" si certaines, décoché si aucune (même logique que dossier → presets).
+function _setElementPresetCaseChecked(presetId, text, on) {
+  const p = getElementPresets().find(x => x.id === presetId);
+  if (!p) return;
+  const keys = new Set((p.elements || []).map(_elementPresetCaseKey).filter(Boolean));
+  const sel = new Set(_elementPresetCheckedTexts(p).map(_elementPresetCaseKey));
+  const key = _elementPresetCaseKey(text);
+  if (on) sel.add(key); else sel.delete(key);
+  _uncheckElementPreset(presetId);
+  const kept = [...sel].filter(k => keys.has(k));
+  if (kept.length && kept.length === keys.size) _elementPresetsChecked.add(presetId);
+  else if (kept.length) _elementPresetsPartial.set(presetId, new Set(kept));
+}
+
+// Textes à importer : presets entiers + cases cochées une à une, sans doublon (insensible à la casse).
+function _elementPresetsTextsToImport() {
+  const seen = new Set();
+  const out = [];
+  getElementPresets().forEach(p => _elementPresetCheckedTexts(p).forEach(t => {
+    const k = _elementPresetCaseKey(t);
+    if (!seen.has(k)) { seen.add(k); out.push(t); }
+  }));
+  return out;
+}
+
 function _refreshElementPresetsButtons() {
   const targetId = _elementPresetsTargetId();
-  const n = getElementPresets().filter(p => _elementPresetsChecked.has(p.id)).length;
+  const n = _elementPresetsTextsToImport().length;
   const importBtn = document.getElementById('btn-import-element-presets');
   importBtn.disabled = !targetId || n === 0;
   importBtn.textContent = n > 0 ? `Importer (${n})` : 'Importer';
@@ -4959,7 +5037,7 @@ function _buildElementPresetDeleteConfirm(message, onConfirm) {
 
 function _deleteElementPresetConfirmed(id) {
   deleteElementPreset(id);
-  _elementPresetsChecked.delete(id);
+  _uncheckElementPreset(id);
   if (_isFavElementPreset(id)) _setFavElementPreset(id, false);
   if (_elementPresetEditId === id) _closeElementPresetPane();
   renderElementPresetList();
@@ -4968,7 +5046,7 @@ function _deleteElementPresetConfirmed(id) {
 function _deleteElementPresetFolderConfirmed(folderId) {
   const inside = getElementPresets().filter(p => p.folderId === folderId);
   inside.forEach(p => {
-    _elementPresetsChecked.delete(p.id);
+    _uncheckElementPreset(p.id);
     if (_isFavElementPreset(p.id)) delete _favElementPresetIds[p.id];
   });
   if (inside.length) saveUserPrefs({ favElementPresets: Object.keys(_favElementPresetIds).length ? _favElementPresetIds : null });
@@ -4988,11 +5066,17 @@ function _buildElementPresetRow(p) {
 
   const cb = document.createElement('input');
   cb.type = 'checkbox';
-  cb.checked = _elementPresetsChecked.has(p.id);
+  const checkState = _elementPresetCheckState(p);
+  cb.checked = checkState === 'full';
+  cb.indeterminate = checkState === 'partial';
   cb.addEventListener('click', e => e.stopPropagation());
   cb.addEventListener('change', () => {
-    if (cb.checked) _elementPresetsChecked.add(p.id); else _elementPresetsChecked.delete(p.id);
+    // Coché entier → décoché ; à moitié ou décoché → entier.
+    const wasFull = checkState === 'full';
+    _uncheckElementPreset(p.id);
+    if (!wasFull) _elementPresetsChecked.add(p.id);
     renderElementPresetList(); // met aussi à jour la case du dossier (cochée / à moitié)
+    if (_elementPresetPaneOpen() && _elementPresetEditId === p.id) _syncElementPresetCaseChecks();
   });
 
   const isFav = _isFavElementPreset(p.id);
@@ -5045,18 +5129,21 @@ function _buildElementPresetFolderRow(f, presets) {
 
   // Cochée si tous ses presets le sont, "à moitié" si seulement certains. Clic = tout cocher, ou tout
   // décocher si tout était déjà coché.
-  const allIds = getElementPresets().filter(p => p.folderId === f.id).map(p => p.id);
-  const nChecked = allIds.filter(id => _elementPresetsChecked.has(id)).length;
+  const inFolder = getElementPresets().filter(p => p.folderId === f.id);
+  const allIds = inFolder.map(p => p.id);
+  const nChecked = inFolder.filter(p => _elementPresetCheckState(p) === 'full').length;
+  const anyPartial = inFolder.some(p => _elementPresetCheckState(p) === 'partial');
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.disabled = allIds.length === 0;
   cb.checked = allIds.length > 0 && nChecked === allIds.length;
-  cb.indeterminate = nChecked > 0 && nChecked < allIds.length;
+  cb.indeterminate = !cb.checked && (nChecked > 0 || anyPartial);
   cb.addEventListener('click', e => e.stopPropagation());
   cb.addEventListener('change', () => {
     const checkAll = nChecked < allIds.length;
-    allIds.forEach(id => { if (checkAll) _elementPresetsChecked.add(id); else _elementPresetsChecked.delete(id); });
+    allIds.forEach(id => { _uncheckElementPreset(id); if (checkAll) _elementPresetsChecked.add(id); });
     renderElementPresetList();
+    if (_elementPresetPaneOpen() && allIds.includes(_elementPresetEditId)) _syncElementPresetCaseChecks();
   });
 
   const arrow = document.createElement('span');
@@ -5186,6 +5273,7 @@ function openElementPresetsModal(targetId) {
   _setElementPresetsTarget(targetId && isEligible(tree, targetId) ? targetId : null);
   document.getElementById('element-presets-sort-select').value = _elementPresetsSortMode();
   _elementPresetsChecked.clear();
+  _elementPresetsPartial.clear();
   _elementPresetPendingDelete = null;
   _closeElementPresetPane();
   renderElementPresetList();
@@ -5197,6 +5285,7 @@ function closeElementPresetsModal() {
   _elementPresetTargetMenu.classList.add('hidden');
   _closeElementPresetPane();
   _elementPresetsChecked.clear();
+  _elementPresetsPartial.clear();
   _elementPresetPendingDelete = null;
   // Les tags du panneau Cases sont les noms des presets : à rafraîchir après toute modification.
   renderElements();
@@ -5241,10 +5330,10 @@ document.getElementById('btn-element-preset-from-target').addEventListener('clic
 
 document.getElementById('btn-import-element-presets').addEventListener('click', async () => {
   const targetId = _elementPresetsTargetId();
-  const presets = getElementPresets().filter(p => _elementPresetsChecked.has(p.id));
-  if (!targetId || presets.length === 0) return;
+  const texts = _elementPresetsTextsToImport();
+  if (!targetId || texts.length === 0) return;
   await _bingoEnsureFoldersLoaded([targetId]);
-  const added = importElementTexts(presets.flatMap(p => p.elements || []), targetId);
+  const added = importElementTexts(texts, targetId);
   closeElementPresetsModal();
   if (added === 0) uiAlert('Toutes les cases existent déjà dans ce dossier.', 'Preset cases');
 });
@@ -5289,10 +5378,37 @@ function _renderElementPresetEditList() {
   if (window.lucide) lucide.createIcons();
 }
 
+// Met à jour sur place les cases à cocher du volet droit (sans re-rendre la liste ni rejouer son animation).
+function _syncElementPresetCaseChecks() {
+  if (!_elementPresetEditId) return;
+  document.querySelectorAll('#element-preset-edit-list .element-preset-case-check').forEach(cb => {
+    cb.checked = _isElementPresetCaseChecked(_elementPresetEditId, cb.dataset.key);
+  });
+}
+
 function _buildElementPresetEditItem(text, idx) {
   const li = document.createElement('li');
   li.className = 'element-item';
   li.title = 'Clic gauche : renommer';
+
+  // Case à cocher pour importer cette case seule (preset déjà enregistré uniquement : un preset sans
+  // nom n'existe pas encore dans la liste de gauche).
+  const presetId = _elementPresetEditId;
+  if (presetId && getElementPresets().some(p => p.id === presetId)) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'element-preset-case-check';
+    cb.dataset.key = _elementPresetCaseKey(text);
+    cb.checked = _isElementPresetCaseChecked(presetId, text);
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      _setElementPresetCaseChecked(presetId, text, cb.checked);
+      renderElementPresetList(); // case du preset / du dossier (cochée / à moitié) + bouton Importer
+      _syncElementPresetCaseChecks(); // les doublons (même texte) suivent
+    });
+    li.classList.add('has-case-check');
+    li.appendChild(cb);
+  }
 
   const span = document.createElement('span');
   span.className = 'element-text';
@@ -5373,6 +5489,12 @@ function _startEditElementPresetEditText(idx, span, clickEvent) {
     if (newText && newText !== text) {
       _elementPresetEditTexts[idx] = newText;
       _elementPresetEditDates[idx] = Date.now();
+      // Case cochée une à une : la coche suit le nouveau texte (clé = texte).
+      const part = _elementPresetEditId && _elementPresetsPartial.get(_elementPresetEditId);
+      if (part && part.has(_elementPresetCaseKey(text))) {
+        part.delete(_elementPresetCaseKey(text));
+        part.add(_elementPresetCaseKey(newText));
+      }
     }
     _renderElementPresetEditList();
     _commitElementPresetEdit();
@@ -5446,6 +5568,7 @@ function _commitElementPresetEdit() {
     getElementPresets().push(created);
     _bingoSaveIndex();
     _elementPresetEditId = created.id;
+    _renderElementPresetEditList(); // le preset existe désormais : cases à cocher affichées
   }
   _updateElementPresetEditTitle(); // le nom peut avoir changé
   renderElementPresetList(); // nom/nombre de cases à jour dans la liste de gauche
@@ -5610,7 +5733,10 @@ function _suggestionEditingIn(list) {
 
 function addSuggestion() {
   const input = document.getElementById('new-suggestion-input');
-  if (_addSuggestionText(input.value.trim())) input.value = '';
+  if (_addSuggestionText(input.value.trim())) {
+    input.value = '';
+    renderSuggestions(); // le champ sert aussi de recherche : réafficher la liste non filtrée
+  }
 }
 
 // Partagé par le panneau Suggestions et l'onglet Suggestions du panneau Cases (cf addElement).
