@@ -430,8 +430,8 @@ function loadUserPrefs() {
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
     if (prefs.tlActiveFolderId    != null) _tlLocalActiveFolderId   = prefs.tlActiveFolderId;
     if (prefs.tlNoSelection       != null) _tlLocalNoSelection      = !!prefs.tlNoSelection;
-    // Page active — l'app démarre toujours sur l'accueil (sauf lien direct vers une grille/tierlist
-    // en plein écran solo) ; prefs.activePage n'est utilisée que pour les changements d'onglet en cours
+    // Page active — l'app démarre sur l'accueil (sauf lien direct vers une grille/tierlist en plein
+    // écran solo), puis bascule sur la soirée en cours s'il y en a une (_openCurrentEventAtStartupIfNeeded) ; prefs.activePage n'est utilisée que pour les changements d'onglet en cours
     // de session. _userNavigated protège contre le cas où ce .once('value') répond APRÈS que
     // l'utilisateur ait déjà cliqué sur un autre onglet (Dossiers, Bingo…) : sans cette garde, la page
     // était renvoyée de force vers l'accueil en pleine navigation, écrasant le geste de l'utilisateur
@@ -683,6 +683,8 @@ async function _applyPrefsAndRender() {
   // Re-render la Tier List avec la bonne tierlist active
   if (typeof tlRender === 'function') tlRender();
   if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
+  _prefsAppliedOnce = true;
+  _openCurrentEventAtStartupIfNeeded();
 }
 
 // Rattrape le chargement du contenu lourd Bingo (saison du dossier actif) quand l'utilisateur
@@ -1005,6 +1007,8 @@ let _firebaseReady = false;
 // currentEventTierlistId sur un faux négatif dû à cette course entre les deux index Firebase).
 let _tlIndexReady = false;
 let _prefsReady    = false;
+let _startupCeDone = false;     // cf _openCurrentEventAtStartupIfNeeded
+let _prefsAppliedOnce = false;  // _applyPrefsAndRender terminée au moins une fois (awaits compris)
 // activeFolderId est chargé depuis Firebase /users/{uid}/prefs
 let _localActiveFolderId   = null;
 // Dossier actuellement ouvert dans le panneau Dossiers (null = racine) — indépendant de
@@ -7556,6 +7560,7 @@ renameGridInput.addEventListener('keydown', e => {
     navBtns.forEach(b => b.classList.toggle('active', b.dataset.page === target));
     pages.forEach(p => p.classList.toggle('active', p.id === `page-${target}`));
     _currentPage = target;
+    _placePageSwitcher(target);
     // Contenu lourd (grilles/images) chargé "à la demande" (cf _applyPrefsAndRender/listener d'index
     // tierlist, qui ne préchargent plus qu'en arrivant directement sur ces pages) : rattraper le
     // chargement ici si l'utilisateur navigue vers Bingo/Tier List après être arrivé sur l'accueil.
@@ -7589,6 +7594,54 @@ renameGridInput.addEventListener('keydown', e => {
       saveUserPrefs({ activePage: target });
     });
   });
+})();
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Sélecteur de page "LesMichels" (remplace la barre du haut, masquée mais gardée) : même place en haut
+// à gauche sur toutes les pages (position en CSS). Sous "LesMichels" : le nom de la page affichée.
+// Clic = menu des autres pages (via les onglets cachés du header, pour garder leur logique). Petit
+// bouton Profil séparé tout en haut à droite (ouvre le menu Profil habituel).
+// ──────────────────────────────────────────────────────────────────────────────
+function _placePageSwitcher(target) {
+  const lbl = document.getElementById('page-switcher-label');
+  if (lbl) lbl.textContent = ({ folders: 'Dossiers', bingo: 'Bingo', tierlist: 'Tier List' })[target] || '';
+}
+(function setupPageSwitcher() {
+  const sw   = document.getElementById('page-switcher');
+  const menu = document.getElementById('page-switcher-menu');
+  if (!sw || !menu) return;
+  _placePageSwitcher(_currentPage);
+  const openMenuUnder = (m) => {
+    const r = sw.getBoundingClientRect();
+    m.style.top = (r.bottom + 6) + 'px';
+    m.style.left = r.left + 'px';
+    m.style.right = 'auto';
+    m.classList.remove('hidden');
+  };
+  sw.addEventListener('click', e => {
+    e.stopPropagation();
+    document.getElementById('profile-menu')?.classList.add('hidden');
+    if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
+    menu.querySelectorAll('[data-page]').forEach(it => { it.style.display = it.dataset.page === _currentPage ? 'none' : ''; });
+    openMenuUnder(menu);
+  });
+  menu.querySelectorAll('[data-page]').forEach(it => it.addEventListener('click', () => {
+    document.querySelector(`.nav-btn[data-page="${it.dataset.page}"]`)?.click();
+  }));
+  const profileBtn = document.getElementById('page-switcher-profile');
+  profileBtn?.addEventListener('click', e => {
+    e.stopPropagation();
+    menu.classList.add('hidden');
+    const profileMenu = document.getElementById('profile-menu');
+    if (!profileMenu) return;
+    if (!profileMenu.classList.contains('hidden')) { profileMenu.classList.add('hidden'); return; }
+    const r = profileBtn.getBoundingClientRect();
+    profileMenu.style.top = (r.bottom + 6) + 'px';
+    profileMenu.style.left = 'auto';
+    profileMenu.style.right = (window.innerWidth - r.right) + 'px';
+    profileMenu.classList.remove('hidden');
+  });
+  document.addEventListener('click', () => menu.classList.add('hidden'));
 })();
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -14406,6 +14459,7 @@ function _tlStartTierlistListeners() {
       _applySoloTierlistModeIfNeeded();
       _applyCompareTierlistModeIfNeeded();
       tlRender();
+      _openCurrentEventAtStartupIfNeeded();
       // Page Dossiers déjà affichée avant l'arrivée de cet index (ex. clic sur "Dossiers" pendant que
       // l'index tierlist était encore en vol) : re-rendre pour ne pas laisser "Templates récents" figé
       // sur son premier rendu incomplet (cf _tlRenderRecentFolderPaths).
@@ -14456,6 +14510,51 @@ function _homeGoToTlTierlist(tl) {
   saveUserPrefs({ activePage: 'tierlist', tlActiveTierlistId: root.id, tlNoSelection: false });
   tlRender();
 }
+
+// Ouverture de l'appli : aller directement sur la soirée en cours s'il y en a une (sinon on reste sur
+// Dossiers), une seule fois par chargement. Attend les prefs (qui fixent le bingo/la liste actifs) et
+// l'index Bingo (qui porte la soirée en cours), plus l'index Tier List si la soirée est une liste —
+// appelée à la fin de _applyPrefsAndRender et du premier rendu de l'index Tier List. Jamais si
+// l'utilisateur a déjà changé de page entre-temps, ni sur un lien direct plein écran/comparaison.
+function _openCurrentEventAtStartupIfNeeded() {
+  // _prefsAppliedOnce : ne jamais changer de page pendant qu'_applyPrefsAndRender est encore en cours
+  // (son rendu de fin suppose la page qu'elle a vue au départ). Index Tier List toujours attendu : la
+  // page affichée au démarrage (même Dossiers) doit être complète avant d'apparaître (cf _revealApp).
+  if (_startupCeDone || !_prefsReady || !_firebaseReady || !_prefsAppliedOnce || !_tlIndexReady) return;
+  _startupCeDone = true;
+  if (_userNavigated || _soloGridIds.length > 0 || _soloTierlistId || _compareTierlistIds.length >= 2) { _revealApp(); return; }
+  const tl = state.currentEventTierlistId
+    ? tlState.tierlists.find(t => t.id === state.currentEventTierlistId && !t.archived) : null;
+  if (tl) {
+    // Liste active posée AVANT le changement de page, pour que son contenu soit chargé par _switchPage.
+    const rootId = _tlGroupRoot(tl).id;
+    _tlLocalActiveTierlistId = rootId;
+    _tlLocalNoSelection = false;
+    _homeGoToTlTierlist(tl);
+    _tlEnsureGroupLoaded(rootId).catch(() => {}).then(_revealApp);
+    return;
+  }
+  const folderId = state.currentEventFolderId;
+  const folder = folderId ? findFolderById(state.folders, folderId) : null;
+  if (!folder || folder.archived) { _revealApp(); return; }
+  _homeGoToBingoFolder(folderId)
+    .then(() => _bingoEnsureSeasonLoaded(folderId))
+    .catch(() => {}).then(_revealApp);
+}
+
+// Affiche la page (cachée au démarrage par body.app-loading) : après le rendu de la page de départ,
+// une image plus tard pour laisser les derniers rendus (grilles, images) se poser. Filet de sécurité :
+// affichée quoi qu'il arrive au bout de 10 s (connexion lente, erreur de chargement…), mais pas
+// tant que la fenêtre de connexion est ouverte (elle reste visible, la page derrière n'a rien à montrer).
+function _revealApp() {
+  requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.remove('app-loading')));
+}
+setTimeout(function _revealAppFallback() {
+  if (!document.body.classList.contains('app-loading')) return;
+  const authOpen = !document.getElementById('modal-auth')?.classList.contains('hidden');
+  if (authOpen) { setTimeout(_revealAppFallback, 10000); return; }
+  document.body.classList.remove('app-loading');
+}, 10000);
 
 function _homeRenderHero() {
   const btn = document.getElementById('home-btn-current-event');

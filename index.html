@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=347" />
+  <link rel="stylesheet" href="style.css?v=350" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -21,7 +21,9 @@
   <!-- JSZip (export "Exporter images" en .zip) -->
   <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
-<body>
+<!-- header-removed : barre du haut masquée (code gardé). Retirer cette classe pour la remettre.
+     app-loading : page invisible tant que les données ne sont pas chargées (retirée par _revealApp). -->
+<body class="header-removed app-loading">
 
   <header class="header">
     <div class="header-inner">
@@ -46,17 +48,33 @@
       <div id="user-badge" class="user-badge hidden">
         <button id="btn-profile" class="btn-profile-header" title="Profil"><i data-lucide="user"></i> Profil</button>
       </div>
-      <!-- Menu Profil (clic sur #btn-profile) -->
-      <div id="profile-menu" class="ctx-menu hidden">
-        <button class="ctx-menu-item" id="btn-open-prefs"><i data-lucide="settings"></i> Préférences</button>
-        <button class="ctx-menu-item ctx-danger" id="btn-signout"><i data-lucide="log-out"></i> Se déconnecter</button>
-      </div>
-
     </div>
     <!-- Petite flèche centrée sous la barre : replie/déplie la barre du haut (toutes les pages,
          état mémorisé sur l'appareil, cf _setHeaderCollapsed). -->
     <button class="header-toggle" id="btn-header-toggle" title="Replier/déplier la barre du haut"><i data-lucide="chevron-up"></i></button>
   </header>
+
+  <!-- Menu Profil (clic sur #btn-profile ou sur "Profil" du sélecteur de page). Sorti du header :
+       celui-ci est masqué (body.header-removed), un menu à l'intérieur ne s'afficherait plus. -->
+  <div id="profile-menu" class="ctx-menu hidden">
+    <button class="ctx-menu-item" id="btn-open-prefs"><i data-lucide="settings"></i> Préférences</button>
+    <button class="ctx-menu-item ctx-danger" id="btn-signout"><i data-lucide="log-out"></i> Se déconnecter</button>
+  </div>
+
+  <!-- Sélecteur de page : remplace la barre du haut (masquée mais gardée). "LesMichels" + nom de la
+       page affichée ; clic = menu des autres pages. Même place en haut à gauche sur toutes les pages
+       (position absolue, cf .page-switcher). -->
+  <button class="page-switcher" id="page-switcher">
+    <span class="logo"><span class="logo-les">Les</span><span class="logo-michels">Michels</span></span>
+    <span class="page-switcher-sub"><span id="page-switcher-label">Dossiers</span><i data-lucide="chevron-down"></i></span>
+  </button>
+  <div id="page-switcher-menu" class="ctx-menu hidden">
+    <button class="ctx-menu-item" data-page="folders">Dossiers</button>
+    <button class="ctx-menu-item" data-page="bingo">Bingo</button>
+    <button class="ctx-menu-item" data-page="tierlist">Tier List</button>
+  </div>
+  <!-- Petit bouton Profil tout en haut à droite (remplace celui de la barre du haut) : ouvre #profile-menu. -->
+  <button class="btn-profile-header page-profile-btn" id="page-switcher-profile"><i data-lucide="user"></i> Profil</button>
 
   <main class="main">
 
@@ -1291,6 +1309,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=492"></script>
+  <script src="app.js?v=496"></script>
 </body>
 </html>

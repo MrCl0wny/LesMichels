@@ -134,6 +134,73 @@ body.header-collapsed .bingo-left-col { top: 12px; }
   flex: 1;
   justify-content: center;
 }
+/* ── Barre du haut retirée (code gardé au cas où) : body.header-removed dans index.html. Les
+   hauteurs/positions reprennent celles d'une page sans header (prioritaires sur header-collapsed). ── */
+body.header-removed .header { display: none; }
+body.header-removed .main { padding-top: 12px; }
+body.header-removed .folders-page { height: calc(100vh - 52px); }
+body.header-removed .cases-sidebar,
+body.header-removed .bingo-left-col { top: 12px; }
+body.header-removed .cases-sidebar { max-height: calc(100vh - 24px); }
+
+/* ── Sélecteur de page "LesMichels" (remplace la barre du haut) : même place en haut à gauche sur
+   toutes les pages, centré verticalement sur la rangée des gros boutons (Dossiers, Bingo). Sur Tier
+   List (pas de gros boutons), la page descend pour lui laisser sa rangée. ── */
+.page-switcher {
+  position: absolute;
+  top: 46px;
+  left: 12px;
+  transform: translateY(-50%);
+  z-index: 50;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  line-height: 1.15;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.page-switcher:hover { background: var(--surface-2); border-color: var(--border); }
+.page-switcher .logo { cursor: pointer; }
+/* Nom de la page : même police, taille et couleur que "Les" (.logo-les). */
+.page-switcher-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: Arial, sans-serif;
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.page-switcher-sub svg { width: 16px; height: 16px; }
+body.header-removed:not(.solo-tierlist-mode):not(.compare-tierlist-mode) #page-tierlist { padding-top: 72px; }
+/* Petit bouton Profil tout en haut à droite (style de l'ancien bouton du header, .btn-profile-header). */
+.btn-profile-header.page-profile-btn {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 50;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 0.8rem;
+}
+/* Au démarrage, rien n'est affiché tant que les données ne sont pas chargées (cf _revealApp).
+   visibility (pas display:none) : la mise en page reste calculée, les tailles des grilles sont justes. */
+body.app-loading .main,
+body.app-loading .page-switcher,
+body.app-loading .page-profile-btn { visibility: hidden; }
+body.solo-grid-mode .page-switcher,
+body.solo-grid-mode .page-profile-btn,
+body.solo-tierlist-mode .page-switcher,
+body.solo-tierlist-mode .page-profile-btn,
+body.compare-tierlist-mode .page-switcher,
+body.compare-tierlist-mode .page-profile-btn { display: none; }
+
 .nav { display: flex; gap: 6px; }
 .nav-btn {
   background: none;
