@@ -1143,6 +1143,7 @@ function renderCurrentEventButton() {
       // rendu) : tl introuvable ne veut PAS dire "supprimée" ici — ne rien nettoyer, réessayer au
       // prochain rendu (déclenché par l'arrivée de l'index tierlist, cf _tlStartTierlistListeners).
       btn.style.display = 'none';
+      _updateBingoHeroCeBtn();
       return;
     }
     // TL introuvable ou archivée (index tierlist bien chargé) — nettoyer
@@ -1190,6 +1191,7 @@ function _placeCeSetHeaderBtn() {
 // État (grisé si la page active est déjà la soirée en cours) dépend de la page affichée —
 // appelé à chaque renderCurrentEventButton(), indépendamment de la branche bingo/tierlist qui a matché.
 function _updateCeSetHeaderBtn() {
+  _updateBingoHeroCeBtn();
   const ceSet = document.getElementById('btn-ce-set-header');
   if (!ceSet) return;
   const onFoldersPage = document.getElementById('page-folders')?.classList.contains('active');
@@ -1209,7 +1211,41 @@ function _updateCeSetHeaderBtn() {
     isCurrentEvent = _localActiveFolderId && state.currentEventFolderId === _localActiveFolderId;
   }
   ceSet.classList.toggle('ce-set-disabled', !!isCurrentEvent);
+  // Une AUTRE soirée est en cours (bouton du header affiché, déjà nettoyé des soirées introuvables) :
+  // texte blanc + fond opaque (cf .ce-set-other).
+  const ceHeaderShown = document.getElementById('btn-current-event')?.style.display !== 'none';
+  ceSet.classList.toggle('ce-set-other', ceHeaderShown && !isCurrentEvent);
 }
+
+// Gros bouton soirée en cours de la page Bingo, à droite de Chemin : visible seulement si une soirée
+// est en cours ET que ce n'est pas celle affichée. Suit l'état du bouton du header (calculé juste
+// avant par renderCurrentEventButton) : même libellé, même navigation.
+function _updateBingoHeroCeBtn() {
+  const heroBtn = document.getElementById('bingo-hero-current-event');
+  const headerBtn = document.getElementById('btn-current-event');
+  if (!heroBtn || !headerBtn) return;
+  const show = headerBtn.style.display !== 'none' && !headerBtn.classList.contains('ce-nav-disabled');
+  heroBtn.style.display = show ? 'inline-flex' : 'none';
+  if (!show) return;
+  const lbl = document.getElementById('bingo-hero-ce-label');
+  if (lbl) lbl.textContent = document.getElementById('btn-current-event-label')?.textContent || '';
+}
+document.getElementById('bingo-hero-current-event')?.addEventListener('click', () => {
+  document.getElementById('btn-ce-navigate')?.click();
+});
+
+// Petite flèche sous la barre du haut : replie/déplie la barre (toutes les pages), état mémorisé sur
+// l'appareil. La place disponible change sans 'resize' natif : on en déclenche un pour que grilles
+// Bingo, cadres Tier List et panneaux latéraux se recalculent.
+function _setHeaderCollapsed(collapsed) {
+  document.body.classList.toggle('header-collapsed', collapsed);
+  try { localStorage.setItem('headerCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+  window.dispatchEvent(new Event('resize'));
+}
+try { if (localStorage.getItem('headerCollapsed') === '1') document.body.classList.add('header-collapsed'); } catch (e) {}
+document.getElementById('btn-header-toggle')?.addEventListener('click', () => {
+  _setHeaderCollapsed(!document.body.classList.contains('header-collapsed'));
+});
 
 function setCurrentEventFolder(id) {
   if (state.currentEventFolderId === id) {
@@ -2210,7 +2246,7 @@ function renderElements() {
   // Onglet Suggestions : liste partagée du dossier (filtrée par la recherche, pas par tag).
   const suggestions = _bingoSortedSuggestions(searchText);
   const tabSuggestions = document.querySelector('.tab-btn[data-tab="suggestions"]');
-  if (tabSuggestions) tabSuggestions.textContent = `Suggestions (${suggestions.length})`;
+  if (tabSuggestions) tabSuggestions.textContent = `Idées (${suggestions.length})`;
   if (!_suggestionEditingIn(listSuggestions)) {
     listSuggestions.innerHTML = '';
     suggestions.forEach(sg => listSuggestions.appendChild(_buildSuggestionItem(sg, true)));
@@ -2593,12 +2629,27 @@ if (_btnPathDropdown && _pathDropdownMenu) {
       _pathDropdownMenu.classList.add('hidden');
     } else {
       _pathDropdownMenu.classList.remove('hidden');
-      _positionPathMenu(_pathDropdownMenu, _btnPathDropdown);
+      // Sous le gros bouton Chemin (aligné sur son bord gauche), pas à sa droite comme côté Tier List.
+      const aRect = _btnPathDropdown.getBoundingClientRect();
+      _pathDropdownMenu.style.left = aRect.left + 'px';
+      _pathDropdownMenu.style.top = (aRect.bottom + 4) + 'px';
+      _pathDropdownMenu.style.maxHeight = (window.innerHeight - aRect.bottom - 16) + 'px';
+      requestAnimationFrame(() => {
+        const rect = _pathDropdownMenu.getBoundingClientRect();
+        if (rect.right > window.innerWidth - 8) _pathDropdownMenu.style.left = Math.max(8, window.innerWidth - 8 - rect.width) + 'px';
+      });
       _renderPathMenuRows(_pathDropdownMenu, state.folders, true);
     }
   });
   _pathDropdownMenu.addEventListener('click', e => e.stopPropagation());
   document.addEventListener('click', () => _pathDropdownMenu.classList.add('hidden'));
+  // Clic droit : menu d'options du dossier affiché (même menu que la page Dossiers).
+  _btnPathDropdown.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    _pathDropdownMenu.classList.add('hidden');
+    const f = activeFolder();
+    if (f) _openBingoFolderCtxMenu(f, e, null);
+  });
 }
 
 // Tri des dossiers dans les drawers Dossiers (bingo + tierlist) : toujours trié, pas de mode manuel
@@ -2869,8 +2920,8 @@ function openTlSidebar() { openFoldersPage('tierlist'); }
 
 // "+ Bingo" : même mécanisme que "Nouveau Bingo" sur l'ancienne page d'accueil (_homeNewGridAfterFolder) —
 // la modal "Nouveau dossier" affiche en plus sa section grille, dossier + première grille créés en
-// une seule action. Emplacement prérempli = chemin affiché dans la colonne Dossiers Bingo ; on reste
-// sur la page Dossiers après création.
+// une seule action. Emplacement prérempli = chemin affiché dans la colonne Dossiers Bingo ; après
+// création, on part sur la page Bingo, sur le nouveau bingo (cf confirmNewTheme).
 document.getElementById('btn-new-bingo-folder').addEventListener('click', () => {
   _homeNewGridAfterFolder = true;
   openNewThemeModal(_foldersNavFolderId || null, true);
@@ -3850,7 +3901,12 @@ function renderGrid(skipSizeRecalc = false) {
 
   // Un dossier conteneur (jamais de grilles) n'a besoin d'aucun contrôle de gestion des
   // grilles/cases — seuls Chemin et Stats restent pertinents (cf .folder-mode en CSS).
-  document.getElementById('bingo-control-panel')?.classList.toggle('folder-mode', !!s && !_isFolderBingo(s));
+  document.getElementById('page-bingo')?.classList.toggle('folder-mode', !!s && !_isFolderBingo(s));
+  // Le panneau Création reste dans la page en mode dossier (pour mesurer la largeur des boutons, cf
+  // _fitBingoLeftColButtons) : il doit donc y être fermé (ex. bingo supprimé → dossier conteneur affiché).
+  if (s && !_isFolderBingo(s) && _bingoCreationOpen) _setBingoCreationOpen(false, false);
+  // Bleu (comme Création) seulement si les grilles affichées sont à générer ET générables — reposé plus bas.
+  btnGenerate.classList.remove('btn-generate-needed');
 
   // Arrivée sur un bingo (chargement ou changement, y compris sans passer par switchFolder) : Création
   // ouvert s'il reste une grille affichée à générer, fermé sinon. Évalué une seule fois par arrivée,
@@ -3981,6 +4037,7 @@ function renderGrid(skipSizeRecalc = false) {
   btnGenerate.classList.toggle('btn-disabled', !canGenerate);
   // Grilles affichées toutes générées : Générer grisé, mais toujours cliquable (cf .btn-generate-done).
   btnGenerate.classList.toggle('btn-generate-done', !_bingoVisibleGridsNeedGenerate());
+  btnGenerate.classList.toggle('btn-generate-needed', canGenerate && _bingoVisibleGridsNeedGenerate());
 
   const mainGridId = getMainGridId(s.id);
   const hasMainGrid = gridsToShow.length > 1 && !!mainGridId && gridsToShow.some(gx => gx.id === mainGridId);
@@ -4060,7 +4117,23 @@ function renderGrid(skipSizeRecalc = false) {
 // pendant que la hauteur est bridée, les cellules deviennent plus hautes que l'espace
 // alloué et se chevauchent. Il faut donc calculer le côté du carré (min de la largeur
 // et de la hauteur réellement disponibles) et fixer explicitement width ET height.
+// Colonne de gauche Bingo : tous ses boutons (cadre du haut, Création, panneau Création, même fermé)
+// prennent la largeur naturelle du plus long (--bingo-btn-w, cf CSS) — le cadre du haut garde ainsi
+// toujours la même taille. Les boutons masqués (display:none) mesurent 0 et sont ignorés. Rien à faire
+// page Bingo masquée (tout mesurerait 0) : refait au prochain rendu.
+function _fitBingoLeftColButtons() {
+  const col = document.getElementById('bingo-left-col');
+  if (!col || !col.offsetParent) return;
+  const els = col.querySelectorAll('.bingo-tools-frame > .btn-action, #btn-bingo-creation, #bingo-creation-group > .btn-action, #bingo-creation-group > .btn-ce-set, #bingo-creation-group .lock-group > .btn-action, #global-size-control');
+  els.forEach(el => { el.style.width = 'max-content'; });
+  let w = 0;
+  els.forEach(el => { w = Math.max(w, el.getBoundingClientRect().width); });
+  els.forEach(el => { el.style.width = ''; });
+  if (w > 0) col.style.setProperty('--bingo-btn-w', Math.ceil(w) + 'px');
+}
+
 function _adjustBingoGridSizes() {
+  _fitBingoLeftColButtons();
   document.querySelectorAll('.cases-sidebar.open').forEach(_adjustSidebarMaxHeight);
   // Le cadre des grilles (.panel-grid) reprend toute la largeur laissée par les panneaux le temps de
   // la mesure, puis est resserré autour des grilles une fois dimensionnées (cf .bingo-layout-fit) —
@@ -4665,13 +4738,11 @@ function confirmNewTheme() {
     // parent quand un emplacement autre que la racine est choisi (les grilles n'étaient alors jamais créées).
     // Par id : l'objet `folder` est déjà périmé après le _bingoSaveIndex() de createFolder.
     gridNames.forEach(gname => createGrid(gname, folder.id, MAX_SIZE));
-    if (stayOnFoldersPage) {
-      // Le bingo a maintenant des grilles : re-rendre pour qu'il apparaisse dans "Bingos récents".
-      renderFoldersPanelTree();
-    } else if (typeof _homeGoToBingoFolder === 'function') {
-      // Rejoindre directement le Bingo qu'on vient de créer (comme "Rejoindre Bingo").
-      _homeGoToBingoFolder(folder.id);
-    }
+    // Nouveau bingo : cadre Cases toujours sur l'onglet "Actives".
+    document.querySelector('.tab-btn[data-tab="active"]')?.click();
+    // Rejoindre directement le Bingo qu'on vient de créer (comme "Rejoindre Bingo"), y compris depuis
+    // la page Dossiers (demandé 2026-11-05 ; avant, on y restait).
+    if (typeof _homeGoToBingoFolder === 'function') _homeGoToBingoFolder(folder.id);
   }
 }
 
@@ -5889,6 +5960,7 @@ function renderSuggestions() {
   // Compteur du bouton principal : nombre total (sans filtre de recherche), même panneau fermé.
   const countEl = document.getElementById('bingo-suggestions-count');
   if (countEl) countEl.textContent = scope ? ` (${_bingoSuggestions.length})` : '';
+  _fitBingoLeftColButtons(); // le compteur change la largeur du bouton Idées
   const panel = document.getElementById('suggestions-panel');
   const list = document.getElementById('suggestions-list');
   if (!panel || !list || !panel.classList.contains('open')) return;
@@ -6788,8 +6860,9 @@ function _setBingoCreationOpen(open, render = true) {
   if (btnCreation) {
     // aria-expanded="true" = mise en évidence bleu clair (cf CSS, même style que .btn-creation-needed)
     btnCreation.setAttribute('aria-expanded', open ? 'true' : 'false');
-    btnCreation.innerHTML = `<i data-lucide="pickaxe"></i> ${open ? 'Quitter création' : 'Création'}`;
+    btnCreation.innerHTML = `<i data-lucide="pickaxe"></i> ${open ? 'Quitter' : 'Création'}`;
     if (window.lucide) lucide.createIcons({ root: btnCreation });
+    _fitBingoLeftColButtons();
   }
   // Les boutons par grille (générer/vider) ne sont visibles que Création ouvert (cf CSS).
   document.getElementById('page-bingo')?.classList.toggle('creation-open', open);
@@ -7088,6 +7161,15 @@ if (btnNewGridMain) {
     openDuplicateFolderModal(_localActiveFolderId);
   });
 }
+
+// Supprimer (panneau Création) : envoie le bingo affiché dans la corbeille, même modal de confirmation
+// et même suppression que "Supprimer" du menu d'options d'un dossier.
+document.getElementById('btn-delete-bingo')?.addEventListener('click', () => {
+  const f = activeFolder();
+  if (!f || !_isFolderBingo(f)) return;
+  const id = f.id;
+  confirmDelete(`le bingo "${f.name}"`, () => deleteFolder(id));
+});
 
 const _btnCeNavigate = document.getElementById('btn-ce-navigate');
 if (_btnCeNavigate) {
