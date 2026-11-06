@@ -2172,6 +2172,168 @@ let _renameGridId  = null;
 // par case) : inutile de le faire pendant que le panneau est fermé et invisible.
 // On le rattrape via openCasesPanel() qui force un render à l'ouverture.
 let _casesPanelDirty = false;
+
+// ── Sélection (cases à cocher) du panneau Cases ──
+// Ids cochés dans l'onglet affiché (cases Actives/Archivées, ou idées dans l'onglet Idées). État local
+// uniquement (jamais écrit dans Firebase), vidé à chaque changement d'onglet ; les ids qui n'existent
+// plus dans l'onglet (case supprimée/déplacée, autre bingo, idée retirée par un autre) sont retirés à
+// chaque renderElements(). Une case cochée puis masquée par le filtre Tag/recherche reste cochée.
+const _casesSel = new Set();
+function _casesCurrentTab() {
+  return document.querySelector('.elements-tabs .tab-btn.active')?.dataset.tab || 'active';
+}
+function _casesCurrentList() {
+  const tab = _casesCurrentTab();
+  return tab === 'archived' ? listArchived : tab === 'suggestions' ? listSuggestions : listActive;
+}
+// Tous les ids de l'onglet, sans tenir compte du filtre Tag/recherche.
+function _casesTabIds(tab) {
+  if (tab === 'suggestions') return new Set(_bingoSuggestions.map(sg => sg.id));
+  const s = activeSubtheme();
+  if (!s) return new Set();
+  const arch = new Set(s.archivedElementIds || []);
+  return new Set((s.elements || []).filter(e => (tab === 'archived') === arch.has(e.id)).map(e => e.id));
+}
+function _hideCasesBulkConfirm() {
+  document.getElementById('cases-bulk-confirm')?.classList.add('hidden');
+}
+function _clearCasesSel() {
+  _casesSel.clear();
+  document.querySelectorAll('#cases-panel .cases-sel-check').forEach(cb => { cb.checked = false; });
+  _hideCasesBulkConfirm();
+  _updateCasesBulkUI();
+}
+// Boutons Activer/Archiver/Supprimer : non cliquables sans sélection, ou quand les cases sont déjà
+// dans l'onglet visé (Activer dans Actives, Archiver dans Archivées). "Tout" : coché si toutes les
+// cases visibles le sont, à moitié si une partie seulement.
+function _updateCasesBulkUI() {
+  const tab = _casesCurrentTab();
+  const n = _casesSel.size;
+  const btnAct = document.getElementById('btn-cases-activate');
+  const btnArc = document.getElementById('btn-cases-archive');
+  const btnDel = document.getElementById('btn-cases-delete');
+  if (btnAct) btnAct.disabled = !n || tab === 'active';
+  if (btnArc) btnArc.disabled = !n || tab === 'archived';
+  if (btnDel) btnDel.disabled = !n;
+  const selAll = document.getElementById('cases-select-all');
+  if (!selAll) return;
+  const visIds = [..._casesCurrentList().querySelectorAll(':scope > .element-item[data-id]')].map(li => li.dataset.id);
+  const nVisSel = visIds.filter(id => _casesSel.has(id)).length;
+  selAll.disabled = !visIds.length;
+  selAll.checked = visIds.length > 0 && nVisSel === visIds.length;
+  selAll.indeterminate = nVisSel > 0 && nVisSel < visIds.length;
+}
+// Case à cocher en tête d'une ligne du panneau Cases (case ou idée). Le clic ne déclenche pas le
+// renommage (clic gauche sur la ligne).
+function _addCasesSelCheck(li, id) {
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'cases-sel-check';
+  cb.checked = _casesSel.has(id);
+  cb.addEventListener('click', e => e.stopPropagation());
+  cb.addEventListener('change', () => {
+    if (cb.checked) _casesSel.add(id); else _casesSel.delete(id);
+    _hideCasesBulkConfirm();
+    _updateCasesBulkUI();
+  });
+  li.classList.add('has-case-check');
+  li.insertBefore(cb, li.firstChild);
+}
+// Vide les cellules des grilles du dossier qui contiennent une des cases (comme archiveElement/deleteElement).
+function _emptyCellsOfElements(s, idSet) {
+  if (!idSet.size) return;
+  (s.grids || []).forEach(g => {
+    g.grid = g.grid.map(cell =>
+      idSet.has(cell.elementId) ? { elementId: null, checked: false, color: null } : cell
+    );
+  });
+}
+// Activer (toArchived=false) / Archiver (true) les cases cochées — ou, dans l'onglet Idées, placer les
+// idées cochées dans les cases (même règle que _placeSuggestion : pas de doublon de texte, une case
+// existante est juste passée dans l'onglet visé ; les idées placées sont retirées pour tout le monde).
+// Un seul enregistrement et un seul rendu pour toute la sélection.
+function _casesBulkMove(toArchived) {
+  const s = activeSubtheme();
+  const tab = _casesCurrentTab();
+  const ids = [..._casesSel];
+  if (!s || !ids.length) return;
+  if (!s.archivedElementIds) s.archivedElementIds = [];
+  const toEmpty = new Set();
+  const setArchived = (elId, archived) => {
+    const isArch = s.archivedElementIds.includes(elId);
+    if (archived && !isArch) { s.archivedElementIds.push(elId); toEmpty.add(elId); }
+    else if (!archived && isArch) s.archivedElementIds = s.archivedElementIds.filter(x => x !== elId);
+  };
+  const placedSuggestionIds = [];
+  if (tab === 'suggestions') {
+    if (!s.elements) s.elements = [];
+    ids.forEach(id => {
+      const sg = _bingoSuggestions.find(x => x.id === id);
+      if (!sg) return;
+      const key = sg.text.trim().toLowerCase();
+      const existing = s.elements.find(e => e.text.trim().toLowerCase() === key);
+      if (existing) {
+        setArchived(existing.id, toArchived);
+      } else {
+        const newId = uid();
+        s.elements.push({ id: newId, text: sg.text });
+        if (toArchived) s.archivedElementIds.push(newId);
+      }
+      placedSuggestionIds.push(id);
+    });
+  } else {
+    const existingIds = new Set((s.elements || []).map(e => e.id));
+    ids.filter(id => existingIds.has(id)).forEach(id => setArchived(id, toArchived));
+  }
+  _emptyCellsOfElements(s, toEmpty);
+  _casesSel.clear();
+  _hideCasesBulkConfirm();
+  _bingoSaveFolder(s.id);
+  if (placedSuggestionIds.length) _deleteSuggestions(placedSuggestionIds);
+  renderElements();
+  renderGrid();
+}
+// Supprimer les cases cochées (vidées des grilles, comme deleteElement) ou, dans l'onglet Idées,
+// les idées cochées (pour tout le monde). Appelé après la confirmation inline.
+function _casesBulkDelete() {
+  const tab = _casesCurrentTab();
+  const ids = [..._casesSel];
+  _casesSel.clear();
+  _hideCasesBulkConfirm();
+  if (!ids.length) { _updateCasesBulkUI(); return; }
+  if (tab === 'suggestions') {
+    _deleteSuggestions(ids);
+    renderElements();
+    return;
+  }
+  const s = activeSubtheme();
+  if (!s) return;
+  const idSet = new Set(ids);
+  s.elements = (s.elements || []).filter(e => !idSet.has(e.id));
+  s.archivedElementIds = (s.archivedElementIds || []).filter(id => !idSet.has(id));
+  _emptyCellsOfElements(s, idSet);
+  _bingoSaveFolder(s.id);
+  renderElements();
+  renderGrid();
+}
+
+// Met dans la ligne invisible .cases-width-sizer le texte le plus large (mesuré au canvas, même police
+// que les cases) : elle donne sa largeur au panneau Cases (cf CSS #cases-panel).
+let _casesWidthCtx = null;
+function _updateCasesWidthSizer(texts) {
+  const el = document.getElementById('cases-width-sizer-text');
+  if (!el) return;
+  if (!_casesWidthCtx) _casesWidthCtx = document.createElement('canvas').getContext('2d');
+  const cs = getComputedStyle(el);
+  _casesWidthCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  let best = '', bestW = -1;
+  texts.forEach(txt => {
+    const w = _casesWidthCtx.measureText(txt).width;
+    if (w > bestW) { bestW = w; best = txt; }
+  });
+  if (el.textContent !== best) el.textContent = best;
+}
+
 function renderElements() {
   const panelEl = document.getElementById('cases-panel');
   if (panelEl && !panelEl.classList.contains('open')) {
@@ -2179,6 +2341,9 @@ function renderElements() {
     return;
   }
   _casesPanelDirty = false;
+  // La largeur du panneau suit la case la plus longue (cf CSS #cases-panel) : si elle change, les
+  // grilles doivent être redimensionnées (voir fin de fonction).
+  const prevPanelW = panelEl ? panelEl.offsetWidth : 0;
   const t = activeTheme();
   const s = activeSubtheme();
   const folderNameEl = document.getElementById('cases-panel-folder-name');
@@ -2190,8 +2355,17 @@ function renderElements() {
     listArchived.innerHTML = '';
     listSuggestions.innerHTML = '';
     elementCount.textContent = '0';
+    _casesSel.clear();
+    _hideCasesBulkConfirm();
+    _updateCasesBulkUI();
+    _updateCasesWidthSizer([]);
     return;
   }
+  // Retirer de la sélection ce qui n'est plus dans l'onglet affiché.
+  const tabIds = _casesTabIds(_casesCurrentTab());
+  let selPruned = false;
+  [..._casesSel].forEach(id => { if (!tabIds.has(id)) { _casesSel.delete(id); selPruned = true; } });
+  if (selPruned) _hideCasesBulkConfirm();
   const archivedIds = s.archivedElementIds || [];
   const sElems = s.elements || [];
 
@@ -2203,7 +2377,7 @@ function renderElements() {
   if (filterSelect) {
     const tags = [...new Set(sElems.flatMap(tagsOf))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     const prevValue = filterSelect.value;
-    filterSelect.innerHTML = '<option value="">Tous les tags</option>';
+    filterSelect.innerHTML = '<option value="">Tous</option>';
     tags.forEach(tag => {
       const opt = document.createElement('option');
       opt.value = tag;
@@ -2256,6 +2430,9 @@ function renderElements() {
     suggestions.forEach(sg => listSuggestions.appendChild(_buildSuggestionItem(sg, true)));
   }
   if (window.lucide) lucide.createIcons();
+  _updateCasesBulkUI();
+  _updateCasesWidthSizer(sElems.map(e => e.text).concat(_bingoSuggestions.map(sg => sg.text)));
+  if (panelEl && panelEl.offsetWidth !== prevPanelW) _adjustBingoGridSizes();
 }
 
 // Équivalent de _patchCellsAfterCheck() (cf buildSingleGrid) mais pour le panneau latéral "Cases" :
@@ -2290,10 +2467,11 @@ function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
 
   li.className = 'element-item' + (isArchived ? ' archived' : '') + (isChecked ? ' elem-checked' : '');
   li.dataset.id = el.id;
-  li.title = 'Clic gauche : renommer · Clic droit : ' + (isArchived ? 'restaurer, supprimer' : 'archiver, supprimer');
+  li.title = 'Clic gauche : renommer';
 
-  // Colonne de gauche (grid) : texte, peut wrapper librement.
-  // Colonne de droite, réservée exclusivement au menu "..." (voir plus bas).
+  // Texte (peut wrapper librement), après la case à cocher (_addCasesSelCheck). Plus de menu ⋮ ni de
+  // clic droit (retirés sur demande : Activer/Archiver/Supprimer passent par les cases cochées ;
+  // "Ajouter à un preset" retiré avec, accepté par l'utilisateur).
   const content = document.createElement('span');
   content.className = 'element-item-content';
   li.appendChild(content);
@@ -2304,33 +2482,13 @@ function buildElementItem(el, isArchived, nonArchivedGrids, visGrids) {
   span.style.cursor = 'text';
   content.appendChild(span);
 
-  // Bouton "..." options — colonne de droite fixe, à part du contenu wrappable.
-  const menuBtn = document.createElement('button');
-  menuBtn.className = 'elem-menu-btn';
-  menuBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-  menuBtn.title = 'Options';
-  menuBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    if (!isArchived) {
-      openCtxMenuElement(el.id, span, e, li);
-    } else {
-      openCtxMenuElementArchived(el.id, e, li);
-    }
-  });
-  li.appendChild(menuBtn);
-
   // Clic gauche sur la ligne : renommer la case
   li.addEventListener('click', (e) => {
     e.stopPropagation();
     startEditElement(el.id, span, e);
   });
 
-  if (!isArchived) {
-    li.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuElement(el.id, span, e, li); });
-  } else {
-    li.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); openCtxMenuElementArchived(el.id, e, li); });
-  }
-
+  _addCasesSelCheck(li, el.id);
   return li;
 }
 
@@ -2365,15 +2523,15 @@ function startEditElement(id, span, clickEvent) {
   };
   textarea.addEventListener('input', autoResize);
 
-  const rect = span.getBoundingClientRect();
+  // Curseur exactement au caractère cliqué (mesuré avant le remplacement) ; clic hors du texte
+  // (marge de la ligne) : à la fin.
+  const caret = clickEvent ? _tlCaretOffsetFromClick(span, clickEvent.clientX, clickEvent.clientY) : null;
   span.replaceWith(textarea);
   textarea.focus();
   autoResize();
 
   if (clickEvent) {
-    const clickX = clickEvent.clientX - rect.left;
-    const charWidth = rect.width / el.text.length;
-    const position = Math.round(clickX / charWidth);
+    const position = caret !== null ? caret : textarea.value.length;
     textarea.setSelectionRange(position, position);
   } else {
     textarea.select();
@@ -5587,15 +5745,14 @@ function _startEditElementPresetEditText(idx, span, clickEvent) {
   };
   textarea.addEventListener('input', autoResize);
 
-  const rect = span.getBoundingClientRect();
+  // Curseur exactement au caractère cliqué (cf startEditElement).
+  const caret = clickEvent ? _tlCaretOffsetFromClick(span, clickEvent.clientX, clickEvent.clientY) : null;
   span.replaceWith(textarea);
   textarea.focus();
   autoResize();
 
   if (clickEvent) {
-    const clickX = clickEvent.clientX - rect.left;
-    const charWidth = rect.width / text.length;
-    const position = Math.round(clickX / charWidth);
+    const position = caret !== null ? caret : textarea.value.length;
     textarea.setSelectionRange(position, position);
   } else {
     textarea.select();
@@ -5684,7 +5841,37 @@ tabBtns.forEach(btn => {
     listActive.classList.toggle('hidden', tab !== 'active');
     listArchived.classList.toggle('hidden', tab !== 'archived');
     listSuggestions.classList.toggle('hidden', tab !== 'suggestions');
+    _clearCasesSel(); // la sélection ne suit pas d'un onglet à l'autre
   });
+});
+
+// Panneau Cases : actions sur les cases cochées de l'onglet affiché.
+document.getElementById('btn-cases-activate')?.addEventListener('click', () => _casesBulkMove(false));
+document.getElementById('btn-cases-archive')?.addEventListener('click', () => _casesBulkMove(true));
+document.getElementById('btn-cases-delete')?.addEventListener('click', () => {
+  const n = _casesSel.size;
+  if (!n) return;
+  const txt = document.getElementById('cases-bulk-confirm-text');
+  if (txt) txt.textContent = _casesCurrentTab() === 'suggestions'
+    ? `Supprimer ${n} idée${n > 1 ? 's' : ''} ?`
+    : `Supprimer ${n} case${n > 1 ? 's' : ''} ?`;
+  document.getElementById('cases-bulk-confirm')?.classList.remove('hidden');
+});
+document.getElementById('btn-cases-bulk-confirm-yes')?.addEventListener('click', _casesBulkDelete);
+document.getElementById('btn-cases-bulk-confirm-no')?.addEventListener('click', _hideCasesBulkConfirm);
+// "Tout" : coche toutes les cases visibles de l'onglet (filtre Tag/recherche compris), ou les
+// décoche toutes si elles l'étaient déjà.
+document.getElementById('cases-select-all')?.addEventListener('change', () => {
+  const list = _casesCurrentList();
+  const checks = [...list.querySelectorAll(':scope > .element-item[data-id] > .cases-sel-check')];
+  const allSel = checks.length > 0 && checks.every(cb => _casesSel.has(cb.parentElement.dataset.id));
+  checks.forEach(cb => {
+    const id = cb.parentElement.dataset.id;
+    if (allSel) _casesSel.delete(id); else _casesSel.add(id);
+    cb.checked = !allSel;
+  });
+  _hideCasesBulkConfirm();
+  _updateCasesBulkUI();
 });
 
 // ──────────────────────────────────────────────
@@ -5839,6 +6026,14 @@ function _deleteSuggestion(id) {
   _dbBingoSuggestions.child(_bingoSuggestionsScopeId).child(id).remove()
     .catch(e => console.warn('Suggestion delete error:', e));
 }
+// Plusieurs idées d'un coup (cases cochées du panneau Cases) : une seule écriture.
+function _deleteSuggestions(ids) {
+  if (!_bingoSuggestionsScopeId || !ids.length) return;
+  const upd = {};
+  ids.forEach(id => { upd[id] = null; });
+  _dbBingoSuggestions.child(_bingoSuggestionsScopeId).update(upd)
+    .catch(e => console.warn('Suggestions delete error:', e));
+}
 
 // Place la suggestion dans les cases du bingo actif (Actives ou Archivées), puis la retire de la
 // liste partagée pour tout le monde. Si une case de même texte existe déjà dans ce bingo, pas de
@@ -5867,9 +6062,8 @@ function _placeSuggestion(id, archived) {
   _deleteSuggestion(id);
 }
 
-// inCasesPanel : onglet Suggestions du panneau Cases (menu ⋯ / clic droit : placer, renommer,
-// supprimer) ; sinon panneau Suggestions (croix de suppression, comme les cases d'un preset).
-// Dans les deux cas, clic gauche sur la ligne = renommer.
+// inCasesPanel : onglet Idées du panneau Cases (case à cocher, pas de menu) ; sinon panneau Idées
+// (croix de suppression, comme les cases d'un preset). Dans les deux cas, clic gauche = renommer.
 function _buildSuggestionItem(sg, inCasesPanel) {
   const li = document.createElement('li');
   li.className = 'element-item';
@@ -5881,38 +6075,24 @@ function _buildSuggestionItem(sg, inCasesPanel) {
   span.style.cursor = 'text';
   li.appendChild(span);
 
-  const btn = document.createElement('button');
-  btn.className = 'elem-menu-btn';
-  if (inCasesPanel) {
-    btn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-    const openMenu = e => {
-      e.preventDefault();
-      e.stopPropagation();
-      closeCtxMenuElement(); closeCtxMenuElementArchived();
-      const { addItem } = _tlMakeCtxMenu(li, e);
-      addItem('circle-plus', 'Ajouter aux actives', false, () => _placeSuggestion(sg.id, false));
-      addItem('package', 'Ajouter aux archivées', false, () => _placeSuggestion(sg.id, true));
-      addItem('pencil', 'Renommer', false, () => {
-        const sp = li.querySelector('.element-text');
-        if (sp) _startEditSuggestion(sg, sp);
-      });
-      addItem('trash-2', 'Supprimer', true, () => _deleteSuggestion(sg.id));
-    };
-    btn.addEventListener('click', openMenu);
-    li.addEventListener('contextmenu', openMenu);
-  } else {
+  // Onglet Idées du panneau Cases : plus de menu ⋮ ni de clic droit (retirés sur demande), tout passe
+  // par les cases cochées (Activer/Archiver/Supprimer). Panneau Idées : croix de suppression.
+  if (!inCasesPanel) {
+    const btn = document.createElement('button');
+    btn.className = 'elem-menu-btn';
     btn.innerHTML = '<i data-lucide="x"></i>';
     btn.addEventListener('click', e => {
       e.stopPropagation();
       _deleteSuggestion(sg.id);
     });
+    li.appendChild(btn);
   }
-  li.appendChild(btn);
 
   li.addEventListener('click', e => {
     e.stopPropagation();
     if (span.isConnected) _startEditSuggestion(sg, span, e);
   });
+  if (inCasesPanel) _addCasesSelCheck(li, sg.id);
   return li;
 }
 
@@ -5943,14 +6123,14 @@ function _startEditSuggestion(sg, span, clickEvent) {
   };
   textarea.addEventListener('input', autoResize);
 
-  const rect = span.getBoundingClientRect();
+  // Curseur exactement au caractère cliqué (cf startEditElement).
+  const caret = clickEvent ? _tlCaretOffsetFromClick(span, clickEvent.clientX, clickEvent.clientY) : null;
   span.replaceWith(textarea);
   textarea.focus();
   autoResize();
 
   if (clickEvent) {
-    const charWidth = rect.width / sg.text.length;
-    const position = Math.round((clickEvent.clientX - rect.left) / charWidth);
+    const position = caret !== null ? caret : textarea.value.length;
     textarea.setSelectionRange(position, position);
   } else {
     textarea.select();
@@ -6188,8 +6368,8 @@ function _renderBingoStatsEpisodesMenu() {
 }
 
 // ── Modal "Grilles" (bouton Grilles du panneau Création) : liste des grilles du bingo — cocher/
-// décocher pour afficher, étoile favorite, bouton ⋮ (Renommer/Supprimer, pas de Dupliquer) — et, en
-// dessous, le formulaire de nouvelle grille (cf openNewGridModal). ──
+// décocher pour afficher, étoile favorite, clic sur le nom = renommer, croix rouge = supprimer (avec
+// confirmation inline) — et, en dessous, le formulaire de nouvelle grille (cf openNewGridModal). ──
 document.getElementById('btn-grids-dropdown')?.addEventListener('click', () => openNewGridModal());
 
 function _renderGridsModalList() {
@@ -6241,10 +6421,45 @@ function _renderGridsModalList() {
     });
     item.appendChild(cb);
 
+    // Clic sur le nom : renommer sur place (Entrée/clic ailleurs valide, Échap annule).
     const nameSpan = document.createElement('span');
     nameSpan.className = 'grid-tab-name';
     nameSpan.textContent = g.name;
-    nameSpan.addEventListener('click', () => cb.click());
+    nameSpan.addEventListener('click', e => {
+      e.stopPropagation();
+      // Position du curseur = caractère cliqué (mesurée sur le texte avant de le remplacer par le champ).
+      let caret = g.name.length;
+      const pos = document.caretPositionFromPoint ? document.caretPositionFromPoint(e.clientX, e.clientY) : null;
+      const rng = !pos && document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+      if (pos && nameSpan.contains(pos.offsetNode)) caret = pos.offset;
+      else if (rng && nameSpan.contains(rng.startContainer)) caret = rng.startOffset;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'grid-tab-rename-input';
+      input.maxLength = 40;
+      input.value = g.name;
+      // Exactement la place du nom (largeur ET hauteur) : la ligne ne change pas de taille en renommant.
+      const r = nameSpan.getBoundingClientRect();
+      input.style.width = r.width + 'px';
+      input.style.height = r.height + 'px';
+      let done = false;
+      const finish = commit => {
+        if (done) return;
+        done = true;
+        const v = input.value.trim();
+        if (commit && v && v !== g.name) renameGrid(g.id, v); // re-rend la liste (renderGridsList)
+        else _renderGridsModalList();
+      };
+      input.addEventListener('click', ev => ev.stopPropagation());
+      input.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); }
+      });
+      input.addEventListener('blur', () => finish(true));
+      nameSpan.replaceWith(input);
+      input.focus();
+      input.setSelectionRange(caret, caret);
+    });
     item.appendChild(nameSpan);
 
     const isMain = getMainGridId(s.id) === g.id;
@@ -6262,15 +6477,32 @@ function _renderGridsModalList() {
     });
     item.appendChild(mainBtn);
 
-    const ctxBtn = document.createElement('button');
-    ctxBtn.className = 'grid-tab-ctx-btn';
-    ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-    ctxBtn.title = 'Options';
-    ctxBtn.addEventListener('click', e => {
+    // Petite croix rouge (remplace le menu ⋮) : supprimer la grille (→ corbeille, cf deleteGrid),
+    // après une confirmation inline sous la ligne (jamais de modal empilé sur le modal Grilles).
+    const delBtn = document.createElement('button');
+    delBtn.className = 'grid-tab-del-btn';
+    delBtn.innerHTML = '<i data-lucide="x"></i>';
+    delBtn.addEventListener('click', e => {
       e.stopPropagation();
-      openCtxMenuGrid(g.id, null, ctxBtn);
+      const already = item.nextElementSibling?.classList.contains('grids-modal-del-confirm');
+      menu.querySelectorAll('.grids-modal-del-confirm').forEach(x => x.remove());
+      if (already) return; // 2e clic sur la croix : referme la confirmation
+      const conf = document.createElement('div');
+      conf.className = 'grids-modal-del-confirm';
+      const txt = document.createElement('span');
+      txt.textContent = `Supprimer « ${g.name} » ?`;
+      const yes = document.createElement('button');
+      yes.className = 'btn-action btn-danger-action';
+      yes.textContent = 'Oui';
+      yes.addEventListener('click', ev => { ev.stopPropagation(); conf.remove(); deleteGrid(g.id); });
+      const no = document.createElement('button');
+      no.className = 'btn-action btn-secondary';
+      no.textContent = 'Non';
+      no.addEventListener('click', ev => { ev.stopPropagation(); conf.remove(); });
+      conf.append(txt, yes, no);
+      item.insertAdjacentElement('afterend', conf);
     });
-    item.appendChild(ctxBtn);
+    item.appendChild(delBtn);
 
     menu.appendChild(item);
   });
@@ -12487,7 +12719,9 @@ function _tlRenderPresetEditTiers() {
     label.style.cursor = 'text';
     label.textContent = tier.label;
     label.title = 'Cliquer pour renommer';
-    label.addEventListener('click', () => {
+    label.addEventListener('click', ev => {
+      // Curseur exactement au caractère cliqué (mesuré avant le remplacement), sinon à la fin.
+      const caret = _tlCaretOffsetFromClick(label, ev.clientX, ev.clientY);
       const input = document.createElement('input');
       input.type = 'text';
       input.className = 'modal-text-input';
@@ -12495,7 +12729,8 @@ function _tlRenderPresetEditTiers() {
       input.style.flex = '1';
       label.replaceWith(input);
       input.focus();
-      input.select();
+      const position = caret !== null ? caret : input.value.length;
+      input.setSelectionRange(position, position);
       const commit = () => {
         const val = input.value.trim();
         if (val) tier.label = val;

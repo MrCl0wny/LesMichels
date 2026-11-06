@@ -350,6 +350,13 @@ body.compare-tierlist-mode .page-profile-btn { display: none; }
 #btn-clear-grids:hover:not(:disabled):not(.btn-disabled),
 #btn-reset:hover:not(:disabled):not(.btn-disabled),
 #btn-delete-bingo:hover { opacity: 1 !important; color: var(--text) !important; }
+/* En cours, Dupliquer et Supprimer retirés du panneau Création (demandé) : masqués, code conservé.
+   #btn-ce-set-header n'est masqué que dans ce panneau (il est déplacé ailleurs sur Tier List). */
+#bingo-creation-group > #btn-ce-set-header,
+#btn-new-grid-main,
+#btn-delete-bingo { display: none !important; }
+/* Plus rien sous le groupe Taille/Générer/Vider/Décocher : pas de séparateur orphelin en bas. */
+#creation-panel #bingo-creation-group .lock-group { border-bottom: none; padding-bottom: 0; }
 /* Le panneau Création suit la colonne (pas de sticky propre). Le cadre du haut et le panneau Création
    ont exactement la même largeur (boutons + padding 8px + bordure 1px de chaque côté) : la colonne
    ne change jamais de largeur, le bouton Création/Quitter ne bouge donc pas. */
@@ -1573,6 +1580,86 @@ body.compare-tierlist-mode #page-tierlist.page.active {
 #btn-clear-elements-panel [data-lucide] { width: 15px; height: 15px; margin-right: 0; }
 #btn-clear-elements-panel { background: #5c2b2b; color: #f3d4d4; }
 #btn-clear-elements-panel:hover { background: #7a3838; }
+/* Activer / Archiver / Supprimer (cases cochées) : même rangée que Preset, texte seul, le plus
+   étroits possible (la rangée fixe la largeur minimale du panneau Cases). */
+.cases-bulk-btn {
+  width: auto;
+  min-width: 0;
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  background: #4b5563;
+  color: #e5e7eb;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Même taille que Preset (hauteur 28px, padding, police, icône) — largeur selon le texte. */
+.cases-bulk-btn { gap: 6px; }
+.cases-bulk-btn [data-lucide] { width: 15px; height: 15px; margin-right: 0; flex-shrink: 0; }
+.cases-bulk-btn:hover { background: #6b7280; }
+/* Preset : dans la rangée du titre du panneau Cases, tout à droite (le titre, flex:1, le pousse). */
+.folders-panel-header #btn-presets-elements-panel { flex: none; height: 28px; }
+.cases-bulk-row { justify-content: center; }
+/* Activer vert (teinte de Grilles), Archiver orange (teinte de Dupliquer). */
+.cases-bulk-btn.cases-bulk-activate { background: #14532d; color: #dcfce7; }
+.cases-bulk-btn.cases-bulk-activate:hover { background: #15803d; color: #fff; }
+.cases-bulk-btn.cases-bulk-archive { background: #7c2d12; color: #ffedd5; }
+.cases-bulk-btn.cases-bulk-archive:hover { background: #c2410c; color: #fff; }
+.cases-bulk-btn.cases-bulk-delete { background: #5c2b2b; color: #f3d4d4; }
+.cases-bulk-btn.cases-bulk-delete:hover { background: #7a3838; }
+.cases-bulk-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+.cases-bulk-confirm { margin: -6px 0 14px; }
+/* "Tout" : coche/décoche toutes les cases visibles de l'onglet affiché. */
+.cases-select-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+/* Rangée "Tout" (à gauche, aligné sur les cases à cocher de la liste) + filtre Tag (à droite, aligné
+   sur le bord droit des cases : padding-right 4px + barre de défilement 4px de la liste). */
+.cases-tout-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 8px 6px 11px;
+}
+/* Barre de texte + bouton + et rangée Activer/Archiver/Supprimer : bloc centré à la largeur de cette
+   rangée (la barre de texte, flex:1 min-width:0, s'étire jusqu'à cette largeur). */
+.cases-toolbar {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+}
+/* Panneau Cases : largeur = le texte de case le plus long (sur une ligne), toutes les cases de la
+   même largeur, plafonnée à 360px = largeur du panneau Idées (.cases-sidebar.open) (au-delà le
+   texte passe à la ligne). La largeur vient de
+   .cases-width-sizer, ligne invisible de hauteur 0 qui contient le texte le plus long de TOUTES les
+   cases et idées (cf _updateCasesWidthSizer) : elle ne change ni avec la recherche/le tag ni d'un
+   onglet à l'autre. margin-right = padding-right (4px) + barre de défilement (4px) de la liste.
+   Le titre (nom du dossier) ne compte pas (contain), il est tronqué. */
+#cases-panel.open { width: max-content; max-width: 360px; }
+#cases-panel.open > * { width: auto; }
+#cases-panel .folders-panel-header { contain: inline-size; }
+#cases-panel .elements-list { scrollbar-gutter: stable; }
+/* Plus de menu ⋮ sur les lignes du panneau Cases : case à cocher | texte. */
+#cases-panel .element-item.has-case-check { grid-template-columns: auto 1fr; }
+#cases-panel .cases-width-sizer {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  margin-right: 8px;
+  overflow: hidden;
+  visibility: hidden;
+  animation: none;
+}
 
 /* ── Tabs ── */
 .elements-tabs {
@@ -2085,6 +2172,16 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   opacity: 1;
 }
 .btn-action.btn-generate-global.btn-generate-needed:not(.btn-disabled):not(:disabled):hover { background: rgba(96,165,250,0.42); }
+/* Générer du panneau Création (2026-11-06) : TOUJOURS bleu clair à texte blanc (même bleu que
+   Création ouvert), quel que soit l'état (à générer / déjà générées) ; transparent et non cliquable
+   seulement quand il n'y a pas assez de cases (disabled, cf renderGrid → opacité de .btn-action:disabled). */
+#btn-generate.btn-action {
+  background: rgba(96,165,250,0.28);
+  border-color: #60a5fa;
+  color: #fff;
+}
+#btn-generate.btn-action:hover { background: rgba(96,165,250,0.42); color: #fff; border-color: #60a5fa; }
+#btn-generate.btn-action:not(.btn-disabled):not(:disabled) { opacity: 1; }
 
 /* Bouton Vider global (panneau Création) : rose */
 .btn-action.btn-clear-grids {
@@ -3029,7 +3126,8 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   padding: 8px 4px;
 }
 .element-preset-row input[type="checkbox"],
-.element-preset-case-check {
+.element-preset-case-check,
+.cases-sel-check {
   accent-color: var(--accent);
   cursor: pointer;
   flex-shrink: 0;
@@ -3037,6 +3135,8 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 /* Volet droit du modal Preset cases : case à cocher (import individuel) avant le texte. */
 .element-item.has-case-check { grid-template-columns: auto 1fr auto; }
 .element-preset-case-check { margin: 2px 0 0; }
+.element-item > .cases-sel-check { margin: 2px 0 0; }
+.cases-select-all > .cases-sel-check { margin: 0; }
 .element-preset-count {
   font-size: 0.75rem;
   color: var(--text-faint);
@@ -3204,6 +3304,51 @@ body.solo-grid-mode .subgrid-lock-gen-group {
 }
 .grids-modal-list .tl-dropdown-item { border-radius: var(--radius); padding: 6px 8px; }
 .grids-modal-list .tl-dropdown-item input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+/* Lignes de grille le plus étroites possible : une seule colonne centrée, à la largeur de la ligne la
+   plus longue (toutes les lignes de même largeur). */
+.grids-modal-list { display: grid; justify-content: center; align-content: start; }
+.grids-modal-list .tl-dropdown-item { width: auto; gap: 8px; }
+.grids-modal-list .grid-tab-name { cursor: text; }
+/* Champ de renommage : taille fixée en JS à celle du nom remplacé ; ni padding ni bordure (contour en
+   outline, qui ne prend pas de place) pour que la ligne ne s'agrandisse pas. */
+.grid-tab-rename-input {
+  flex: none;
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: var(--surface-3);
+  color: var(--text);
+  font: inherit;
+  line-height: inherit;
+  outline: 1px solid var(--accent-dim);
+}
+/* Petite croix rouge : supprimer la grille (confirmation inline sous la ligne). */
+.grid-tab-del-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 3px;
+  opacity: 0.7;
+  transition: var(--transition);
+}
+.grid-tab-del-btn:hover { opacity: 1; background: var(--surface-3); }
+.grid-tab-del-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; vertical-align: middle; }
+.grids-modal-del-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 4px 8px 6px;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+.grids-modal-del-confirm .btn-action { padding: 3px 10px; font-size: 0.78rem; }
 .grids-modal-new-title {
   font-size: 0.8rem;
   font-weight: 700;
