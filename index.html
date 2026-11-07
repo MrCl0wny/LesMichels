@@ -9,7 +9,9 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=358" />
+  <link rel="stylesheet" href="style.css?v=364" />
+  <!-- Couleurs choisies (Préférences) appliquées dès le chargement, sans attendre Firebase ni app.js. -->
+  <script>try { var _ct = localStorage.getItem('lmColorTheme'); if (_ct && _ct !== 'gray') document.documentElement.setAttribute('data-color-theme', _ct); } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <!-- Firebase SDK (compat) -->
@@ -1102,6 +1104,25 @@
         <h3>Préférences</h3>
       </div>
       <div class="modal-body">
+        <!-- Couleurs de l'appli (fond + cadres), propres à l'utilisateur : cf _applyColorTheme (app.js)
+             et html[data-color-theme] (style.css). Gris = couleurs d'origine, par défaut. -->
+        <div class="prefs-section">
+          <div class="prefs-section-title">Couleurs</div>
+          <div class="prefs-color-options">
+            <button type="button" class="prefs-color-option" data-color-theme="gray" style="--pv-bg:#0e0e10;--pv-surface:#18181c;--pv-border:#2e2e3a;">
+              <span class="pco-schema"><span class="pco-frame"></span><span class="pco-frame"></span></span>Gris
+            </button>
+            <button type="button" class="prefs-color-option" data-color-theme="blue" style="--pv-bg:#0a0e16;--pv-surface:#121a28;--pv-border:#2a3850;">
+              <span class="pco-schema"><span class="pco-frame"></span><span class="pco-frame"></span></span>Bleu
+            </button>
+            <button type="button" class="prefs-color-option" data-color-theme="red" style="--pv-bg:#120a0b;--pv-surface:#1e1214;--pv-border:#3d272c;">
+              <span class="pco-schema"><span class="pco-frame"></span><span class="pco-frame"></span></span>Rouge
+            </button>
+            <button type="button" class="prefs-color-option" data-color-theme="green" style="--pv-bg:#0a110d;--pv-surface:#121c16;--pv-border:#283a2f;">
+              <span class="pco-schema"><span class="pco-frame"></span><span class="pco-frame"></span></span>Vert
+            </button>
+          </div>
+        </div>
         <div class="prefs-section">
           <div class="prefs-section-title"><i data-lucide="star"></i> Grille favorite par défaut</div>          <div class="prefs-chips" id="prefs-fav-title-chips">
             <button type="button" class="prefs-chip" data-value="">Aucune</button>
@@ -1333,6 +1354,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=504"></script>
+  <script src="app.js?v=505"></script>
 </body>
 </html>

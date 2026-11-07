@@ -16,7 +16,7 @@
   --text-muted:   #7a7a90;
   --text-faint:   #444455;
   --bingo-glow:   rgba(80, 220, 140, 0.35);
-  --bingo-line:   rgba(80, 220, 140, 0.18);
+  --bingo-line:   rgba(34, 197, 94, 0.40);
   --bingo-green:  #50dc8c;
   --bingo-green-dim: #2a9960;
   --danger:       #e85b47;
@@ -26,6 +26,29 @@
   --font-ui:      'Arial', sans-serif;
   --font-mono:    'Space Mono', monospace;
   --transition:   0.18s ease;
+}
+/* Couleurs au choix (Profil > Préférences > Couleurs) : fond (--bg) + cadres (--surface*, --border).
+   Sans attribut = gris d'origine ci-dessus. Les aperçus des boutons reprennent ces valeurs (index.html). */
+html[data-color-theme="blue"] {
+  --bg:        #0a0e16;
+  --surface:   #121a28;
+  --surface-2: #1a2436;
+  --surface-3: #212d42;
+  --border:    #2a3850;
+}
+html[data-color-theme="red"] {
+  --bg:        #120a0b;
+  --surface:   #1e1214;
+  --surface-2: #2a1a1d;
+  --surface-3: #332024;
+  --border:    #3d272c;
+}
+html[data-color-theme="green"] {
+  --bg:        #0a110d;
+  --surface:   #121c16;
+  --surface-2: #1a271f;
+  --surface-3: #203027;
+  --border:    #283a2f;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -355,6 +378,11 @@ body.compare-tierlist-mode .page-profile-btn { display: none; }
 #bingo-creation-group > #btn-ce-set-header,
 #btn-new-grid-main,
 #btn-delete-bingo { display: none !important; }
+/* Vider et Décocher retirés du panneau Création (2026-11-07) : masqués, code conservé. */
+#creation-panel #btn-clear-grids,
+#creation-panel #btn-reset { display: none !important; }
+/* Plus de séparateur entre Grilles et le groupe Taille/Générer (2026-11-07). */
+#creation-panel #bingo-creation-group .lock-group { border-top: none; padding-top: 0; }
 /* Plus rien sous le groupe Taille/Générer/Vider/Décocher : pas de séparateur orphelin en bas. */
 #creation-panel #bingo-creation-group .lock-group { border-bottom: none; padding-bottom: 0; }
 /* Le panneau Création suit la colonne (pas de sticky propre). Le cadre du haut et le panneau Création
@@ -364,6 +392,9 @@ body.compare-tierlist-mode .page-profile-btn { display: none; }
 .bingo-tools-frame,
 .bingo-left-col > .creation-sidebar.open { width: calc(var(--bingo-btn-w, 120px) + 18px); }
 .bingo-left-col > .creation-sidebar.open > * { width: 100%; }
+/* Ouvert, le panneau Création laisse dépasser le halo de Générer (sinon coupé net au bord). */
+.bingo-left-col > .creation-sidebar.open,
+.bingo-left-col > .creation-sidebar.open .panel-elements-body { overflow: visible; }
 #bingo-creation-group { align-items: center; }
 /* Plus de sous-cadre autour de Taille/Générer/Vider/Décocher : de simples séparateurs au-dessus et
    en dessous du groupe. */
@@ -405,11 +436,19 @@ body.compare-tierlist-mode .page-profile-btn { display: none; }
    ou quand Création est ouvert (bouton "Quitter création") */
 /* Désactivé (impossible de quitter tant qu'une grille affichée n'est pas générée) : reste gris
    (btn-neutral-action + opacité de .btn-action:disabled), sans la mise en évidence bleue. */
+/* Bleu vif + halo, identique au bouton soirée en cours (2026-11-07). */
 #btn-bingo-creation.btn-creation-needed:not(:disabled),
 #btn-bingo-creation[aria-expanded="true"]:not(:disabled) {
-  border-color: #60a5fa !important;
-  color: #dbeafe !important;
-  background: rgba(96,165,250,0.28) !important;
+  border-color: #7dd3fc !important;
+  color: #fff !important;
+  background: rgba(56,189,248,0.45) !important;
+  box-shadow: 0 0 16px rgba(56,189,248,0.55);
+}
+#btn-bingo-creation.btn-creation-needed:not(:disabled):hover,
+#btn-bingo-creation[aria-expanded="true"]:not(:disabled):hover {
+  border-color: #bae6fd !important;
+  background: rgba(56,189,248,0.58) !important;
+  box-shadow: 0 0 20px rgba(56,189,248,0.7);
 }
 /* Bouton New : toujours grisé, même activé (l'icône œil/œil barré suffit à indiquer l'état) */
 #btn-toggle-new-badge[aria-pressed="true"]:not(:hover) {
@@ -442,11 +481,11 @@ body.compare-tierlist-mode .page-profile-btn { display: none; }
   min-width: 0;
 }
 .btn-ce-label {
-  background: rgba(56, 189, 248, 0.28);
+  background: rgba(56, 189, 248, 0.45);
   border: 1px solid #7dd3fc;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.55);
   border-radius: var(--radius);
-  color: #e0f2fe;
+  color: #fff;
   font-size: 0.82rem;
   font-weight: 700;
   padding: 5px 12px;
@@ -467,7 +506,7 @@ body.compare-tierlist-mode .page-profile-btn { display: none; }
   white-space: normal;
   word-break: break-word;
 }
-.btn-ce-label:hover { background: rgba(56, 189, 248, 0.4); border-color: #bae6fd; }
+.btn-ce-label:hover { background: rgba(56, 189, 248, 0.58); border-color: #bae6fd; box-shadow: 0 0 20px rgba(56, 189, 248, 0.7); }
 .btn-ce-set {
   background: rgba(99, 102, 241, 0.15);
   border: 1px solid rgba(99, 102, 241, 0.4);
@@ -2176,12 +2215,21 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
    Création ouvert), quel que soit l'état (à générer / déjà générées) ; transparent et non cliquable
    seulement quand il n'y a pas assez de cases (disabled, cf renderGrid → opacité de .btn-action:disabled). */
 #btn-generate.btn-action {
-  background: rgba(96,165,250,0.28);
-  border-color: #60a5fa;
+  background: rgba(56,189,248,0.45);
+  border-color: #7dd3fc;
   color: #fff;
 }
-#btn-generate.btn-action:hover { background: rgba(96,165,250,0.42); color: #fff; border-color: #60a5fa; }
+#btn-generate.btn-action:hover { background: rgba(56,189,248,0.58); color: #fff; border-color: #bae6fd; }
+/* Halo comme le bouton soirée en cours (2026-11-07), seulement quand il est cliquable. */
+#btn-generate.btn-action:not(.btn-disabled):not(:disabled) { box-shadow: 0 0 16px rgba(56,189,248,0.55); }
+#btn-generate.btn-action:not(.btn-disabled):not(:disabled):hover { box-shadow: 0 0 20px rgba(56,189,248,0.7); }
 #btn-generate.btn-action:not(.btn-disabled):not(:disabled) { opacity: 1; }
+/* Grilles affichées toutes générées (2026-11-07) : Générer transparent (même aspect qu'un bouton
+   non cliquable) mais toujours cliquable pour régénérer ; redevient net au survol. */
+#btn-generate.btn-action.btn-generate-done:not(.btn-disabled):not(:disabled) { opacity: 0.4; }
+/* Transparent = sans halo (2026-11-07) ; le halo revient au survol, avec l'opacité pleine. */
+#btn-generate.btn-action.btn-generate-done:not(.btn-disabled):not(:disabled):not(:hover) { box-shadow: none; }
+#btn-generate.btn-action.btn-generate-done:not(.btn-disabled):not(:disabled):hover { opacity: 1; }
 
 /* Bouton Vider global (panneau Création) : rose */
 .btn-action.btn-clear-grids {
@@ -2434,7 +2482,7 @@ body.solo-grid-mode #bingo-fullscreen-breadcrumb.bingo-breadcrumb-title {
   word-break: break-word;
   pointer-events: none;
 }
-#bingo-secondary-cell-preview.checked { color: var(--accent); border-color: var(--accent); }
+#bingo-secondary-cell-preview.checked { color: #fdba74; border-color: #f97316; }
 #bingo-secondary-cell-preview.bingo-line { color: var(--bingo-green); border-color: var(--bingo-green); }
 
 /* Ligne de titre : Générer/Vider à gauche | titre + étoile centrés | (Capture) à droite. Les deux
@@ -2627,10 +2675,11 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   color: var(--text);
   background: var(--surface-3);
 }
+/* Cases cochées orangées (2026-11-07, à la place du jaune). */
 .bingo-cell.checked {
   background: var(--surface-3);
-  border-color: var(--accent-dim);
-  color: var(--accent);
+  border-color: #f97316;
+  color: #fdba74;
 }
 .bingo-cell.checked::after {
   content: '';
@@ -2640,8 +2689,13 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   border-radius: inherit;
   pointer-events: none;
 }
+/* Voile orangé marqué sur les cases cochées ; aucun voile orange sur les lignes de bingo, qui
+   gardent leur vert pur (2026-11-07). */
+.bingo-cell.checked:not(.bingo-line)::after { background: rgba(249, 115, 22, 0.38); }
+.bingo-cell.checked.bingo-line::after { background: none; }
+/* Fond opaque (2026-11-07) : le voile vert est posé sur un fond plein, jamais sur le cadre derrière. */
 .bingo-cell.bingo-line {
-  background: var(--bingo-line) !important;
+  background: linear-gradient(var(--bingo-line), var(--bingo-line)), var(--surface-3) !important;
   border-color: var(--bingo-green) !important;
   color: var(--bingo-green) !important;
   box-shadow: 0 0 14px rgba(80, 220, 140, 0.3);
@@ -3531,6 +3585,45 @@ body.solo-grid-mode .subgrid-lock-gen-group {
   height: 40px;
 }
 .prefs-side-schema.pss-reverse { flex-direction: row-reverse; }
+/* Choix des couleurs : chaque bouton montre un aperçu (fond + deux cadres) avec ses propres couleurs. */
+.prefs-color-options {
+  display: flex;
+  gap: 6px;
+}
+.prefs-color-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.prefs-color-option:hover { border-color: var(--accent-dim); color: var(--text); }
+.prefs-color-option.active { border-color: var(--accent); color: var(--accent); }
+.pco-schema {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 4px;
+  background: var(--pv-bg);
+  border: 1px solid var(--pv-border);
+}
+.pco-frame {
+  flex: 1;
+  border-radius: 3px;
+  background: var(--pv-surface);
+  border: 1px solid var(--pv-border);
+}
 .pss-main {
   width: 40px;
   display: flex;
@@ -5197,11 +5290,11 @@ body.tl-split-dragging { cursor: ew-resize; user-select: none; }
   justify-content: center;
   gap: 6px;
   align-self: center;
-  background: rgba(56, 189, 248, 0.3);
+  background: rgba(56, 189, 248, 0.45);
   border: 1px solid #7dd3fc;
-  box-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.55);
   border-radius: var(--radius);
-  color: #e0f2fe;
+  color: #fff;
   font-size: 1.1rem;
   font-weight: 700;
   padding: 16px 30px;
@@ -5209,7 +5302,7 @@ body.tl-split-dragging { cursor: ew-resize; user-select: none; }
   transition: var(--transition);
   white-space: nowrap;
 }
-.home-ce-btn:hover { background: rgba(56, 189, 248, 0.42); border-color: #bae6fd; box-shadow: 0 0 18px rgba(56, 189, 248, 0.5); }
+.home-ce-btn:hover { background: rgba(56, 189, 248, 0.58); border-color: #bae6fd; box-shadow: 0 0 20px rgba(56, 189, 248, 0.7); }
 
 .archived-theme-btn.del {
   font-size: 0.95rem;

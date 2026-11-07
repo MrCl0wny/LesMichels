@@ -413,6 +413,7 @@ function loadUserPrefs() {
     if (typeof prefs.favGridTitle === 'string') _localFavGridTitle = prefs.favGridTitle;
     _favElementPresetIds = (prefs.favElementPresets && typeof prefs.favElementPresets === 'object') ? prefs.favElementPresets : {};
     if (prefs.favGridSide === 'left' || prefs.favGridSide === 'right') _localFavGridSide = prefs.favGridSide;
+    _applyColorTheme(prefs.colorTheme || 'gray');
     // Migration prefs anciens formats vers nouvelle structure
     if (!prefs.activeFolderId && prefs.activeThemeId) {
       _localActiveFolderId = prefs.activeThemeId;
@@ -3839,12 +3840,13 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
     renderElements();
   });
 
-  // Cadre discret autour de Générer + Vider
+  // Cadre discret autour de Générer + Vider — retiré de chaque grille sur demande (2026-11-07) :
+  // plus ajouté au titre, code conservé au cas où (Générer reste dans le panneau Création).
   const lockGenGroup = document.createElement('div');
   lockGenGroup.className = 'subgrid-lock-gen-group';
   lockGenGroup.appendChild(btnSubGen);
   lockGenGroup.appendChild(btnSubClear);
-  titleRow.appendChild(lockGenGroup);
+  // titleRow.appendChild(lockGenGroup);
 
   const btnSubCapture = document.createElement('button');
   btnSubCapture.className = 'btn-action btn-screenshot-bingo btn-subgrid grid-view-title-capture';
@@ -6984,6 +6986,20 @@ function _refreshPrefsModal() {
   chips.forEach(c => c.classList.toggle('active', c.dataset.value === _localFavGridTitle));
   prefsFavTitleInput.value = isPreset ? '' : _localFavGridTitle;
   modalPrefs.querySelectorAll('.prefs-side-option').forEach(b => b.classList.toggle('active', b.dataset.side === _localFavGridSide));
+  modalPrefs.querySelectorAll('.prefs-color-option').forEach(b => b.classList.toggle('active', b.dataset.colorTheme === _localColorTheme));
+}
+
+// Couleurs de l'appli (fond + cadres) : 'gray' (d'origine, par défaut) | 'blue' | 'red' | 'green'.
+// Pref utilisateur Firebase `colorTheme`, recopiée dans localStorage pour être appliquée dès le
+// chargement (script dans <head> d'index.html), avant même la connexion.
+const _COLOR_THEMES = ['gray', 'blue', 'red', 'green'];
+let _localColorTheme = 'gray';
+function _applyColorTheme(name) {
+  if (!_COLOR_THEMES.includes(name)) name = 'gray';
+  _localColorTheme = name;
+  if (name === 'gray') document.documentElement.removeAttribute('data-color-theme');
+  else document.documentElement.setAttribute('data-color-theme', name);
+  try { localStorage.setItem('lmColorTheme', name); } catch (e) {}
 }
 
 function _setFavGridPrefs(patch) {
@@ -7016,6 +7032,13 @@ modalPrefs.querySelectorAll('.prefs-chip').forEach(chip => {
 });
 modalPrefs.querySelectorAll('.prefs-side-option').forEach(btn => {
   btn.addEventListener('click', () => _setFavGridPrefs({ favGridSide: btn.dataset.side }));
+});
+modalPrefs.querySelectorAll('.prefs-color-option').forEach(btn => {
+  btn.addEventListener('click', () => {
+    _applyColorTheme(btn.dataset.colorTheme);
+    saveUserPrefs({ colorTheme: _localColorTheme });
+    _refreshPrefsModal();
+  });
 });
 prefsFavTitleInput.addEventListener('input', () => {
   // Pendant la saisie, aucune puce ne doit rester surlignée (le titre perso remplacera le preset)
