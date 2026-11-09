@@ -3,14 +3,9 @@
 ═══════════════════════════════════════════════ */
 
 // ──────────────────────────────────────────────
-// Mode "grille(s) plein écran" (overlay interne, activable aussi via ?openGrids= pour compat)
+// Liens directs Tier List : plein écran (?openTierlist=) et comparaison (?compareTierlists=)
 // ──────────────────────────────────────────────
 const _soloGridParams = new URLSearchParams(window.location.search);
-const _soloGridIds = (_soloGridParams.get('openGrids') || _soloGridParams.get('openGrid') || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
-let _soloGridApplied = false;
 
 let _soloTierlistId = _soloGridParams.get('openTierlist') || null;
 let _soloTierlistApplied = false;
@@ -57,42 +52,6 @@ if (DISABLE_TITLE_TOOLTIPS) {
 }
 
 // ──────────────────────────────────────────────
-// Tooltip custom générique (data-tooltip="...") — seul canal d'infobulle qui fonctionne encore une
-// fois title="..." désactivé ci-dessus. N'affiche rien si l'élément demande une troncature
-// explicite (voir _showAppTooltipIfTruncated) et que le texte n'est en fait pas tronqué.
-// ──────────────────────────────────────────────
-let _appTooltipEl = null;
-function _showAppTooltip(text, anchorRect) {
-  if (!_appTooltipEl) {
-    _appTooltipEl = document.createElement('div');
-    _appTooltipEl.id = 'app-tooltip';
-    _appTooltipEl.className = 'hidden';
-    document.body.appendChild(_appTooltipEl);
-  }
-  _appTooltipEl.textContent = text;
-  _appTooltipEl.classList.remove('hidden');
-  const top = anchorRect.bottom + 6;
-  let left = anchorRect.left + anchorRect.width / 2;
-  _appTooltipEl.style.top = top + 'px';
-  _appTooltipEl.style.left = left + 'px';
-  _appTooltipEl.style.transform = 'translateX(-50%)';
-  // Recale si ça dépasse à gauche/droite de la fenêtre
-  const rect = _appTooltipEl.getBoundingClientRect();
-  if (rect.left < 4) _appTooltipEl.style.left = (left + (4 - rect.left)) + 'px';
-  if (rect.right > window.innerWidth - 4) _appTooltipEl.style.left = (left - (rect.right - window.innerWidth + 4)) + 'px';
-}
-function _hideAppTooltip() {
-  if (_appTooltipEl) _appTooltipEl.classList.add('hidden');
-}
-// N'affiche le tooltip que si le texte de l'élément est réellement tronqué visuellement
-// (scrollWidth/scrollHeight > client*) — évite une infobulle redondante sur un nom déjà entier.
-function _showAppTooltipIfTruncated(el) {
-  const isTruncated = el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
-  if (!isTruncated) return;
-  _showAppTooltip(el.dataset.tooltip || el.textContent, el.getBoundingClientRect());
-}
-
-// ──────────────────────────────────────────────
 // Icônes Lucide (remplacement progressif des emojis)
 // Ré-appeler lucide.createIcons() après tout ajout dynamique de <i data-lucide>
 // ──────────────────────────────────────────────
@@ -125,20 +84,14 @@ const MODAL_CLOSE_FNS = {
   'modal-move-folder': () => closeMoveFolderModal(),
   'modal-element-presets': () => closeElementPresetsModal(),
   'modal-bingo-stats': () => closeBingoStatsModal(),
-  'modal-rename-grid': () => closeRenameGridModal(),
-  'modal-rename-subtheme': () => closeRenameSubthemeModal(),
   'modal-grids': () => closeNewGridModal(),
   'modal-confirm-signout': () => document.getElementById('modal-confirm-signout').classList.add('hidden'),
   'modal-prefs': () => closePrefsModal(),
-  'modal-confirm-reset': () => document.getElementById('modal-confirm-reset').classList.add('hidden'),
-  'modal-capture-choice': () => closeCaptureChoiceModal(),
   'modal-tl-capture-choice': () => closeTlCaptureChoiceModal(),
   'modal-generate-choice': () => closeGenerateChoiceModal(),
   'modal-confirm-clear': () => {
     document.getElementById('modal-confirm-clear').classList.add('hidden');
-    document.getElementById('btn-confirm-clear-archived-only').classList.add('hidden');
     _clearCellCallback = null;
-    _clearArchivedOnlyCallback = null;
   },
   'modal-confirm-toplace': () => _tlCloseConfirmToPlaceModal(),
   'modal-confirm-current-event': () => closeConfirmCurrentEventModal(),
@@ -276,7 +229,6 @@ const _auth = firebase.auth();
 function setupAuth() {
   const modalAuth    = document.getElementById('modal-auth');
   const btnGoogle    = document.getElementById('btn-google-signin');
-  const userBadge    = document.getElementById('user-badge');
   const btnSignout   = document.getElementById('btn-signout');
 
   btnGoogle.addEventListener('click', () => {
@@ -305,19 +257,9 @@ function setupAuth() {
     document.getElementById('modal-confirm-signout').classList.remove('hidden');
   });
 
-  // Menu Profil : Préférences + Se déconnecter (#btn-signout ci-dessus). Positionné en fixed sous le
-  // bouton, aligné à droite ; tout clic ailleurs (y compris sur un item) le referme.
-  const btnProfile  = document.getElementById('btn-profile');
+  // Menu Profil : Préférences + Se déconnecter (#btn-signout ci-dessus), ouvert par #page-switcher-profile
+  // (cf setupPageSwitcher) ; tout clic ailleurs (y compris sur un item) le referme.
   const profileMenu = document.getElementById('profile-menu');
-  btnProfile.addEventListener('click', e => {
-    e.stopPropagation();
-    if (!profileMenu.classList.contains('hidden')) { profileMenu.classList.add('hidden'); return; }
-    const r = btnProfile.getBoundingClientRect();
-    profileMenu.style.top = (r.bottom + 6) + 'px';
-    profileMenu.style.left = 'auto';
-    profileMenu.style.right = (window.innerWidth - r.right) + 'px';
-    profileMenu.classList.remove('hidden');
-  });
   document.addEventListener('click', () => profileMenu.classList.add('hidden'));
   document.getElementById('btn-open-prefs').addEventListener('click', openPrefsModal);
 
@@ -342,7 +284,6 @@ function setupAuth() {
       currentUser  = user;
       currentPseudo = user.displayName || user.email;
       modalAuth.classList.add('hidden');
-      userBadge.classList.remove('hidden');
       loadUserPrefs();
     } else {
       currentUser   = null;
@@ -367,7 +308,6 @@ function setupAuth() {
       _tlLocalActiveFolderId   = null;
       _tlLocalNoSelection      = false;
       modalAuth.classList.remove('hidden');
-      userBadge.classList.add('hidden');
     }
   });
 }
@@ -437,7 +377,7 @@ function loadUserPrefs() {
     // l'utilisateur ait déjà cliqué sur un autre onglet (Dossiers, Bingo…) : sans cette garde, la page
     // était renvoyée de force vers l'accueil en pleine navigation, écrasant le geste de l'utilisateur
     // sans prévenir (bug constaté : "Dossiers > Tier List" cliqué tôt ne s'affichait jamais).
-    if (window._switchPage && _soloGridIds.length === 0 && !_soloTierlistId && !_userNavigated) _switchPage('folders');
+    if (window._switchPage && !_soloTierlistId && !_userNavigated) _switchPage('folders');
     _prefsReady = true;
     // Re-render seulement si les données Bingo sont déjà chargées
     if (_firebaseReady) {
@@ -446,37 +386,10 @@ function loadUserPrefs() {
   }).catch(e => console.warn('Prefs load error:', e));
 }
 
-// async : le lien direct "grille en plein écran" peut cibler un dossier-bingo jamais activé cette
-// session (donc encore léger, sans le tableau grid[] de cellules) — findParentFolder/le titre
-// fonctionnent déjà sur l'index seul (id/name/title), mais le RENDU de la grille (renderGrid, appelé
-// juste après par l'appelant) a besoin du contenu lourd chargé en mémoire avant de s'exécuter.
-async function _applySoloGridModeIfNeeded() {
-  if (_soloGridIds.length === 0) return;
-  const firstFolder = findParentFolder(state.folders, _soloGridIds[0]);
-  if (!firstFolder) return;
-  const folderGridIds = new Set((firstFolder.grids || []).map(gx => gx.id));
-  const validIds = _soloGridIds.filter(id => folderGridIds.has(id)).slice(0, MAX_VISIBLE_GRIDS);
-  if (validIds.length === 0) return;
-  _localActiveFolderId = firstFolder.id;
-  _selectedGridIds = validIds;
-  await _bingoEnsureSeasonLoaded(firstFolder.id);
-  _bingoUpdateActiveSeasonSubscription();
-  const firstFolderNow = findFolderById(state.folders, firstFolder.id) || firstFolder;
-  firstFolderNow.activeGridId = validIds[0];
-  if (!_soloGridApplied) {
-    _soloGridApplied = true;
-    const grids = (firstFolderNow.grids || []).filter(gx => validIds.includes(gx.id));
-    document.title = (grids.length === 1
-      ? (grids[0].title || grids[0].name || 'Grille')
-      : `${grids.length} grilles`);
-    document.body.classList.add('solo-grid-mode');
-  }
-}
-
 // #tl-btn-undo, #tl-btn-toggle-unplaced, #tl-list-options-frame et le
 // wrapper du bouton Liste vivent dans la toolbar du mode normal (lignes 1 et 2) et dans la barre
 // plein écran (.tl-solo-toolbar) en solo-tierlist-mode — mêmes éléments physiques déplacés en JS,
-// jamais deux jeux de contrôles désynchronisés (comme #btn-grids-dropdown côté Bingo). En plein
+// jamais deux jeux de contrôles désynchronisés. En plein
 // écran, un template ne peut pas s'afficher : le bouton Liste y remplace Tiers/Reset (masqués via
 // body.solo-tierlist-mode, voir CSS) pour permettre de changer de liste sans repasser en mode normal.
 function _tlEnterSoloToolbarLayout() {
@@ -565,7 +478,7 @@ function _applyCompareTierlistModeIfNeeded() {
       if (exitBtn) {
         exitBtn.innerHTML = '<i data-lucide="x"></i> Fermer';
         exitBtn.title = 'Fermer cette fenêtre';
-        if (window.lucide) lucide.createIcons();
+        if (window.lucide) lucide.createIcons({ root: exitBtn });
       }
     }
   }
@@ -633,10 +546,9 @@ async function _applyPrefsAndRender() {
       _localActiveFolderId = nonArchived.length > 0 ? nonArchived[0].id : (state.folders[0]?.id || null);
     }
   }
-  // Contenu lourd (grilles/éléments) chargé seulement si la page Bingo est affichée, ou si un lien
-  // direct la nécessite hors page (grille plein écran ?openGrids=) — sinon laissé à la charge de
-  // _bingoLoadActivePageContent(), déclenché quand l'utilisateur navigue vers Bingo (cf _switchPage).
-  if (_currentPage === 'bingo' || _soloGridIds.length > 0) {
+  // Contenu lourd (grilles/éléments) chargé seulement si la page Bingo est affichée — sinon laissé à
+  // la charge de _bingoLoadActivePageContent(), déclenché quand l'utilisateur navigue vers Bingo (cf _switchPage).
+  if (_currentPage === 'bingo') {
     if (_localActiveFolderId) await _bingoEnsureSeasonLoaded(_localActiveFolderId);
     _bingoUpdateActiveSeasonSubscription();
   }
@@ -650,12 +562,11 @@ async function _applyPrefsAndRender() {
       _selectedGridIds = (folder.grids || []).filter(g => !g.archived).map(g => g.id);
     }
   }
-  await _applySoloGridModeIfNeeded();
-  // renderGrid()/updateClearGridsButton()/updateResetButton() lisent gx.grid (tableau de cellules) —
+  // renderGrid() lit gx.grid (tableau de cellules) —
   // absent tant que le dossier n'est pas chargé en lourd (index seul, cf _bingoIndexFolder). Ne
   // rendre ici que si ce contenu a bien été chargé ci-dessus ; sinon _bingoLoadActivePageContent()
   // s'en charge au moment où l'utilisateur navigue réellement vers Bingo (cf _switchPage).
-  if (_currentPage === 'bingo' || _soloGridIds.length > 0) {
+  if (_currentPage === 'bingo') {
     renderAllFolders();
     renderElements();
     renderGridsList();
@@ -1110,37 +1021,35 @@ function activeSubtheme() {
   return activeFolder();
 }
 
-function renderCurrentEventButton() {
-  const btn = document.getElementById('btn-current-event');
-  const lbl = document.getElementById('btn-current-event-label');
-  if (!btn) return;
+// État de la soirée en cours, recalculé par renderCurrentEventButton() et lu par les boutons qui
+// l'affichent (_updateCeSetHeaderBtn, _updateBingoHeroCeBtn) : une soirée valide existe (_ceShown),
+// son chemin complet (_ceLabel), et si c'est déjà elle qui est affichée (_ceHere).
+let _ceShown = false;
+let _ceLabel = '';
+let _ceHere = false;
 
+function renderCurrentEventButton() {
   // Priorité : tierlist active > bingo actif
   const ceTl = state.currentEventTierlistId;
   if (ceTl) {
     const tl = (typeof tlState !== 'undefined' ? tlState.tierlists || [] : []).find(t => t.id === ceTl && !t.archived);
     if (tl) {
-      btn.style.display = 'flex';
-      if (lbl) {
-        // Remonter le chemin du dossier si la TL est dans un dossier
-        const parts = ['Tier list'];
-        if (tl.folderId && typeof tlState !== 'undefined') {
-          const folderParts = [];
-          let current = (tlState.folders || []).find(f => f.id === tl.folderId);
-          while (current) {
-            folderParts.unshift(current.name);
-            current = (tlState.folders || []).find(f => f.id === current.parentId);
-          }
-          parts.push(...folderParts);
+      _ceShown = true;
+      // Remonter le chemin du dossier si la TL est dans un dossier
+      const parts = ['Tier list'];
+      if (tl.folderId && typeof tlState !== 'undefined') {
+        const folderParts = [];
+        let current = (tlState.folders || []).find(f => f.id === tl.folderId);
+        while (current) {
+          folderParts.unshift(current.name);
+          current = (tlState.folders || []).find(f => f.id === current.parentId);
         }
-        parts.push(tl.name);
-        const fullPath = parts.join(' \\ ');
-        lbl.textContent = fullPath;
-        document.getElementById('btn-ce-navigate').title = 'Aller à la soirée en cours\n' + fullPath;
+        parts.push(...folderParts);
       }
+      parts.push(tl.name);
+      _ceLabel = parts.join(' \\ ');
       const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
-      const alreadyHere = onTlPage && _tlLocalActiveTierlistId === ceTl;
-      btn.classList.toggle('ce-nav-disabled', alreadyHere);
+      _ceHere = !!(onTlPage && _tlLocalActiveTierlistId === ceTl);
       _updateCeSetHeaderBtn();
       return;
     }
@@ -1148,7 +1057,7 @@ function renderCurrentEventButton() {
       // L'index tierlist n'est pas encore arrivé (course avec l'index bingo, qui déclenche aussi ce
       // rendu) : tl introuvable ne veut PAS dire "supprimée" ici — ne rien nettoyer, réessayer au
       // prochain rendu (déclenché par l'arrivée de l'index tierlist, cf _tlStartTierlistListeners).
-      btn.style.display = 'none';
+      _ceShown = false;
       _updateBingoHeroCeBtn();
       return;
     }
@@ -1158,100 +1067,67 @@ function renderCurrentEventButton() {
   }
 
   const cef = state.currentEventFolderId;
-  if (!cef) { btn.style.display = 'none'; _updateCeSetHeaderBtn(); return; }
-  const folder = findFolderById(state.folders, cef);
-  if (!folder) { btn.style.display = 'none'; _updateCeSetHeaderBtn(); return; }
-  btn.style.display = 'flex';
-  if (lbl) {
-    const path = getFolderPath(state.folders, cef);
-    const fullPath = 'Bingo \\ ' + path.map(f => f.name).join(' \\ ');
-    lbl.textContent = fullPath;
-    document.getElementById('btn-ce-navigate').title = 'Aller à la soirée en cours\n' + fullPath;
-  }
+  const folder = cef ? findFolderById(state.folders, cef) : null;
+  if (!folder) { _ceShown = false; _updateCeSetHeaderBtn(); return; }
+  _ceShown = true;
+  _ceLabel = 'Bingo \\ ' + getFolderPath(state.folders, cef).map(f => f.name).join(' \\ ');
   const onBingoPage = document.getElementById('page-bingo')?.classList.contains('active');
-  const alreadyHereBingo = onBingoPage && _localActiveFolderId === cef;
-  btn.classList.toggle('ce-nav-disabled', alreadyHereBingo);
+  _ceHere = !!(onBingoPage && _localActiveFolderId === cef);
   _updateCeSetHeaderBtn();
 }
 
-// Un seul bouton physique "Définir soirée en cours" (#btn-ce-set-header), déplacé en JS selon
-// la page active — même pattern que #btn-grids-dropdown (Bingo) / #tl-btn-undo (Tier
-// List) : jamais deux jeux de contrôles désynchronisés. Sur Bingo, il vit dans le panneau Création
-// (#bingo-creation-group), juste avant Dupliquer (#btn-new-grid-main) ; sur Tier List, tout à droite
-// de la ligne 1 du panneau tierlist, juste avant le bouton Tiers (#tl-btn-add-tier). Masqué sur Accueil/
-// Dossiers (retombe dans le header, sa position d'origine dans le HTML).
-function _placeCeSetHeaderBtn() {
-  const ceSet = document.getElementById('btn-ce-set-header');
-  if (!ceSet) return;
-  const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
-  const onBingoPage = document.getElementById('page-bingo')?.classList.contains('active');
-  if (onBingoPage) {
-    const dupBtn = document.getElementById('btn-new-grid-main');
-    if (dupBtn && dupBtn.previousSibling !== ceSet) dupBtn.insertAdjacentElement('beforebegin', ceSet);
-  } else if (onTlPage) {
-    const tiersBtn = document.getElementById('tl-btn-add-tier');
-    if (tiersBtn && tiersBtn.previousSibling !== ceSet) tiersBtn.insertAdjacentElement('beforebegin', ceSet);
+// Va sur la soirée en cours (gros boutons de la page Dossiers et de la page Bingo).
+function _goToCurrentEvent() {
+  if (state.currentEventTierlistId) {
+    if (window._switchPage) window._switchPage('tierlist');
+    // Navigation directe sans toggle
+    _tlLocalActiveTierlistId = state.currentEventTierlistId;
+    _tlLocalNoSelection = false;
+    saveUserPrefs({ tlActiveTierlistId: state.currentEventTierlistId, tlNoSelection: false });
+    if (typeof tlRender === 'function') tlRender();
+  } else if (state.currentEventFolderId) {
+    if (window._switchPage) window._switchPage('bingo');
+    // Navigation directe sans toggle
+    _localActiveFolderId = state.currentEventFolderId;
+    _saveLocalActiveFolderId(state.currentEventFolderId);
+    const folder = findFolderById(state.folders, state.currentEventFolderId);
+    _selectedGridIds = folder?.grids?.filter(g => !g.archived).map(g => g.id) || [];
+    saveLocalSelectedGrids(_selectedGridIds);
+    renderAllFolders();
+    renderElements();
+    renderGridsList();
+    renderGrid();
   }
 }
 
-// État (grisé si la page active est déjà la soirée en cours) dépend de la page affichée —
-// appelé à chaque renderCurrentEventButton(), indépendamment de la branche bingo/tierlist qui a matché.
+// Bouton "En cours" (#btn-ce-set-header, ligne 1 du panneau Tier List, avant Tiers) : grisé si la liste
+// affichée est déjà la soirée en cours. Appelé à chaque renderCurrentEventButton().
 function _updateCeSetHeaderBtn() {
   _updateBingoHeroCeBtn();
   const ceSet = document.getElementById('btn-ce-set-header');
   if (!ceSet) return;
-  const onFoldersPage = document.getElementById('page-folders')?.classList.contains('active');
-  if (onFoldersPage) {
-    ceSet.style.display = 'none';
-    return;
-  }
-  _placeCeSetHeaderBtn();
-  ceSet.style.display = '';
-  const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
-  let isCurrentEvent;
-  if (onTlPage) {
-    const tl = (typeof tlActiveTierlist === 'function') ? tlActiveTierlist() : null;
-    const root = tl && typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
-    isCurrentEvent = root && state.currentEventTierlistId === root.id;
-  } else {
-    isCurrentEvent = _localActiveFolderId && state.currentEventFolderId === _localActiveFolderId;
-  }
+  if (!document.getElementById('page-tierlist')?.classList.contains('active')) return;
+  const tl = (typeof tlActiveTierlist === 'function') ? tlActiveTierlist() : null;
+  const root = tl && typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
+  const isCurrentEvent = root && state.currentEventTierlistId === root.id;
   ceSet.classList.toggle('ce-set-disabled', !!isCurrentEvent);
-  // Une AUTRE soirée est en cours (bouton du header affiché, déjà nettoyé des soirées introuvables) :
-  // texte blanc + fond opaque (cf .ce-set-other).
-  const ceHeaderShown = document.getElementById('btn-current-event')?.style.display !== 'none';
-  ceSet.classList.toggle('ce-set-other', ceHeaderShown && !isCurrentEvent);
+  // Une AUTRE soirée est en cours (déjà nettoyée des soirées introuvables) : texte blanc + fond
+  // opaque (cf .ce-set-other).
+  ceSet.classList.toggle('ce-set-other', _ceShown && !isCurrentEvent);
 }
 
 // Gros bouton soirée en cours de la page Bingo, à droite de Chemin : visible seulement si une soirée
-// est en cours ET que ce n'est pas celle affichée. Suit l'état du bouton du header (calculé juste
-// avant par renderCurrentEventButton) : même libellé, même navigation.
+// est en cours ET que ce n'est pas celle affichée (état calculé juste avant par renderCurrentEventButton).
 function _updateBingoHeroCeBtn() {
   const heroBtn = document.getElementById('bingo-hero-current-event');
-  const headerBtn = document.getElementById('btn-current-event');
-  if (!heroBtn || !headerBtn) return;
-  const show = headerBtn.style.display !== 'none' && !headerBtn.classList.contains('ce-nav-disabled');
+  if (!heroBtn) return;
+  const show = _ceShown && !_ceHere;
   heroBtn.style.display = show ? 'inline-flex' : 'none';
   if (!show) return;
   const lbl = document.getElementById('bingo-hero-ce-label');
-  if (lbl) lbl.textContent = document.getElementById('btn-current-event-label')?.textContent || '';
+  if (lbl) lbl.textContent = _ceLabel;
 }
-document.getElementById('bingo-hero-current-event')?.addEventListener('click', () => {
-  document.getElementById('btn-ce-navigate')?.click();
-});
-
-// Petite flèche sous la barre du haut : replie/déplie la barre (toutes les pages), état mémorisé sur
-// l'appareil. La place disponible change sans 'resize' natif : on en déclenche un pour que grilles
-// Bingo, cadres Tier List et panneaux latéraux se recalculent.
-function _setHeaderCollapsed(collapsed) {
-  document.body.classList.toggle('header-collapsed', collapsed);
-  try { localStorage.setItem('headerCollapsed', collapsed ? '1' : '0'); } catch (e) {}
-  window.dispatchEvent(new Event('resize'));
-}
-try { if (localStorage.getItem('headerCollapsed') === '1') document.body.classList.add('header-collapsed'); } catch (e) {}
-document.getElementById('btn-header-toggle')?.addEventListener('click', () => {
-  _setHeaderCollapsed(!document.body.classList.contains('header-collapsed'));
-});
+document.getElementById('bingo-hero-current-event')?.addEventListener('click', _goToCurrentEvent);
 
 function setCurrentEventFolder(id) {
   if (state.currentEventFolderId === id) {
@@ -1500,13 +1376,6 @@ function _unarchiveFolderChain(id) {
   return changed;
 }
 
-function renameFolder(id, newName) {
-  const folder = findFolderById(state.folders, id);
-  if (folder && newName.trim()) { folder.name = newName.trim(); touchFolderChain(id); }
-  _bingoSaveIndex();
-  renderAllFolders();
-}
-
 // Dossier "épisode précédent" du dossier actif : parmi ses frères (même parent) de type 'episode',
 // celui dont le numbering.number est le plus grand tout en restant strictement inférieur au sien.
 // Retourne null si le dossier actif n'est pas lui-même un épisode numéroté, ou si aucun épisode
@@ -1725,14 +1594,6 @@ function _cleanElementPresetEntries(texts, dates) {
   return { elements, elementDates };
 }
 
-function saveElementPreset(name, texts) {
-  const now = Date.now();
-  const preset = { id: uid(), name: name.trim(), ..._cleanElementPresetEntries(texts, texts.map(() => now)), createdAt: now };
-  _touchElementPreset(preset);
-  getElementPresets().push(preset);
-  _bingoSaveIndex();
-}
-
 function updateElementPreset(id, name, texts, dates) {
   const preset = getElementPresets().find(p => p.id === id);
   if (!preset) return;
@@ -1807,7 +1668,7 @@ function sanitizeForFirebase(obj) {
 // dans l'index. L'index garde par dossier un tableau folder.grids ALLÉGÉ (id/archived/hidden/title/
 // locked/name, sans le tableau grid[] de 25 cellules) plutôt qu'un "gridsMeta" séparé : toutes les
 // lectures cross-arbre existantes (_isFolderBingo, _collectEpisodeFolders, _flattenFoldersForRecent,
-// _renderRecentFolderPaths, renderArchivesUnified) ne lisent jamais folder.grids[].grid, seulement
+// _renderRecentFolderPaths) ne lisent jamais folder.grids[].grid, seulement
 // archived/hidden/name/length — donc réutilisables telles quelles sans aucune modification.
 const _dbBingoIndex = window._db.ref('bingo/index');
 const _dbBingoData  = window._db.ref('bingo/data');
@@ -2139,12 +2000,10 @@ const listArchived     = document.getElementById('elements-archived');
 const listSuggestions  = document.getElementById('elements-suggestions');
 const elementCount     = document.getElementById('element-count');
 const tabBtns          = document.querySelectorAll('.tab-btn');
-const bingoMsg         = document.getElementById('bingo-message');
 const sizeDisplay      = document.getElementById('grid-size-display');
 const btnSizeMinus     = document.getElementById('btn-size-minus');
 const btnSizePlus      = document.getElementById('btn-size-plus');
 const btnGenerate      = document.getElementById('btn-generate');
-const btnReset         = document.getElementById('btn-reset');
 const gridError        = document.getElementById('grid-error');
 const btnNewGrid       = document.getElementById('btn-new-grid');
 const gridWrapper        = document.getElementById('grid-wrapper');
@@ -2166,10 +2025,6 @@ btnToggleNewBadge?.addEventListener('click', () => {
   renderGrid();
 });
 const bingoLayout              = document.getElementById('bingo-layout');
-const modalRenameGrid       = document.getElementById('modal-rename-grid');
-const renameGridInput       = document.getElementById('rename-grid-input');
-const btnConfirmRenameGrid  = document.getElementById('btn-confirm-rename-grid');
-let _renameGridId  = null;
 
 // ──────────────────────────────────────────────
 // Rendu : liste d'éléments
@@ -2245,7 +2100,7 @@ function _addCasesSelCheck(li, id) {
   li.classList.add('has-case-check');
   li.insertBefore(cb, li.firstChild);
 }
-// Vide les cellules des grilles du dossier qui contiennent une des cases (comme archiveElement/deleteElement).
+// Vide les cellules des grilles du dossier qui contiennent une des cases.
 function _emptyCellsOfElements(s, idSet) {
   if (!idSet.size) return;
   (s.grids || []).forEach(g => {
@@ -2255,7 +2110,7 @@ function _emptyCellsOfElements(s, idSet) {
   });
 }
 // Activer (toArchived=false) / Archiver (true) les cases cochées — ou, dans l'onglet Idées, placer les
-// idées cochées dans les cases (même règle que _placeSuggestion : pas de doublon de texte, une case
+// idées cochées dans les cases (pas de doublon de texte : une case
 // existante est juste passée dans l'onglet visé ; les idées placées sont retirées pour tout le monde).
 // Un seul enregistrement et un seul rendu pour toute la sélection.
 function _casesBulkMove(toArchived) {
@@ -2299,7 +2154,7 @@ function _casesBulkMove(toArchived) {
   renderElements();
   renderGrid();
 }
-// Supprimer les cases cochées (vidées des grilles, comme deleteElement) ou, dans l'onglet Idées,
+// Supprimer les cases cochées (vidées des grilles) ou, dans l'onglet Idées,
 // les idées cochées (pour tout le monde). Appelé après la confirmation inline.
 function _casesBulkDelete() {
   const tab = _casesCurrentTab();
@@ -2435,7 +2290,7 @@ function renderElements() {
     listSuggestions.innerHTML = '';
     suggestions.forEach(sg => listSuggestions.appendChild(_buildSuggestionItem(sg, true)));
   }
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: document.getElementById('cases-panel') });
   _updateCasesBulkUI();
   _updateCasesWidthSizer(sElems.map(e => e.text).concat(_bingoSuggestions.map(sg => sg.text)));
   if (panelEl && panelEl.offsetWidth !== prevPanelW) _adjustBingoGridSizes();
@@ -2579,115 +2434,22 @@ function addElement() {
   // ajoutées à la suite) : évite un reflow + reconstruction DOM complète par case.
 }
 
-function deleteElement(id) {
-  const s = activeSubtheme();
-  if (!s) return;
-  s.elements = (s.elements || []).filter(e => e.id !== id);
-  // Vider cet élément dans toutes les grilles du dossier actif
-  (s.grids || []).forEach(g => {
-    g.grid = g.grid.map(cell =>
-      cell.elementId === id ? { elementId: null, checked: false, color: null } : cell
-    );
-  });
-  _bingoSaveFolder(s.id);
-  renderElements();
-  renderGrid();
-}
-
-function clearAllElements() {
-  const s = activeSubtheme();
-  if (!s) return;
-  s.elements = [];
-  s.archivedElementIds = [];
-  (s.grids || []).forEach(g => {
-    g.grid = g.grid.map(cell => ({ elementId: null, checked: false, color: null }));
-  });
-  _bingoSaveFolder(s.id);
-  renderElements();
-  renderGrid();
-}
-
-function clearArchivedElements() {
-  const s = activeSubtheme();
-  if (!s) return;
-  const archivedIds = s.archivedElementIds || [];
-  if (archivedIds.length === 0) return;
-  s.elements = (s.elements || []).filter(e => !archivedIds.includes(e.id));
-  s.archivedElementIds = [];
-  (s.grids || []).forEach(g => {
-    g.grid = g.grid.map(cell =>
-      archivedIds.includes(cell.elementId) ? { elementId: null, checked: false, color: null } : cell
-    );
-  });
-  _bingoSaveFolder(s.id);
-  renderElements();
-  renderGrid();
-}
-
-function archiveElement(id) {
-  const s = activeSubtheme();
-  if (!s) return;
-  if (!s.archivedElementIds) s.archivedElementIds = [];
-  if (!s.archivedElementIds.includes(id)) {
-    s.archivedElementIds.push(id);
-  }
-  // Vider les cases contenant cet élément dans toutes les grilles du sous-thème actif
-  (s.grids || []).forEach(g => {
-    g.grid = g.grid.map(cell =>
-      cell.elementId === id ? { elementId: null, checked: false, color: null } : cell
-    );
-  });
-  _bingoSaveFolder(s.id);
-  renderElements();
-  renderGrid();
-}
-
-function restoreElement(id) {
-  const s = activeSubtheme();
-  if (!s) return;
-  if (!s.archivedElementIds) s.archivedElementIds = [];
-  s.archivedElementIds = s.archivedElementIds.filter(eid => eid !== id);
-  _bingoSaveFolder(s.id);
-  renderElements();
-  renderGrid();
-}
-
 function renderAllFolders() {
   renderFoldersPanelTree();
   renderGridsBreadcrumb();
   renderCurrentEventButton();
-  const btnNewFolderBingo = document.getElementById('btn-new-folder-bingo');
-  if (btnNewFolderBingo) btnNewFolderBingo.dataset.parentId = _localActiveFolderId || '';
   if (btnNewGrid) btnNewGrid.disabled = !_localActiveFolderId || !_isFolderBingo(activeFolder());
   if (window.lucide) lucide.createIcons();
 }
 
 // ──────────────────────────────────────────────
-// Rendu : breadcrumb chemin complet dans ctrl-row-grids
+// Rendu : libellé du gros bouton Chemin (chemin complet du dossier affiché)
 // ──────────────────────────────────────────────
-
 function renderGridsBreadcrumb() {
-  const container = document.getElementById('grids-breadcrumb');
-  const fsContainer = document.getElementById('bingo-fullscreen-breadcrumb');
-  if (container) container.innerHTML = '';
-  if (fsContainer) fsContainer.textContent = '';
-  const path = _localActiveFolderId ? getFolderPath(state.folders, _localActiveFolderId) : [];
-  if (fsContainer) fsContainer.textContent = path.map(f => f.name).join(' \\ ');
   const pathLabel = document.getElementById('path-dropdown-label');
-  if (pathLabel) pathLabel.textContent = path.length ? path.map(f => f.name).join(' \\ ') : 'Racine';
-  if (!container || !_localActiveFolderId) return;
-  path.forEach((f, i) => {
-    if (i > 0) {
-      const sep = document.createElement('span');
-      sep.className = 'grids-breadcrumb-sep';
-      sep.textContent = '\\';
-      container.appendChild(sep);
-    }
-    const span = document.createElement('span');
-    span.className = 'grids-breadcrumb-item' + (i === path.length - 1 ? ' last' : '');
-    span.textContent = f.name;
-    container.appendChild(span);
-  });
+  if (!pathLabel) return;
+  const path = _localActiveFolderId ? getFolderPath(state.folders, _localActiveFolderId) : [];
+  pathLabel.textContent = path.length ? path.map(f => f.name).join(' \\ ') : 'Racine';
 }
 
 // ── Afficher/Masquer archives (dossiers et bingos archivés, cf archiveFolder) : un seul réglage
@@ -2825,7 +2587,7 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
     empty.textContent = 'Aucun dossier';
     menu.appendChild(empty);
   }
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: menu });
 }
 
 // Petit bouton de tri en haut du menu Chemin (Bingo + Tier List) : chaque clic passe au mode
@@ -3147,7 +2909,7 @@ function renderFoldersPanelTree() {
     container.appendChild(row);
   });
 
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: container.closest('.fp-tree-frame') || container });
 }
 
 // ── Page d'accueil unique (fusion Accueil + Dossiers) : colonnes Bingo et Tier List
@@ -3191,160 +2953,10 @@ function renderThemesList() {
   renderAllFolders();
 }
 
-// Sous-thèmes — délégation vers fonctions dossiers
-function renameSubtheme(id, newName) { renameFolder(id, newName); }
-
 function renderSubthemesList() {
   renderAllFolders();
 }
 
-
-// Modales renommage sous-thème
-const modalRenameSubtheme      = document.getElementById('modal-rename-subtheme');
-const renameSubthemeInput      = document.getElementById('rename-subtheme-input');
-const btnConfirmRenameSubtheme = document.getElementById('btn-confirm-rename-subtheme');
-let _renameSubthemeId = null;
-
-function closeRenameSubthemeModal() { modalRenameSubtheme.classList.add('hidden'); _renameSubthemeId = null; }
-function confirmRenameSubtheme() { if (!_renameSubthemeId) return; renameSubtheme(_renameSubthemeId, renameSubthemeInput.value); closeRenameSubthemeModal(); }
-
-btnConfirmRenameSubtheme.addEventListener('click', confirmRenameSubtheme);
-renameSubthemeInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmRenameSubtheme(); if (e.key === 'Escape') closeRenameSubthemeModal(); });
-
-// Brancher le bouton "+ Dossier" sur la vraie modale
-const _btnNewFolderBingo = document.getElementById('btn-new-folder-bingo');
-if (_btnNewFolderBingo) {
-  _btnNewFolderBingo.addEventListener('click', () => {
-    const parentId = _btnNewFolderBingo.dataset.parentId || null;
-    openNewFolderModal(parentId || null);
-  });
-}
-
-// Bouton "+ Dossier" racine
-const _btnNewRootFolder = document.getElementById('btn-new-root-folder');
-if (_btnNewRootFolder) {
-  _btnNewRootFolder.addEventListener('click', () => openNewFolderModal(null));
-}
-// Les sous-thèmes archivés sont désormais dans modal-archives-unified
-
-function closeCtxMenuSubtheme() { closeCtxMenuFolder(); }
-
-// ──────────────────────────────────────────────
-// Export PNG de la grille bingo
-// ──────────────────────────────────────────────
-function renderGridToCanvas(t, g, cellSize = 120) {
-  const n = g.gridSize;
-  const gap = 3;
-  const pathFontPx  = Math.max(10, Math.round(cellSize * 0.11));
-  const nameFontPx  = Math.max(13, Math.round(cellSize * 0.15));
-  const lineGap     = Math.round(cellSize * 0.04);
-  const headerH     = pathFontPx + lineGap + nameFontPx + Math.round(cellSize * 0.1) * 2;
-  const totalW = n * cellSize + (n - 1) * gap;
-  const totalH = headerH + n * cellSize + (n - 1) * gap;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = totalW;
-  canvas.height = totalH;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#18181c';
-  ctx.fillRect(0, 0, totalW, totalH);
-
-  const padV = Math.round(cellSize * 0.1);
-  // Ligne 1 : chemin du dossier (petit, à gauche)
-  const path = getFolderPath(state.folders, _localActiveFolderId);
-  const pathStr = path.map(f => f.name).join(' \\ ');
-  ctx.fillStyle = '#9090a8';
-  ctx.font = `${pathFontPx}px Arial`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillText(pathStr, totalW / 2, padV);
-
-  // Ligne 2 : nom de la grille (plus grand, centré, en jaune)
-  ctx.fillStyle = '#e8c547';
-  ctx.font = `bold ${nameFontPx}px Arial`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillText(g.name, totalW / 2, padV + pathFontPx + lineGap);
-
-  const { indices: bingoIdx } = getBingoResult(n, g.grid.slice(0, n * n));
-
-  for (let i = 0; i < n * n; i++) {
-    const row = Math.floor(i / n);
-    const col = i % n;
-    const x = col * (cellSize + gap);
-    const y = headerH + row * (cellSize + gap);
-    const cell = g.grid[i];
-    const el = cell && cell.elementId ? (activeSubtheme()?.elements || []).find(e => e.id === cell.elementId) : null;
-
-    if (bingoIdx.has(i)) {
-      ctx.fillStyle = '#4caf7d';
-    } else if (cell && cell.checked) {
-      ctx.fillStyle = '#2d6a4f';
-    } else if (el) {
-      ctx.fillStyle = '#23232e';
-    } else {
-      ctx.fillStyle = '#1a1a22';
-    }
-    ctx.fillRect(x, y, cellSize, cellSize);
-
-    ctx.strokeStyle = '#333344';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
-
-    if (!el) continue;
-
-    ctx.fillStyle = (bingoIdx.has(i) || (cell && cell.checked)) ? '#fff' : '#d0d0e8';
-    const lenText = el.text.length;
-    let baseRatio;
-    if (lenText <= 6)       baseRatio = 0.185;
-    else if (lenText <= 12) baseRatio = 0.145;
-    else if (lenText <= 22) baseRatio = 0.113;
-    else if (lenText <= 40) baseRatio = 0.093;
-    else                    baseRatio = 0.077;
-    let fontSize = Math.max(7, Math.round(baseRatio * cellSize));
-    ctx.font = `bold ${fontSize}px Arial`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-
-    // Word-wrap — réduire la taille si le texte ne rentre pas
-    const padding = cellSize * 0.1;
-    const maxW = cellSize - padding * 2;
-    const lineH = fontSize * 1.2;
-
-    function wrapText(fs) {
-      ctx.font = `bold ${fs}px Arial`;
-      const words = el.text.split(' ');
-      const result = [];
-      let line = '';
-      for (const word of words) {
-        const test = line ? line + ' ' + word : word;
-        if (ctx.measureText(test).width > maxW && line) { result.push(line); line = word; }
-        else line = test;
-      }
-      if (line) result.push(line);
-      return result;
-    }
-
-    let lines = wrapText(fontSize);
-    // Réduire la taille si le texte dépasse la hauteur de cellule
-    let fsFinal = fontSize;
-    while (fsFinal > 8 && lines.length * fsFinal * 1.2 > cellSize - padding * 2) {
-      fsFinal--;
-      lines = wrapText(fsFinal);
-    }
-    if (fsFinal !== fontSize) ctx.font = `bold ${fsFinal}px Arial`;
-    const lineHFinal = fsFinal * 1.2;
-
-    const totalTextH = lines.length * lineHFinal;
-    const startY = y + (cellSize - totalTextH) / 2;
-    lines.forEach((l, li) => {
-      ctx.fillText(l, x + cellSize / 2, startY + li * lineHFinal);
-    });
-  }
-
-  return canvas;
-}
 
 function getVisibleGrids() {
   const s = activeSubtheme();
@@ -3386,55 +2998,6 @@ function playCaptureSound() {
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + 0.25);
   } catch (e) {}
-}
-
-function copyGridToClipboard(grids) {
-  const t = activeTheme();
-  if (!t || grids.length === 0) return;
-  // Largeur cible : 600px par grille
-  const TARGET_PER_GRID = 600;
-  const outerGap = 16;
-  const n = grids[0].gridSize;
-  const gridGap = 3;
-  const availPerGrid = TARGET_PER_GRID - gridGap * (n - 1);
-  const cellSize = Math.floor(availPerGrid / n);
-
-  let canvas;
-  if (grids.length === 1) {
-    canvas = renderGridToCanvas(t, grids[0], cellSize);
-  } else {
-    const canvases = grids.map(gx => renderGridToCanvas(t, gx, cellSize));
-    const totalW = canvases.reduce((s, c) => s + c.width, 0) + outerGap * (canvases.length - 1);
-    const totalH = Math.max(...canvases.map(c => c.height));
-    canvas = document.createElement('canvas');
-    canvas.width = totalW;
-    canvas.height = totalH;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#0e0e10';
-    ctx.fillRect(0, 0, totalW, totalH);
-    let xOff = 0;
-    canvases.forEach(c => { ctx.drawImage(c, xOff, 0); xOff += c.width + outerGap; });
-  }
-  canvas.toBlob(blob => {
-    if (!blob) return;
-    navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
-      playCaptureSound();
-    }).catch(err => {
-      console.warn('Clipboard write failed:', err);
-    });
-  }, 'image/png');
-}
-
-function bingoScreenshot() {
-  copyGridToClipboard(getVisibleGrids());
-}
-
-function bingoScreenshotOne(gId) {
-  const s = activeSubtheme();
-  if (!s) return;
-  const g = s.grids.find(x => x.id === gId);
-  if (!g) return;
-  copyGridToClipboard([g]);
 }
 
 
@@ -3545,28 +3108,6 @@ function renderGridsList() {
   _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id));
   // Modal Grilles ouvert : sa liste suit les créations/renommages/suppressions.
   if (!document.getElementById('modal-grids')?.classList.contains('hidden')) _renderGridsModalList();
-}
-
-function openRenameGridModal(id) {
-  const s = activeSubtheme();
-  if (!s) return;
-  const g = s.grids.find(g => g.id === id);
-  if (!g) return;
-  _renameGridId = id;
-  renameGridInput.value = g.name;
-  modalRenameGrid.classList.remove('hidden');
-  setTimeout(() => { renameGridInput.focus(); renameGridInput.select(); }, 50);
-}
-
-function closeRenameGridModal() {
-  modalRenameGrid.classList.add('hidden');
-  _renameGridId = null;
-}
-
-function confirmRenameGrid() {
-  if (!_renameGridId) return;
-  renameGrid(_renameGridId, renameGridInput.value);
-  closeRenameGridModal();
 }
 
 
@@ -3738,11 +3279,7 @@ function _fitBingoCellTexts() {
   });
 }
 
-// Mode placement manuel supprimé
-const manualMode = false;
-
 let _clearCellCallback = null;
-let _clearArchivedOnlyCallback = null; // callback du bouton "Archivées seulement" (modal-confirm-clear)
 function openClearCellConfirm(label, callback) {
   _clearCellCallback = callback;
   document.getElementById('modal-clear-msg').textContent = `Vider la case ${label} ?`;
@@ -3859,95 +3396,7 @@ function buildSingleGrid(t, g, isActive, totalGrids = 1, isSecondary = false) {
   });
   titleRow.appendChild(titleStar);
 
-  // Message bingo individuel ("BINGO !"), sur la même rangée que le titre, à droite
-  // DÉSACTIVÉ : le message se recréait/rechargeait de façon incontrôlée à cause d'un ou plusieurs
-  // mécanismes de rendu Firebase non entièrement résolus (échos multiples, rendus redondants au
-  // chargement et au clic — cf conversations précédentes). À reprendre plus tard. Uniquement CE
-  // texte est coupé — le surlignage vert des cases (bingo-line), le son et les confettis restent
-  // actifs normalement (cf plus bas dans buildSingleGrid/_patchCellsAfterCheck/renderGrid).
-  // if (bingoLines.length > 0) {
-  //   const msg = document.createElement('div');
-  //   msg.className = 'bingo-message-inline';
-  //   const count = bingoLines.length;
-  //   msg.innerHTML = count === 1
-  //     ? `<i data-lucide="party-popper"></i> BINGO !`
-  //     : `<i data-lucide="party-popper"></i> BINGO x${count} !`;
-  //   titleRow.appendChild(msg);
-  // }
-
-  // Contrôles par grille (ordre : Générer | Vider | Capture), à côté du nom. Grille modifiable
-  // uniquement quand "Création" est ouvert (cf _bingoEditLocked).
   const gridLocked = _bingoEditLocked();
-
-  // Vérifier si assez d'éléments pour cette grille
-  const sActive = activeSubtheme();
-  const sArchivedIds = (sActive && sActive.archivedElementIds) ? sActive.archivedElementIds : [];
-  const activeElemCount = (sActive && sActive.elements ? sActive.elements : []).filter(e => !sArchivedIds.includes(e.id)).length;
-  const cellCount = g.gridSize * g.gridSize;
-  const enoughForThis = activeElemCount >= cellCount;
-
-  const canFillEmpty = (() => {
-    const usedIds = new Set();
-    for (let i = 0; i < cellCount; i++) {
-      if (g.grid[i] && g.grid[i].elementId) {
-        const elemExists = (sActive && sActive.elements ? sActive.elements : []).some(el => el.id === g.grid[i].elementId);
-        if (elemExists) usedIds.add(g.grid[i].elementId);
-      }
-    }
-    const emptyCount = g.grid.slice(0, cellCount).filter(c => !c || !c.elementId).length;
-    const availableCount = activeElemCount - usedIds.size;
-    return !gridLocked && emptyCount > 0 && availableCount >= emptyCount;
-  })();
-
-  const genDisabled = gridLocked || (!enoughForThis && !canFillEmpty);
-
-  const btnSubGen = document.createElement('button');
-  btnSubGen.className = 'btn-action btn-subgrid btn-subgrid-gen' + (genDisabled ? ' btn-disabled' : '');
-  btnSubGen.disabled = genDisabled;
-  btnSubGen.innerHTML = '<i data-lucide="dices"></i>';
-  btnSubGen.title = genDisabled && !gridLocked
-    ? `Pas assez d'éléments (${activeElemCount}/${cellCount})`
-    : 'Générer aléatoirement cette grille';
-  btnSubGen.addEventListener('click', () => openGenerateChoiceModal(g.id));
-
-  const btnSubClear = document.createElement('button');
-  btnSubClear.className = 'btn-action btn-subgrid btn-subgrid-clear' + (gridLocked ? ' btn-disabled' : '');
-  btnSubClear.disabled = gridLocked;
-  btnSubClear.innerHTML = '<i data-lucide="eraser"></i>';
-  btnSubClear.title = gridLocked ? 'Grille bloquée' : 'Vider cette grille';
-  btnSubClear.addEventListener('click', () => {
-    const tNow = activeTheme();
-    const sNow = activeSubtheme();
-    if (!tNow || _bingoEditLocked() || !sNow) return;
-    const gNow = sNow.grids.find(x => x.id === g.id);
-    if (!gNow) return;
-    // Conserver les IDs validés avant de vider
-    if (!sNow.persistentCheckedIds) sNow.persistentCheckedIds = [];
-    gNow.grid.forEach(c => {
-      if (c.checked && c.elementId && !sNow.persistentCheckedIds.includes(c.elementId)) {
-        sNow.persistentCheckedIds.push(c.elementId);
-      }
-    });
-    gNow.grid = gNow.grid.map(() => ({ elementId: null, checked: false }));
-    _bingoSaveFolder(sNow.id);
-    renderGrid();
-    renderElements();
-  });
-
-  // Cadre discret autour de Générer + Vider — retiré de chaque grille sur demande (2026-11-07) :
-  // plus ajouté au titre, code conservé au cas où (Générer reste dans le panneau Création).
-  const lockGenGroup = document.createElement('div');
-  lockGenGroup.className = 'subgrid-lock-gen-group';
-  lockGenGroup.appendChild(btnSubGen);
-  lockGenGroup.appendChild(btnSubClear);
-  // titleRow.appendChild(lockGenGroup);
-
-  const btnSubCapture = document.createElement('button');
-  btnSubCapture.className = 'btn-action btn-screenshot-bingo btn-subgrid grid-view-title-capture';
-  btnSubCapture.innerHTML = '<i data-lucide="camera"></i>';
-  btnSubCapture.title = 'Copier la grille dans le presse-papier';
-  btnSubCapture.addEventListener('click', () => bingoScreenshotOne(g.id));
-  titleRow.appendChild(btnSubCapture);
 
   wrapper.appendChild(titleRow);
 
@@ -4129,24 +3578,6 @@ function _hideSecondaryCellPreview() {
   if (preview) preview.classList.add('hidden');
 }
 
-// "Reset" décoche toutes les cases de toutes les grilles non archivées du sous-thème actif — inutile
-// (et donc désactivé) s'il n'y a ni dossier/sous-thème actif, si le dossier est verrouillé, ou si rien
-// n'est actuellement coché (grilles ET persistentCheckedIds, que Reset vide aussi).
-function updateResetButton() {
-  const t = activeTheme();
-  const s = activeSubtheme();
-  if (!t || _bingoEditLocked() || !s) {
-    btnReset.disabled = true;
-    btnReset.classList.add('btn-disabled');
-    return;
-  }
-  const hasCheckedCell = (s.grids || []).some(gx => !gx.archived && gx.grid.some(c => c.checked));
-  const hasPersistent = (s.persistentCheckedIds || []).length > 0;
-  const nothingToReset = !hasCheckedCell && !hasPersistent;
-  btnReset.disabled = nothingToReset;
-  btnReset.classList.toggle('btn-disabled', nothingToReset);
-}
-
 // skipSizeRecalc : true seulement quand l'appelant sait avec certitude que rien de
 // dimensionnel n'a changé (ex : cocher une case) — évite le reflow synchrone coûteux
 // de _adjustBingoGridSizes(). Par défaut false (comportement historique, toujours sûr) :
@@ -4177,10 +3608,7 @@ function renderGrid(skipSizeRecalc = false) {
     _setBingoCreationOpen(_bingoVisibleGridsNeedGenerate(), false);
   }
 
-  updateClearGridsButton();
   updateCreationButton();
-  updateOpenGridsWindowButton();
-  updateResetButton();
   _updateNewBadgeButton();
   _hideSecondaryCellPreview();
   gridWrapper.innerHTML = '';
@@ -4202,7 +3630,6 @@ function renderGrid(skipSizeRecalc = false) {
     sizeDisplay.textContent = '—';
     btnSizeMinus.disabled = true;
     btnSizePlus.disabled = true;
-    bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
     return;
@@ -4221,7 +3648,6 @@ function renderGrid(skipSizeRecalc = false) {
     sizeDisplay.textContent = '—';
     btnSizeMinus.disabled = true;
     btnSizePlus.disabled = true;
-    bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
     return;
@@ -4261,7 +3687,6 @@ function renderGrid(skipSizeRecalc = false) {
     sizeDisplay.textContent = '—';
     btnSizeMinus.disabled = true;
     btnSizePlus.disabled = true;
-    bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
     return;
@@ -4284,7 +3709,6 @@ function renderGrid(skipSizeRecalc = false) {
   if (gridsToShow.length === 0) {
     gridWrapper.innerHTML = '<div class="no-grid-msg">Aucune grille sélectionnée — clique sur un onglet pour afficher une grille.</div>';
     gridWrapper.className = 'grid-wrapper';
-    bingoMsg.classList.add('hidden');
     btnGenerate.disabled = true;
     btnGenerate.classList.add('btn-disabled');
     return;
@@ -4301,9 +3725,6 @@ function renderGrid(skipSizeRecalc = false) {
   const hasMainGrid = gridsToShow.length > 1 && !!mainGridId && gridsToShow.some(gx => gx.id === mainGridId);
   gridWrapper.className = `grid-wrapper grid-views-${gridsToShow.length}` + (hasMainGrid ? ' grid-wrapper-has-main' : '')
     + (hasMainGrid && _localFavGridSide === 'right' ? ' grid-wrapper-main-right' : '');
-
-  // Le message global est désormais remplacé par des messages individuels par grille
-  bingoMsg.classList.add('hidden');
 
   const _pendingBingoEffects = [];
 
@@ -4337,10 +3758,9 @@ function renderGrid(skipSizeRecalc = false) {
   // de gridsToShow, pour garantir "principale à gauche, secondaires à droite" dans tous les cas.
   if (secondaryCol) gridWrapper.appendChild(secondaryCol);
 
-  // lucide.createIcons() re-scanne TOUT le document (pas seulement le DOM neuf) : coûteux sur
-  // machine lente, donc sauté quand skipSizeRecalc est vrai (aucune icône ne peut avoir changé
-  // dans ce cas — cf commentaire sur skipSizeRecalc plus bas).
-  if (!skipSizeRecalc && window.lucide) lucide.createIcons();
+  // Icônes des grilles seulement (les boutons autour gèrent les leurs) ; sauté quand skipSizeRecalc
+  // est vrai (aucune icône ne peut avoir changé dans ce cas — cf commentaire sur skipSizeRecalc plus bas).
+  if (!skipSizeRecalc && window.lucide) lucide.createIcons({ root: gridWrapper });
   // _adjustBingoGridSizes() force un reflow synchrone (getBoundingClientRect/getComputedStyle) :
   // coûteux sur machine lente, à sauter uniquement quand l'appelant garantit qu'aucune dimension
   // n'a changé (voir skipSizeRecalc en tête de fonction).
@@ -4520,8 +3940,15 @@ function _sizeSingleGridWrapper(wrapper, availableHeight, availableWidth = null)
   return side + wrapperPaddingH + wrapperBorderH;
 }
 
+// Une seule mesure par image affichée pendant un redimensionnement de fenêtre (l'événement 'resize'
+// arrive bien plus souvent, et _adjustBingoGridSizes() est coûteux).
+let _bingoResizeRaf = 0;
 window.addEventListener('resize', () => {
-  if (document.getElementById('page-bingo').classList.contains('active')) _adjustBingoGridSizes();
+  if (_bingoResizeRaf) return;
+  _bingoResizeRaf = requestAnimationFrame(() => {
+    _bingoResizeRaf = 0;
+    if (document.getElementById('page-bingo').classList.contains('active')) _adjustBingoGridSizes();
+  });
 });
 
 // ──────────────────────────────────────────────
@@ -4656,7 +4083,6 @@ function _closeFolderTreeDropdown() {
 // showFullPath : le bouton affiche le chemin complet ("Saison \ Sous-dossier") au lieu du seul nom.
 function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, storageKey, excludeFn = null, showFullPath = false) {
   const labelSpan = btnEl.querySelector('span');
-  const iconEl = btnEl.querySelector('[data-lucide]');
 
   function findFolderLabel(folders, id) {
     for (const f of (folders || [])) {
@@ -4671,8 +4097,10 @@ function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, stora
     const val = selectEl.value;
     const name = val ? findFolderLabel(rootFolders, val) : null;
     labelSpan.textContent = name || rootLabel;
+    // Relu à chaque fois : lucide remplace l'icône par un nouvel élément à chaque createIcons.
+    const iconEl = btnEl.querySelector('[data-lucide]');
     if (iconEl) iconEl.setAttribute('data-lucide', name ? 'folder-closed' : 'house');
-    if (window.lucide) lucide.createIcons();
+    if (window.lucide) lucide.createIcons({ root: btnEl });
   }
 
   function selectFolder(id) {
@@ -4722,7 +4150,7 @@ function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, stora
       arrow.classList.toggle('collapsed', collapsed);
       childrenEl.classList.toggle('collapsed', collapsed);
       icon.innerHTML = (hasChildren && !collapsed) ? '<i data-lucide="folder-open"></i>' : '<i data-lucide="folder-closed"></i>';
-      if (window.lucide) lucide.createIcons();
+      if (window.lucide) lucide.createIcons({ root: icon });
     };
     arrow.addEventListener('click', toggleCollapse);
     row.addEventListener('click', e => { e.stopPropagation(); selectFolder(f.id); });
@@ -4757,7 +4185,7 @@ function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, stora
     });
     btnEl.classList.add('open');
     _folderTreeDropdownPanel = panel;
-    if (window.lucide) lucide.createIcons();
+    if (window.lucide) lucide.createIcons({ root: panel });
     _folderTreeDropdownCloseHandler = () => _closeFolderTreeDropdown();
     setTimeout(() => document.addEventListener('click', _folderTreeDropdownCloseHandler), 0);
   };
@@ -5704,7 +5132,7 @@ function _renderElementPresetEditList() {
 
   list.innerHTML = '';
   entries.forEach(({ text, idx }) => list.appendChild(_buildElementPresetEditItem(text, idx)));
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: list });
 }
 
 // Met à jour sur place les cases à cocher du volet droit (sans re-rendre la liste ni rejouer son animation).
@@ -5987,28 +5415,6 @@ document.getElementById('btn-presets-elements-panel').addEventListener('click', 
 // Page Dossiers : même modale, sans dossier cible pré-sélectionné.
 document.getElementById('folders-page-btn-presets-cases').addEventListener('click', () => openElementPresetsModal(null));
 
-document.getElementById('btn-clear-elements-panel').addEventListener('click', () => {
-  const s = activeSubtheme();
-  if (!s || !(s.elements || []).length) return;
-  _clearCellCallback = clearAllElements;
-  const archivedCount = (s.archivedElementIds || []).length;
-  const btnArchivedOnly = document.getElementById('btn-confirm-clear-archived-only');
-  if (archivedCount > 0) {
-    _clearArchivedOnlyCallback = clearArchivedElements;
-    btnArchivedOnly.textContent = '';
-    btnArchivedOnly.innerHTML = `<i data-lucide="package"></i> Archivées seulement (${archivedCount})`;
-    btnArchivedOnly.classList.remove('hidden');
-    if (window.lucide) lucide.createIcons();
-  } else {
-    _clearArchivedOnlyCallback = null;
-    btnArchivedOnly.classList.add('hidden');
-  }
-  document.getElementById('modal-clear-msg').textContent = archivedCount > 0
-    ? `Supprimer les ${s.elements.length} case(s) de ce dossier, ou seulement les ${archivedCount} archivée(s) ?`
-    : `Supprimer les ${s.elements.length} case(s) de ce dossier ?`;
-  document.getElementById('modal-confirm-clear').classList.remove('hidden');
-});
-
 const _elementsFilterTagSelect = document.getElementById('elements-filter-tag-select');
 if (_elementsFilterTagSelect) {
   _elementsFilterTagSelect.addEventListener('change', renderElements);
@@ -6131,33 +5537,6 @@ function _deleteSuggestions(ids) {
     .catch(e => console.warn('Suggestions delete error:', e));
 }
 
-// Place la suggestion dans les cases du bingo actif (Actives ou Archivées), puis la retire de la
-// liste partagée pour tout le monde. Si une case de même texte existe déjà dans ce bingo, pas de
-// doublon : elle est juste passée dans l'onglet demandé.
-function _placeSuggestion(id, archived) {
-  const s = activeSubtheme();
-  const sg = _bingoSuggestions.find(x => x.id === id);
-  if (!s || !sg) return;
-  const key = sg.text.trim().toLowerCase();
-  const existing = (s.elements || []).find(e => e.text.trim().toLowerCase() === key);
-  if (existing) {
-    const isArchived = (s.archivedElementIds || []).includes(existing.id);
-    if (archived && !isArchived) archiveElement(existing.id);
-    else if (!archived && isArchived) restoreElement(existing.id);
-  } else {
-    if (!s.elements) s.elements = [];
-    const newId = uid();
-    s.elements.push({ id: newId, text: sg.text });
-    if (archived) {
-      if (!s.archivedElementIds) s.archivedElementIds = [];
-      s.archivedElementIds.push(newId);
-    }
-    _bingoSaveFolder(s.id);
-    renderElements();
-  }
-  _deleteSuggestion(id);
-}
-
 // inCasesPanel : onglet Idées du panneau Cases (case à cocher, pas de menu) ; sinon panneau Idées
 // (croix de suppression, comme les cases d'un preset). Dans les deux cas, clic gauche = renommer.
 function _buildSuggestionItem(sg, inCasesPanel) {
@@ -6269,9 +5648,8 @@ function closeSuggestionsPanel() {
   setTimeout(_adjustBingoGridSizes, 240);
 }
 document.getElementById('btn-bingo-suggestions').addEventListener('click', () => {
-  // Mode Création (hors plein écran, où le panneau Cases n'a pas sa place) : onglet Suggestions du
-  // panneau Cases plutôt que le panneau Suggestions séparé.
-  if (_bingoCreationOpen && !document.body.classList.contains('solo-grid-mode')) {
+  // Mode Création : onglet Suggestions du panneau Cases plutôt que le panneau Suggestions séparé.
+  if (_bingoCreationOpen) {
     openCasesPanel();
     document.querySelector('.tab-btn[data-tab="suggestions"]')?.click();
     return;
@@ -6460,7 +5838,7 @@ function _renderBingoStatsEpisodesMenu() {
     menu.appendChild(item);
   });
 
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: menu });
 }
 
 // ── Modal "Grilles" (bouton Grilles du panneau Création) : liste des grilles du bingo — cocher/
@@ -6474,7 +5852,7 @@ function _renderGridsModalList() {
   const s = activeSubtheme();
   menu.innerHTML = '';
 
-  if (!s) { if (window.lucide) lucide.createIcons(); return; }
+  if (!s) { if (window.lucide) lucide.createIcons({ root: menu }); return; }
   const activeGrids = s.grids.filter(g => !g.archived);
   _selectedGridIds = _selectedGridIds.filter(id => activeGrids.some(x => x.id === id)).slice(0, MAX_VISIBLE_GRIDS);
   const selectionFull = _selectedGridIds.length >= MAX_VISIBLE_GRIDS;
@@ -6603,128 +5981,9 @@ function _renderGridsModalList() {
     menu.appendChild(item);
   });
 
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: menu });
 }
 
-
-// ──────────────────────────────────────────────
-// Menu contextuel — Dossiers (remplace ctx-menu-theme)
-// ──────────────────────────────────────────────
-const ctxMenuTheme  = document.getElementById('ctx-menu-folder');
-const ctxThemeRename    = document.getElementById('ctx-folder-rename');
-const ctxThemeDuplicate = document.getElementById('ctx-folder-duplicate');
-const ctxThemeArchive   = document.getElementById('ctx-folder-archive');
-let _ctxThemeId = null; // contient maintenant un folderId
-
-function closeCtxMenuTheme() { closeCtxMenuFolder(); }
-
-function openCtxMenuFolder(id, e, anchorEl) {
-  closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
-  _ctxThemeId = id;
-  const _ceBtn = document.getElementById('ctx-folder-set-current-event');
-  if (_ceBtn) {
-    const isCurrentEvent = state.currentEventFolderId === id;
-    _ceBtn.innerHTML = '<i data-lucide="party-popper"></i> ' + (isCurrentEvent ? 'Retirer soirée en cours' : 'Définir comme soirée en cours');
-    if (window.lucide) lucide.createIcons();
-  }
-  if (ctxMenuTheme) { positionCtxMenu(ctxMenuTheme, e, anchorEl); ctxMenuTheme.classList.remove('hidden'); }
-}
-
-function closeCtxMenuFolder() {
-  if (ctxMenuTheme) ctxMenuTheme.classList.add('hidden');
-  _ctxThemeId = null;
-}
-
-if (ctxThemeRename) ctxThemeRename.addEventListener('click', () => {
-  if (_ctxThemeId) openRenameFolderModal(_ctxThemeId);
-  closeCtxMenuFolder();
-});
-if (ctxThemeDuplicate) ctxThemeDuplicate.addEventListener('click', () => {
-  if (_ctxThemeId) openDuplicateFolderModal(_ctxThemeId);
-  closeCtxMenuFolder();
-});
-if (ctxThemeArchive) ctxThemeArchive.addEventListener('click', () => {
-  if (_ctxThemeId) archiveFolder(_ctxThemeId);
-  closeCtxMenuFolder();
-});
-const _ctxFolderDeleteBtn = document.getElementById('ctx-folder-delete');
-if (_ctxFolderDeleteBtn) _ctxFolderDeleteBtn.addEventListener('click', () => {
-  const id = _ctxThemeId;
-  closeCtxMenuFolder();
-  const f = id && findFolderById(state.folders, id);
-  if (f) confirmDelete(`"${f.name}"`, () => deleteFolder(id));
-});
-const _ctxFolderNewChildBtn = document.getElementById('ctx-folder-new-child');
-if (_ctxFolderNewChildBtn) _ctxFolderNewChildBtn.addEventListener('click', () => {
-  const parentId = _ctxThemeId;
-  closeCtxMenuFolder();
-  if (parentId) openNewFolderModal(parentId);
-});
-const _ctxFolderSetCurrentEventBtn = document.getElementById('ctx-folder-set-current-event');
-if (_ctxFolderSetCurrentEventBtn) _ctxFolderSetCurrentEventBtn.addEventListener('click', () => {
-  const id = _ctxThemeId;
-  closeCtxMenuFolder();
-  if (id) confirmSetCurrentEventFolder(id);
-});
-
-// ──────────────────────────────────────────────
-// Menu contextuel — Grilles
-// ──────────────────────────────────────────────
-const ctxMenuGrid    = document.getElementById('ctx-menu-grid');
-const ctxGridRename    = document.getElementById('ctx-grid-rename');
-let _ctxGridId = null;
-
-function openCtxMenuGrid(id, e, anchorEl) {
-  closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuElement();
-  _ctxGridId = id;
-  positionCtxMenu(ctxMenuGrid, e, anchorEl);
-  ctxMenuGrid.classList.remove('hidden');
-}
-
-function closeCtxMenuGrid() {
-  ctxMenuGrid.classList.add('hidden');
-  _ctxGridId = null;
-}
-
-ctxGridRename.addEventListener('click', () => {
-  if (_ctxGridId) openRenameGridModal(_ctxGridId);
-  closeCtxMenuGrid();
-});
-document.getElementById('ctx-grid-delete').addEventListener('click', () => {
-  const id = _ctxGridId;
-  closeCtxMenuGrid();
-  const g = id && (activeSubtheme()?.grids || []).find(x => x.id === id);
-  if (g) confirmDelete(`la grille "${g.name}"`, () => deleteGrid(id));
-});
-
-// ── Menu contextuel cases ──
-const ctxMenuElement  = document.getElementById('ctx-menu-element');
-const ctxElEdit       = document.getElementById('ctx-element-edit');
-const ctxElArchive    = document.getElementById('ctx-element-archive');
-let _ctxElementId     = null;
-let _ctxElementSpan   = null;
-
-function openCtxMenuElement(id, span, e, anchorEl) {
-  closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuGrid();
-  _ctxElementId = id;
-  _ctxElementSpan = span;
-  positionCtxMenu(ctxMenuElement, e, anchorEl);
-  ctxMenuElement.classList.remove('hidden');
-}
-function closeCtxMenuElement() { ctxMenuElement.classList.add('hidden'); _ctxElementId = null; _ctxElementSpan = null; }
-
-ctxElEdit.addEventListener('click', () => {
-  if (_ctxElementId && _ctxElementSpan) startEditElement(_ctxElementId, _ctxElementSpan);
-  closeCtxMenuElement();
-});
-ctxElArchive.addEventListener('click', () => {
-  if (_ctxElementId) archiveElement(_ctxElementId);
-  closeCtxMenuElement();
-});
-document.getElementById('ctx-element-delete-active').addEventListener('click', () => {
-  if (_ctxElementId) deleteElement(_ctxElementId);
-  closeCtxMenuElement();
-});
 
 // Ajoute un texte à un preset s'il n'y est pas déjà (insensible à la casse) — sans sauvegarder.
 function _pushTextToElementPreset(preset, text) {
@@ -6736,62 +5995,6 @@ function _pushTextToElementPreset(preset, text) {
   preset.elementDates = dates;
   _touchElementPreset(preset);
 }
-
-// Ajoute le texte de la case au preset choisi (existant ou nouveau) — le tag apparaît ensuite tout
-// seul dans le panneau Cases (détection dynamique par comparaison de texte, voir getElementTags).
-function _addElementToPreset(elementId, presetId, presetName) {
-  const s = activeSubtheme();
-  const el = s && (s.elements || []).find(e => e.id === elementId);
-  if (!el) return;
-  const preset = presetId ? getElementPresets().find(p => p.id === presetId) : null;
-  if (preset) {
-    _pushTextToElementPreset(preset, el.text);
-    _bingoSaveIndex();
-  } else if (presetName) {
-    saveElementPreset(presetName, [el.text]);
-  } else {
-    return;
-  }
-  renderElements();
-}
-
-document.getElementById('ctx-element-add-to-preset').addEventListener('click', e => {
-  e.stopPropagation();
-  const elementId = _ctxElementId;
-  const anchorEl = _ctxElementSpan ? _ctxElementSpan.closest('.element-item') : null;
-  closeCtxMenuElement();
-  if (!elementId) return;
-  const { addItem } = _tlMakeCtxMenu(anchorEl, e);
-  const presets = getElementPresets().slice().sort((a, b) => _elementPresetDisplayName(a).localeCompare(_elementPresetDisplayName(b), undefined, { sensitivity: 'base' }));
-  presets.forEach(p => addItem('tag', _elementPresetDisplayName(p), false, () => _addElementToPreset(elementId, p.id, null)));
-  addItem('plus', 'Nouveau preset...', false, async () => {
-    const name = await uiPrompt('Nouveau preset', { okLabel: 'Créer', placeholder: 'Nom du preset...' });
-    if (name && name.trim()) _addElementToPreset(elementId, null, name.trim());
-  });
-});
-
-// ── Menu contextuel cases archivées ──
-const ctxMenuElementArchived = document.getElementById('ctx-menu-element-archived');
-const ctxElRestore           = document.getElementById('ctx-element-restore');
-const ctxElDelete            = document.getElementById('ctx-element-delete');
-let _ctxElementArchivedId    = null;
-
-function openCtxMenuElementArchived(id, e, anchorEl) {
-  closeCtxMenuTheme(); closeCtxMenuSubtheme(); closeCtxMenuGrid(); closeCtxMenuElement();
-  _ctxElementArchivedId = id;
-  positionCtxMenu(ctxMenuElementArchived, e, anchorEl);
-  ctxMenuElementArchived.classList.remove('hidden');
-}
-function closeCtxMenuElementArchived() { ctxMenuElementArchived.classList.add('hidden'); _ctxElementArchivedId = null; }
-
-ctxElRestore.addEventListener('click', () => {
-  if (_ctxElementArchivedId) restoreElement(_ctxElementArchivedId);
-  closeCtxMenuElementArchived();
-});
-ctxElDelete.addEventListener('click', () => {
-  if (_ctxElementArchivedId) deleteElement(_ctxElementArchivedId);
-  closeCtxMenuElementArchived();
-});
 
 // Positionnement dédié au menu "Chemin" (Bingo + Tier List) : contrairement à positionCtxMenu
 // (utilisé par les menus contextuels classiques), le haut ne doit JAMAIS être réajusté selon la
@@ -6832,102 +6035,7 @@ function positionCtxMenu(menu, e, anchorEl) {
   }
 }
 
-document.addEventListener('click', () => {
-  closeCtxMenuTheme();
-  closeCtxMenuGrid();
-  closeCtxMenuSubtheme();
-  closeCtxMenuElement();
-  closeCtxMenuElementArchived();
-});
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuSubtheme(); closeCtxMenuElement(); closeCtxMenuElementArchived(); }
-});
-// Fermer les menus contextuels au scroll (ils sont fixed et ne suivent pas la page)
-window.addEventListener('scroll', () => {
-  closeCtxMenuTheme(); closeCtxMenuGrid(); closeCtxMenuSubtheme(); closeCtxMenuElement(); closeCtxMenuElementArchived();
-}, { passive: true });
-
-document.getElementById('btn-open-grids-window').addEventListener('click', () => {
-  const grids = getVisibleGrids();
-  if (grids.length === 0 || _bingoVisibleGridsNeedGenerate()) return;
-  document.title = getFolderPath(state.folders, _localActiveFolderId).map(f => f.name).join(' \\ ');
-  document.body.classList.add('solo-grid-mode');
-  // En plein écran, tout doit tenir sur une seule rangée : #btn-toggle-new-badge, le bouton Capture
-  // et Stats (2e rangée, mode normal) sont déplacés en JS dans #bingo-solo-toolbar-center, dans le
-  // même ordre qu'en mode normal (New/Capture/Stats) — mêmes éléments physiques, jamais deux jeux de
-  // contrôles désynchronisés. Grilles (panneau Création) n'est pas disponible en plein écran. Le chemin
-  // (#bingo-fullscreen-breadcrumb) reste un frère indépendant de ce groupe, centré par position
-  // absolue (voir CSS), pas dans ce conteneur — sinon un groupe trop large le pousse hors de son centrage.
-  const soloCenter = document.getElementById('bingo-solo-toolbar-center');
-  const newBadgeBtn = document.getElementById('btn-toggle-new-badge');
-  const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
-  const statsBtn = document.getElementById('btn-bingo-stats');
-  if (soloCenter) {
-    if (newBadgeBtn) soloCenter.appendChild(newBadgeBtn);
-    if (captureBtn) soloCenter.appendChild(captureBtn);
-    if (statsBtn) soloCenter.appendChild(statsBtn);
-  }
-  // Fermer le panneau Cases : affichage cassé s'il est laissé ouvert en plein écran.
-  // Sa fermeture anime une transition CSS de largeur (0.22s, voir .cases-sidebar) : recalculer
-  // seulement en requestAnimationFrame() mesurait encore l'ancienne largeur réduite (bug rapporté —
-  // la taille des grilles restait celle d'avant la fermeture du panneau). Il faut attendre la fin
-  // de cette transition avant de mesurer la largeur réellement disponible.
-  closeCasesPanel();
-  // Le layout plein écran change la taille disponible sans déclencher de 'resize' :
-  // recalculer une fois que le nouveau layout est peint, sinon les grilles gardent
-  // la taille calculée pour l'affichage normal jusqu'à la prochaine interaction.
-  requestAnimationFrame(_adjustBingoGridSizes);
-  setTimeout(_adjustBingoGridSizes, 240);
-});
-document.getElementById('btn-exit-solo-grid')?.addEventListener('click', () => {
-  document.body.classList.remove('solo-grid-mode');
-  document.title = 'LesMichels';
-  requestAnimationFrame(_adjustBingoGridSizes);
-  // Le panneau Cases, fermé à l'entrée du plein écran, revient avec le panneau Création s'il est ouvert.
-  if (_bingoCreationOpen) {
-    openCasesPanel();
-    setTimeout(_adjustBingoGridSizes, 240);
-  }
-  // Rendre à la 2e rangée (ordre du HTML) : New au début, Stats en fin de rangée et
-  // Capture juste avant Stats (mode normal).
-  const optionsRow = document.getElementById('bingo-grids-options-row');
-  const newBadgeBtn = document.getElementById('btn-toggle-new-badge');
-  if (newBadgeBtn && optionsRow) optionsRow.prepend(newBadgeBtn);
-  const captureBtn = document.getElementById('btn-screenshot-bingo-normal');
-  const statsBtn = document.getElementById('btn-bingo-stats');
-  if (statsBtn && optionsRow) optionsRow.appendChild(statsBtn);
-  if (captureBtn && optionsRow) optionsRow.insertBefore(captureBtn, statsBtn && statsBtn.parentNode === optionsRow ? statsBtn : null);
-});
-// Modale de choix "Capture" (plein écran) : toutes les grilles affichées ou une grille précise
-const modalCaptureChoice = document.getElementById('modal-capture-choice');
-const captureChoiceActions = document.getElementById('capture-choice-actions');
-function openCaptureChoiceModal() {
-  const grids = getVisibleGrids();
-  captureChoiceActions.querySelectorAll('.btn-capture-choice-grid').forEach(btn => btn.remove());
-  grids.forEach(g => {
-    const btn = document.createElement('button');
-    btn.className = 'btn-action btn-secondary btn-capture-choice-grid';
-    btn.innerHTML = `<i data-lucide="camera"></i> ${g.title || g.name}`;
-    btn.addEventListener('click', () => {
-      closeCaptureChoiceModal();
-      bingoScreenshotOne(g.id);
-    });
-    captureChoiceActions.appendChild(btn);
-  });
-  if (window.lucide) lucide.createIcons();
-  modalCaptureChoice.classList.remove('hidden');
-}
-function closeCaptureChoiceModal() {
-  modalCaptureChoice.classList.add('hidden');
-}
-document.getElementById('btn-screenshot-bingo-normal')?.addEventListener('click', openCaptureChoiceModal);
-document.getElementById('btn-capture-choice-all').addEventListener('click', () => {
-  closeCaptureChoiceModal();
-  bingoScreenshot();
-});
-
 function generateAllVisibleGrids() {
-  if (manualMode) return;
   const t = activeTheme();
   const s = activeSubtheme();
   if (!t || _bingoEditLocked() || !s) return;
@@ -6940,7 +6048,7 @@ function generateAllVisibleGrids() {
 
   if (active.length < cellCount) {
     gridError.innerHTML = `<i data-lucide="triangle-alert"></i> Il faut au moins ${cellCount} éléments actifs pour générer une grille ${n}×${n} (${active.length}/${cellCount}).`;
-    if (window.lucide) lucide.createIcons();
+    if (window.lucide) lucide.createIcons({ root: gridError });
     gridError.classList.remove('hidden');
     return;
   }
@@ -6951,7 +6059,6 @@ function generateAllVisibleGrids() {
 }
 
 function generateEmptyCellsVisibleGrids() {
-  if (manualMode) return;
   const t = activeTheme();
   const s = activeSubtheme();
   if (!t || _bingoEditLocked() || !s) return;
@@ -6965,7 +6072,6 @@ function generateEmptyCellsVisibleGrids() {
 }
 
 function generateSingleGrid(gridId, emptyOnly) {
-  if (manualMode) return;
   const tNow = activeTheme();
   const sNow = activeSubtheme();
   if (!tNow || _bingoEditLocked() || !sNow) return;
@@ -6996,7 +6102,7 @@ function generateSingleGrid(gridId, emptyOnly) {
       msg = `<i data-lucide="triangle-alert"></i> Pas assez d'éléments actifs pour générer une grille ${n}×${n}.`;
     }
     gridError.innerHTML = msg;
-    if (window.lucide) lucide.createIcons();
+    if (window.lucide) lucide.createIcons({ root: gridError });
     gridError.classList.remove('hidden');
     return;
   }
@@ -7143,47 +6249,8 @@ prefsFavTitleInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') { _commitFavTitleInput(); prefsFavTitleInput.blur(); }
   if (e.key === 'Escape') closePrefsModal();
 });
-btnReset.addEventListener('click', () => {
-  const t = activeTheme();
-  const s = activeSubtheme();
-  if (!t || _bingoEditLocked() || !s) return;
-  document.getElementById('modal-confirm-reset').classList.remove('hidden');
-});
-
-document.getElementById('btn-confirm-reset').addEventListener('click', () => {
-  document.getElementById('modal-confirm-reset').classList.add('hidden');
-  const t = activeTheme();
-  const s = activeSubtheme();
-  if (!t || !s) return;
-  (s.grids || []).filter(gx => !gx.archived).forEach(gx => {
-    gx.grid = gx.grid.map(c => ({ ...c, checked: false }));
-  });
-  (s.elements || []).forEach(el => { el.checked = false; });
-  s.persistentCheckedIds = [];
-  _bingoSaveFolder(s.id);
-  renderGrid();
-  renderElements();
-});
-
-// Bouton global "Vider"
-const btnClearGrids = document.getElementById('btn-clear-grids');
-let _clearGridsTarget = 'visible'; // 'visible' ou gridId pour per-grille
-
-// "Vider" remet à vide toutes les cases remplies des grilles affichées non verrouillées — inutile
-// (et donc désactivé) si le dossier est verrouillé, ou si aucune grille éligible n'a de case remplie.
-function updateClearGridsButton() {
-  const btn = document.getElementById('btn-clear-grids');
-  if (!btn) return;
-  const t = activeTheme();
-  const locked = !t || _bingoEditLocked();
-  const grids = locked ? [] : getVisibleGrids();
-  const nothingToClear = locked || grids.every(gx => gx.grid.every(c => !c.elementId));
-  btn.disabled = nothingToClear;
-  btn.classList.toggle('btn-disabled', nothingToClear);
-}
-
-// Bouton "Création" : ouvre/ferme le panneau Création à gauche (#creation-panel : cadre Taille/Générer/
-// Vider/Reset, En cours, Dupliquer) et le panneau Cases à droite. Grisé par défaut, bleu clair tant qu'au moins une grille
+// Bouton "Création" : ouvre/ferme le panneau Création à gauche (#creation-panel : Grilles, Taille,
+// Générer) et le panneau Cases à droite. Grisé par défaut, bleu clair tant qu'au moins une grille
 // affichée a encore une case vide (génération à faire ou incomplète).
 // Impossible de quitter Création tant qu'une grille affichée a une case vide : bouton grisé et désactivé.
 function _bingoVisibleGridsNeedGenerate() {
@@ -7217,8 +6284,6 @@ function _setBingoCreationOpen(open, render = true) {
     if (window.lucide) lucide.createIcons({ root: btnCreation });
     _fitBingoLeftColButtons();
   }
-  // Les boutons par grille (générer/vider) ne sont visibles que Création ouvert (cf CSS).
-  document.getElementById('page-bingo')?.classList.toggle('creation-open', open);
   // Le panneau Cases s'ouvre et se ferme avec Création.
   if (open) openCasesPanel();
   else closeCasesPanel();
@@ -7234,68 +6299,12 @@ document.getElementById('btn-bingo-creation')?.addEventListener('click', () => {
   _setBingoCreationOpen(!_bingoCreationOpen);
 });
 
-function updateOpenGridsWindowButton() {
-  const btn = document.getElementById('btn-open-grids-window');
-  if (!btn) return;
-  const noGrids = getVisibleGrids().length === 0;
-  // Bloqué aussi tant qu'une grille affichée a une case vide (même règle que updateCreationButton).
-  const needsGenerate = !noGrids && _bingoVisibleGridsNeedGenerate();
-  btn.disabled = noGrids || needsGenerate;
-  btn.classList.toggle('btn-disabled', noGrids || needsGenerate);
-  btn.title = needsGenerate
-    ? 'Génère toutes les grilles affichées pour pouvoir passer en plein écran'
-    : 'Afficher les grilles en plein écran';
-}
-
-btnClearGrids.addEventListener('click', () => {
-  const t = activeTheme();
-  if (!t || _bingoEditLocked()) return;
-  _clearGridsTarget = 'visible';
-  const grids = getVisibleGrids();
-  const count = grids.length;
-  document.getElementById('modal-clear-msg').textContent =
-    count === 1 ? 'Vider la grille affichée ?' : `Vider les ${count} grilles affichées ?`;
-  document.getElementById('modal-confirm-clear').classList.remove('hidden');
-});
-
-document.getElementById('btn-confirm-clear-archived-only').addEventListener('click', () => {
-  document.getElementById('modal-confirm-clear').classList.add('hidden');
-  document.getElementById('btn-confirm-clear-archived-only').classList.add('hidden');
-  if (_clearArchivedOnlyCallback) {
-    _clearArchivedOnlyCallback();
-    _clearArchivedOnlyCallback = null;
-  }
-  _clearCellCallback = null;
-});
-
+// Confirmation "Vider la case" (clic droit sur une case, cf openClearCellConfirm).
 document.getElementById('btn-confirm-clear').addEventListener('click', () => {
   document.getElementById('modal-confirm-clear').classList.add('hidden');
-  document.getElementById('btn-confirm-clear-archived-only').classList.add('hidden');
-  _clearArchivedOnlyCallback = null;
-  if (_clearCellCallback) {
-    _clearCellCallback();
-    _clearCellCallback = null;
-    return;
-  }
-  const t = activeTheme();
-  if (!t || _bingoEditLocked()) return;
-  const sNow = activeSubtheme();
-  const grids = getVisibleGrids();
-  // Conserver les IDs validés avant de vider
-  if (sNow) {
-    if (!sNow.persistentCheckedIds) sNow.persistentCheckedIds = [];
-    grids.forEach(gx => {
-      gx.grid.forEach(c => {
-        if (c.checked && c.elementId && !sNow.persistentCheckedIds.includes(c.elementId)) {
-          sNow.persistentCheckedIds.push(c.elementId);
-        }
-      });
-    });
-  }
-  grids.forEach(gx => { gx.grid = gx.grid.map(() => ({ elementId: null, checked: false })); });
-  if (sNow) _bingoSaveFolder(sNow.id);
-  renderGrid();
-  renderElements();
+  const cb = _clearCellCallback;
+  _clearCellCallback = null;
+  if (cb) cb();
 });
 
 function closeConfirmCurrentEventModal() {
@@ -7507,60 +6516,10 @@ btnNewGrid.addEventListener('click', () => {
   openNewGridModal();
 });
 
-const btnNewGridMain = document.getElementById('btn-new-grid-main');
-if (btnNewGridMain) {
-  btnNewGridMain.addEventListener('click', () => {
-    if (!_localActiveFolderId) return;
-    openDuplicateFolderModal(_localActiveFolderId);
-  });
-}
-
-// Supprimer (panneau Création) : envoie le bingo affiché dans la corbeille, même modal de confirmation
-// et même suppression que "Supprimer" du menu d'options d'un dossier.
-document.getElementById('btn-delete-bingo')?.addEventListener('click', () => {
-  const f = activeFolder();
-  if (!f || !_isFolderBingo(f)) return;
-  const id = f.id;
-  confirmDelete(`le bingo "${f.name}"`, () => deleteFolder(id));
+document.getElementById('btn-ce-set-header')?.addEventListener('click', () => {
+  const tl = typeof tlActiveTierlist === 'function' ? tlActiveTierlist() : null;
+  if (tl) confirmSetCurrentEventTierlist(tl.id);
 });
-
-const _btnCeNavigate = document.getElementById('btn-ce-navigate');
-if (_btnCeNavigate) {
-  _btnCeNavigate.addEventListener('click', () => {
-    if (state.currentEventTierlistId) {
-      if (window._switchPage) window._switchPage('tierlist');
-      // Navigation directe sans toggle
-      _tlLocalActiveTierlistId = state.currentEventTierlistId;
-      _tlLocalNoSelection = false;
-      saveUserPrefs({ tlActiveTierlistId: state.currentEventTierlistId, tlNoSelection: false });
-      if (typeof tlRender === 'function') tlRender();
-    } else if (state.currentEventFolderId) {
-      if (window._switchPage) window._switchPage('bingo');
-      // Navigation directe sans toggle
-      _localActiveFolderId = state.currentEventFolderId;
-      _saveLocalActiveFolderId(state.currentEventFolderId);
-      const folder = findFolderById(state.folders, state.currentEventFolderId);
-      _selectedGridIds = folder?.grids?.filter(g => !g.archived).map(g => g.id) || [];
-      saveLocalSelectedGrids(_selectedGridIds);
-      renderAllFolders();
-      renderElements();
-      renderGridsList();
-      renderGrid();
-    }
-  });
-}
-const _btnCeSetHeader = document.getElementById('btn-ce-set-header');
-if (_btnCeSetHeader) {
-  _btnCeSetHeader.addEventListener('click', () => {
-    const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
-    if (onTlPage) {
-      const tl = typeof tlActiveTierlist === 'function' ? tlActiveTierlist() : null;
-      if (tl) confirmSetCurrentEventTierlist(tl.id);
-    } else if (_localActiveFolderId) {
-      confirmSetCurrentEventFolder(_localActiveFolderId);
-    }
-  });
-}
 
 const _btnNewFolderInGrids = document.getElementById('btn-new-folder-in-grids');
 if (_btnNewFolderInGrids) {
@@ -7568,9 +6527,7 @@ if (_btnNewFolderInGrids) {
   _btnNewFolderInGrids.addEventListener('click', () => openNewFolderModal(_foldersNavFolderId || null, true));
 }
 
-// ── Archives unifiées ──────────────────────────────────────────────────────────
-const modalArchivesUnified = document.getElementById('modal-archives-unified');
-
+// ── Arbres des corbeilles (Bingo et Tier List) ───────────────────────────────
 function _makeTreeNode(label, depth, collapsed, onToggle) {
   const row = document.createElement('div');
   row.className = 'tree-node-row';
@@ -7624,103 +6581,6 @@ function _makeArchiveButtons(actions) {
   });
   return area;
 }
-
-function renderArchivesUnified() {
-  const container = document.getElementById('archives-tree');
-  container.innerHTML = '';
-  let hasAny = false;
-
-  function _renderFolderArchive(f, depth, parentArchived, targetContainer) {
-    const dest = targetContainer || container;
-    const fArchived = f.archived;
-    const archivedSubFolders = (f.folders || []).filter(sf => sf.archived || (sf.folders || []).some(x => x.archived) || (sf.grids || []).some(g => g.archived));
-    const archivedGrids = (f.grids || []).filter(g => g.archived);
-    if (!fArchived && archivedSubFolders.length === 0 && archivedGrids.length === 0) return;
-    hasAny = true;
-
-    const folderChildren = document.createElement('div');
-    folderChildren.className = 'tree-children tree-hidden';
-    let collapsed = true;
-    const folderRow = _makeTreeNode(f.name, depth, collapsed, () => {
-      collapsed = !collapsed;
-      folderRow.querySelector('.tree-arrow').classList.toggle('collapsed', collapsed);
-      folderChildren.classList.toggle('tree-hidden', collapsed);
-    });
-
-    if (fArchived) {
-      folderRow.appendChild(_makeArchiveButtons([
-        { text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore', disabled: parentArchived,
-          onClick: () => { archiveFolder(f.id); renderArchivesUnified(); } },
-        { text: '<i data-lucide="trash-2"></i> Supprimer', cls: 'del',
-          // deleteFolder est async (charge le contenu lourd avant trashPush) — attendre avant de
-          // re-render, sinon renderArchivesUnified() s'exécute sur un état pas encore à jour
-          // (liste obsolète/scintillante).
-          onClick: async () => { await deleteFolder(f.id); renderArchivesUnified(); } }
-      ]));
-    }
-    dest.appendChild(folderRow);
-    dest.appendChild(folderChildren);
-
-    archivedGrids.forEach(g => {
-      const leafRow = _makeLeafRow(g.name, depth + 1, [
-        // g peut provenir d'un dossier-bingo pas encore chargé en lourd (les grilles allégées de
-        // l'index ont aussi leur propre "archived") — charger le dossier avant de désarchiver pour
-        // muter le VRAI tableau grids[] (celui qui sera réécrit), jamais la copie légère de l'index.
-        { text: '<i data-lucide="corner-down-left"></i> Restaurer', cls: 'restore', disabled: fArchived || parentArchived,
-          onClick: async () => {
-            await _bingoEnsureFolderLoaded(f.id);
-            const fNow = findFolderById(state.folders, f.id);
-            const gNow = fNow && (fNow.grids || []).find(x => x.id === g.id);
-            if (gNow) gNow.archived = false;
-            _bingoSave(f.id); // archived est dupliqué dans les métadonnées allégées de l'index
-            renderGridsList();
-            renderArchivesUnified();
-          } },
-        { text: '<i data-lucide="trash-2"></i> Supprimer', cls: 'del',
-          onClick: () => {
-            const savedId = _localActiveFolderId;
-            _localActiveFolderId = f.id;
-            deleteGrid(g.id);
-            _localActiveFolderId = savedId;
-            renderArchivesUnified();
-          }
-        }
-      ]);
-      folderChildren.appendChild(leafRow);
-    });
-
-    (f.folders || []).forEach(sf => {
-      const sfArchived = sf.archived || (sf.folders || []).some(x => x.archived) || (sf.grids || []).some(g => g.archived);
-      if (sfArchived) _renderFolderArchive(sf, depth + 1, fArchived || parentArchived, folderChildren);
-    });
-  }
-
-  (state.folders || []).forEach(f => _renderFolderArchive(f, 0, false));
-  if (!hasAny) container.innerHTML = '<p class="archived-empty">Aucun élément archivé.</p>';
-  if (window.lucide) lucide.createIcons();
-}
-
-const modalArchivesUnifiedOverlay = document.getElementById('modal-archives-unified-overlay');
-
-function openArchivesUnified() {
-  renderArchivesUnified();
-  modalArchivesUnified.classList.add('open');
-  modalArchivesUnifiedOverlay.classList.add('open');
-}
-
-function closeArchivesUnified() {
-  modalArchivesUnified.classList.remove('open');
-  modalArchivesUnifiedOverlay.classList.remove('open');
-}
-modalArchivesUnifiedOverlay.addEventListener('click', closeArchivesUnified);
-
-document.getElementById('btn-archives-unified').addEventListener('click', () => {
-  if (modalArchivesUnified.classList.contains('open')) closeArchivesUnified();
-  else openArchivesUnified();
-});
-
-// ── Panneau dossiers (bouton legacy caché, garde sa fonction pour compat JS) ──
-document.getElementById('btn-folders-panel').addEventListener('click', () => openFoldersPage('bingo'));
 
 const _foldersSortSelect = document.getElementById('folders-sort-select');
 if (_foldersSortSelect) {
@@ -7845,7 +6705,7 @@ function renderTrashList() {
       });
     });
   });
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: container });
 }
 
 const modalTrashUnifiedOverlay = document.getElementById('modal-trash-unified-overlay');
@@ -7865,11 +6725,6 @@ function closeTrashUnified() {
 }
 modalTrashUnifiedOverlay.addEventListener('click', closeTrashUnified);
 
-document.getElementById('btn-trash-unified').addEventListener('click', () => {
-  if (modalTrashUnified.classList.contains('open')) closeTrashUnified();
-  else openTrashUnified();
-});
-
 // Confirmation inline (remplace le bouton "Vider" sur place, jamais un modal par-dessus le drawer
 // Corbeille) : cf. tl-btn-trash-empty-all pour le pendant tier list.
 document.getElementById('btn-trash-empty-all').addEventListener('click', (e) => {
@@ -7888,25 +6743,16 @@ document.getElementById('btn-confirm-trash-empty').addEventListener('click', () 
   renderTrashList();
 });
 
-// Modales renommage grille
-btnConfirmRenameGrid.addEventListener('click', confirmRenameGrid);
-renameGridInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') confirmRenameGrid();
-  if (e.key === 'Escape') closeRenameGridModal();
-});
-
 // ──────────────────────────────────────────────
 // Initialisation
 // ──────────────────────────────────────────────────────────────────────────────
 // Navigation multi-pages
 // ──────────────────────────────────────────────────────────────────────────────
 (function setupNav() {
-  const navBtns = document.querySelectorAll('.nav-btn[data-page]');
   const pages   = document.querySelectorAll('.page');
 
   window._switchPage = (target) => {
     if (!document.getElementById(`page-${target}`)) return;
-    navBtns.forEach(b => b.classList.toggle('active', b.dataset.page === target));
     pages.forEach(p => p.classList.toggle('active', p.id === `page-${target}`));
     _currentPage = target;
     _placePageSwitcher(target);
@@ -7933,23 +6779,12 @@ renameGridInput.addEventListener('keydown', e => {
     }
     if (target === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
   };
-
-  navBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.classList.contains('disabled')) return;
-      _userNavigated = true;
-      const target = btn.dataset.page;
-      _switchPage(target);
-      saveUserPrefs({ activePage: target });
-    });
-  });
 })();
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Sélecteur de page "LesMichels" (remplace la barre du haut, masquée mais gardée) : même place en haut
-// à gauche sur toutes les pages (position en CSS). Sous "LesMichels" : le nom de la page affichée.
-// Clic = menu des autres pages (via les onglets cachés du header, pour garder leur logique). Petit
-// bouton Profil séparé tout en haut à droite (ouvre le menu Profil habituel).
+// Sélecteur de page "LesMichels" : même place en haut à gauche sur toutes les pages (position en
+// CSS). Sous "LesMichels" : le nom de la page affichée. Clic = menu des autres pages. Petit bouton
+// Profil séparé tout en haut à droite (ouvre le menu Profil).
 // ──────────────────────────────────────────────────────────────────────────────
 function _placePageSwitcher(target) {
   const lbl = document.getElementById('page-switcher-label');
@@ -7975,7 +6810,9 @@ function _placePageSwitcher(target) {
     openMenuUnder(menu);
   });
   menu.querySelectorAll('[data-page]').forEach(it => it.addEventListener('click', () => {
-    document.querySelector(`.nav-btn[data-page="${it.dataset.page}"]`)?.click();
+    _userNavigated = true;
+    _switchPage(it.dataset.page);
+    saveUserPrefs({ activePage: it.dataset.page });
   }));
   const profileBtn = document.getElementById('page-switcher-profile');
   profileBtn?.addEventListener('click', e => {
@@ -8742,9 +7579,14 @@ function _tlUnplacedSortMode(tl) {
 function _tlGetSortedUnplaced(tl) {
   const ids = tl.unplaced.slice();
   const mode = _tlUnplacedSortMode(tl);
+  if (mode === 'manual') return ids;
+  // Images indexées une seule fois (même résultat que tlFindImage, sans le refaire à chaque comparaison).
+  const byId = new Map();
+  _tlGetGroupImages(tl).forEach(img => { if (!byId.has(img.id)) byId.set(img.id, img); });
+  const find = id => byId.get(id) || null;
   if (mode === 'alpha' || mode === 'alpha-desc') {
     ids.sort((a, b) => {
-      const ia = tlFindImage(tl, a), ib = tlFindImage(tl, b);
+      const ia = find(a), ib = find(b);
       return (ia ? ia.name : '').localeCompare(ib ? ib.name : '', 'fr', { sensitivity: 'base' });
     });
     if (mode === 'alpha-desc') ids.reverse();
@@ -8752,7 +7594,7 @@ function _tlGetSortedUnplaced(tl) {
   }
   if (mode === 'updatedAt' || mode === 'updatedAt-asc') {
     ids.sort((a, b) => {
-      const ia = tlFindImage(tl, a), ib = tlFindImage(tl, b);
+      const ia = find(a), ib = find(b);
       return (ib?.updatedAt || 0) - (ia?.updatedAt || 0);
     });
     if (mode === 'updatedAt-asc') ids.reverse();
@@ -8957,33 +7799,6 @@ async function tlDuplicateFolder(id, newParentId, explicitNumbering) {
   return result;
 }
 
-function tlArchiveFolder(id) {
-  const folder = (tlState.folders || []).find(f => f.id === id);
-  if (!folder) return;
-  // Archiver en cascade les sous-dossiers
-  const allIds = [id, ..._tlGetDescendantIds(id)];
-  allIds.forEach(fid => {
-    const f = (tlState.folders || []).find(x => x.id === fid);
-    if (f) f.archived = true;
-  });
-  tlSave(); // dossiers seuls : index-only
-  tlRender();
-}
-
-function tlUnarchiveFolder(id) {
-  const folder = (tlState.folders || []).find(f => f.id === id);
-  if (!folder) return;
-  folder.archived = false;
-  // Restaurer aussi les sous-dossiers directs archivés en même temps
-  _tlGetDescendantIds(id).forEach(fid => {
-    const f = (tlState.folders || []).find(x => x.id === fid);
-    if (f) f.archived = false;
-  });
-  tlSave(); // dossiers seuls : index-only
-  tlRender();
-  tlRenderArchivedModal();
-}
-
 // ── Corbeille (chargée à la demande, jamais de listener permanent — cf _dbTierlistTrash.once) ──
 // tlSaveTrash() fait un .set() qui REMPLACE tout le noeud tierlist/trash : sans garantie que
 // tlState.trash reflète l'état distant le plus récent, une suppression effectuée sans avoir jamais
@@ -9101,7 +7916,6 @@ async function tlDeleteFolder(id) {
   tlSave();
   tlSaveTrash();
   tlRender();
-  tlRenderArchivedModal();
   tlRenderTrashList();
 }
 
@@ -9160,7 +7974,6 @@ const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
 const tlBtnUndo           = document.getElementById('tl-btn-undo');
 const tlBtnReset          = document.getElementById('tl-btn-reset');
 const tlFileInput         = document.getElementById('tl-file-input');
-const tlBtnExport         = document.getElementById('tl-btn-export');
 const tlBtnCapture        = document.getElementById('tl-btn-capture');
 const tlTiersZone         = document.getElementById('tl-tiers-zone');
 const tlUnplacedZone      = document.getElementById('tl-unplaced-zone');
@@ -9252,9 +8065,6 @@ const tlModalTierColor    = buildColorPicker(); // "Autre" (sélecteur maison, m
 tlModalTier.querySelector('.tl-color-picker').appendChild(tlModalTierColor);
 const tlModalTierConfirm  = document.getElementById('tl-modal-tier-confirm');
 
-const tlModalArchived     = document.getElementById('tl-modal-archived');
-const tlArchivedList      = document.getElementById('tl-archived-list');
-
 const tlModalTrash          = document.getElementById('tl-modal-trash');
 const tlTrashList            = document.getElementById('tl-trash-list');
 const tlTrashEmptyConfirmInline = document.getElementById('tl-trash-empty-confirm-inline');
@@ -9277,132 +8087,6 @@ function _tlInvalidateDropRectsCache() { _tlDropRectsCache = null; }
 
 // ── Sélection image (pour suppression au clavier) ──────────────────────────────
 let _tlSelectedImgId = null;
-
-// ── Drag & drop sidebar (tierlists & dossiers) ────────────────────────────────
-let _tlSidebarDragId   = null; // id de la tierlist ou du dossier draggé
-let _tlSidebarDragType = null; // 'tierlist' | 'folder'
-
-function _tlSidebarDragStart(e, id, type) {
-  _tlSidebarDragId   = id;
-  _tlSidebarDragType = type;
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', id);
-  setTimeout(() => {
-    const el = e.currentTarget;
-    el.classList.add('tl-dragging');
-  }, 0);
-}
-
-function _tlSidebarDragEnd(e) {
-  _tlSidebarDragId   = null;
-  _tlSidebarDragType = null;
-  e.currentTarget.classList.remove('tl-dragging');
-  // Nettoyer tous les indicateurs
-  document.querySelectorAll('.tl-drag-over-top,.tl-drag-over-bottom,.tl-drag-over-folder')
-    .forEach(el => el.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder'));
-}
-
-function _tlSidebarDragOverItem(e, el, id, type) {
-  if (!_tlSidebarDragId) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  // Nettoyer les autres indicateurs
-  document.querySelectorAll('.tl-drag-over-top,.tl-drag-over-bottom,.tl-drag-over-folder')
-    .forEach(x => x.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder'));
-  if (_tlSidebarDragType === 'tierlist' && type === 'folder-header') {
-    // Déposer une tierlist sur un dossier = la ranger
-    el.classList.add('tl-drag-over-folder');
-    e.dataTransfer.dropEffect = 'move';
-    return;
-  }
-  const rect = el.getBoundingClientRect();
-  const mid  = rect.top + rect.height / 2;
-  if (e.clientY < mid) el.classList.add('tl-drag-over-top');
-  else el.classList.add('tl-drag-over-bottom');
-}
-
-function _tlSidebarDragLeaveItem(e, el) {
-  el.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder');
-}
-
-function _tlSidebarDropOnItem(e, targetId, targetType, targetEl) {
-  e.preventDefault();
-  if (!_tlSidebarDragId || _tlSidebarDragId === targetId) {
-    document.querySelectorAll('.tl-drag-over-top,.tl-drag-over-bottom,.tl-drag-over-folder')
-      .forEach(x => x.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder'));
-    return;
-  }
-
-  const isTop = targetEl.classList.contains('tl-drag-over-top');
-  document.querySelectorAll('.tl-drag-over-top,.tl-drag-over-bottom,.tl-drag-over-folder')
-    .forEach(x => x.classList.remove('tl-drag-over-top','tl-drag-over-bottom','tl-drag-over-folder'));
-
-  if (_tlSidebarDragType === 'tierlist' && targetType === 'folder-header') {
-    // Ranger la tierlist dans ce dossier
-    tlMoveTierlistToFolder(_tlSidebarDragId, targetId);
-    return;
-  }
-
-  // Réordonner : construire un tableau plat de références [{ type, id }]
-  if (!tlState.folders) tlState.folders = [];
-
-  if (_tlSidebarDragType === 'tierlist') {
-    // Réordonner les tierlists dans leur contexte (même dossier)
-    const dragTl = tlState.tierlists.find(t => t.id === _tlSidebarDragId);
-    if (!dragTl) return;
-    // Une tierlist rattachée à un template vivant ne change jamais de dossier indépendamment de lui —
-    // seul son ordre interne au groupe (non géré ici) peut varier, on ignore le drop inter-contexte.
-    if (_tlHasLiveTemplate(dragTl)) return;
-
-    if (targetType === 'tierlist') {
-      const targetTl = tlState.tierlists.find(t => t.id === targetId);
-      if (!targetTl) return;
-      // Même contexte ?
-      if (_tlEffectiveFolderId(dragTl) === _tlEffectiveFolderId(targetTl)) {
-        const arr = tlState.tierlists;
-        const fromIdx = arr.findIndex(t => t.id === _tlSidebarDragId);
-        const toIdx   = arr.findIndex(t => t.id === targetId);
-        if (fromIdx === -1 || toIdx === -1) return;
-        const [moved] = arr.splice(fromIdx, 1);
-        const newIdx  = arr.findIndex(t => t.id === targetId);
-        arr.splice(isTop ? newIdx : newIdx + 1, 0, moved);
-      } else {
-        // Déplacer vers le contexte de la cible
-        dragTl.folderId = _tlEffectiveFolderId(targetTl);
-        const arr = tlState.tierlists;
-        const fromIdx = arr.findIndex(t => t.id === _tlSidebarDragId);
-        const [moved] = arr.splice(fromIdx, 1);
-        const newIdx  = arr.findIndex(t => t.id === targetId);
-        arr.splice(isTop ? newIdx : newIdx + 1, 0, moved);
-      }
-    } else if (targetType === 'folder') {
-      // Déposer avant/après un dossier = sortir du dossier et mettre à cet endroit
-      dragTl.folderId = null;
-      const arr = tlState.tierlists;
-      const fromIdx = arr.findIndex(t => t.id === _tlSidebarDragId);
-      const [moved] = arr.splice(fromIdx, 1);
-      tlState.tierlists.splice(isTop ? 0 : tlState.tierlists.length, 0, moved);
-    }
-  } else if (_tlSidebarDragType === 'folder') {
-    if (targetType === 'folder') {
-      // Interdire de déplacer dans un descendant
-      if (_tlGetDescendantIds(_tlSidebarDragId).includes(targetId)) return;
-      const arr = tlState.folders;
-      const dragFolder = arr.find(f => f.id === _tlSidebarDragId);
-      const targetFolder = arr.find(f => f.id === targetId);
-      if (!dragFolder || !targetFolder) return;
-      // Adopter le même parentId que la cible (même niveau)
-      dragFolder.parentId = targetFolder.parentId || null;
-      const fromIdx = arr.findIndex(f => f.id === _tlSidebarDragId);
-      const [moved] = arr.splice(fromIdx, 1);
-      const newIdx  = arr.findIndex(f => f.id === targetId);
-      arr.splice(isTop ? newIdx : newIdx + 1, 0, moved);
-    }
-  }
-
-  tlSave(); // drag&drop sidebar : réordonne/déplace dossiers/folderId — index-only
-  tlRender();
-}
 
 // Plafonne .tl-layout à l'espace réellement visible sous sa position actuelle,
 // mesuré dynamiquement — au lieu d'un calc(100vh - Npx) fixe qui suppose une hauteur
@@ -9621,57 +8305,6 @@ function tlRenderGroupPanel(tl) {
   if (window.lucide) lucide.createIcons();
 }
 
-function tlBuildTierlistItem(tl) {
-  const item = document.createElement('div');
-  item.className = 'tl-list-item' + (tl.id === _tlLocalActiveTierlistId ? ' active' : '');
-  item.dataset.id = tl.id;
-  item.draggable = false;
-
-  const dragHandle = document.createElement('span');
-  dragHandle.className = 'tl-folder-drag-handle';
-  dragHandle.innerHTML = '<i data-lucide="grip"></i>';
-  dragHandle.title = 'Glisser pour déplacer';
-  dragHandle.addEventListener('mousedown', () => { item.draggable = true; });
-  dragHandle.addEventListener('mouseleave', () => { if (!item.classList.contains('tl-dragging')) item.draggable = false; });
-  item.appendChild(dragHandle);
-
-  const icon = document.createElement('span');
-  icon.className = 'tl-list-item-icon';
-  icon.innerHTML = tl.isTemplate ? '<i data-lucide="scroll"></i>' : '<i data-lucide="scroll-text"></i>';
-  icon.style.cssText = 'flex-shrink:0;opacity:0.8;';
-  const _icn = icon.querySelector('[data-lucide]');
-  if (_icn) _icn.style.marginRight = '0';
-  item.appendChild(icon);
-
-  const nameSpan = document.createElement('span');
-  nameSpan.className = 'tl-list-item-name';
-  nameSpan.textContent = tl.name;
-  nameSpan.title = tl.name + '\nClic gauche : sélectionner / désélectionner\nClic droit : renommer, dupliquer, archiver\nGlisser : réordonner';
-  item.appendChild(nameSpan);
-
-  const ctxBtn = document.createElement('button');
-  ctxBtn.className = 'tl-list-item-btn';
-  ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-  ctxBtn.title = 'Options';
-  ctxBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    tlOpenManageModal(tl.id, item);
-  });
-  item.appendChild(ctxBtn);
-
-  item.addEventListener('click', () => tlSwitch(tl.id));
-  item.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); tlOpenManageModal(tl.id, item); });
-
-  // Drag & drop sidebar
-  item.addEventListener('dragstart', e => _tlSidebarDragStart(e, tl.id, 'tierlist'));
-  item.addEventListener('dragend', _tlSidebarDragEnd);
-  item.addEventListener('dragover', e => _tlSidebarDragOverItem(e, item, tl.id, 'tierlist'));
-  item.addEventListener('dragleave', e => _tlSidebarDragLeaveItem(e, item));
-  item.addEventListener('drop', e => _tlSidebarDropOnItem(e, tl.id, 'tierlist', item));
-
-  return item;
-}
-
 // Une tierlist générée n'est "rattachée" à son template que si celui-ci existe encore et n'est pas archivé
 function _tlHasLiveTemplate(tl) {
   if (!tl.templateId) return false;
@@ -9887,7 +8520,7 @@ function _tlRenderToPlaceZone(tl) {
     content.style.width = imgSize + 'px';
     content.style.height = imgSize + 'px';
   }
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: zone });
 }
 
 // Texte "(Template \ Dossier)" à afficher à côté d'une tierlist archivée/supprimée, pour donner
@@ -9905,100 +8538,6 @@ function _tlContextLabel(tl, includeFolder = true) {
     parts.push(folder ? folder.name : '(dossier supprimé)');
   }
   return parts.length > 0 ? ' (' + parts.join(' \\ ') + ')' : '';
-}
-
-// Rendu d'un template comme "dossier virtuel" repliable, contenant ses tierlists générées
-function _tlBuildTemplateGroupEl(template, depth) {
-  const collapseKey = 'tl_tplgroup_open_' + template.id;
-  const groupOpen = sessionStorage.getItem(collapseKey) === '1';
-  const isActive = template.id === _tlLocalActiveTierlistId
-    || tlState.tierlists.some(t => t.id === _tlLocalActiveTierlistId && t.templateId === template.id);
-
-  const groupEl = document.createElement('div');
-  groupEl.className = 'tl-folder' + (groupOpen ? ' open' : '') + (isActive ? ' active-folder' : '');
-  groupEl.dataset.templateId = template.id;
-  if (depth > 0) groupEl.style.marginLeft = (depth * 10) + 'px';
-
-  const header = document.createElement('div');
-  header.className = 'tl-folder-header';
-
-  const arrow = document.createElement('span');
-  arrow.className = 'tl-folder-arrow';
-  arrow.innerHTML = '<i data-lucide="chevron-right"></i>';
-  arrow.style.cursor = 'pointer';
-  arrow.addEventListener('click', e => {
-    e.stopPropagation();
-    const isOpen = sessionStorage.getItem(collapseKey) === '1';
-    sessionStorage.setItem(collapseKey, isOpen ? '0' : '1');
-    groupEl.classList.toggle('open', !isOpen);
-  });
-
-  const icon = document.createElement('span');
-  icon.className = 'tl-folder-icon';
-  icon.innerHTML = '<i data-lucide="scroll"></i>';
-
-  const name = document.createElement('span');
-  name.className = 'tl-folder-name';
-  name.textContent = template.name;
-  name.title = template.name + '\nClic gauche : ouvrir le template\nClic droit : renommer, générer, archiver';
-
-  const ctxBtn = document.createElement('button');
-  ctxBtn.className = 'tl-folder-ctx-btn';
-  ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-  ctxBtn.title = 'Options';
-  ctxBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    tlOpenManageModal(template.id, header);
-  });
-
-  const dragHandle = document.createElement('span');
-  dragHandle.className = 'tl-folder-drag-handle';
-  dragHandle.innerHTML = '<i data-lucide="grip"></i>';
-  dragHandle.title = 'Glisser pour déplacer';
-
-  header.appendChild(dragHandle);
-  header.appendChild(arrow);
-  header.appendChild(icon);
-  header.appendChild(name);
-  header.appendChild(ctxBtn);
-
-  header.addEventListener('click', () => tlSwitch(template.id));
-  header.addEventListener('contextmenu', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    tlOpenManageModal(template.id, header);
-  });
-
-  // Drag & drop — un template est une entrée tlState.tierlists (isTemplate:true),
-  // donc _tlSidebarDropOnItem le traite déjà comme type 'tierlist' sans code additionnel
-  groupEl.draggable = false;
-  dragHandle.addEventListener('mousedown', () => { groupEl.draggable = true; });
-  dragHandle.addEventListener('mouseleave', () => { if (!groupEl.classList.contains('tl-dragging')) groupEl.draggable = false; });
-  groupEl.addEventListener('dragstart', e => {
-    if (e.target !== groupEl && e.target.closest('.tl-folder-children')) return;
-    _tlSidebarDragStart(e, template.id, 'tierlist');
-  });
-  groupEl.addEventListener('dragend', _tlSidebarDragEnd);
-  groupEl.addEventListener('dragover', e => _tlSidebarDragOverItem(e, groupEl, template.id, 'tierlist'));
-  groupEl.addEventListener('dragleave', e => _tlSidebarDragLeaveItem(e, groupEl));
-  groupEl.addEventListener('drop', e => _tlSidebarDropOnItem(e, template.id, 'tierlist', groupEl));
-
-  groupEl.appendChild(header);
-
-  const children = document.createElement('div');
-  children.className = 'tl-folder-children';
-  const generated = tlState.tierlists.filter(t => !t.archived && t.templateId === template.id);
-  if (generated.length === 0) {
-    const empty = document.createElement('div');
-    empty.style.cssText = 'color:var(--text-faint);font-style:italic;font-size:0.75rem;padding:3px 4px;';
-    empty.textContent = 'Aucune liste générée';
-    children.appendChild(empty);
-  } else {
-    generated.forEach(t => children.appendChild(tlBuildTierlistItem(t)));
-  }
-  groupEl.appendChild(children);
-
-  return groupEl;
 }
 
 function _tlFolderIsEmpty(folder) {
@@ -10019,121 +8558,6 @@ function _tlRenderFolderEmptyState(folder) {
 function _tlHideFolderEmptyState() {
   const el = document.getElementById('tl-folder-empty-state');
   if (el) el.classList.add('hidden');
-}
-
-function _tlBuildFolderEl(folder, depth) {
-  const activeTl = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId && !t.archived);
-  // Actif si la TL active est dans ce dossier ou dans un descendant, ou si ce dossier (vide)
-  // a été explicitement sélectionné sans tierlist active
-  const allDescIds = [folder.id, ..._tlGetDescendantIds(folder.id)];
-  const folderIsActive = (activeTl && allDescIds.includes(_tlEffectiveFolderId(activeTl)))
-    || (!activeTl && _tlLocalActiveFolderId === folder.id);
-  const tlCollapseKey = 'tl_folder_open_' + folder.id;
-  const folderOpen = sessionStorage.getItem(tlCollapseKey) === '1';
-
-  const folderEl = document.createElement('div');
-  folderEl.className = 'tl-folder' + (folderOpen ? ' open' : '') + (folderIsActive ? ' active-folder' : '');
-  folderEl.dataset.folderId = folder.id;
-  if (depth > 0) folderEl.style.marginLeft = (depth * 10) + 'px';
-
-  const header = document.createElement('div');
-  header.className = 'tl-folder-header';
-
-  const arrow = document.createElement('span');
-  arrow.className = 'tl-folder-arrow';
-  arrow.innerHTML = '<i data-lucide="chevron-right"></i>';
-  arrow.style.cursor = 'pointer';
-  const toggleOpen = () => {
-    const isOpen = sessionStorage.getItem(tlCollapseKey) === '1';
-    sessionStorage.setItem(tlCollapseKey, isOpen ? '0' : '1');
-    folderEl.classList.toggle('open', !isOpen);
-  };
-  arrow.addEventListener('click', e => { e.stopPropagation(); toggleOpen(); });
-
-  const icon = document.createElement('span');
-  icon.className = 'tl-folder-icon';
-  icon.innerHTML = '<i data-lucide="folder-closed"></i>';
-
-  const name = document.createElement('span');
-  name.className = 'tl-folder-name';
-  name.textContent = folder.name;
-  name.title = folder.name + '\nClic droit : renommer, déplacer, archiver';
-
-  const ctxBtn = document.createElement('button');
-  ctxBtn.className = 'tl-folder-ctx-btn';
-  ctxBtn.innerHTML = '<i data-lucide="ellipsis-vertical"></i>';
-  ctxBtn.title = 'Options';
-  ctxBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    tlOpenFolderManageModal(folder.id, header);
-  });
-
-  header.appendChild(arrow);
-  header.appendChild(icon);
-  header.appendChild(name);
-  header.appendChild(ctxBtn);
-
-  header.addEventListener('contextmenu', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    tlOpenFolderManageModal(folder.id, header);
-  });
-
-  // Simple clic sur le header = même fonction que la flèche (plier/déplier) ; navigation
-  // réservée au double-clic et à l'item "Ouvrir" du menu ⋮.
-  header.addEventListener('click', e => {
-    if (e.target.closest('.tl-folder-arrow, .tl-folder-ctx-btn')) return;
-    toggleOpen();
-  });
-  header.addEventListener('dblclick', e => {
-    if (e.target.closest('.tl-folder-arrow, .tl-folder-ctx-btn')) return;
-    _tlGoToFolder(folder.id);
-    _switchPage('tierlist');
-  });
-
-  // Une tierlist peut toujours être glissée dans ce dossier (fonctionnalité distincte du
-  // réordonnancement des dossiers, qui a été retiré) — le dossier lui-même n'est plus draggable.
-  folderEl.addEventListener('dragover', e => {
-    if (_tlSidebarDragType === 'tierlist') {
-      _tlSidebarDragOverItem(e, header, folder.id, 'folder-header');
-    }
-  });
-  folderEl.addEventListener('dragleave', e => {
-    if (!folderEl.contains(e.relatedTarget)) {
-      _tlSidebarDragLeaveItem(e, header);
-    }
-  });
-  folderEl.addEventListener('drop', e => {
-    if (_tlSidebarDragType === 'tierlist') {
-      _tlSidebarDropOnItem(e, folder.id, 'folder-header', header);
-    }
-  });
-
-  folderEl.appendChild(header);
-
-  const children = document.createElement('div');
-  children.className = 'tl-folder-children';
-
-  // Sous-dossiers
-  const subFolders = _sortFoldersList((tlState.folders || []).filter(f => !f.archived && f.parentId === folder.id), _folderSortMode('tlFoldersSortMode'));
-  subFolders.forEach(sf => children.appendChild(_tlBuildFolderEl(sf, depth + 1)));
-
-  // Tierlists/templates du dossier — les tierlists rattachées à un template vivant
-  // n'apparaissent jamais à plat, seulement sous leur groupe de template (voir tlRenderList)
-  const folderTierlists = tlState.tierlists.filter(tl => !tl.archived && tl.folderId === folder.id && !_tlHasLiveTemplate(tl));
-  if (subFolders.length === 0 && folderTierlists.length === 0) {
-    const empty = document.createElement('div');
-    empty.style.cssText = 'color:var(--text-faint);font-style:italic;font-size:0.75rem;padding:3px 4px;';
-    empty.textContent = 'Vide';
-    children.appendChild(empty);
-  } else {
-    folderTierlists.forEach(tl => children.appendChild(
-      tl.isTemplate ? _tlBuildTemplateGroupEl(tl, depth + 1) : tlBuildTierlistItem(tl)
-    ));
-  }
-
-  folderEl.appendChild(children);
-  return folderEl;
 }
 
 // Ouvre (déplie) tous les ancêtres d'un dossier dans le drawer tierlist (sessionStorage tl_folder_open_<id>).
@@ -10223,7 +8647,7 @@ function _tlRenderRecentFolderPaths() {
     list.appendChild(row);
   });
   container.appendChild(list);
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: container });
 }
 
 // Fil d'Ariane du panneau Dossiers Tier List — navigue via _tlFoldersNavFolderId (niveau courant).
@@ -10370,7 +8794,7 @@ function tlRenderList() {
 
   subFolders.forEach(f => tlList.appendChild(_tlBuildFolderListRow(f, tlList, tlRenderList)));
   levelTierlists.forEach(tl => tlList.appendChild(_tlBuildTierlistListRow(tl, tlList)));
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: tlList });
 }
 
 // Peuple la zone images d'UN tier (vide-la d'abord). Factorisé hors de tlRenderTiers pour être
@@ -10503,7 +8927,7 @@ function tlRenderTiers(tl) {
     wrap.appendChild(row);
     tlTiersZone.appendChild(wrap);
   });
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: tlTiersZone });
 }
 
 // ── Renommage inline tier ─────────────────────────────────────────────────────
@@ -11080,7 +9504,7 @@ function tlRenderUnplaced(tl) {
   const imgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : _tlClampImgSize(tl.imgSize);
   _tlFillUnplacedZone(tl, imgSize);
   _tlUpdateUnplacedCount(tl);
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: tlUnplacedZone });
 }
 
 function _tlShowImportMenu(anchorEl) {
@@ -11371,20 +9795,6 @@ async function tlDelete(id) {
   tlSaveTrash();
   tlRender();
   tlRenderTrashList();
-}
-
-function tlArchive(id) {
-  const tl = tlState.tierlists.find(t => t.id === id);
-  if (!tl) return;
-  tl.archived = true;
-  if (_tlLocalActiveTierlistId === id) {
-    const remaining = tlState.tierlists.filter(t => !t.archived);
-    _tlLocalActiveTierlistId = remaining.length > 0 ? remaining[0].id : null;
-    _tlLocalNoSelection = false;
-    saveUserPrefs({ tlActiveTierlistId: _tlLocalActiveTierlistId, tlNoSelection: false });
-  }
-  tlSave(); // archivage : champ archived (index) seul, groupe inchangé
-  tlRender();
 }
 
 // Convertit une tierlist normale en template : un template n'a jamais d'image classée dans un tier,
@@ -12308,217 +10718,6 @@ function tlExportImages() {
   });
 }
 
-// ── Modal archivées (tierlists + dossiers) ────────────────────────────────────
-function tlBuildArchivedTierlistItem(tl) {
-  const item = document.createElement('div');
-  item.className = 'archived-theme-item';
-
-  const name = document.createElement('span');
-  name.className = 'archived-theme-name';
-  name.innerHTML = '<i data-lucide="scroll-text"></i> ';
-  name.appendChild(document.createTextNode(tl.name + _tlContextLabel(tl, false)));
-  item.appendChild(name);
-
-  const btnRestore = document.createElement('button');
-  btnRestore.className = 'archived-theme-btn restore';
-  btnRestore.innerHTML = '<i data-lucide="corner-down-left"></i> Restaurer';
-  btnRestore.addEventListener('click', () => {
-    // Restaurer sans dossier (détacher du dossier)
-    const t = tlState.tierlists.find(x => x.id === tl.id);
-    if (t) { t.archived = false; t.folderId = null; }
-    if (!_tlLocalActiveTierlistId) {
-      _tlLocalActiveTierlistId = tl.id;
-      _tlLocalNoSelection = false;
-      saveUserPrefs({ tlActiveTierlistId: tl.id, tlNoSelection: false });
-    }
-    tlSave(); tlRender(); tlRenderArchivedModal(); // désarchivage : champs archived/folderId (index) seuls
-  });
-  item.appendChild(btnRestore);
-
-  const btnDel = document.createElement('button');
-  btnDel.className = 'archived-theme-btn del';
-  btnDel.innerHTML = '<i data-lucide="x"></i> Supprimer';
-  btnDel.addEventListener('click', async () => { await tlDelete(tl.id); tlRenderArchivedModal(); });
-  item.appendChild(btnDel);
-
-  return item;
-}
-
-function tlRenderArchivedModal() {
-  tlArchivedList.innerHTML = '';
-  const archivedTL = tlState.tierlists.filter(t => t.archived);
-  const archivedFolders = (tlState.folders || []).filter(f => f.archived);
-  // Dossiers non archivés qui contiennent des tierlists archivées
-  const activeFoldersWithArchivedTL = (tlState.folders || []).filter(f => !f.archived &&
-    tlState.tierlists.some(t => t.archived && t.folderId === f.id));
-
-  if (archivedTL.length === 0 && archivedFolders.length === 0) {
-    tlArchivedList.innerHTML = '<p class="archived-empty">Aucun élément archivé.</p>';
-    return;
-  }
-
-  // Dossiers archivés (avec expandeur pour voir leurs tierlists archivées)
-  if (archivedFolders.length > 0) {
-    const sep = document.createElement('p');
-    sep.style.cssText = 'font-size:0.72rem;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px;';
-    sep.innerHTML = '<i data-lucide="folder-closed"></i> Dossiers archivés';
-    tlArchivedList.appendChild(sep);
-
-    // Rendre récursivement les dossiers archivés (racine en premier)
-    function _renderArchivedFolder(folder, depth) {
-      const tlsInFolder = tlState.tierlists.filter(t => _tlEffectiveFolderId(t) === folder.id);
-      const subFolders = archivedFolders.filter(f => f.parentId === folder.id);
-      const hasChildren = tlsInFolder.length > 0 || subFolders.length > 0;
-
-      const folderWrap = document.createElement('div');
-      folderWrap.style.cssText = 'margin-bottom:4px;' + (depth > 0 ? 'margin-left:' + (depth * 14) + 'px;' : '');
-
-      const item = document.createElement('div');
-      item.className = 'archived-theme-item';
-      item.style.cssText = 'flex-direction:column;align-items:stretch;gap:6px;';
-
-      const topRow = document.createElement('div');
-      topRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
-
-      let childrenDiv = null;
-      if (hasChildren) {
-        const arrowBtn = document.createElement('button');
-        arrowBtn.style.cssText = 'background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:0.65rem;padding:0 4px;transition:transform 0.15s;flex-shrink:0;';
-        arrowBtn.innerHTML = '<i data-lucide="chevron-right"></i>';
-        arrowBtn.title = 'Voir le contenu';
-        childrenDiv = document.createElement('div');
-        childrenDiv.style.cssText = 'display:none;flex-direction:column;gap:4px;padding:4px 0 0 14px;border-left:2px solid var(--border);margin-left:6px;';
-        arrowBtn.addEventListener('click', e => {
-          e.stopPropagation();
-          const open = childrenDiv.style.display !== 'none';
-          childrenDiv.style.display = open ? 'none' : 'flex';
-          arrowBtn.style.transform = open ? '' : 'rotate(90deg)';
-        });
-        topRow.appendChild(arrowBtn);
-      }
-
-      const name = document.createElement('span');
-      name.className = 'archived-theme-name';
-      name.innerHTML = '<i data-lucide="folder-closed"></i> ';
-      name.appendChild(document.createTextNode(folder.name));
-      topRow.appendChild(name);
-
-      const btnRestore = document.createElement('button');
-      btnRestore.className = 'archived-theme-btn restore';
-      btnRestore.innerHTML = '<i data-lucide="corner-down-left"></i> Restaurer';
-      btnRestore.addEventListener('click', () => tlUnarchiveFolder(folder.id));
-      topRow.appendChild(btnRestore);
-
-      const btnDel = document.createElement('button');
-      btnDel.className = 'archived-theme-btn del';
-      btnDel.innerHTML = '<i data-lucide="x"></i> Supprimer';
-      btnDel.addEventListener('click', async () => { await tlDeleteFolder(folder.id); tlRenderArchivedModal(); });
-      topRow.appendChild(btnDel);
-
-      item.appendChild(topRow);
-      if (childrenDiv) {
-        subFolders.forEach(sf => {
-          const sfEl = document.createElement('div');
-          sfEl.style.cssText = 'margin-top:4px;';
-          _renderArchivedFolder(sf, 0); // déjà indenté par childrenDiv
-          // On rend directement dans childrenDiv (pas de récursion dans folderWrap)
-          childrenDiv.appendChild(sfEl);
-          // Re-render dans le bon conteneur
-          sfEl.remove();
-          const sfWrap = document.createElement('div');
-          sfWrap.style.cssText = 'margin-bottom:2px;';
-          // Build simplified sf row
-          const sfRow = document.createElement('div');
-          sfRow.className = 'archived-theme-item';
-          sfRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
-          const sfName = document.createElement('span');
-          sfName.className = 'archived-theme-name';
-          sfName.innerHTML = '<i data-lucide="folder-closed"></i> ';
-          sfName.appendChild(document.createTextNode(sf.name));
-          sfRow.appendChild(sfName);
-          const sfRestore = document.createElement('button');
-          sfRestore.className = 'archived-theme-btn restore';
-          sfRestore.innerHTML = '<i data-lucide="corner-down-left"></i> Restaurer';
-          sfRestore.addEventListener('click', () => tlUnarchiveFolder(sf.id));
-          sfRow.appendChild(sfRestore);
-          const sfDel = document.createElement('button');
-          sfDel.className = 'archived-theme-btn del';
-          sfDel.innerHTML = '<i data-lucide="x"></i> Supprimer';
-          sfDel.addEventListener('click', async () => { await tlDeleteFolder(sf.id); tlRenderArchivedModal(); });
-          sfRow.appendChild(sfDel);
-          sfWrap.appendChild(sfRow);
-          childrenDiv.appendChild(sfWrap);
-        });
-        tlsInFolder.forEach(tl => childrenDiv.appendChild(tlBuildArchivedTierlistItem(tl)));
-        item.appendChild(childrenDiv);
-      }
-      folderWrap.appendChild(item);
-      tlArchivedList.appendChild(folderWrap);
-    }
-
-    // Afficher d'abord les dossiers racine archivés, puis les enfants
-    const rootArchived = archivedFolders.filter(f => !f.parentId || !archivedFolders.find(p => p.id === f.parentId));
-    rootArchived.forEach(folder => _renderArchivedFolder(folder, 0));
-  }
-
-  // Tierlists archivées sans dossier (ou dont le dossier n'est pas archivé)
-  const orphanArchivedTL = archivedTL.filter(t => !_tlEffectiveFolderId(t) || !(tlState.folders || []).find(f => f.id === _tlEffectiveFolderId(t) && f.archived));
-  if (orphanArchivedTL.length > 0) {
-    const sep = document.createElement('p');
-    sep.style.cssText = 'font-size:0.72rem;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;margin:' + (archivedFolders.length > 0 ? '10px 0 6px' : '0 0 6px') + ';';
-    sep.innerHTML = '<i data-lucide="square-mouse-pointer"></i> Listes archivées';
-    tlArchivedList.appendChild(sep);
-
-    // Grouper par dossier actif
-    const byFolder = {};
-    orphanArchivedTL.forEach(tl => {
-      const key = _tlEffectiveFolderId(tl) || '__root__';
-      if (!byFolder[key]) byFolder[key] = [];
-      byFolder[key].push(tl);
-    });
-
-    // Tierlists sans dossier
-    if (byFolder['__root__']) {
-      byFolder['__root__'].forEach(tl => tlArchivedList.appendChild(tlBuildArchivedTierlistItem(tl)));
-    }
-
-    // Tierlists dans dossiers actifs
-    (tlState.folders || []).filter(f => !f.archived && byFolder[f.id]).forEach(folder => {
-      const tlsInFolder = byFolder[folder.id];
-      const folderWrap = document.createElement('div');
-      folderWrap.style.cssText = 'margin-bottom:4px;';
-
-      const folderHeader = document.createElement('div');
-      folderHeader.style.cssText = 'display:flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:0.8rem;font-weight:700;color:var(--text-muted);';
-
-      const arrowBtn = document.createElement('button');
-      arrowBtn.style.cssText = 'background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:0.65rem;padding:0 4px;transition:transform 0.15s;flex-shrink:0;';
-      arrowBtn.innerHTML = '<i data-lucide="chevron-right"></i>';
-      arrowBtn.title = 'Voir les listes';
-      const childrenDiv = document.createElement('div');
-      childrenDiv.style.cssText = 'display:none;flex-direction:column;gap:4px;padding:4px 0 0 14px;border-left:2px solid var(--border);margin-left:6px;';
-      arrowBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        const open = childrenDiv.style.display !== 'none';
-        childrenDiv.style.display = open ? 'none' : 'flex';
-        arrowBtn.style.transform = open ? '' : 'rotate(90deg)';
-      });
-
-      folderHeader.appendChild(arrowBtn);
-      const folderIcon = document.createElement('i');
-      folderIcon.setAttribute('data-lucide', 'folder-closed');
-      folderHeader.appendChild(folderIcon);
-      folderHeader.appendChild(document.createTextNode(' ' + folder.name + ' (' + tlsInFolder.length + ')'));
-      folderWrap.appendChild(folderHeader);
-
-      tlsInFolder.forEach(tl => childrenDiv.appendChild(tlBuildArchivedTierlistItem(tl)));
-      folderWrap.appendChild(childrenDiv);
-      tlArchivedList.appendChild(folderWrap);
-    });
-  }
-  if (window.lucide) lucide.createIcons();
-}
-
 // ── Modal nouvelle tierlist ───────────────────────────────────────────────────
 let tlModalNewMode = 'create'; // 'create' | 'rename' | 'create-template'
 let tlModalNewTargetId = null;
@@ -12710,7 +10909,7 @@ function tlOpenTiersSourceModal(id) {
   _tlSyncCustomPresetDropdown(customPresets, tl, id);
   document.getElementById('tl-tiers-source-new-preset-btn').onclick = () => tlOpenPresetEditModal(null, id);
 
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: document.getElementById('tl-modal-tiers-source') });
   tlModalTiersSource.classList.remove('hidden');
 }
 
@@ -12938,7 +11137,7 @@ function _tlRenderPresetEditTiers() {
 
     wrap.appendChild(row);
   });
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: wrap });
 }
 
 // Sauvegarde automatique : appelée après chaque modification (ajout/suppression/réordonnancement/
@@ -13062,31 +11261,6 @@ function _tlSetupNewModalImportBtn() {
       _tlSetupNewModalImportBtn();
     });
   };
-}
-
-function tlOpenNewModal(presetFolderId) {
-  tlModalNewMode = 'create';
-  tlModalNewTargetId = null;
-  _tlNewModalImportSourceId = null;
-  tlModalNewTitle.textContent = 'Nouvelle liste';
-  tlModalNewInput.value = '';
-  tlModalNewInput.placeholder = 'Nom de la liste...';
-  // Afficher/cacher le select dossier selon le mode
-  const wrap = document.getElementById('tl-modal-new-folder-wrap');
-  if (wrap) {
-    wrap.style.display = '';
-    tlPopulateFolderSelect(tlModalNewFolderSelect, presetFolderId || '');
-    const dropdownBtn = document.getElementById('tl-modal-new-folder-dropdown-btn');
-    if (dropdownBtn) _setupFolderTreeDropdown(tlModalNewFolderSelect, dropdownBtn, _tlBuildFolderTree(), '— Aucun dossier —', 'fp_tlnewmodal_collapsed', null, true);
-  }
-  const presetWrap = document.getElementById('tl-modal-new-preset-wrap');
-  if (presetWrap) {
-    presetWrap.style.display = '';
-    tlPopulatePresetSelect(document.getElementById('tl-modal-new-preset-select'));
-    _tlSetupNewModalImportBtn();
-  }
-  tlModalNew.classList.remove('hidden');
-  setTimeout(() => { tlModalNewInput.focus(); }, 50);
 }
 
 function tlOpenNewTemplateModal(presetFolderId, fromHome = false) {
@@ -13595,15 +11769,6 @@ function tlCapture() {
 // openTlSidebar définie plus haut (stub de compat → openFoldersPage('tierlist')).
 document.getElementById('tl-empty-btn-folders').addEventListener('click', () => openFoldersPage('tierlist'));
 
-const _tlBtnFolderOptions = document.getElementById('tl-btn-folder-options');
-if (_tlBtnFolderOptions) {
-  _tlBtnFolderOptions.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const folderId = _tlCurrentSelectedFolderId();
-    if (folderId) tlOpenFolderManageModal(folderId, _tlBtnFolderOptions);
-  });
-}
-
 const _tlFoldersSortSelect = document.getElementById('tl-folders-sort-select');
 if (_tlFoldersSortSelect) {
   _tlFoldersSortSelect.addEventListener('change', () => {
@@ -13786,7 +11951,7 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
     empty.textContent = 'Aucun dossier';
     menu.appendChild(empty);
   }
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: menu });
 }
 
 const _tlBtnPathDropdown = document.getElementById('tl-btn-path-dropdown');
@@ -13823,7 +11988,7 @@ if (_tlBtnTierlistDropdown) {
     members.forEach(member => _tlAddDropdownSwitchItem(menu, member, !!tl && member.id === tl.id, close));
     if (members.length) addSep();
     addItem('', '+ Liste', 'green', () => tlOpenGenerateFromTemplateModal(root.id));
-    if (window.lucide) lucide.createIcons();
+    if (window.lucide) lucide.createIcons({ root: menu });
   });
 }
 
@@ -14106,10 +12271,9 @@ function tlRenderTrashList() {
       children.appendChild(_makeLeafRow(tl.name, 1, actions));
     });
   });
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: container });
 }
 
-tlBtnExport?.addEventListener('click', tlExport);
 tlBtnCapture?.addEventListener('click', () => openTlCaptureChoiceModal(tlCapture, tlExport));
 document.getElementById('tl-btn-export-images')?.addEventListener('click', tlExportImages);
 
@@ -14261,23 +12425,6 @@ if (tlCompareImgSizeSlider) {
   }, () => {});
 }
 
-const tlModalArchivedOverlay = document.getElementById('tl-modal-archived-overlay');
-
-function tlOpenArchivesUnified() {
-  tlRenderArchivedModal();
-  tlModalArchived.classList.add('open');
-  tlModalArchivedOverlay.classList.add('open');
-}
-function tlCloseArchivesUnified() {
-  tlModalArchived.classList.remove('open');
-  tlModalArchivedOverlay.classList.remove('open');
-}
-document.getElementById('tl-btn-archives-unified').addEventListener('click', () => {
-  if (tlModalArchived.classList.contains('open')) tlCloseArchivesUnified();
-  else tlOpenArchivesUnified();
-});
-tlModalArchivedOverlay.addEventListener('click', tlCloseArchivesUnified);
-
 const tlModalTrashOverlay = document.getElementById('tl-modal-trash-overlay');
 
 async function tlOpenTrashUnified() {
@@ -14292,10 +12439,6 @@ function tlCloseTrashUnified() {
   tlTrashEmptyConfirmInline.classList.add('hidden');
   document.getElementById('tl-btn-trash-empty-all').classList.remove('hidden');
 }
-document.getElementById('tl-btn-trash-unified').addEventListener('click', () => {
-  if (tlModalTrash.classList.contains('open')) tlCloseTrashUnified();
-  else tlOpenTrashUnified();
-});
 tlModalTrashOverlay.addEventListener('click', tlCloseTrashUnified);
 
 // Confirmation inline (remplace le bouton "Vider" sur place, jamais un modal par-dessus le drawer
@@ -14374,7 +12517,7 @@ function _tlUpdateToggleUnplacedBtn() {
     ? '<i data-lucide="eye"></i> Non placés'
     : '<i data-lucide="eye-off"></i> Non placés';
   tlBtnToggleUnplaced.title = _tlLocalUnplacedHidden ? 'Afficher le cadre Éléments non placés' : 'Masquer le cadre Éléments non placés';
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: tlBtnToggleUnplaced });
 }
 if (tlBtnToggleUnplaced) {
   tlBtnToggleUnplaced.addEventListener('click', () => {
@@ -14687,11 +12830,10 @@ function _bingoStartListeners() {
     if (!state.trash) state.trash = [];
     state.folders.forEach(_bingoNormalizeFolderShallow);
 
-    // Contenu lourd (grilles/éléments) chargé seulement si la page Bingo est affichée, ou si un lien
-    // direct la nécessite hors page (grille plein écran ?openGrids=) — sinon laissé à la charge de
-    // _bingoLoadActivePageContent(), déclenché quand l'utilisateur navigue vers Bingo (cf _switchPage).
+    // Contenu lourd (grilles/éléments) chargé seulement si la page Bingo est affichée — sinon laissé à
+    // la charge de _bingoLoadActivePageContent(), déclenché quand l'utilisateur navigue vers Bingo (cf _switchPage).
     const pending = [];
-    if (_currentPage === 'bingo' || _soloGridIds.length > 0) {
+    if (_currentPage === 'bingo') {
       _bingoUpdateActiveSeasonSubscription();
       const activeF = activeFolder();
       if (activeF) pending.push(_bingoEnsureSeasonLoaded(activeF.id));
@@ -14923,7 +13065,7 @@ function _openCurrentEventAtStartupIfNeeded() {
   // page affichée au démarrage (même Dossiers) doit être complète avant d'apparaître (cf _revealApp).
   if (_startupCeDone || !_prefsReady || !_firebaseReady || !_prefsAppliedOnce || !_tlIndexReady) return;
   _startupCeDone = true;
-  if (_userNavigated || _soloGridIds.length > 0 || _soloTierlistId || _compareTierlistIds.length >= 2) { _revealApp(); return; }
+  if (_userNavigated || _soloTierlistId || _compareTierlistIds.length >= 2) { _revealApp(); return; }
   const tl = state.currentEventTierlistId
     ? tlState.tierlists.find(t => t.id === state.currentEventTierlistId && !t.archived) : null;
   if (tl) {
@@ -14968,7 +13110,7 @@ function _homeRenderHero() {
     if (tl) {
       btn.style.display = 'inline-flex';
       if (lbl) {
-        // Même construction de chemin que renderCurrentEventButton() (header) : Tier List | dossiers | nom
+        // Même construction de chemin que renderCurrentEventButton() : Tier List | dossiers | nom
         const parts = ['Tier list'];
         if (tl.folderId) {
           const folderParts = [];
@@ -15006,7 +13148,5 @@ function _homeRenderHero() {
   btn.style.display = 'none';
 }
 
-document.getElementById('home-btn-current-event')?.addEventListener('click', () => {
-  document.getElementById('btn-ce-navigate')?.click();
-});
+document.getElementById('home-btn-current-event')?.addEventListener('click', _goToCurrentEvent);
 

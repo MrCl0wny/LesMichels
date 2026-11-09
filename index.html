@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=366" />
+  <link rel="stylesheet" href="style.css?v=367" />
   <!-- Couleurs choisies (Préférences) appliquées dès le chargement, sans attendre Firebase ni app.js. -->
   <script>try { var _ct = localStorage.getItem('lmColorTheme'); if (_ct && _ct !== 'gray') document.documentElement.setAttribute('data-color-theme', _ct); } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -23,48 +23,16 @@
   <!-- JSZip (export "Exporter images" en .zip) -->
   <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
-<!-- header-removed : barre du haut masquée (code gardé). Retirer cette classe pour la remettre.
-     app-loading : page invisible tant que les données ne sont pas chargées (retirée par _revealApp). -->
-<body class="header-removed app-loading">
+<!-- app-loading : page invisible tant que les données ne sont pas chargées (retirée par _revealApp). -->
+<body class="app-loading">
 
-  <header class="header">
-    <div class="header-inner">
-      <div class="logo">
-        <span class="logo-les">Les</span><span class="logo-michels">Michels</span>
-      </div>
-      <div class="nav-group">
-        <nav class="nav">
-          <button class="nav-btn active nav-btn-folders" data-page="folders" title="Dossiers"><i data-lucide="folder"></i> Dossiers</button>
-          <button class="nav-btn" data-page="bingo">Bingo</button>
-          <button class="nav-btn" data-page="tierlist">Tier List</button>
-        </nav>
-
-        <!-- Soirée en cours (commun bingo + tierlist) -->
-        <div class="btn-current-event" id="btn-current-event" style="display:none">
-          <button class="btn-ce-label" id="btn-ce-navigate" title="Aller à la soirée en cours"><i data-lucide="party-popper"></i> <span id="btn-current-event-label">Soirée en cours</span></button>
-        </div>
-        <button class="btn-ce-set" id="btn-ce-set-header" style="display:none" title="Définir la page active comme soirée en cours"><i data-lucide="party-popper"></i> En cours</button>
-      </div>
-
-      <!-- Badge profil dans le header -->
-      <div id="user-badge" class="user-badge hidden">
-        <button id="btn-profile" class="btn-profile-header" title="Profil"><i data-lucide="user"></i> Profil</button>
-      </div>
-    </div>
-    <!-- Petite flèche centrée sous la barre : replie/déplie la barre du haut (toutes les pages,
-         état mémorisé sur l'appareil, cf _setHeaderCollapsed). -->
-    <button class="header-toggle" id="btn-header-toggle" title="Replier/déplier la barre du haut"><i data-lucide="chevron-up"></i></button>
-  </header>
-
-  <!-- Menu Profil (clic sur #btn-profile ou sur "Profil" du sélecteur de page). Sorti du header :
-       celui-ci est masqué (body.header-removed), un menu à l'intérieur ne s'afficherait plus. -->
+  <!-- Menu Profil (clic sur "Profil" en haut à droite). -->
   <div id="profile-menu" class="ctx-menu hidden">
     <button class="ctx-menu-item" id="btn-open-prefs"><i data-lucide="settings"></i> Préférences</button>
     <button class="ctx-menu-item ctx-danger" id="btn-signout"><i data-lucide="log-out"></i> Se déconnecter</button>
   </div>
 
-  <!-- Sélecteur de page : remplace la barre du haut (masquée mais gardée). "LesMichels" + nom de la
-       page affichée ; clic = menu des autres pages. Même place en haut à gauche sur toutes les pages
+  <!-- Sélecteur de page : "LesMichels" + nom de la page affichée ; clic = menu des autres pages. Même place en haut à gauche sur toutes les pages
        (position absolue, cf .page-switcher). -->
   <button class="page-switcher" id="page-switcher">
     <span class="logo"><span class="logo-les">Les</span><span class="logo-michels">Michels</span></span>
@@ -75,7 +43,7 @@
     <button class="ctx-menu-item" data-page="bingo">Bingo</button>
     <button class="ctx-menu-item" data-page="tierlist">Tier List</button>
   </div>
-  <!-- Petit bouton Profil tout en haut à droite (remplace celui de la barre du haut) : ouvre #profile-menu. -->
+  <!-- Petit bouton Profil tout en haut à droite : ouvre #profile-menu. -->
   <button class="btn-profile-header page-profile-btn" id="page-switcher-profile"><i data-lucide="user"></i> Profil</button>
 
   <main class="main">
@@ -191,8 +159,6 @@
                rien au centre, Non placés à droite. -->
           <div class="ctrl-row ctrl-row-line1">
             <div class="ctrl-row-grids-left tl-group-row">
-              <button class="tl-toolbar-btn tl-btn-neutral tl-btn-folders tl-shrink-0 hidden" id="tl-btn-folders" title="Ouvrir la page Dossiers"><i data-lucide="folder"></i> Dossiers</button>
-              <div id="tl-group-breadcrumb" class="grids-breadcrumb tl-group-breadcrumb-hidden"></div>
               <div class="tl-labeled-btn tl-group-elem hidden tl-shrink-0">
                 <span class="tl-labeled-btn-label">Chemin</span>
                 <button class="tl-toolbar-btn tl-btn-neutral tl-btn-path" id="tl-btn-path-dropdown" title="Aller à un dossier"><i data-lucide="road"></i> <span id="tl-path-dropdown-label"></span></button>
@@ -206,6 +172,7 @@
             </div>
             <div class="ctrl-row-grids-center"></div>
             <div class="ctrl-row-grids-right">
+              <button class="btn-ce-set" id="btn-ce-set-header" title="Définir la liste affichée comme soirée en cours"><i data-lucide="party-popper"></i> En cours</button>
               <button class="tl-toolbar-btn tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Tiers</button>
               <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Non placés</button>
             </div>
@@ -254,11 +221,6 @@
       </div>
 
       <div class="tl-layout">
-
-        <!-- Boutons legacy Archives/Corbeille tierlist : cachés (stubs de compat JS). Corbeille accessible
-             via #folders-page-btn-trash-tl sur la page Dossiers ; plus aucun accès Archives dans l'UI. -->
-        <button class="hidden" id="tl-btn-archives-unified" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
-        <button class="hidden" id="tl-btn-trash-unified" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
 
         <!-- ── Zone principale ── -->
         <div class="tl-main" id="tl-main">
@@ -358,55 +320,25 @@
         <button class="home-ce-btn" id="bingo-hero-current-event" style="display:none" title="Aller à la soirée en cours"><i data-lucide="party-popper"></i> <span id="bingo-hero-ce-label"></span></button>
       </div>
 
-      <!-- Ancien panneau de contrôle : plus affiché (plein écran Bingo retiré à la demande). Ses restes
-           (plein écran, fil d'Ariane) sont gardés masqués avec leur code, au cas où. -->
-      <div class="bingo-control-panel hidden" id="bingo-control-panel">
-        <div class="bingo-control-panel-body" id="bingo-control-panel-body">
-          <div class="ctrl-row ctrl-row-grids">
-            <div class="ctrl-row-grids-left">
-              <button class="btn-action btn-folders-panel hidden" id="btn-folders-panel" title="Ouvrir la page Dossiers"><i data-lucide="folder"></i> Dossiers</button>
-              <div id="grids-breadcrumb" class="grids-breadcrumb hidden"></div>
-            </div>
-          </div>
-          <div class="ctrl-row ctrl-row-toolbar">
-            <div class="ctrl-row-toolbar-center btn-fullscreen-only" id="bingo-solo-toolbar-center"></div>
-            <div id="bingo-fullscreen-breadcrumb" class="bingo-fullscreen-breadcrumb bingo-breadcrumb-title"></div>
-            <div class="ctrl-row-toolbar-right">
-              <button class="btn-action btn-open-grids-window btn-hide-solo-mode" id="btn-open-grids-window" title="Afficher les grilles en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
-              <button class="btn-action btn-exit-solo-mode" id="btn-exit-solo-grid" title="Quitter le mode plein écran"><i data-lucide="x"></i> Quitter plein écran</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Menu déroulant Chemin (mode normal) : arborescence pliable/dépliable des dossiers,
            même comportement que le bouton Chemin de la partie Tier List. -->
       <div id="path-dropdown-menu" class="ctx-menu path-menu hidden"></div>
 
       <div class="bingo-layout" id="bingo-layout">
 
-        <!-- Boutons legacy Archives/Corbeille bingo : cachés (stubs de compat JS). Corbeille accessible
-             via #folders-page-btn-trash-bingo sur la page Dossiers ; plus aucun accès Archives dans l'UI. -->
-        <button class="hidden" id="btn-archives-unified" title="Éléments archivés"><i data-lucide="package"></i> Archives</button>
-        <button class="hidden" id="btn-trash-unified" title="Éléments supprimés"><i data-lucide="trash-2"></i> Corbeille</button>
-
         <!-- Colonne de gauche : cadre New / Stats / Idées, bouton Création en dessous, puis le panneau
              Création (ouvert sous ce bouton). -->
         <div class="bingo-left-col" id="bingo-left-col">
         <div class="bingo-tools-frame" id="bingo-grids-options-row">
           <button class="btn-action btn-neutral-action tl-shrink-0 hidden" id="btn-toggle-new-badge" title="Afficher/masquer le badge NEW des cases nouvelles"><i data-lucide="eye"></i> New</button>
-          <!-- Capture : masqué (classe hidden) sur demande, code conservé au cas où. -->
-          <button class="btn-action btn-screenshot-bingo tl-shrink-0 hidden" id="btn-screenshot-bingo-normal" title="Copier les grilles affichées dans le presse-papier"><i data-lucide="camera"></i> Capture</button>
           <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-bingo-stats" title="Statistiques des cases sur la saison"><i data-lucide="bar-chart-2"></i> Stats</button>
           <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-bingo-suggestions" title="Idées de cases (partagées entre les épisodes du dossier)"><i data-lucide="lightbulb"></i> <span>Idées<span id="bingo-suggestions-count"></span></span></button>
         </div>
         <!-- Création : ouvre/ferme ensemble le panneau Création (juste en dessous) et le panneau Cases (droite). -->
         <button class="btn-action btn-neutral-action tl-shrink-0" id="btn-bingo-creation" title="Afficher/masquer les outils de création des grilles et le panneau Cases" aria-expanded="false"><i data-lucide="pickaxe"></i> Création</button>
         <!-- Panneau Création : ouvert/fermé uniquement par #btn-bingo-creation
-             (_setBingoCreationOpen), en même temps que le panneau Cases.
-             #btn-ce-set-header y est inséré en JS (_placeCeSetHeaderBtn), avant Dupliquer.
-             En cours, Dupliquer et Supprimer : masqués sur demande (CSS), code conservé ; les mêmes
-             actions restent dans le menu d'options du dossier (clic droit sur Chemin). -->
+             (_setBingoCreationOpen), en même temps que le panneau Cases. Définir soirée en cours,
+             Dupliquer et Supprimer sont dans le menu d'options du dossier (clic droit sur Chemin). -->
         <div id="creation-panel" class="folders-panel cases-sidebar creation-sidebar">
           <div class="folders-panel-header">
             <span class="folders-panel-title"><i data-lucide="pickaxe"></i> Création</span>
@@ -420,11 +352,7 @@
                 <button class="size-btn size-btn-sm" id="btn-size-plus" title="Agrandir les grilles">+</button>
               </div>
               <button class="btn-action btn-generate-global tl-shrink-0" id="btn-generate" title="Générer aléatoirement toutes les grilles affichées"><i data-lucide="dices"></i> Générer</button>
-              <button class="btn-action btn-clear-grids tl-shrink-0" id="btn-clear-grids" title="Vider toutes les grilles affichées"><i data-lucide="eraser"></i> Vider</button>
-              <button class="btn-action btn-reset tl-shrink-0" id="btn-reset" title="Décoche toutes les cases du sous-thème"><i data-lucide="undo-dot"></i> Décocher</button>
             </div>
-            <button class="btn-action btn-duplicate-orange tl-shrink-0" id="btn-new-grid-main" title="Dupliquer le dossier actuel"><i data-lucide="copy-plus"></i> Dupliquer</button>
-            <button class="btn-action tl-shrink-0" id="btn-delete-bingo" title="Envoyer ce bingo dans la corbeille"><i data-lucide="trash"></i> Supprimer</button>
           </div>
         </div>
         </div>
@@ -437,8 +365,6 @@
             <!-- Les grilles s'affichent dynamiquement ici -->
           </div>
           <div id="bingo-secondary-cell-preview" class="hidden"></div>
-
-          <div id="bingo-message" class="bingo-message hidden"></div>
         </div>
 
         <!-- Panneau cases (sidebar fixe, droite) -->
@@ -457,9 +383,8 @@
               <button id="btn-add-element" class="btn-icon" title="Ajouter une case">+</button>
             </div>
             <!-- Activer / Archiver / Supprimer : agissent sur les cases cochées de l'onglet affiché
-                 (_casesSel). Vider : masqué sur demande, code conservé au cas où. -->
+                 (_casesSel). -->
             <div class="add-element-form cases-bulk-row">
-              <button id="btn-clear-elements-panel" class="btn-icon hidden" title="Supprimer toutes les cases"><i data-lucide="trash-2"></i> Vider</button>
               <button id="btn-cases-activate" class="btn-icon cases-bulk-btn cases-bulk-activate" disabled><i data-lucide="square-activity"></i> Activer</button>
               <button id="btn-cases-archive" class="btn-icon cases-bulk-btn cases-bulk-archive" disabled><i data-lucide="book"></i> Archiver</button>
               <button id="btn-cases-delete" class="btn-icon cases-bulk-btn cases-bulk-delete" disabled><i data-lucide="trash"></i> Supprimer</button>
@@ -748,18 +673,6 @@
     </div>
   </div>
 
-
-  <div id="tl-modal-archived-overlay" class="archives-panel-overlay"></div>
-  <!-- Panneau Archives tier list (drawer flottant, tierlists + dossiers) -->
-  <div id="tl-modal-archived" class="folders-panel archives-panel">
-    <div class="folders-panel-header">
-      <span class="folders-panel-title"><i data-lucide="package"></i> Archives</span>
-    </div>
-    <div class="folders-panel-tree">
-      <div id="tl-archived-list" class="modal-items-list"></div>
-    </div>
-  </div>
-
   <div id="tl-modal-trash-overlay" class="trash-panel-overlay"></div>
   <!-- Panneau Corbeille tier list (drawer flottant) -->
   <div id="tl-modal-trash" class="folders-panel trash-panel">
@@ -794,37 +707,6 @@
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- boutons stubs pour compat JS -->
-  <button id="btn-new-root-folder" style="display:none"></button>
-  <button id="btn-new-folder-bingo" style="display:none"></button>
-
-  <!-- Menu contextuel dossier (clic droit) -->
-  <div id="ctx-menu-folder" class="ctx-menu hidden">
-    <button class="ctx-menu-item" id="ctx-folder-new-child"><i data-lucide="folder-closed"></i> Nouveau dossier enfant</button>
-    <button class="ctx-menu-item" id="ctx-folder-rename"><i data-lucide="pencil"></i> Renommer</button>
-    <button class="ctx-menu-item" id="ctx-folder-duplicate"><i data-lucide="copy-plus"></i> Dupliquer</button>
-    <button class="ctx-menu-item" id="ctx-folder-set-current-event"><i data-lucide="party-popper"></i> Définir comme soirée en cours</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-folder-delete"><i data-lucide="trash-2"></i> Supprimer</button>
-  </div>
-
-  <!-- Menu contextuel grille (clic droit) -->
-  <div id="ctx-menu-grid" class="ctx-menu hidden">
-    <button class="ctx-menu-item" id="ctx-grid-rename"><i data-lucide="pencil"></i> Renommer</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-grid-delete"><i data-lucide="trash-2"></i> Supprimer</button>
-  </div>
-
-  <div id="ctx-menu-element" class="ctx-menu hidden">
-    <button class="ctx-menu-item" id="ctx-element-edit"><i data-lucide="pencil"></i> Modifier</button>
-    <button class="ctx-menu-item" id="ctx-element-add-to-preset"><i data-lucide="tag"></i> Ajouter à un preset</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-element-archive"><i data-lucide="package"></i> Archiver</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-element-delete-active"><i data-lucide="trash-2"></i> Supprimer</button>
-  </div>
-
-  <div id="ctx-menu-element-archived" class="ctx-menu hidden">
-    <button class="ctx-menu-item" id="ctx-element-restore"><i data-lucide="undo-2"></i> Restaurer</button>
-    <button class="ctx-menu-item ctx-danger" id="ctx-element-delete"><i data-lucide="trash-2"></i> Supprimer</button>
   </div>
 
   <!-- Modal nouveau dossier -->
@@ -876,16 +758,6 @@
     </div>
   </div>
 
-  <div id="modal-archives-unified-overlay" class="archives-panel-overlay"></div>
-  <!-- Panneau Archives (drawer flottant) -->
-  <div id="modal-archives-unified" class="folders-panel archives-panel">
-    <div class="folders-panel-header">
-      <span class="folders-panel-title"><i data-lucide="package"></i> Archives</span>
-    </div>
-    <div class="folders-panel-tree">
-      <div id="archives-tree" class="archives-tree"></div>
-    </div>
-  </div>
   <div id="modal-trash-unified-overlay" class="trash-panel-overlay"></div>
   <!-- Panneau Corbeille (drawer flottant) -->
   <div id="modal-trash-unified" class="folders-panel trash-panel">
@@ -1014,66 +886,6 @@
   <!-- Menu déroulant "Épisodes" de la modale Stats : cocher/décocher les épisodes à inclure. -->
   <div id="bingo-stats-episodes-menu" class="ctx-menu hidden"></div>
 
-  <!-- Modal renommer dossier -->
-  <div id="modal-rename-folder" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3 id="rename-folder-modal-title">Renommer le dossier</h3>
-      </div>
-      <div class="modal-body">
-        <input type="text" id="rename-folder-input" class="modal-text-input modal-rename-input" placeholder="Nom du dossier..." maxlength="40" />
-        <div class="modal-actions">
-          <button class="btn-action" id="btn-confirm-rename-folder">Renommer</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal renommer grille -->
-  <div id="modal-rename-grid" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Renommer la grille</h3>
-      </div>
-      <div class="modal-body">
-        <input type="text" id="rename-grid-input" class="modal-text-input modal-rename-input" placeholder="Nom de la grille..." maxlength="40" />
-        <div class="modal-actions">
-          <button class="btn-action" id="btn-confirm-rename-grid">Renommer</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal nouveau sous-thème -->
-  <div id="modal-new-subtheme" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Nouveau sous-thème</h3>
-      </div>
-      <div class="modal-body">
-        <input type="text" id="new-subtheme-name-input" class="modal-text-input" placeholder="Nom du sous-thème..." maxlength="40" />
-        <div class="modal-actions">
-          <button class="btn-action" id="btn-confirm-new-subtheme">Créer</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal renommer sous-thème -->
-  <div id="modal-rename-subtheme" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Renommer le sous-thème</h3>
-      </div>
-      <div class="modal-body">
-        <input type="text" id="rename-subtheme-input" class="modal-text-input modal-rename-input" placeholder="Nom du sous-thème..." maxlength="40" />
-        <div class="modal-actions">
-          <button class="btn-action" id="btn-confirm-rename-subtheme">Renommer</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Modal Grilles (bouton Grilles du panneau Création) : liste des grilles du bingo (afficher,
        favorite, clic sur le nom = renommer, croix rouge = supprimer — remplie par _renderGridsModalList) + nouvelle grille en dessous. -->
   <div id="modal-grids" class="modal-overlay hidden">
@@ -1163,35 +975,6 @@
     </div>
   </div>
 
-  <div id="modal-confirm-reset" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Confirmer le décochage</h3>
-      </div>
-      <div class="modal-body">
-        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Décocher toutes les cases de cet épisode ?</p>
-        <div class="modal-actions">
-          <button class="btn-action btn-danger-action" id="btn-confirm-reset"><i data-lucide="undo-dot"></i> Décocher</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal choix Capture (toutes les grilles ou une grille spécifique) -->
-  <div id="modal-capture-choice" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Capture</h3>
-      </div>
-      <div class="modal-body">
-        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Capturer toutes les grilles affichées ou une grille spécifique ?</p>
-        <div class="modal-actions modal-actions-wrap" id="capture-choice-actions">
-          <button class="btn-action" id="btn-capture-choice-all"><i data-lucide="camera"></i> Toutes les grilles</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Modal choix Capture tierlist (capture d'écran presse-papier ou export PNG) -->
   <div id="modal-tl-capture-choice" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -1224,7 +1007,7 @@
     </div>
   </div>
 
-  <!-- Modal confirmation Vider grilles -->
+  <!-- Modal confirmation Vider la case (clic droit sur une case en mode Création) -->
   <div id="modal-confirm-clear" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
       <div class="modal-header">
@@ -1234,7 +1017,6 @@
         <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;" id="modal-clear-msg">Vider les grilles affichées ?</p>
         <div class="modal-actions">
           <button class="btn-action btn-danger-action" id="btn-confirm-clear"><i data-lucide="eraser"></i> Vider</button>
-          <button class="btn-action btn-danger-action hidden" id="btn-confirm-clear-archived-only"><i data-lucide="package"></i> Archivées seulement</button>
         </div>
       </div>
     </div>
@@ -1355,6 +1137,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=509"></script>
+  <script src="app.js?v=510"></script>
 </body>
 </html>
