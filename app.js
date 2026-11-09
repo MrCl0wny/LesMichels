@@ -6972,6 +6972,13 @@ function tlSaveIndex() {
 // de base64 à chaque action coûtait des dizaines de ms avant même l'envoi.
 const _tlLastGroupSnapshot = new Map();
 
+// Id du groupe dont tlSaveGroup() est EN TRAIN d'appeler .set()/.update() : Firebase déclenche le
+// listener du groupe actif de façon SYNCHRONE sur une écriture locale (même constat que l'index Bingo),
+// avec exactement ce qu'on vient d'écrire — le handler de _tlSetActiveGroupSubscription s'en sert pour
+// ignorer cet écho, qui relançait un tlRender() complet après chaque action (annulant les patchs ciblés
+// du glisser-déposer). Un vrai changement distant n'arrive jamais pendant cet appel synchrone.
+let _tlLocalGroupWrite = null;
+
 // Empreinte d'un payload de groupe DÉJÀ passé par sanitizeForFirebase : images en copies superficielles
 // (comparées champ par champ avec ===, ce qui ne recopie ni ne sérialise jamais les src base64), membres
 // (ids seulement, légers) en JSON.
@@ -7002,12 +7009,30 @@ function tlSaveGroup(groupRootId) {
   if (prev === undefined) {
     // Rien d'écrit pour ce groupe depuis le chargement de la page : set() complet, comme avant.
     _tlLastGroupSnapshot.set(groupRootId, next);
-    _dbTierlistData.child(groupRootId).set(payload).catch(e => console.warn('TL group save error:', e));
+    _tlLocalGroupWrite = groupRootId;
+    try {
+      _dbTierlistData.child(groupRootId).set(payload).catch(e => console.warn('TL group save error:', e));
+    } finally {
+      _tlLocalGroupWrite = null;
+    }
     return;
   }
   const updates = {};
-  const imagesChanged = next.images.length !== prev.images.length || next.images.some((img, i) => !_tlSameImage(img, prev.images[i]));
-  if (imagesChanged) updates.images = payload.images;
+  if (prev.images === null) {
+    // Positions côté Firebase inconnues (cf handler de _tlSetActiveGroupSubscription) : tableau complet.
+    updates.images = payload.images;
+  } else {
+    // Images : seulement les entrées qui ont changé (ajouter/renommer une image n'envoie plus qu'elle,
+    // au lieu de retransmettre tout le tableau base64 — plusieurs Mo qui bloquaient la connexion de
+    // tout le monde). Toujours l'entrée COMPLÈTE, jamais un champ seul : une écriture concurrente qui
+    // décalerait les positions ne peut ainsi jamais laisser d'image incomplète (sans id/src). Les
+    // positions au-delà de la nouvelle longueur sont effacées : jamais de trou au milieu du tableau.
+    const len = Math.max(next.images.length, prev.images.length);
+    for (let i = 0; i < len; i++) {
+      if (i >= next.images.length) updates['images/' + i] = null;
+      else if (!_tlSameImage(next.images[i], prev.images[i])) updates['images/' + i] = payload.images[i];
+    }
+  }
   if (payload.toPlaceImgId !== prev.toPlaceImgId) updates.toPlaceImgId = payload.toPlaceImgId;
   const memberIds = new Set([...Object.keys(next.members), ...Object.keys(prev.members)]);
   memberIds.forEach(id => {
@@ -7015,7 +7040,12 @@ function tlSaveGroup(groupRootId) {
   });
   _tlLastGroupSnapshot.set(groupRootId, next);
   if (Object.keys(updates).length === 0) return;
-  _dbTierlistData.child(groupRootId).update(updates).catch(e => console.warn('TL group save error:', e));
+  _tlLocalGroupWrite = groupRootId;
+  try {
+    _dbTierlistData.child(groupRootId).update(updates).catch(e => console.warn('TL group save error:', e));
+  } finally {
+    _tlLocalGroupWrite = null;
+  }
 }
 
 // Corbeille : nœud séparé, toujours chargé/écrit en entier (contient déjà des snapshots complets —
@@ -7237,7 +7267,18 @@ function _tlNormalizeIndex(rawIndex) {
 // tierlist complets qu'attendent les 4 passes historiques (id/isTemplate/templateId + champs lourds).
 function _tlNormalizeGroupData(groupRootId, rawGroupData) {
   const data = (rawGroupData && typeof rawGroupData === 'object') ? rawGroupData : {};
+  // Images écrites position par position (cf tlSaveGroup) : deux écritures concurrentes peuvent
+  // laisser un trou dans le tableau — Firebase le relit alors avec une case vide, ou comme un objet
+  // {"0":…, "2":…}. Recoller dans l'ordre des positions et retirer les entrées vides (persisté via
+  // _tlMigrated) plutôt que de planter sur une case vide ou de jeter toutes les images.
+  let _tlImagesRepaired = false;
+  if (data.images && typeof data.images === 'object' && !Array.isArray(data.images)) {
+    data.images = Object.keys(data.images).sort((a, b) => Number(a) - Number(b)).map(k => data.images[k]);
+    _tlImagesRepaired = true;
+  }
   if (!Array.isArray(data.images)) data.images = [];
+  const _tlValidImages = data.images.filter(img => img && typeof img === 'object' && img.id);
+  if (_tlValidImages.length !== data.images.length) { data.images = _tlValidImages; _tlImagesRepaired = true; }
   if (!data.members || typeof data.members !== 'object') data.members = {};
 
   // Les métas légères (id/isTemplate/templateId/folderId...) de tous les membres du groupe sont déjà
@@ -7274,7 +7315,7 @@ function _tlNormalizeGroupData(groupRootId, rawGroupData) {
     });
   });
 
-  let _tlMigrated = false;
+  let _tlMigrated = _tlImagesRepaired;
 
   // Migration : images encore locales à une tierlist générée (ancien format, avant fusion dans le
   // template) — cf. commentaire d'origine dans _tlNormalizeState.
@@ -12701,6 +12742,57 @@ function _bingoNormalizeFolderShallow(f) {
 let _bingoActiveSeasonSub = new Set();
 const _bingoActiveSeasonHandlers = new Map(); // folderId -> handler (pour .off())
 
+// Empreinte du contenu lourd d'un dossier SANS ce que change un cochage (champs `checked`,
+// persistentCheckedIds) : deux états qui ne diffèrent que par des coches ont la même empreinte.
+// Clés triées, et null/undefined/[] ignorés : Firebase supprime les null et les tableaux vides alors
+// que l'état local les garde (case vide locale {elementId:null, color:null} = {} relue de Firebase).
+// Au moindre doute (forme inattendue), les empreintes diffèrent → rendu complet, jamais l'inverse.
+function _bingoStructureKey(f) {
+  const canon = v => {
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    if (v && typeof v === 'object') {
+      return '{' + Object.keys(v).sort()
+        .filter(k => k !== 'checked' && k !== 'persistentCheckedIds' && v[k] !== null && v[k] !== undefined && !(Array.isArray(v[k]) && v[k].length === 0))
+        .map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
+    }
+    return JSON.stringify(v === undefined ? null : v);
+  };
+  return canon({ elements: f.elements, archivedElementIds: f.archivedElementIds, grids: f.grids, activeGridId: f.activeGridId });
+}
+
+// elementId -> suite des états cochés de ses cases (toutes grilles) + de l'élément lui-même : sert à
+// trouver quelles cases un changement distant a cochées/décochées (structure identique garantie par
+// _bingoStructureKey, donc même ordre de parcours des deux côtés).
+function _bingoCheckSignature(f) {
+  const sig = new Map();
+  const add = (id, bit) => sig.set(id, (sig.get(id) || '') + bit);
+  (f.grids || []).forEach(g => (g.grid || []).forEach(c => { if (c && c.elementId) add(c.elementId, c.checked ? '1' : '0'); }));
+  (f.elements || []).forEach(e => { if (e && e.id) add(e.id, e.checked ? 'E' : 'e'); });
+  return sig;
+}
+
+// Recopie les coches (cases + éléments) de la version fusionnée vers les objets d'avant la fusion,
+// position par position (structure identique garantie par _bingoStructureKey).
+function _bingoCopyChecks(fromGrids, fromElements, toGrids, toElements) {
+  const copy = (to, from) => { if (from.checked !== undefined) to.checked = from.checked; else delete to.checked; };
+  (toGrids || []).forEach((g, gi) => {
+    const src = fromGrids[gi];
+    (g.grid || []).forEach((c, ci) => { if (c && src && src.grid && src.grid[ci]) copy(c, src.grid[ci]); });
+  });
+  (toElements || []).forEach((e, ei) => { if (e && fromElements[ei]) copy(e, fromElements[ei]); });
+}
+
+// Équivalent, pour une coche reçue d'un autre utilisateur, de ce que fait le clic local sur une case
+// (cf buildSingleGrid) : patch des cases et du panneau Cases + effets BINGO, sans reconstruire les
+// grilles ni recalculer leur taille.
+function _bingoPatchRemoteChecks(changedIds) {
+  (changedIds.length ? changedIds : [null]).forEach(elementId => _patchCellsAfterCheck(elementId));
+  changedIds.forEach(elementId => _patchElementsListAfterCheck(elementId));
+  getVisibleGrids().forEach(gx => {
+    triggerBingoEffectIfNew(gx.id, getBingoResult(gx.gridSize, gx.grid.slice(0, gx.gridSize * gx.gridSize)).lines.length);
+  });
+}
+
 function _bingoSetActiveSeasonSubscription(folderIds) {
   const nextIds = new Set((folderIds || []).filter(Boolean));
   // Désabonner les dossiers sortis du périmètre
@@ -12745,9 +12837,29 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
       }
       _bingoRemoteUpdate = true;
       const before = new Set((findFolderById(state.folders, id)?.grids || []).filter(g => !g.archived).map(g => g.id));
+      // Changement distant sur le bingo affiché : s'il ne porte QUE sur des coches, patch ciblé
+      // (comme un clic local) au lieu du rendu complet. Empreinte prise AVANT la fusion, qui remplace
+      // les objets grilles/cases/éléments.
+      const fPrev = findFolderById(state.folders, id);
+      const canPatch = !!(_prefsReady && id === _localActiveFolderId && _currentPage === 'bingo' && fPrev && _bingoLoadedFolders.has(id));
+      const prevKey = canPatch ? _bingoStructureKey(fPrev) : null;
+      const prevSig = canPatch ? _bingoCheckSignature(fPrev) : null;
+      const prevGrids = fPrev ? fPrev.grids : null;
+      const prevElements = fPrev ? fPrev.elements : null;
       _bingoMergeDataIntoState(id, rawVal);
       const f = findFolderById(state.folders, id);
       _bingoLoadedFolders.add(id);
+      let patchedIds = null;
+      if (canPatch && f === fPrev && _bingoStructureKey(f) === prevKey) {
+        const nextSig = _bingoCheckSignature(f);
+        patchedIds = [...nextSig.keys()].filter(k => nextSig.get(k) !== prevSig.get(k));
+        // Les cases affichées gardent dans leurs handlers (clic, clic droit) une référence aux objets
+        // case d'AVANT la fusion : on y recopie les nouvelles coches et on les remet dans l'état,
+        // sinon le prochain clic lirait une coche périmée (cocher au lieu de décocher).
+        _bingoCopyChecks(f.grids, f.elements, prevGrids, prevElements);
+        f.grids = prevGrids;
+        f.elements = prevElements;
+      }
       _bingoLastKnownPayloadJSON.set(id, rawValJSON);
       // Nouvelles grilles apparues (créées par un autre utilisateur) dans le dossier actif : les
       // ajouter à la sélection locale — même comportement que l'ancien listener unique.
@@ -12775,7 +12887,8 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
       // toujours faite) pour que NEW/Stats reste à jour, sans jamais toucher l'affichage courant.
       // Seulement sur la page Bingo : ailleurs rien d'affiché ne dépend de ce contenu (_switchPage
       // refait le rendu Bingo en y arrivant), et la page Dossiers est rafraîchie juste en dessous.
-      if (_prefsReady && id === _localActiveFolderId && _currentPage === 'bingo') _applyPrefsAndRender();
+      if (patchedIds) _bingoPatchRemoteChecks(patchedIds);
+      else if (_prefsReady && id === _localActiveFolderId && _currentPage === 'bingo') _applyPrefsAndRender();
       if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
     };
     _dbBingoData.child(id).on('value', handler);
@@ -12951,6 +13064,9 @@ function _tlSetActiveGroupSubscription(groupRootId) {
   if (!groupRootId || _tlActiveGroupSub === groupRootId) { _tlActiveGroupSub = groupRootId; return; }
   _tlActiveGroupSub = groupRootId;
   _tlActiveGroupSubHandler = snapshot => {
+    // Écho synchrone de notre propre tlSaveGroup() (cf _tlLocalGroupWrite) : l'état local est déjà
+    // exactement ce qui vient d'être écrit, et l'action appelante fait elle-même son rendu.
+    if (_tlLocalGroupWrite === groupRootId) return;
     _tlRemoteUpdate = true;
     const needsSave = _tlMergeGroupDataIntoState(groupRootId, snapshot.val());
     _tlLoadedGroups.set(groupRootId, 'loaded');
@@ -12959,7 +13075,18 @@ function _tlSetActiveGroupSubscription(groupRootId) {
     // l'état serveur à jour plutôt qu'à un cache devenu obsolète (voir commentaire sur
     // _tlLastGroupSnapshot) — sinon la prochaine écriture locale réenverrait des branches qui
     // n'ont en fait pas changé depuis ce snapshot distant.
-    _tlLastGroupSnapshot.set(groupRootId, _tlGroupPayloadSnapshot(sanitizeForFirebase(_tlBuildGroupPayload(groupRootId))));
+    const groupSnap = _tlGroupPayloadSnapshot(sanitizeForFirebase(_tlBuildGroupPayload(groupRootId)));
+    if (needsSave) {
+      // Réparation faite en mémoire (dédup/migration d'images…) : tlSaveGroup() écrit les images
+      // position par position, le cache doit donc refléter les positions RÉELLEMENT présentes côté
+      // Firebase, pas le tableau réparé — sinon une image serait écrite au mauvais indice. Tableau
+      // illisible (troué, relu comme un objet) → null = réécriture complète du tableau.
+      const rawImages = snapshot.child('images').val();
+      groupSnap.images = rawImages === null ? []
+        : Array.isArray(rawImages) ? rawImages.map(img => (img && typeof img === 'object') ? { ...img } : img)
+        : null;
+    }
+    _tlLastGroupSnapshot.set(groupRootId, groupSnap);
     _tlRenderIfVisible();
     _tlRemoteUpdate = false;
     // cf. commentaire équivalent dans _tlEnsureGroupLoaded : persiste les réparations auto.
