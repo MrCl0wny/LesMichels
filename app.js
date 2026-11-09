@@ -26,6 +26,10 @@ let _currentPage = 'folders';
 // true quand un rendu Tier List a été sauté parce que sa page était masquée (cf _tlRenderIfVisible) —
 // rattrapé par _switchPage en arrivant sur Tier List.
 let _tlRenderDeferred = false;
+// Empreinte (cf _bingoGridRenderKey) de ce qu'affichait le dernier renderGrid() complet, null si
+// inconnue — permet au listener d'index Bingo de sauter la reconstruction des grilles quand rien de
+// ce qu'elles affichent n'a changé.
+let _bingoLastGridRenderKey = null;
 // true dès que l'utilisateur a cliqué sur un onglet de nav (via window._switchPage) — loadUserPrefs()
 // s'en sert pour ne forcer l'accueil qu'au tout premier chargement (avant toute navigation manuelle),
 // jamais après : sinon un chargement de prefs qui répond en retard renverrait l'utilisateur sur
@@ -531,7 +535,9 @@ function _exitCompareTierlistMode() {
 // snapshot d'index (activeFolder() valait alors null, donc _bingoEnsureSeasonLoaded n'avait rien
 // à charger) : _applyPrefsAndRender s'assure elle-même du chargement plutôt que d'en dépendre
 // implicitement, quel que soit l'appelant. _bingoEnsureSeasonLoaded est un no-op si déjà chargé.
-async function _applyPrefsAndRender() {
+// opts.fromIndex : appel du listener d'index Bingo (renommage ailleurs, preset, soirée en cours…) —
+// les grilles ne sont alors reconstruites que si ce qu'elles affichent a changé (cf _bingoGridRenderKey).
+async function _applyPrefsAndRender(opts) {
   // Valider que le dossier actif existe toujours
   if (_localActiveFolderId) {
     const exists = findFolderById(state.folders, _localActiveFolderId);
@@ -573,7 +579,12 @@ async function _applyPrefsAndRender() {
     renderAllFolders();
     renderElements();
     renderGridsList();
-    renderGrid();
+    let gridUnchanged = false;
+    if (opts && opts.fromIndex && _bingoLastGridRenderKey !== null) {
+      getVisibleGrids(); // même nettoyage de _selectedGridIds que renderGrid() avant de calculer l'empreinte
+      gridUnchanged = _bingoGridRenderKey() === _bingoLastGridRenderKey;
+    }
+    if (!gridUnchanged) renderGrid();
   }
   setTimeout(setBingoReadyForEffect, 0);
   renderCurrentEventButton();
@@ -3586,7 +3597,26 @@ function _hideSecondaryCellPreview() {
 // de _adjustBingoGridSizes(). Par défaut false (comportement historique, toujours sûr) :
 // ne jamais passer true pour un appelant qui pourrait tourner alors que la grille n'a
 // pas encore été dimensionnée au moins une fois (page masquée, changement de dossier...).
+// Tout ce que lit renderGrid() pour la page Bingo, SAUF les coches (toujours mises à jour par patch
+// ciblé : _patchCellsAfterCheck au clic local, _bingoPatchRemoteChecks à distance). Deux empreintes
+// égales ⇔ renderGrid() reproduirait exactement le même affichage. À appeler après getVisibleGrids()
+// (qui nettoie _selectedGridIds), comme renderGrid() le fait.
+function _bingoGridRenderKey() {
+  const s = activeSubtheme();
+  const prevNew = (s && _localShowNewBadge) ? _previousEpisodeActiveTextSet(s) : null;
+  return JSON.stringify([
+    _currentPage, _localActiveFolderId, activeTheme()?.id || null, s ? s.id : null,
+    s ? [s.name, s.type || null, !!s.locked, !!s.archived, _isFolderBingo(s), _bingoLoadedFolders.has(s.id)] : null,
+    s ? _bingoStructureKey(s) : null,
+    s ? getFolderPath(state.folders, s.id).map(f => [f.id, f.name, !!f.locked, !!f.archived]) : null,
+    _selectedGridIds, _bingoCreationOpen, _bingoCreationAutoCheckedId,
+    s ? getMainGridId(s.id) : null, _localFavGridSide, _localShowNewBadge,
+    prevNew ? [...prevNew].sort() : null,
+  ]);
+}
+
 function renderGrid(skipSizeRecalc = false) {
+  _bingoLastGridRenderKey = null; // reposée en fin de rendu complet uniquement (pas sur les retours anticipés)
   const t = activeTheme();
   const s = activeSubtheme();
   const g = activeGrid();
@@ -3787,6 +3817,7 @@ function renderGrid(skipSizeRecalc = false) {
       triggerBingoEffectIfNew(gridId, lineCount);
     });
   }, 0);
+  _bingoLastGridRenderKey = _bingoGridRenderKey();
 }
 
 // Dimensionne chaque .bingo-grid pour occuper au maximum l'espace disponible
@@ -13028,7 +13059,7 @@ function _bingoStartListeners() {
     _bingoRemoteUpdate = false;
     Promise.all(pending).catch(() => {}).then(() => {
       if (_prefsReady) {
-        _applyPrefsAndRender();
+        _applyPrefsAndRender({ fromIndex: true });
       } else if (!currentUser) {
         // Pas encore connecté : render par défaut sans prefs
         renderThemesList();
@@ -13057,6 +13088,57 @@ function _bingoStartListeners() {
 // (_tlEnsureGroupLoaded), sans souscription permanente.
 let _tlActiveGroupSub = null;
 let _tlActiveGroupSubHandler = null;
+
+// ── Patch ciblé d'un changement distant (Tier List) ──
+// Mémorise, AVANT la fusion d'un snapshot distant, ce qu'affiche la liste active de ce groupe. null =
+// cas non couvert (autre page, comparaison, template, élément "à placer" en cours) → rendu complet.
+function _tlCaptureForRemotePatch(groupRootId) {
+  if (_currentPage !== 'tierlist' || document.body.classList.contains('compare-tierlist-mode')) return null;
+  const tl = tlActiveTierlist();
+  if (!tl || tl.archived || tl.isTemplate || _tlGroupRoot(tl).id !== groupRootId) return null;
+  const root = _tlGroupRoot(tl);
+  if (root.toPlaceImgId || _tlLoadedGroups.get(groupRootId) !== 'loaded') return null;
+  return {
+    tl, root,
+    tiers: tl.tiers,
+    images: root.images,
+    tierMeta: _tlTierMetaKey(tl.tiers),
+    zoneItems: _tlZoneItemsMap(tl),
+    resolved: JSON.stringify(tl.resolvedToPlaceIds || []),
+  };
+}
+
+// Tiers sans leurs items (id/label/couleur…), clés triées : identique ⇔ seuls des placements ont pu changer.
+function _tlTierMetaKey(tiers) {
+  return JSON.stringify((tiers || []).map(t => Object.keys(t).filter(k => k !== 'items').sort().map(k => [k, t[k]])));
+}
+
+// zoneId ('__unplaced__' ou id du tier) -> JSON de ses items.
+function _tlZoneItemsMap(tl) {
+  const m = new Map([['__unplaced__', JSON.stringify(tl.unplaced || [])]]);
+  (tl.tiers || []).forEach(t => m.set(t.id, JSON.stringify(t.items || [])));
+  return m;
+}
+
+// Après la fusion : si seuls des placements ont changé (images, tiers, "à placer" identiques),
+// remet les objets tiers/images d'AVANT la fusion — les handlers des lignes de tiers et des cartes
+// affichées les ont capturés (ex. renommer un tier écrit tier.label sur l'objet capturé) — avec les
+// nouveaux placements, et retourne les zones à reconstruire ([] = rien de visible n'a changé).
+// null = rendu complet.
+function _tlRestoreForRemotePatch(ctx) {
+  const { tl, root } = ctx;
+  if (tlActiveTierlist() !== tl || _tlGroupRoot(tl) !== root || root.toPlaceImgId) return null;
+  if (JSON.stringify(tl.resolvedToPlaceIds || []) !== ctx.resolved) return null;
+  if (_tlTierMetaKey(tl.tiers) !== ctx.tierMeta) return null;
+  const imgs = root.images || [];
+  if (imgs.length !== ctx.images.length || imgs.some((img, i) => !_tlSameImage(img, ctx.images[i]))) return null;
+  const nextItems = _tlZoneItemsMap(tl);
+  const changed = [...nextItems.keys()].filter(z => nextItems.get(z) !== ctx.zoneItems.get(z));
+  ctx.tiers.forEach((t, i) => { t.items = tl.tiers[i].items; });
+  tl.tiers = ctx.tiers;
+  root.images = ctx.images;
+  return changed;
+}
 function _tlSetActiveGroupSubscription(groupRootId) {
   if (_tlActiveGroupSub && _tlActiveGroupSub !== groupRootId) {
     _dbTierlistData.child(_tlActiveGroupSub).off('value', _tlActiveGroupSubHandler);
@@ -13068,8 +13150,10 @@ function _tlSetActiveGroupSubscription(groupRootId) {
     // exactement ce qui vient d'être écrit, et l'action appelante fait elle-même son rendu.
     if (_tlLocalGroupWrite === groupRootId) return;
     _tlRemoteUpdate = true;
+    const patchCtx = _tlCaptureForRemotePatch(groupRootId); // AVANT la fusion, qui remplace les objets
     const needsSave = _tlMergeGroupDataIntoState(groupRootId, snapshot.val());
     _tlLoadedGroups.set(groupRootId, 'loaded');
+    const patchZones = (patchCtx && !needsSave) ? _tlRestoreForRemotePatch(patchCtx) : null;
     // Resynchronise le cache de diff (tlSaveGroup) sur l'état réellement présent côté Firebase
     // (snapshot reçu), pour que la prochaine sauvegarde locale calcule son delta par rapport à
     // l'état serveur à jour plutôt qu'à un cache devenu obsolète (voir commentaire sur
@@ -13087,7 +13171,14 @@ function _tlSetActiveGroupSubscription(groupRootId) {
         : null;
     }
     _tlLastGroupSnapshot.set(groupRootId, groupSnap);
-    _tlRenderIfVisible();
+    if (patchZones) {
+      // Seuls des placements de la liste affichée ont changé : ne reconstruire que ces zones (même
+      // patch que le glisser-déposer local), rendu complet si l'une d'elles n'est pas patchable.
+      const tl = tlActiveTierlist();
+      if (!patchZones.every(z => _tlPatchImageMove(tl, z, z))) tlRender();
+    } else {
+      _tlRenderIfVisible();
+    }
     _tlRemoteUpdate = false;
     // cf. commentaire équivalent dans _tlEnsureGroupLoaded : persiste les réparations auto.
     if (needsSave) tlSaveGroup(groupRootId);
