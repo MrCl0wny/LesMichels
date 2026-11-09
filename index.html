@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=364" />
+  <link rel="stylesheet" href="style.css?v=366" />
   <!-- Couleurs choisies (Préférences) appliquées dès le chargement, sans attendre Firebase ni app.js. -->
   <script>try { var _ct = localStorage.getItem('lmColorTheme'); if (_ct && _ct !== 'gray') document.documentElement.setAttribute('data-color-theme', _ct); } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -117,6 +117,7 @@
             <div class="fp-tree-frame">
               <div class="fp-tree-frame-header">
                 <div class="fp-tree-frame-title" id="fp-tree-frame-title">Dossiers</div>
+                <button class="fp-tree-frame-btn-archives" id="btn-toggle-bingo-archives"><i data-lucide="eye"></i> Afficher archives</button>
                 <button class="btn-new-folder-in-grids" id="btn-new-folder-in-grids" title="Nouveau dossier"><span class="btn-plus-green">+ Dossier</span></button>
                 <button class="fp-tree-frame-btn-new" id="btn-new-bingo-folder-small" title="Nouveau Bingo">+ Bingo</button>
               </div>
@@ -1354,6 +1355,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=505"></script>
+  <script src="app.js?v=509"></script>
 </body>
 </html>

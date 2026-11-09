@@ -619,7 +619,8 @@ async function _applyPrefsAndRender() {
   // Valider que le dossier actif existe toujours
   if (_localActiveFolderId) {
     const exists = findFolderById(state.folders, _localActiveFolderId);
-    if (!exists || exists.archived) {
+    // Un dossier archivé reste ouvrable (l'archivage n'est qu'un état, cf archiveFolder).
+    if (!exists) {
       const nonArchived = [];
       function collectNonArchived(folders) {
         if (!folders) return;
@@ -1159,7 +1160,7 @@ function renderCurrentEventButton() {
   const cef = state.currentEventFolderId;
   if (!cef) { btn.style.display = 'none'; _updateCeSetHeaderBtn(); return; }
   const folder = findFolderById(state.folders, cef);
-  if (!folder || folder.archived) { btn.style.display = 'none'; _updateCeSetHeaderBtn(); return; }
+  if (!folder) { btn.style.display = 'none'; _updateCeSetHeaderBtn(); return; }
   btn.style.display = 'flex';
   if (lbl) {
     const path = getFolderPath(state.folders, cef);
@@ -1340,6 +1341,8 @@ function defaultSubtheme(name, withGrid = false) {
 // Retourne le dossier créé (jamais activeFolder(), qui vaut le parent quand parentId est fourni).
 function createFolder(name, parentId = null, numbering = null, type = 'folder', keepActive = false) {
   const folder = defaultFolder(name, false, numbering, type);
+  // Créer dans un dossier archivé le désarchive (avec ses parents archivés) ; sauvé avec l'index plus bas.
+  if (parentId) _unarchiveFolderChain(parentId);
   if (keepActive) {
     if (!parentId) {
       if (!state.folders) state.folders = [];
@@ -1470,31 +1473,31 @@ async function deleteFolder(id) {
   renderGrid();
 }
 
+// Archiver / Désarchiver un dossier ou un bingo (menu d'options). Simple état (folder.archived, champ
+// d'index) : il ne fait que masquer le dossier des listes tant que "Masquer archives" est actif (cf
+// _bingoFolderShown). Archiver archive aussi tous ses sous-dossiers/bingos ; désarchiver désarchive
+// lui et ses dossiers parents archivés, mais pas son contenu (choix de l'utilisateur). Ne touche ni
+// aux grilles, ni au dossier actif, ni à la date de modification — aucun noeud bingo/data/<id> à réécrire.
 function archiveFolder(id) {
   const folder = findFolderById(state.folders, id);
   if (!folder) return;
-  folder.archived = !folder.archived;
   if (folder.archived) {
-    function archiveAll(f) { f.archived = true; (f.grids || []).forEach(g => { g.archived = true; }); (f.folders || []).forEach(archiveAll); }
+    _unarchiveFolderChain(id);
+  } else {
+    const archiveAll = f => { f.archived = true; (f.folders || []).forEach(archiveAll); };
     archiveAll(folder);
-    if (_localActiveFolderId === id || findFolderById([folder], _localActiveFolderId)) {
-      const all = [];
-      function collectNA(folders) { if (!folders) return; for (const f of folders) { if (!f.archived) all.push(f); collectNA(f.folders); } }
-      collectNA(state.folders);
-      _localActiveFolderId = all[0]?.id || null;
-      _saveLocalActiveFolderId(_localActiveFolderId);
-      _selectedGridIds = [];
-    }
   }
-  // Flag "archived" propagé récursivement sur f.archived (dossiers) et g.archived (grilles) : les deux
-  // sont des champs d'index (grids allégées dans l'index gardent leur propre archived). Aucun noeud
-  // bingo/data/<id> n'a besoin d'être chargé/réécrit ici — _bingoMergeDataIntoState resynchronise
-  // g.archived depuis l'index à la prochaine fusion (plan §3, pattern 3b).
   _bingoSaveIndex();
   renderAllFolders();
-  renderElements();
-  renderGridsList();
-  renderGrid();
+}
+
+// Désarchive un dossier et tous ses dossiers parents archivés (pas son contenu) — appelé aussi quand
+// on crée/duplique/déplace quelque chose dans un dossier archivé, ou qu'on y ajoute une grille.
+// N'écrit rien : l'appelant sauvegarde l'index ensuite. Renvoie true si un dossier a changé.
+function _unarchiveFolderChain(id) {
+  let changed = false;
+  (id ? getFolderPath(state.folders, id) : []).forEach(f => { if (f.archived) { f.archived = false; changed = true; } });
+  return changed;
 }
 
 function renameFolder(id, newName) {
@@ -1584,6 +1587,7 @@ async function duplicateFolder(id, name, explicitNumbering) {
   if (parent) {
     parent.folders.push(copy);
     parent.children.push({ type: 'folder', id: copy.id });
+    _unarchiveFolderChain(parent.id); // dupliquer dans un dossier archivé le désarchive
   } else {
     state.folders.push(copy);
   }
@@ -1631,6 +1635,7 @@ function moveFolder(id, targetParentId) {
     if (!newParent.children) newParent.children = [];
     newParent.folders.push(folder);
     newParent.children.push({ type: 'folder', id: folder.id });
+    _unarchiveFolderChain(targetParentId); // déplacer dans un dossier archivé le désarchive
   } else {
     if (!state.folders) state.folders = [];
     state.folders.push(folder);
@@ -2685,12 +2690,75 @@ function renderGridsBreadcrumb() {
   });
 }
 
+// ── Afficher/Masquer archives (dossiers et bingos archivés, cf archiveFolder) : un seul réglage
+// commun au cadre Dossiers de la page Dossiers et au menu Chemin, mémorisé dans le navigateur,
+// archives masquées par défaut. "Bingos récents" et les fenêtres Emplacement ne le suivent pas.
+function _bingoShowArchives() { return localStorage.getItem('bingoShowArchives') === '1'; }
+function _bingoFolderShown(f) { return !f.archived || _bingoShowArchives(); }
+function _bingoArchivesToggleLabel() {
+  return _bingoShowArchives() ? '<i data-lucide="eye-off"></i> Masquer archives' : '<i data-lucide="eye"></i> Afficher archives';
+}
+function _toggleBingoShowArchives() {
+  localStorage.setItem('bingoShowArchives', _bingoShowArchives() ? '0' : '1');
+  renderFoldersPanelTree();
+  if (_pathDropdownMenu && !_pathDropdownMenu.classList.contains('hidden')) _renderPathMenuRows(_pathDropdownMenu, state.folders);
+}
+
 // ── Bouton Chemin (mode normal) : arborescence pliable/dépliable des dossiers, même comportement
 // que le bouton Chemin de la partie Tier List (voir _tlRenderPathMenuRows/_tlGoToFolder). Les
 // dossiers bingo sont imbriqués (folder.folders), pas une liste plate avec parentId comme tlState.
 function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
   menu.querySelectorAll('.tl-path-menu-row').forEach(el => el.remove());
   const sortMode = _ensurePathMenuSortBtn(menu, 'bingoPathSortMode', () => _renderPathMenuRows(menu, state.folders));
+  // Rangée du haut : bouton Afficher/Masquer archives à gauche du bouton de tri (créée une seule fois).
+  let topRow = menu.querySelector('.path-menu-top-row');
+  if (!topRow) {
+    topRow = document.createElement('div');
+    topRow.className = 'path-menu-top-row';
+    const archBtn = document.createElement('button');
+    archBtn.type = 'button';
+    archBtn.className = 'path-menu-archives-btn'; // pas .path-menu-sort-btn : _ensurePathMenuSortBtn le confondrait avec le tri
+    archBtn.addEventListener('click', ev => { ev.stopPropagation(); _toggleBingoShowArchives(); });
+    topRow.appendChild(archBtn);
+    topRow.appendChild(menu.querySelector('.path-menu-sort-btn'));
+    menu.prepend(topRow);
+  }
+  topRow.querySelector('.path-menu-archives-btn').innerHTML = _bingoArchivesToggleLabel();
+
+  // Bingos récents (chemins complets, comme sur la page Dossiers) entre les boutons et les dossiers,
+  // encadrés de séparateurs ; 5 lignes visibles puis scroll (CSS .path-menu-recent-list).
+  menu.querySelector('.path-menu-recent-block')?.remove();
+  const recent = _bingoRecentFolders();
+  if (recent.length) {
+    const block = document.createElement('div');
+    block.className = 'path-menu-recent-block';
+    const list = document.createElement('div');
+    list.className = 'path-menu-recent-list';
+    recent.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'tl-path-menu-row' + (f.id === _localActiveFolderId ? ' active' : '') + (f.archived ? ' is-archived' : '');
+      const icon = document.createElement('span');
+      icon.className = 'tl-path-menu-icon';
+      icon.innerHTML = '<i data-lucide="grid-3x3"></i>';
+      const name = document.createElement('span');
+      name.className = 'tl-path-menu-name';
+      name.textContent = getFolderPath(state.folders, f.id).map(x => x.name).join(' \\ ');
+      row.appendChild(icon);
+      row.appendChild(name);
+      // Même comportement qu'une ligne bingo de l'arbre : ouvre ce bingo, le menu reste ouvert.
+      row.addEventListener('click', () => { if (_localActiveFolderId !== f.id) switchFolder(f.id); });
+      row.addEventListener('contextmenu', ev => { ev.preventDefault(); _openBingoFolderCtxMenu(f, ev, null); });
+      list.appendChild(row);
+    });
+    const sepTop = document.createElement('div');
+    sepTop.className = 'path-menu-sep';
+    const sepBottom = document.createElement('div');
+    sepBottom.className = 'path-menu-sep';
+    block.appendChild(sepTop);
+    block.appendChild(list);
+    block.appendChild(sepBottom);
+    topRow.after(block);
+  }
 
   const currentPathIds = _localActiveFolderId
     ? getFolderPath(rootFolders, _localActiveFolderId).map(f => f.id)
@@ -2702,7 +2770,7 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
   if (resetPathExpansion) currentPathIds.forEach(id => sessionStorage.removeItem('bingo_folder_open_' + id));
 
   const buildRow = (folder, depth) => {
-    const children = _sortFoldersList((folder.folders || []).filter(f => !f.archived), sortMode);
+    const children = _sortFoldersList((folder.folders || []).filter(_bingoFolderShown), sortMode);
     const hasChildren = children.length > 0;
     const key = 'bingo_folder_open_' + folder.id;
     const isOnCurrentPath = currentPathIds.includes(folder.id);
@@ -2712,7 +2780,7 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
     const isOpen = stored !== null ? stored === '1' : isOnCurrentPath;
 
     const row = document.createElement('div');
-    row.className = 'tl-path-menu-row' + (isOnCurrentPath ? ' active' : '');
+    row.className = 'tl-path-menu-row' + (isOnCurrentPath ? ' active' : '') + (folder.archived ? ' is-archived' : '');
     row.style.paddingLeft = (8 + depth * 14) + 'px';
 
     // Plus de chevron : l'icône passe en folder-open quand le dossier est déplié.
@@ -2736,12 +2804,18 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
         _renderPathMenuRows(menu, rootFolders);
       }
     });
+    // Clic droit : menu d'options de ce dossier (même menu que la page Dossiers), ouvert par-dessus le
+    // menu Chemin qui reste ouvert (cf sous-menu dans _tlMakeCtxMenu).
+    row.addEventListener('contextmenu', ev => {
+      ev.preventDefault();
+      _openBingoFolderCtxMenu(folder, ev, null);
+    });
 
     menu.appendChild(row);
     if (hasChildren && isOpen) children.forEach(f => buildRow(f, depth + 1));
   };
 
-  const roots = _sortFoldersList((rootFolders || []).filter(f => !f.archived), sortMode);
+  const roots = _sortFoldersList((rootFolders || []).filter(_bingoFolderShown), sortMode);
   roots.forEach(f => buildRow(f, 0));
 
   if (roots.length === 0) {
@@ -2805,6 +2879,8 @@ if (_btnPathDropdown && _pathDropdownMenu) {
     }
   });
   _pathDropdownMenu.addEventListener('click', e => e.stopPropagation());
+  // Redessin après une action de son sous-menu clic droit (ex. Archiver), cf _tlMakeCtxMenu.
+  _pathDropdownMenu._rerender = () => _renderPathMenuRows(_pathDropdownMenu, state.folders);
   document.addEventListener('click', () => _pathDropdownMenu.classList.add('hidden'));
   // Clic droit : menu d'options du dossier affiché (même menu que la page Dossiers).
   _btnPathDropdown.addEventListener('contextmenu', e => {
@@ -2841,11 +2917,11 @@ function touchFolderChain(folderId) {
   getFolderPath(state.folders, folderId).forEach(f => { f.updatedAt = now; });
 }
 
-// Aplatit récursivement l'arbre de dossiers (non archivés) pour trouver les plus récemment modifiés.
+// Aplatit récursivement l'arbre de dossiers pour trouver les plus récemment modifiés (archivés
+// compris : filtrés ensuite selon Afficher/Masquer archives, cf _bingoRecentFolders).
 function _flattenFoldersForRecent(folders) {
   const out = [];
   (folders || []).forEach(f => {
-    if (f.archived) return;
     out.push(f);
     out.push(..._flattenFoldersForRecent(f.folders));
   });
@@ -2867,19 +2943,24 @@ function _dedupeAncestorFolders(sorted, getAncestorIds) {
   return kept;
 }
 
-// Seuls les dossiers-bingo (au moins une grille non archivée).
+// Bingos récents (page Dossiers et menu Chemin) : seuls les dossiers-bingo (au moins une grille non
+// archivée), du plus récent au plus ancien, sans limite ; les archivés suivent Afficher/Masquer archives.
+function _bingoRecentFolders() {
+  const ancestorIdsOf = id => getFolderPath(state.folders, id).slice(0, -1).map(f => f.id);
+  const sorted = _flattenFoldersForRecent(state.folders)
+    .filter(f => f.updatedAt && (f.grids || []).some(g => !g.archived) && _bingoFolderShown(f))
+    // À updatedAt égal (même événement, propagé par touchFolderChain à toute la chaîne), le dossier
+    // le plus profond doit être considéré en premier pour que la déduplication le retienne, lui.
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || ancestorIdsOf(b.id).length - ancestorIdsOf(a.id).length);
+  return _dedupeAncestorFolders(sorted, ancestorIdsOf);
+}
+
 function _renderRecentFolderPaths() {
   const container = document.getElementById('folders-panel-recent');
   if (!container) return;
   container.innerHTML = '';
-  const ancestorIdsOf = id => getFolderPath(state.folders, id).slice(0, -1).map(f => f.id);
-  const sorted = _flattenFoldersForRecent(state.folders)
-    .filter(f => f.updatedAt && (f.grids || []).some(g => !g.archived))
-    // À updatedAt égal (même événement, propagé par touchFolderChain à toute la chaîne), le dossier
-    // le plus profond doit être considéré en premier pour que la déduplication le retienne, lui.
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || ancestorIdsOf(b.id).length - ancestorIdsOf(a.id).length);
   // Sans limite : la liste affiche 5 lignes à la fois et scrolle pour les plus anciennes (CSS .fp-recent-list).
-  const recent = _dedupeAncestorFolders(sorted, ancestorIdsOf);
+  const recent = _bingoRecentFolders();
   if (recent.length === 0) return;
 
   const title = document.createElement('div');
@@ -2933,6 +3014,7 @@ function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder, browseThisFolder)
     addSep();
     addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
     addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
+    addItem(f.archived ? 'archive-restore' : 'archive', f.archived ? 'Désarchiver' : 'Archiver', false, () => archiveFolder(f.id));
     addItem('trash-2', 'Supprimer',           true,  () => confirmDelete(`le bingo "${f.name}"`, () => deleteFolder(f.id)));
     return;
   }
@@ -2941,6 +3023,7 @@ function _openBingoFolderCtxMenu(f, e, anchor, openThisFolder, browseThisFolder)
   addSep();
   addItem('pencil', 'Renommer',             false, () => openRenameFolderModal(f.id));
   addItem('move', 'Déplacer',            false, () => openMoveFolderModal(f.id));
+  addItem(f.archived ? 'archive-restore' : 'archive', f.archived ? 'Désarchiver' : 'Archiver', false, () => archiveFolder(f.id));
   addItem('trash-2', 'Supprimer',           true,  () => confirmDelete(`le dossier "${f.name}" et tout son contenu`, () => deleteFolder(f.id)));
 }
 
@@ -2992,6 +3075,12 @@ function renderFoldersPanelTree() {
   const container = document.getElementById('folders-panel-tree');
   if (!container) return;
 
+  const archBtn = document.getElementById('btn-toggle-bingo-archives');
+  if (archBtn) {
+    archBtn.innerHTML = _bingoArchivesToggleLabel();
+    if (window.lucide) lucide.createIcons({ root: archBtn });
+  }
+
   _renderRecentFolderPaths();
 
   container.innerHTML = '';
@@ -3003,7 +3092,7 @@ function renderFoldersPanelTree() {
   const { currentFolder } = _renderFoldersBreadcrumb(renderFoldersPanelTree);
 
   const listSource = currentFolder ? (currentFolder.folders || []) : (state.folders || []);
-  const items = _sortFoldersList(listSource.filter(f => !f.archived), sortMode);
+  const items = _sortFoldersList(listSource.filter(_bingoFolderShown), sortMode);
 
   if (items.length === 0) {
     const empty = document.createElement('div');
@@ -3018,7 +3107,7 @@ function renderFoldersPanelTree() {
     const isBingoFolder = _isFolderBingo(f);
 
     const row = document.createElement('div');
-    row.className = 'fp-folder-row' + (isBingoFolder ? ' fp-list-item' : '') + (isActive ? ' active' : '');
+    row.className = 'fp-folder-row' + (isBingoFolder ? ' fp-list-item' : '') + (isActive ? ' active' : '') + (f.archived ? ' is-archived' : '');
     row.dataset.folderId = f.id;
 
     const icon = document.createElement('span');
@@ -3092,6 +3181,7 @@ document.getElementById('btn-new-bingo-folder').addEventListener('click', () => 
 // Petits "+ Bingo" / "+ Template" des cadres Dossiers : mêmes actions que les gros boutons du haut.
 document.getElementById('btn-new-bingo-folder-small').addEventListener('click', () => document.getElementById('btn-new-bingo-folder').click());
 document.getElementById('tl-btn-new-template-small').addEventListener('click', () => document.getElementById('tl-btn-new-template').click());
+document.getElementById('btn-toggle-bingo-archives').addEventListener('click', _toggleBingoShowArchives);
 
 // Corbeille : un bouton par colonne, câblé directement (plus de bouton Archives).
 document.getElementById('folders-page-btn-trash-bingo').addEventListener('click', openTrashUnified);
@@ -3379,11 +3469,15 @@ function createGrid(name, targetFolderId = null, gridSize = null) {
     saveLocalSelectedGrids(_selectedGridIds);
   }
   touchFolderChain(s.id);
+  // Ajouter une grille à un bingo archivé le désarchive (avec ses parents archivés) — champ d'index,
+  // sauvé par _bingoSave ci-dessous ; les listes de dossiers sont redessinées pour le refléter.
+  const unarchived = _unarchiveFolderChain(s.id);
   // touchFolderChain propage updatedAt (champ d'index) à toute la chaîne d'ancêtres — en plus du
   // contenu lourd du dossier (nouvelle grille), l'index doit donc être réécrit aussi, sinon "Récents"
   // n'y verrait jamais cette modification (même règle que Tier List, tlSave() appelle toujours
   // tlSaveIndex() en plus de tlSaveGroup()).
   _bingoSave(s.id);
+  if (unarchived) renderAllFolders();
   if (!isActive) return;
   renderGridsList();
   renderGrid();
@@ -4590,7 +4684,7 @@ function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, stora
 
   function renderFolderRow(f, depth) {
     const wrapper = document.createElement('div');
-    const children = (f.folders || []).filter(sf => !sf.archived && !(excludeFn && excludeFn(sf)));
+    const children = (f.folders || []).filter(sf => !(excludeFn && excludeFn(sf))); // archivés toujours proposés (choix utilisateur)
     const hasChildren = children.length > 0;
 
     const row = document.createElement('div');
@@ -4650,7 +4744,7 @@ function _setupFolderTreeDropdown(selectEl, btnEl, rootFolders, rootLabel, stora
     rootRow.addEventListener('click', e2 => { e2.stopPropagation(); selectFolder(''); });
     panel.appendChild(rootRow);
 
-    rootFolders.filter(f => !f.archived && !(excludeFn && excludeFn(f))).forEach(f => panel.appendChild(renderFolderRow(f, 0)));
+    rootFolders.filter(f => !(excludeFn && excludeFn(f))).forEach(f => panel.appendChild(renderFolderRow(f, 0)));
 
     document.body.appendChild(panel);
     const rect = btnEl.getBoundingClientRect();
@@ -4692,7 +4786,7 @@ function openNewThemeModal(parentId = null, stayOnFoldersPage = false) {
     rootOpt.textContent = '— Racine —';
     sel.appendChild(rootOpt);
     function _addOptions(folders, depth) {
-      (folders || []).filter(f => !f.archived).forEach(f => {
+      (folders || []).forEach(f => {
         // Un dossier-bingo ne peut jamais recevoir de sous-dossier/bingo (feuille de l'arbre) :
         // exclu comme parent possible, et pas de récursion dans ses enfants (il n'en a jamais).
         if (_isFolderBingo(f)) return;
@@ -4943,7 +5037,7 @@ function _buildFolderSelectOptions(sel, excludeId) {
   rootOpt.textContent = '— Racine —';
   sel.appendChild(rootOpt);
   function _add(folders, depth) {
-    (folders || []).filter(f => !f.archived && f.id !== excludeId).forEach(f => {
+    (folders || []).filter(f => f.id !== excludeId).forEach(f => {
       // Exclure aussi les descendants du dossier déplacé
       if (excludeId && findFolderById([f], excludeId)) return;
       // Un dossier-bingo ne peut jamais recevoir de sous-dossier/bingo : exclu comme cible,
@@ -6192,14 +6286,14 @@ document.getElementById('new-suggestion-input').addEventListener('keydown', e =>
 document.getElementById('new-suggestion-input').addEventListener('input', renderSuggestions);
 
 // ── Statistiques des cases (winrate sur la saison) ──
-// Un "épisode" = tout dossier non archivé possédant au moins une grille non archivée.
+// Un "épisode" = tout dossier possédant au moins une grille non archivée (un dossier archivé compte
+// aussi : l'archivage d'un dossier n'est qu'un état d'affichage, cf archiveFolder).
 // Pour chaque case (regroupée par texte normalisé) : n = nb d'épisodes où elle est active
 // (présente et non archivée dans cet épisode), m = nb d'épisodes où elle est cochée dans
 // au moins une grille non archivée de cet épisode.
 function _collectEpisodeFolders(folder) {
   const episodes = [];
   (folder.folders || []).forEach(sub => {
-    if (sub.archived) return;
     if ((sub.grids || []).some(g => !g.archived)) episodes.push(sub);
     episodes.push(..._collectEpisodeFolders(sub));
   });
@@ -10472,8 +10566,13 @@ function _tlMakeCtxMenu(anchorEl, e) {
     const r = anchorEl.getBoundingClientRect();
     frozenRect = { top: r.top, left: r.left, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
   }
-  // Fermer tout menu TL déjà ouvert
-  if (_tlActiveCtxMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; }
+  // Sous-menu d'un menu Chemin (clic droit sur une de ses lignes, Bingo ou Tier List) : le menu Chemin
+  // reste ouvert derrière. Ses clics ne remontent pas au document (sinon le menu Chemin se fermerait) ;
+  // un clic dans le menu Chemin ferme seulement le sous-menu.
+  const _src = anchorEl || (e && e.target);
+  const parentMenu = (_src && _src.closest) ? _src.closest('.path-menu') : null;
+  // Fermer tout menu TL déjà ouvert (sauf le menu Chemin parent)
+  if (_tlActiveCtxMenu && _tlActiveCtxMenu !== parentMenu) { _tlActiveCtxMenu.remove(); _tlActiveCtxMenu = null; }
 
   const menu = document.createElement('div');
   menu.className = 'ctx-menu';
@@ -10486,9 +10585,26 @@ function _tlMakeCtxMenu(anchorEl, e) {
 
   const close = () => {
     menu.remove();
-    if (_tlActiveCtxMenu === menu) _tlActiveCtxMenu = null;
+    // Le menu Chemin Tier List parent redevient le menu actif (Échap le fermera). Jamais celui du
+    // Bingo (#path-dropdown-menu, permanent dans la page) : Échap le retirerait du DOM.
+    if (_tlActiveCtxMenu === menu) _tlActiveCtxMenu = (parentMenu && parentMenu.isConnected && parentMenu.id !== 'path-dropdown-menu') ? parentMenu : null;
     document.removeEventListener('click', onDocClick);
     document.removeEventListener('contextmenu', onDocCtx);
+    if (parentMenu) parentMenu.removeEventListener('click', onParentClick, true);
+  };
+  menu._close = close;
+  const onParentClick = () => close();
+  if (parentMenu) {
+    parentMenu.addEventListener('click', onParentClick, true);
+    menu.addEventListener('click', ev => ev.stopPropagation());
+  }
+  // Après une action du sous-menu : si elle a ouvert une fenêtre (Renommer, Déplacer, confirmation…),
+  // le menu Chemin se ferme (il passerait par-dessus) ; sinon il est redessiné (ex. Archiver).
+  const afterSubAction = () => {
+    if (!parentMenu || !parentMenu.isConnected || parentMenu.classList.contains('hidden')) return;
+    if (document.querySelector('.modal-overlay:not(.hidden)')) {
+      if (parentMenu._close) parentMenu._close(); else parentMenu.classList.add('hidden');
+    } else if (parentMenu._rerender) parentMenu._rerender();
   };
 
   // iconName: nom d'icône Lucide (ou '' pour aucune icône), text: libellé affiché
@@ -10501,7 +10617,13 @@ function _tlMakeCtxMenu(anchorEl, e) {
       btn.appendChild(i);
     }
     btn.appendChild(document.createTextNode(text));
-    btn.addEventListener('click', () => { close(); fn(); });
+    btn.addEventListener('click', () => {
+      close();
+      const r = fn();
+      if (!parentMenu) return;
+      afterSubAction();
+      if (r && typeof r.then === 'function') r.then(afterSubAction, afterSubAction);
+    });
     menu.appendChild(btn);
     return btn;
   };
@@ -10515,7 +10637,20 @@ function _tlMakeCtxMenu(anchorEl, e) {
   document.body.appendChild(menu);
   _tlActiveCtxMenu = menu;
 
-  if (frozenRect) positionCtxMenu(menu, null, { getBoundingClientRect: () => frozenRect });
+  if (parentMenu) {
+    // Sous-menu d'un menu Chemin : à côté de lui (à droite, sinon à gauche), jamais par-dessus,
+    // aligné sur le haut de la ligne cliquée.
+    const pRect = parentMenu.getBoundingClientRect();
+    const rowEl = _src.closest('.tl-path-menu-row');
+    const top = rowEl ? rowEl.getBoundingClientRect().top : (frozenRect ? frozenRect.top : e.clientY);
+    menu.style.left = (pRect.right + 4) + 'px';
+    menu.style.top = top + 'px';
+    requestAnimationFrame(() => {
+      const rect = menu.getBoundingClientRect();
+      if (rect.right > window.innerWidth - 8) menu.style.left = Math.max(8, pRect.left - rect.width - 4) + 'px';
+      if (rect.bottom > window.innerHeight - 8) menu.style.top = Math.max(8, window.innerHeight - 8 - rect.height) + 'px';
+    });
+  } else if (frozenRect) positionCtxMenu(menu, null, { getBoundingClientRect: () => frozenRect });
   else positionCtxMenu(menu, e, null);
 
   const onDocClick = () => close();
@@ -13577,6 +13712,10 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
       await tlSwitch(tpl.id, false);
       _tlRenderPathMenuRows(menu, activeFolders, close);
     });
+    // Clic droit : menu d'options du template (même menu que la page Dossiers), en sous-menu : le menu
+    // Chemin reste ouvert (cf _tlMakeCtxMenu). stopPropagation : sinon le clic droit, en remontant au
+    // document, fermerait le menu Chemin.
+    row.addEventListener('contextmenu', ev => { ev.preventDefault(); ev.stopPropagation(); tlOpenManageModal(tpl.id, row, 'folders'); });
     return row;
   };
 
@@ -13620,6 +13759,8 @@ function _tlRenderPathMenuRows(menu, activeFolders, close, resetPathExpansion) {
         _tlRenderPathMenuRows(menu, activeFolders, close);
       }
     });
+    // Clic droit : menu d'options du dossier (même menu que la page Dossiers).
+    row.addEventListener('contextmenu', ev => { ev.preventDefault(); ev.stopPropagation(); tlOpenFolderManageModal(folder.id, row); });
     return row;
   };
 
@@ -13656,6 +13797,8 @@ if (_tlBtnPathDropdown) {
     menu.classList.add('path-menu');
     const activeFolders = (tlState.folders || []).filter(f => !f.archived);
     _tlRenderPathMenuRows(menu, activeFolders, close, true);
+    // Redessin après une action de son sous-menu clic droit (ex. Dupliquer), cf _tlMakeCtxMenu.
+    menu._rerender = () => _tlRenderPathMenuRows(menu, (tlState.folders || []).filter(f => !f.archived), close);
     // Repositionne par-dessus le positionnement générique de _tlMakeCtxMenu (haut fixe, scroll
     // interne — cf _positionPathMenu, jamais de décalage du haut selon les chemins dépliés).
     _positionPathMenu(menu, _tlBtnPathDropdown);
@@ -14794,7 +14937,7 @@ function _openCurrentEventAtStartupIfNeeded() {
   }
   const folderId = state.currentEventFolderId;
   const folder = folderId ? findFolderById(state.folders, folderId) : null;
-  if (!folder || folder.archived) { _revealApp(); return; }
+  if (!folder) { _revealApp(); return; }
   _homeGoToBingoFolder(folderId)
     .then(() => _bingoEnsureSeasonLoaded(folderId))
     .catch(() => {}).then(_revealApp);
@@ -14851,7 +14994,7 @@ function _homeRenderHero() {
   const ceFolder = state.currentEventFolderId;
   if (ceFolder) {
     const folder = findFolderById(state.folders, ceFolder);
-    if (folder && !folder.archived) {
+    if (folder) {
       btn.style.display = 'inline-flex';
       if (lbl) {
         const path = getFolderPath(state.folders, ceFolder);
