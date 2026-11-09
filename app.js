@@ -23,6 +23,9 @@ const _compareModeIsDedicatedWindow = _compareTierlistIds.length >= 2;
 // lourd (grilles/images) d'un bingo ou d'une tierlist que si sa page est réellement affichée, plutôt
 // que de tout précharger dès l'arrivée sur l'accueil (cf _bingoLoadActivePageContent/_tlLoadActivePageContent).
 let _currentPage = 'folders';
+// true quand un rendu Tier List a été sauté parce que sa page était masquée (cf _tlRenderIfVisible) —
+// rattrapé par _switchPage en arrivant sur Tier List.
+let _tlRenderDeferred = false;
 // true dès que l'utilisateur a cliqué sur un onglet de nav (via window._switchPage) — loadUserPrefs()
 // s'en sert pour ne forcer l'accueil qu'au tout premier chargement (avant toute navigation manuelle),
 // jamais après : sinon un chargement de prefs qui répond en retard renverrait l'utilisateur sur
@@ -593,8 +596,8 @@ async function _applyPrefsAndRender() {
     _tlLocalSplit = Math.max(TL_SPLIT_MIN, Math.min(TL_SPLIT_MAX, _tlLocalSplit));
     document.documentElement.style.setProperty('--tl-split', _tlLocalSplit);
   }
-  // Re-render la Tier List avec la bonne tierlist active
-  if (typeof tlRender === 'function') tlRender();
+  // Re-render la Tier List avec la bonne tierlist active (seulement si elle est affichée)
+  _tlRenderIfVisible();
   if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
   _prefsAppliedOnce = true;
   _openCurrentEventAtStartupIfNeeded();
@@ -6760,7 +6763,10 @@ document.getElementById('btn-confirm-trash-empty').addEventListener('click', () 
     // tierlist, qui ne préchargent plus qu'en arrivant directement sur ces pages) : rattraper le
     // chargement ici si l'utilisateur navigue vers Bingo/Tier List après être arrivé sur l'accueil.
     if (target === 'bingo' && _firebaseReady) _bingoLoadActivePageContent();
-    if (target === 'tierlist' && _firebaseReady) _tlLoadActivePageContent();
+    if (target === 'tierlist') {
+      if (_firebaseReady) _tlLoadActivePageContent();
+      else if (_tlRenderDeferred) tlRender(); // rendu sauté pendant que la page était masquée (cf _tlRenderIfVisible)
+    }
     if (typeof renderCurrentEventButton === 'function') renderCurrentEventButton();
     // La page Bingo peut avoir été rendue pendant qu'elle était masquée (display:none sur
     // un ancêtre) — les mesures de _adjustBingoGridSizes() étaient alors nulles/fausses et
@@ -6958,32 +6964,56 @@ function tlSaveIndex() {
   _dbTierlistIndex.set(sanitizeForFirebase(_tlBuildIndexPayload())).catch(e => console.warn('TL index save error:', e));
 }
 
-// Cache du dernier payload EFFECTIVEMENT écrit par groupe (JSON stringifié), pour ne réécrire que
-// les branches qui ont changé — évite de retransmettre `images` (lourd, base64) à chaque déplacement
-// de case qui ne touche que `members/<id>.tiers/unplaced` (léger, IDs seulement). Perdu au rechargement
-// de page (Map en mémoire) : le premier tlSaveGroup() de la session réécrit tout, sans risque.
-const _tlLastGroupPayloadJson = new Map();
+// Cache du dernier payload EFFECTIVEMENT écrit (ou reçu) par groupe, pour ne réécrire que les branches
+// qui ont changé — évite de retransmettre `images` (lourd, base64) à chaque déplacement de case qui ne
+// touche que `members/<id>.tiers/unplaced` (léger, IDs seulement). Perdu au rechargement de page (Map en
+// mémoire) : le premier tlSaveGroup() de la session réécrit tout, sans risque.
+// Forme : cf _tlGroupPayloadSnapshot — jamais le JSON du groupe entier : sérialiser/relire plusieurs Mo
+// de base64 à chaque action coûtait des dizaines de ms avant même l'envoi.
+const _tlLastGroupSnapshot = new Map();
+
+// Empreinte d'un payload de groupe DÉJÀ passé par sanitizeForFirebase : images en copies superficielles
+// (comparées champ par champ avec ===, ce qui ne recopie ni ne sérialise jamais les src base64), membres
+// (ids seulement, légers) en JSON.
+function _tlGroupPayloadSnapshot(payload) {
+  const members = {};
+  Object.keys(payload.members || {}).forEach(id => { members[id] = JSON.stringify(payload.members[id]); });
+  return {
+    images: (payload.images || []).map(img => (img && typeof img === 'object') ? { ...img } : img),
+    toPlaceImgId: payload.toPlaceImgId,
+    members,
+  };
+}
+
+// Même image (mêmes champs, mêmes valeurs) ? Une valeur objet imbriquée compte toujours comme
+// différente (=== sur deux copies) : au pire une réécriture en trop, jamais un changement oublié.
+function _tlSameImage(a, b) {
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return a === b;
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every(k => a[k] === b[k]);
+}
 
 function tlSaveGroup(groupRootId) {
   if (_tlRemoteUpdate || !groupRootId) return;
   const payload = sanitizeForFirebase(_tlBuildGroupPayload(groupRootId));
-  const prevJson = _tlLastGroupPayloadJson.get(groupRootId);
-  if (prevJson === undefined) {
+  const prev = _tlLastGroupSnapshot.get(groupRootId);
+  const next = _tlGroupPayloadSnapshot(payload);
+  if (prev === undefined) {
     // Rien d'écrit pour ce groupe depuis le chargement de la page : set() complet, comme avant.
-    _tlLastGroupPayloadJson.set(groupRootId, JSON.stringify(payload));
+    _tlLastGroupSnapshot.set(groupRootId, next);
     _dbTierlistData.child(groupRootId).set(payload).catch(e => console.warn('TL group save error:', e));
     return;
   }
-  const prev = JSON.parse(prevJson);
   const updates = {};
-  if (JSON.stringify(payload.images) !== JSON.stringify(prev.images)) updates.images = payload.images;
+  const imagesChanged = next.images.length !== prev.images.length || next.images.some((img, i) => !_tlSameImage(img, prev.images[i]));
+  if (imagesChanged) updates.images = payload.images;
   if (payload.toPlaceImgId !== prev.toPlaceImgId) updates.toPlaceImgId = payload.toPlaceImgId;
-  const memberIds = new Set([...Object.keys(payload.members || {}), ...Object.keys(prev.members || {})]);
+  const memberIds = new Set([...Object.keys(next.members), ...Object.keys(prev.members)]);
   memberIds.forEach(id => {
-    const a = payload.members[id], b = prev.members[id];
-    if (JSON.stringify(a) !== JSON.stringify(b)) updates['members/' + id] = a === undefined ? null : a;
+    if (next.members[id] !== prev.members[id]) updates['members/' + id] = payload.members[id] === undefined ? null : payload.members[id];
   });
-  _tlLastGroupPayloadJson.set(groupRootId, JSON.stringify(payload));
+  _tlLastGroupSnapshot.set(groupRootId, next);
   if (Object.keys(updates).length === 0) return;
   _dbTierlistData.child(groupRootId).update(updates).catch(e => console.warn('TL group save error:', e));
 }
@@ -8107,12 +8137,37 @@ window.addEventListener('resize', () => {
 });
 
 // ── Rendu principal ───────────────────────────────────────────────────────────
+// Rendu Tier List seulement si sa page est affichée (les modes plein écran/comparaison y basculent
+// aussi via _switchPage). Sinon seul le bouton "soirée en cours", visible sur toutes les pages et qui
+// peut porter le nom d'une liste, est rafraîchi ; _switchPage refait un tlRender() complet en arrivant
+// sur Tier List. Évite de reconstruire toute la Tier List cachée (images comprises) à chaque case
+// cochée ou image déplacée par un autre utilisateur.
+function _tlRenderIfVisible() {
+  if (_currentPage === 'tierlist') { tlRender(); return; }
+  _tlRenderDeferred = true;
+  renderCurrentEventButton();
+}
+
+// Icônes de fin de tlRender(). Lucide garde data-lucide sur le <svg> qu'il produit : un
+// lucide.createIcons() global redessinait donc TOUTES les icônes de l'appli (pages masquées comprises)
+// à chaque rendu. Ici : la page Tier List en un appel, puis — même filet que l'ancien appel global —
+// toute icône encore non convertie ailleurs (élément [data-lucide] qui n'est pas encore un <svg>).
+function _tlRenderIcons() {
+  if (!window.lucide) return;
+  const page = document.getElementById('page-tierlist');
+  if (page) lucide.createIcons({ root: page });
+  const pendingParents = new Set();
+  document.querySelectorAll('[data-lucide]:not(svg)').forEach(el => { if (el.parentElement) pendingParents.add(el.parentElement); });
+  pendingParents.forEach(p => lucide.createIcons({ root: p }));
+}
+
 // skipHeightRecalc : true seulement quand l'appelant sait que la position/hauteur de .tl-layout
 // n'a pas changé (ex : déplacer une image entre tiers) — évite le reflow synchrone coûteux de
 // _adjustTlLayoutHeight() (getBoundingClientRect/getComputedStyle). Par défaut false (comportement
 // historique, toujours sûr) : ne jamais passer true si le control-panel au-dessus a pu changer de
 // hauteur (changement de dossier/tierlist, ouverture d'options...).
 function tlRender(skipHeightRecalc = false) {
+  _tlRenderDeferred = false;
   if (!skipHeightRecalc) {
     _adjustTlLayoutHeight();
     requestAnimationFrame(_adjustTlLayoutHeight);
@@ -8151,7 +8206,7 @@ function tlRender(skipHeightRecalc = false) {
       _tlHideFolderEmptyState();
       tlEmptyState.classList.remove('hidden');
     }
-    if (window.lucide) lucide.createIcons();
+    _tlRenderIcons();
     return;
   }
   _tlHideFolderEmptyState();
@@ -8183,7 +8238,7 @@ function tlRender(skipHeightRecalc = false) {
   tlRenderTiers(tl);
   tlRenderUnplaced(tl);
   _tlRenderToPlaceZone(tl);
-  if (window.lucide) lucide.createIcons();
+  _tlRenderIcons();
 }
 
 // Contexte du panneau Chemin/Template/Listes : toujours basé sur le DOSSIER actif (pas sur la
@@ -9386,7 +9441,7 @@ function _tlCompareDrop(e, tl, targetTierId) {
   tier.items.splice(insertIdx, 0, imgId);
 
   tlTouchFolderChain(_tlEffectiveFolderId(tl));
-  tlSave(_tlGroupRoot(tl).id);
+  tlSaveGroup(_tlGroupRoot(tl).id); // groupe seul, jamais l'index : cf tlDrop
   // Patch ciblé (2 zones de la colonne concernée) au lieu de reconstruire toutes les colonnes
   // comparées — from peut être '__unplaced__' (image jamais placée avant le drag), zone absente
   // du DOM en mode comparaison : _tlPatchCompareImageMove retombe alors sur le rendu complet.
@@ -10383,7 +10438,11 @@ function tlDrop(e, targetZoneId) {
   }
 
   tlTouchFolderChain(_tlEffectiveFolderId(tl));
-  tlSave(_rootForDrop.id);
+  // Groupe SEUL, jamais l'index (même règle que cocher une case Bingo) : un déplacement ne change
+  // aucun champ de l'index hormis updatedAt du dossier, laissé en mémoire et transmis à la prochaine
+  // action qui écrit l'index — sinon chaque déplacement renvoyait tout l'index à tous les
+  // utilisateurs, avec un rendu complet de leur Tier List en prime.
+  tlSaveGroup(_rootForDrop.id);
   // Déplacer une image entre tiers/non-placés ne change jamais la hauteur du control-panel
   // au-dessus de .tl-layout (la zone "à placer" garde une taille fixe qu'elle soit vide ou
   // non, voir _tlRenderToPlaceZone/.tl-toplace-zone en CSS) : on peut sauter le reflow.
@@ -12714,7 +12773,9 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
       // une action de l'utilisateur. Ne re-rendre que si ce snapshot concerne le dossier actif :
       // les autres dossiers restent fusionnés en mémoire (ligne _bingoMergeDataIntoState ci-dessus,
       // toujours faite) pour que NEW/Stats reste à jour, sans jamais toucher l'affichage courant.
-      if (_prefsReady && id === _localActiveFolderId) _applyPrefsAndRender();
+      // Seulement sur la page Bingo : ailleurs rien d'affiché ne dépend de ce contenu (_switchPage
+      // refait le rendu Bingo en y arrivant), et la page Dossiers est rafraîchie juste en dessous.
+      if (_prefsReady && id === _localActiveFolderId && _currentPage === 'bingo') _applyPrefsAndRender();
       if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
     };
     _dbBingoData.child(id).on('value', handler);
@@ -12896,10 +12957,10 @@ function _tlSetActiveGroupSubscription(groupRootId) {
     // Resynchronise le cache de diff (tlSaveGroup) sur l'état réellement présent côté Firebase
     // (snapshot reçu), pour que la prochaine sauvegarde locale calcule son delta par rapport à
     // l'état serveur à jour plutôt qu'à un cache devenu obsolète (voir commentaire sur
-    // _tlLastGroupPayloadJson) — sinon la prochaine écriture locale réenverrait des branches qui
+    // _tlLastGroupSnapshot) — sinon la prochaine écriture locale réenverrait des branches qui
     // n'ont en fait pas changé depuis ce snapshot distant.
-    _tlLastGroupPayloadJson.set(groupRootId, JSON.stringify(sanitizeForFirebase(_tlBuildGroupPayload(groupRootId))));
-    tlRender();
+    _tlLastGroupSnapshot.set(groupRootId, _tlGroupPayloadSnapshot(sanitizeForFirebase(_tlBuildGroupPayload(groupRootId))));
+    _tlRenderIfVisible();
     _tlRemoteUpdate = false;
     // cf. commentaire équivalent dans _tlEnsureGroupLoaded : persiste les réparations auto.
     if (needsSave) tlSaveGroup(groupRootId);
@@ -13001,7 +13062,7 @@ function _tlStartTierlistListeners() {
     Promise.all(pending).catch(() => {}).then(() => {
       _applySoloTierlistModeIfNeeded();
       _applyCompareTierlistModeIfNeeded();
-      tlRender();
+      _tlRenderIfVisible();
       _openCurrentEventAtStartupIfNeeded();
       // Page Dossiers déjà affichée avant l'arrivée de cet index (ex. clic sur "Dossiers" pendant que
       // l'index tierlist était encore en vol) : re-rendre pour ne pas laisser "Templates récents" figé
