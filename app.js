@@ -1559,7 +1559,9 @@ function importElementTexts(texts, targetId, replace = false) {
   });
   _bingoSaveFolder(targetId);
   renderElements();
-  renderGrid();
+  // Ajouter des cases ne touche aucune grille ; "remplacer" vide toutes celles du dossier cible.
+  const rebuildIds = (replace && targetId === _localActiveFolderId) ? getVisibleGrids().map(gx => gx.id) : [];
+  if (!_bingoRebuildGridCells(rebuildIds)) renderGrid();
   return added;
 }
 
@@ -2115,6 +2117,16 @@ function _addCasesSelCheck(li, id) {
   li.insertBefore(cb, li.firstChild);
 }
 // Vide les cellules des grilles du dossier qui contiennent une des cases.
+// Ids des grilles AFFICHÉES dont une case visible porte l'un de ces éléments — seules grilles à
+// reconstruire (cf _bingoRebuildGridCells) quand ces éléments sont renommés, archivés ou supprimés.
+// À appeler AVANT _emptyCellsOfElements (qui retire justement ces éléments des cases).
+function _bingoGridIdsShowingElements(idSet) {
+  if (!idSet || !idSet.size) return [];
+  return getVisibleGrids()
+    .filter(gx => gx.grid.slice(0, gx.gridSize * gx.gridSize).some(c => c && idSet.has(c.elementId)))
+    .map(gx => gx.id);
+}
+
 function _emptyCellsOfElements(s, idSet) {
   if (!idSet.size) return;
   (s.grids || []).forEach(g => {
@@ -2160,13 +2172,16 @@ function _casesBulkMove(toArchived) {
     const existingIds = new Set((s.elements || []).map(e => e.id));
     ids.filter(id => existingIds.has(id)).forEach(id => setArchived(id, toArchived));
   }
+  const affectedGridIds = _bingoGridIdsShowingElements(toEmpty);
   _emptyCellsOfElements(s, toEmpty);
   _casesSel.clear();
   _hideCasesBulkConfirm();
   _bingoSaveFolder(s.id);
   if (placedSuggestionIds.length) _deleteSuggestions(placedSuggestionIds);
   renderElements();
-  renderGrid();
+  // Seules les grilles où une case archivée était posée changent (réactiver/ajouter ne touche aucune
+  // case) ; le bouton Générer, qui dépend du nombre de cases actives, est mis à jour dans tous les cas.
+  if (!_bingoRebuildGridCells(affectedGridIds)) renderGrid();
 }
 // Supprimer les cases cochées (vidées des grilles) ou, dans l'onglet Idées,
 // les idées cochées (pour tout le monde). Appelé après la confirmation inline.
@@ -2186,10 +2201,11 @@ function _casesBulkDelete() {
   const idSet = new Set(ids);
   s.elements = (s.elements || []).filter(e => !idSet.has(e.id));
   s.archivedElementIds = (s.archivedElementIds || []).filter(id => !idSet.has(id));
+  const affectedGridIds = _bingoGridIdsShowingElements(idSet);
   _emptyCellsOfElements(s, idSet);
   _bingoSaveFolder(s.id);
   renderElements();
-  renderGrid();
+  if (!_bingoRebuildGridCells(affectedGridIds)) renderGrid();
 }
 
 // Met dans la ligne invisible .cases-width-sizer le texte le plus large (mesuré au canvas, même police
@@ -2383,7 +2399,8 @@ function startEditElement(id, span, clickEvent) {
     if (newText) el.text = newText;
     _bingoSaveFolder(s.id);
     renderElements();
-    renderGrid();
+    // Seules les grilles affichant cette case changent (texte, badge NEW).
+    if (!_bingoRebuildGridCells(_bingoGridIdsShowingElements(new Set([el.id])))) renderGrid();
   };
 
   textarea.addEventListener('blur', commit);
@@ -12858,10 +12875,10 @@ function _bingoCanonKey(v) {
   return JSON.stringify(v === undefined ? null : v);
 }
 
-// Comme _bingoStructureKey mais SANS les cases des grilles (g.grid) : égale ⇔ seules des cases
-// (contenu et/ou coches) ont pu changer — cases, grilles, éléments identiques par ailleurs.
+// Grilles SANS leurs cases (g.grid) + activeGridId : égale ⇔ aucune grille créée/supprimée/renommée/
+// redimensionnée… — seuls des cases (contenu, coches) et/ou des éléments du panneau Cases ont pu changer.
 function _bingoMetaKey(f) {
-  return _bingoCanonKey({ elements: f.elements, archivedElementIds: f.archivedElementIds, activeGridId: f.activeGridId,
+  return _bingoCanonKey({ activeGridId: f.activeGridId,
     grids: (f.grids || []).map(g => Object.assign({}, g, { grid: undefined })) });
 }
 
@@ -12951,6 +12968,8 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
       const prevSig = canPatch ? _bingoCheckSignature(fPrev) : null;
       const prevMeta = canPatch ? _bingoMetaKey(fPrev) : null;
       const prevCells = canPatch ? new Map((fPrev.grids || []).map(g => [g.id, _bingoCanonKey(g.grid)])) : null;
+      const prevElemKeys = canPatch ? new Map((fPrev.elements || []).map(e => [e.id, _bingoCanonKey(e)])) : null;
+      const prevArchivedKey = canPatch ? _bingoCanonKey(fPrev.archivedElementIds || []) : null;
       const prevGrids = fPrev ? fPrev.grids : null;
       const prevElements = fPrev ? fPrev.elements : null;
       _bingoMergeDataIntoState(id, rawVal);
@@ -12958,6 +12977,7 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
       _bingoLoadedFolders.add(id);
       let patchedIds = null;
       let rebuiltGridIds = null;
+      let elementsChanged = false;
       if (canPatch && f === fPrev && _bingoStructureKey(f) === prevKey) {
         const nextSig = _bingoCheckSignature(f);
         patchedIds = [...nextSig.keys()].filter(k => nextSig.get(k) !== prevSig.get(k));
@@ -12968,21 +12988,30 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
         f.grids = prevGrids;
         f.elements = prevElements;
       } else if (canPatch && f === fPrev && _bingoMetaKey(f) === prevMeta) {
-        // Seules des cases ont changé (vidées/générées par un autre) : ne reconstruire que les
-        // grilles touchées (cf _bingoRebuildGridCells). Grilles intactes et éléments : objets d'avant
-        // la fusion (capturés par les handlers affichés) avec les nouvelles coches ; grilles
-        // reconstruites : nouveaux objets, leurs cases recevront des handlers frais.
+        // Grilles intactes, seuls des cases et/ou des éléments ont changé (cases vidées/générées,
+        // éléments renommés/archivés/supprimés/ajoutés par un autre) : ne reconstruire que les grilles
+        // dont une case a changé ou affiche un élément modifié (cf _bingoRebuildGridCells). Grilles
+        // intactes : objets d'avant la fusion (capturés par les handlers affichés) avec les nouvelles
+        // coches ; grilles reconstruites : nouveaux objets, leurs cases recevront des handlers frais.
         const nextSig = _bingoCheckSignature(f);
         patchedIds = [...new Set([...nextSig.keys(), ...prevSig.keys()])].filter(k => nextSig.get(k) !== prevSig.get(k));
-        rebuiltGridIds = (f.grids || []).filter(g => _bingoCanonKey(g.grid) !== prevCells.get(g.id)).map(g => g.id);
+        const nextElemKeys = new Map((f.elements || []).map(e => [e.id, _bingoCanonKey(e)]));
+        const changedEls = new Set([...prevElemKeys.keys(), ...nextElemKeys.keys()].filter(k => prevElemKeys.get(k) !== nextElemKeys.get(k)));
+        elementsChanged = changedEls.size > 0 || _bingoCanonKey(f.archivedElementIds || []) !== prevArchivedKey;
+        rebuiltGridIds = (f.grids || []).filter(g => _bingoCanonKey(g.grid) !== prevCells.get(g.id)
+          || (g.grid || []).slice(0, g.gridSize * g.gridSize).some(c => c && changedEls.has(c.elementId))).map(g => g.id);
         const rebuilt = new Set(rebuiltGridIds);
         f.grids = f.grids.map((g, gi) => {
           if (rebuilt.has(g.id)) return g;
           _bingoCopyChecks([g], [], [prevGrids[gi]], []); // même ordre garanti par _bingoMetaKey
           return prevGrids[gi];
         });
-        _bingoCopyChecks([], f.elements, [], prevElements);
-        f.elements = prevElements;
+        // Éléments inchangés (hors coches) : objets d'avant la fusion. Sinon les nouveaux sont gardés
+        // et le panneau Cases est redessiné (les cases affichées relisent s.elements au clic).
+        if (!elementsChanged) {
+          _bingoCopyChecks([], f.elements, [], prevElements);
+          f.elements = prevElements;
+        }
       }
       _bingoLastKnownPayloadJSON.set(id, rawValJSON);
       // Nouvelles grilles apparues (créées par un autre utilisateur) dans le dossier actif : les
@@ -13012,6 +13041,7 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
       // Seulement sur la page Bingo : ailleurs rien d'affiché ne dépend de ce contenu (_switchPage
       // refait le rendu Bingo en y arrivant), et la page Dossiers est rafraîchie juste en dessous.
       if (rebuiltGridIds) {
+        if (elementsChanged) renderElements();
         if (_bingoRebuildGridCells(rebuiltGridIds)) _bingoPatchRemoteChecks(patchedIds);
         else _applyPrefsAndRender();
       } else if (patchedIds) _bingoPatchRemoteChecks(patchedIds);
