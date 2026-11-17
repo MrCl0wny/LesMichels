@@ -3,12 +3,9 @@
 ═══════════════════════════════════════════════ */
 
 // ──────────────────────────────────────────────
-// Liens directs Tier List : plein écran (?openTierlist=) et comparaison (?compareTierlists=)
+// Lien direct Tier List : comparaison (?compareTierlists=)
 // ──────────────────────────────────────────────
 const _soloGridParams = new URLSearchParams(window.location.search);
-
-let _soloTierlistId = _soloGridParams.get('openTierlist') || null;
-let _soloTierlistApplied = false;
 
 let _compareTierlistIds = (_soloGridParams.get('compareTierlists') || '')
   .split(',')
@@ -94,7 +91,6 @@ const MODAL_CLOSE_FNS = {
   'modal-grids': () => closeNewGridModal(),
   'modal-confirm-signout': () => document.getElementById('modal-confirm-signout').classList.add('hidden'),
   'modal-prefs': () => closePrefsModal(),
-  'modal-tl-capture-choice': () => closeTlCaptureChoiceModal(),
   'modal-generate-choice': () => closeGenerateChoiceModal(),
   'modal-confirm-clear': () => {
     document.getElementById('modal-confirm-clear').classList.add('hidden');
@@ -378,13 +374,12 @@ function loadUserPrefs() {
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
     if (prefs.tlActiveFolderId    != null) _tlLocalActiveFolderId   = prefs.tlActiveFolderId;
     if (prefs.tlNoSelection       != null) _tlLocalNoSelection      = !!prefs.tlNoSelection;
-    // Page active — l'app démarre sur l'accueil (sauf lien direct vers une grille/tierlist en plein
-    // écran solo), puis bascule sur la soirée en cours s'il y en a une (_openCurrentEventAtStartupIfNeeded) ; prefs.activePage n'est utilisée que pour les changements d'onglet en cours
+    // Page active — l'app démarre sur l'accueil, puis bascule sur la soirée en cours s'il y en a une (_openCurrentEventAtStartupIfNeeded) ; prefs.activePage n'est utilisée que pour les changements d'onglet en cours
     // de session. _userNavigated protège contre le cas où ce .once('value') répond APRÈS que
     // l'utilisateur ait déjà cliqué sur un autre onglet (Dossiers, Bingo…) : sans cette garde, la page
     // était renvoyée de force vers l'accueil en pleine navigation, écrasant le geste de l'utilisateur
     // sans prévenir (bug constaté : "Dossiers > Tier List" cliqué tôt ne s'affichait jamais).
-    if (window._switchPage && !_soloTierlistId && !_userNavigated) _switchPage('folders');
+    if (window._switchPage && !_userNavigated) _switchPage('folders');
     _prefsReady = true;
     // Re-render seulement si les données Bingo sont déjà chargées
     if (_firebaseReady) {
@@ -393,71 +388,18 @@ function loadUserPrefs() {
   }).catch(e => console.warn('Prefs load error:', e));
 }
 
-// #tl-btn-undo, #tl-btn-toggle-unplaced, #tl-list-options-frame et le
-// wrapper du bouton Liste vivent dans la toolbar du mode normal (lignes 1 et 2) et dans la barre
-// plein écran (.tl-solo-toolbar) en solo-tierlist-mode — mêmes éléments physiques déplacés en JS,
-// jamais deux jeux de contrôles désynchronisés. En plein
-// écran, un template ne peut pas s'afficher : le bouton Liste y remplace Tiers/Reset (masqués via
-// body.solo-tierlist-mode, voir CSS) pour permettre de changer de liste sans repasser en mode normal.
-function _tlEnterSoloToolbarLayout() {
-  const undoBtn = document.getElementById('tl-btn-undo');
-  const optionsFrame = document.getElementById('tl-list-options-frame');
-  const toggleUnplacedBtn = document.getElementById('tl-btn-toggle-unplaced');
-  const listWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
-  const soloLeft = document.querySelector('.tl-solo-toolbar-left');
-  const soloCenter = document.querySelector('.tl-solo-toolbar-center');
-  const soloRight = document.querySelector('.tl-solo-toolbar-right');
-  const exitBtn = document.getElementById('tl-btn-exit-solo');
-  if (listWrap && soloLeft) soloLeft.appendChild(listWrap);
-  if (optionsFrame && soloLeft) soloLeft.appendChild(optionsFrame);
-  // Annuler centré sur TOUTE la barre (voir .tl-solo-toolbar-center en CSS), pas dans
-  // .tl-solo-toolbar-left avec le cadre Options Liste.
-  if (undoBtn && soloCenter) soloCenter.appendChild(undoBtn);
-  if (toggleUnplacedBtn && soloRight) soloRight.insertBefore(toggleUnplacedBtn, exitBtn);
-}
-function _tlExitSoloToolbarLayout() {
-  const undoBtn = document.getElementById('tl-btn-undo');
-  const optionsFrame = document.getElementById('tl-list-options-frame');
-  const toggleUnplacedBtn = document.getElementById('tl-btn-toggle-unplaced');
-  const listWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
-  const line1Right = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-right');
-  const line1Left = document.querySelector('.ctrl-row-line1 .ctrl-row-grids-left');
-  const toolbarLeft = document.querySelector('.ctrl-row-toolbar-left');
-  const toolbarCenter = document.querySelector('.tl-ctrl-row-toolbar .ctrl-row-toolbar-center');
-  if (toggleUnplacedBtn && line1Right) line1Right.appendChild(toggleUnplacedBtn);
-  if (optionsFrame && toolbarLeft) toolbarLeft.appendChild(optionsFrame);
-  // Annuler retourne centré sur la ligne 2 (.ctrl-row-toolbar-center) — même position qu'en mode
-  // normal avant l'entrée en plein écran.
-  if (undoBtn && toolbarCenter) toolbarCenter.appendChild(undoBtn);
-  if (listWrap && line1Left) line1Left.appendChild(listWrap);
-}
-
-// Annuler centré sur TOUTE la barre comparaison (voir .tl-compare-toolbar-center en CSS), même
-// élément DOM physique que le mode normal/plein écran, déplacé en JS (même pattern que
-// _tlEnterSoloToolbarLayout/_tlExitSoloToolbarLayout ci-dessus).
+// Annuler à droite de la barre comparaison (Quitter comparaison est au centre), même élément DOM
+// physique que le mode normal, déplacé en JS.
 function _tlEnterCompareToolbarLayout() {
   const undoBtn = document.getElementById('tl-btn-undo');
-  const compareCenter = document.querySelector('.tl-compare-toolbar-center');
-  if (undoBtn && compareCenter) compareCenter.appendChild(undoBtn);
+  const compareRight = document.querySelector('.tl-compare-toolbar-right');
+  if (undoBtn && compareRight) compareRight.appendChild(undoBtn);
 }
 function _tlExitCompareToolbarLayout() {
+  // Retour à sa place : à droite de la rangée du panneau de contrôle, juste avant Non placés.
   const undoBtn = document.getElementById('tl-btn-undo');
-  const toolbarCenter = document.querySelector('.tl-ctrl-row-toolbar .ctrl-row-toolbar-center');
-  if (undoBtn && toolbarCenter) toolbarCenter.appendChild(undoBtn);
-}
-
-function _applySoloTierlistModeIfNeeded() {
-  if (!_soloTierlistId || _soloTierlistApplied) return;
-  const tl = tlState.tierlists.find(t => t.id === _soloTierlistId && !t.archived);
-  if (!tl) return;
-  _soloTierlistApplied = true;
-  _tlLocalActiveTierlistId = tl.id;
-  _tlLocalNoSelection = false;
-  if (window._switchPage) window._switchPage('tierlist');
-  document.title = (_tlFullTitlePath(tl) || tl.name || 'Liste');
-  document.body.classList.add('solo-tierlist-mode');
-  _tlEnterSoloToolbarLayout();
-  requestAnimationFrame(_adjustTlLayoutHeight);
+  const toolbarRight = document.querySelector('.tl-ctrl-row-toolbar .ctrl-row-toolbar-right');
+  if (undoBtn && toolbarRight) toolbarRight.insertBefore(undoBtn, document.getElementById('tl-btn-toggle-unplaced'));
 }
 
 function _applyCompareTierlistModeIfNeeded() {
@@ -494,16 +436,6 @@ function _applyCompareTierlistModeIfNeeded() {
   _tlCompareSelectedIds = tls.map(t => t.id);
   if (typeof _tlRenderCompareListsMenu === 'function') _tlRenderCompareListsMenu();
   _tlRenderCompareView(tls);
-}
-
-function _exitSoloTierlistMode() {
-  document.body.classList.remove('solo-tierlist-mode');
-  document.title = 'LesMichels';
-  _tlExitSoloToolbarLayout();
-  // Empêche le listener Firebase (_dbTierlist.on('value')) de rouvrir le mode au prochain snapshot
-  _soloTierlistId = null;
-  _soloTierlistApplied = false;
-  requestAnimationFrame(_adjustTlLayoutHeight);
 }
 
 function _exitCompareTierlistMode() {
@@ -1036,7 +968,7 @@ function activeSubtheme() {
 }
 
 // État de la soirée en cours, recalculé par renderCurrentEventButton() et lu par les boutons qui
-// l'affichent (_updateCeSetHeaderBtn, _updateBingoHeroCeBtn) : une soirée valide existe (_ceShown),
+// l'affichent (_updateBingoHeroCeBtn) : une soirée valide existe (_ceShown),
 // son chemin complet (_ceLabel), et si c'est déjà elle qui est affichée (_ceHere).
 let _ceShown = false;
 let _ceLabel = '';
@@ -1062,9 +994,11 @@ function renderCurrentEventButton() {
       }
       parts.push(tl.name);
       _ceLabel = parts.join(' \\ ');
+      // "Déjà affichée" = n'importe quel membre du groupe en cours (le template OU une de ses listes).
       const onTlPage = document.getElementById('page-tierlist')?.classList.contains('active');
-      _ceHere = !!(onTlPage && _tlLocalActiveTierlistId === ceTl);
-      _updateCeSetHeaderBtn();
+      const shownTl = onTlPage && typeof tlActiveTierlist === 'function' ? tlActiveTierlist() : null;
+      _ceHere = !!(shownTl && _tlGroupRoot(shownTl).id === _tlGroupRoot(tl).id);
+      _updateBingoHeroCeBtn();
       return;
     }
     if (!_tlIndexReady) {
@@ -1082,23 +1016,26 @@ function renderCurrentEventButton() {
 
   const cef = state.currentEventFolderId;
   const folder = cef ? findFolderById(state.folders, cef) : null;
-  if (!folder) { _ceShown = false; _updateCeSetHeaderBtn(); return; }
+  if (!folder) { _ceShown = false; _updateBingoHeroCeBtn(); return; }
   _ceShown = true;
   _ceLabel = 'Bingo \\ ' + getFolderPath(state.folders, cef).map(f => f.name).join(' \\ ');
   const onBingoPage = document.getElementById('page-bingo')?.classList.contains('active');
   _ceHere = !!(onBingoPage && _localActiveFolderId === cef);
-  _updateCeSetHeaderBtn();
+  _updateBingoHeroCeBtn();
 }
 
-// Va sur la soirée en cours (gros boutons de la page Dossiers et de la page Bingo).
-function _goToCurrentEvent() {
+// Va sur la soirée en cours (gros boutons des pages Dossiers, Bingo et Tier List). Soirée = template :
+// menu sous le bouton cliqué pour choisir le template, une de ses listes ou en créer une nouvelle.
+function _goToCurrentEvent(e) {
   if (state.currentEventTierlistId) {
-    if (window._switchPage) window._switchPage('tierlist');
-    // Navigation directe sans toggle
-    _tlLocalActiveTierlistId = state.currentEventTierlistId;
-    _tlLocalNoSelection = false;
-    saveUserPrefs({ tlActiveTierlistId: state.currentEventTierlistId, tlNoSelection: false });
-    if (typeof tlRender === 'function') tlRender();
+    const ceTl = tlState.tierlists.find(t => t.id === state.currentEventTierlistId && !t.archived);
+    const root = ceTl ? _tlGroupRoot(ceTl) : null;
+    if (root && root.isTemplate && e && e.currentTarget) {
+      e.stopPropagation();
+      _tlOpenCeChoiceMenu(e.currentTarget, root);
+      return;
+    }
+    _tlGoToTierlistFromAnyPage(state.currentEventTierlistId);
   } else if (state.currentEventFolderId) {
     if (window._switchPage) window._switchPage('bingo');
     // Navigation directe sans toggle
@@ -1114,34 +1051,71 @@ function _goToCurrentEvent() {
   }
 }
 
-// Bouton "En cours" (#btn-ce-set-header, ligne 1 du panneau Tier List, avant Tiers) : grisé si la liste
-// affichée est déjà la soirée en cours. Appelé à chaque renderCurrentEventButton().
-function _updateCeSetHeaderBtn() {
-  _updateBingoHeroCeBtn();
-  const ceSet = document.getElementById('btn-ce-set-header');
-  if (!ceSet) return;
-  if (!document.getElementById('page-tierlist')?.classList.contains('active')) return;
-  const tl = (typeof tlActiveTierlist === 'function') ? tlActiveTierlist() : null;
-  const root = tl && typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
-  const isCurrentEvent = root && state.currentEventTierlistId === root.id;
-  ceSet.classList.toggle('ce-set-disabled', !!isCurrentEvent);
-  // Une AUTRE soirée est en cours (déjà nettoyée des soirées introuvables) : texte blanc + fond
-  // opaque (cf .ce-set-other).
-  ceSet.classList.toggle('ce-set-other', _ceShown && !isCurrentEvent);
-}
-
-// Gros bouton soirée en cours de la page Bingo, à droite de Chemin : visible seulement si une soirée
-// est en cours ET que ce n'est pas celle affichée (état calculé juste avant par renderCurrentEventButton).
+// Gros bouton soirée en cours des pages Bingo et Tier List, à droite de Chemin (et Liste) : visible
+// seulement si une soirée est en cours ET que ce n'est pas celle affichée (état calculé juste avant par
+// renderCurrentEventButton ; _ceHere ne vaut true que sur la page affichée, l'autre bouton est caché avec elle).
 function _updateBingoHeroCeBtn() {
-  const heroBtn = document.getElementById('bingo-hero-current-event');
-  if (!heroBtn) return;
   const show = _ceShown && !_ceHere;
-  heroBtn.style.display = show ? 'inline-flex' : 'none';
-  if (!show) return;
-  const lbl = document.getElementById('bingo-hero-ce-label');
-  if (lbl) lbl.textContent = _ceLabel;
+  [['bingo-hero-current-event', 'bingo-hero-ce-label'], ['tl-hero-current-event', 'tl-hero-ce-label']].forEach(([btnId, lblId]) => {
+    const heroBtn = document.getElementById(btnId);
+    if (!heroBtn) return;
+    heroBtn.style.display = show ? 'inline-flex' : 'none';
+    const lbl = document.getElementById(lblId);
+    if (show && lbl) lbl.textContent = _ceLabel;
+  });
 }
 document.getElementById('bingo-hero-current-event')?.addEventListener('click', _goToCurrentEvent);
+document.getElementById('tl-hero-current-event')?.addEventListener('click', _goToCurrentEvent);
+
+// Ouvre une liste (ou un template) Tier List depuis n'importe quelle page : liste active posée AVANT le
+// changement de page, pour que _switchPage charge son groupe puis fasse le rendu (_tlLoadActivePageContent).
+function _tlGoToTierlistFromAnyPage(id) {
+  const tl = tlState.tierlists.find(t => t.id === id);
+  const root = tl ? _tlGroupRoot(tl) : null;
+  if (root && root.folderId) _tlExpandFolderAncestors(root.folderId);
+  _tlLocalActiveTierlistId = id;
+  _tlLocalNoSelection = false;
+  saveUserPrefs({ activePage: 'tierlist', tlActiveTierlistId: id, tlNoSelection: false });
+  if (window._switchPage) window._switchPage('tierlist');
+}
+
+// Menu de la soirée en cours quand c'est un template (sous le gros bouton cliqué) : le template, ses
+// listes (template affiché "(Template)", son nom est déjà sur le bouton), puis une barre de texte pour
+// créer une nouvelle liste (Entrée = créer et l'ouvrir).
+// Re-clic sur le même bouton = fermer.
+function _tlOpenCeChoiceMenu(anchorBtn, root) {
+  if (_tlActiveCtxMenu && _tlActiveCtxMenu._ceAnchor === anchorBtn && _tlActiveCtxMenu.isConnected) {
+    _tlActiveCtxMenu._close();
+    return;
+  }
+  const { menu, addItem, addSep, close } = _tlMakeCtxMenu(anchorBtn, null);
+  menu._ceAnchor = anchorBtn;
+  addItem('scroll', '(Template)', false, () => _tlGoToTierlistFromAnyPage(root.id));
+  const members = tlState.tierlists.filter(t => !t.archived && t.templateId === root.id);
+  members.forEach(m => addItem('scroll-text', m.name, false, () => _tlGoToTierlistFromAnyPage(m.id)));
+  addSep();
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'tl-ce-new-input';
+  input.placeholder = 'Nouvelle tier list…';
+  // Clic dans la barre : ne doit pas remonter au document (qui fermerait le menu).
+  input.addEventListener('click', ev => ev.stopPropagation());
+  input.addEventListener('keydown', async ev => {
+    if (ev.key !== 'Enter') return;
+    const name = input.value.trim();
+    if (!name) return;
+    close();
+    // Le template doit être chargé en entier (tiers, non placés) avant d'en générer une liste.
+    await _tlEnsureGroupLoaded(root.id);
+    const created = _tlCreateFromTemplate(root.id, name);
+    if (!created) return;
+    tlSave(root.id);
+    _tlGoToTierlistFromAnyPage(created.id);
+  });
+  menu.appendChild(input);
+  _positionMenuBelow(menu, anchorBtn);
+  setTimeout(() => input.focus(), 0);
+}
 
 function setCurrentEventFolder(id) {
   if (state.currentEventFolderId === id) {
@@ -3003,35 +2977,6 @@ function getVisibleGrids() {
 }
 
 
-let _audioCtx = null;
-function _getAudioCtx() {
-  if (!_audioCtx || _audioCtx.state === 'closed') {
-    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if (_audioCtx.state === 'suspended') {
-    _audioCtx.resume();
-  }
-  return _audioCtx;
-}
-
-function playCaptureSound() {
-  try {
-    const ctx = _getAudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.08);
-    gain.gain.setValueAtTime(0.18, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.25);
-  } catch (e) {}
-}
-
-
 // ──────────────────────────────────────────────
 // Grilles (dans le thème actif)
 // ──────────────────────────────────────────────
@@ -3131,7 +3076,7 @@ function renameGrid(id, newName) {
 // à jour (breadcrumb, bouton soirée en cours, nettoyage des sélections obsolètes).
 function renderGridsList() {
   renderGridsBreadcrumb();
-  _updateCeSetHeaderBtn();
+  _updateBingoHeroCeBtn();
   const s = activeSubtheme();
   if (!s) return;
   const activeGrids = s.grids.filter(g => !g.archived);
@@ -3917,7 +3862,7 @@ function _bingoRefreshGenerateState() {
 function _fitBingoLeftColButtons() {
   const col = document.getElementById('bingo-left-col');
   if (!col || !col.offsetParent) return;
-  const els = col.querySelectorAll('.bingo-tools-frame > .btn-action, #btn-bingo-creation, #bingo-creation-group > .btn-action, #bingo-creation-group > .btn-ce-set, #bingo-creation-group .lock-group > .btn-action, #global-size-control');
+  const els = col.querySelectorAll('.bingo-tools-frame > .btn-action, #btn-bingo-creation, #bingo-creation-group > .btn-action, #bingo-creation-group .lock-group > .btn-action, #global-size-control');
   els.forEach(el => { el.style.width = 'max-content'; });
   let w = 0;
   els.forEach(el => { w = Math.max(w, el.getBoundingClientRect().width); });
@@ -6127,6 +6072,23 @@ function _positionPathMenu(menu, anchorEl) {
   });
 }
 
+// Menu ouvert SOUS un gros bouton de la rangée du haut (Chemin/Liste/soirée en cours Tier List), aligné
+// sur son bord gauche, comme le gros Chemin Bingo. Haut fixe, scroll interne si le menu est trop long.
+// Appelé après _tlMakeCtxMenu : son repositionnement (rAF) passe avant celui-ci, qui a donc le dernier mot.
+function _positionMenuBelow(menu, anchorEl) {
+  const aRect = anchorEl.getBoundingClientRect();
+  menu.style.left = aRect.left + 'px';
+  menu.style.top = (aRect.bottom + 4) + 'px';
+  menu.style.maxHeight = (window.innerHeight - aRect.bottom - 16) + 'px';
+  menu.style.overflowY = 'auto';
+  requestAnimationFrame(() => {
+    menu.style.left = aRect.left + 'px';
+    menu.style.top = (aRect.bottom + 4) + 'px';
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 8) menu.style.left = Math.max(8, window.innerWidth - 8 - rect.width) + 'px';
+  });
+}
+
 function positionCtxMenu(menu, e, anchorEl) {
   if (anchorEl) {
     // getBoundingClientRect() retourne des coords viewport → compatible position:fixed directement
@@ -6629,11 +6591,6 @@ newGridNameInput.addEventListener('keydown', e => {
 btnNewGrid.addEventListener('click', () => {
   if (!activeSubtheme()) return;
   openNewGridModal();
-});
-
-document.getElementById('btn-ce-set-header')?.addEventListener('click', () => {
-  const tl = typeof tlActiveTierlist === 'function' ? tlActiveTierlist() : null;
-  if (tl) confirmSetCurrentEventTierlist(tl.id);
 });
 
 const _btnNewFolderInGrids = document.getElementById('btn-new-folder-in-grids');
@@ -7832,7 +7789,7 @@ function _tlFolderPath(folderId) {
 }
 
 // Préfixe de chemin affiché avant le nom de la tierlist : dossiers \ (template) — même logique que
-// le préfixe du titre dans l'éditeur (tlRender), réutilisée pour Export PNG / Capture (_tlBuildCanvas).
+// le préfixe du titre dans l'éditeur (tlRender).
 // Retourne '' si la tierlist est à la racine (pas de dossier, pas de template).
 function _tlTitlePathPrefix(tl) {
   const parts = [];
@@ -8157,7 +8114,6 @@ const tlBtnAddTier        = document.getElementById('tl-btn-add-tier');
 const tlBtnUndo           = document.getElementById('tl-btn-undo');
 const tlBtnReset          = document.getElementById('tl-btn-reset');
 const tlFileInput         = document.getElementById('tl-file-input');
-const tlBtnCapture        = document.getElementById('tl-btn-capture');
 const tlTiersZone         = document.getElementById('tl-tiers-zone');
 const tlUnplacedZone      = document.getElementById('tl-unplaced-zone');
 const tlUnplacedCount     = document.getElementById('tl-unplaced-count');
@@ -8290,7 +8246,7 @@ window.addEventListener('resize', () => {
 });
 
 // ── Rendu principal ───────────────────────────────────────────────────────────
-// Rendu Tier List seulement si sa page est affichée (les modes plein écran/comparaison y basculent
+// Rendu Tier List seulement si sa page est affichée (le mode comparaison y bascule
 // aussi via _switchPage). Sinon seul le bouton "soirée en cours", visible sur toutes les pages et qui
 // peut porter le nom d'une liste, est rafraîchi ; _switchPage refait un tlRender() complet en arrivant
 // sur Tier List. Évite de reconstruire toute la Tier List cachée (images comprises) à chaque case
@@ -8328,18 +8284,17 @@ function tlRender(skipHeightRecalc = false) {
   tlUpdateUndoBtn();
   tlRenderList();
   renderCurrentEventButton();
-  _updateCeSetHeaderBtn();
   const tl = tlActiveTierlist();
   // Le panneau de contrôle (Dossiers + Chemin/Template/Listes du dernier groupe ouvert) reste
   // affiché même sans tierlist/template actif dans le dossier courant — seule la zone éditeur
-  // (titre, tiers, cadre Options Liste, Plein écran…) dépend d'une tierlist active.
+  // (titre, tiers, cadre Options Liste…) dépend d'une tierlist active.
   tlControlPanel.classList.remove('hidden');
   if (!tl || tl.archived) {
     tlEditor.classList.add('hidden');
     tlRenderGroupPanel(null);
     // En mode comparaison, tlActiveTierlist() est null (pas de tierlist "active" unique, voir
     // _tlOpenCompareInline) mais Annuler reste pertinent (undo agit sur le groupe entier) — le
-    // bouton est déplacé dans .tl-compare-toolbar-center (_tlEnterCompareToolbarLayout), donc
+    // bouton est déplacé dans .tl-compare-toolbar-right (_tlEnterCompareToolbarLayout), donc
     // tlRenderGroupPanel(null) ci-dessus l'a caché à tort, le réafficher explicitement ici.
     if (document.body.classList.contains('compare-tierlist-mode')) {
       const tlBtnUndoEl = document.getElementById('tl-btn-undo');
@@ -8410,53 +8365,6 @@ function _tlActiveGroupContext() {
   return { tl, folderId, templatesHere, root };
 }
 
-// Le bouton Chemin garde sa largeur NATURELLE comme Template/Liste (pas de largeur commune —
-// ça les écrasait tous à la largeur du plus étroit, texte illisible/chevauchant, voir capture
-// rapportée). Seule sa largeur est plafonnée (160px) puisque son texte peut être très long ; au-delà
-// il wrap sur 2 lignes + réduit sa police si besoin. La hauteur du bouton est FIXE (32px, comme
-// Template/Liste, voir .tl-toolbar-btn.tl-btn-path en CSS) — jamais question de la faire varier.
-// Le texte doit donc être contraint à tenir dans ces 32px : on réduit la police jusqu'à ce que les
-// lignes réellement occupées (measurées après chaque changement de taille, pas juste "arrondi à 2")
-// tiennent dans la hauteur du bouton ; si même la plus petite taille déborde encore (chemin
-// extrêmement long), on tronque avec ellipsis en dernier recours plutôt que de laisser déborder
-// (bug initial : le calcul visait "≤2 lignes" sans jamais vérifier que 2 lignes à cette taille de
-// police tenaient réellement dans 32px, d'où débordement visuel du texte hors du bouton).
-const TL_PATH_BTN_HEIGHT = 32;
-function _tlFitPathBtnLabel(labelEl) {
-  const btn = labelEl.closest('.tl-btn-path');
-  if (!btn) return;
-  const maxWidth = window.innerWidth * 0.25;
-  btn.style.width = '';
-  labelEl.style.whiteSpace = '';
-  labelEl.style.wordBreak = '';
-  labelEl.style.fontSize = '';
-  labelEl.style.overflow = '';
-  labelEl.style.textOverflow = '';
-  labelEl.style.display = '';
-  labelEl.style.webkitLineClamp = '';
-  labelEl.style.webkitBoxOrient = '';
-  const naturalWidth = btn.scrollWidth;
-  if (naturalWidth <= maxWidth) return;
-  btn.style.width = maxWidth + 'px';
-  labelEl.style.whiteSpace = 'normal';
-  labelEl.style.wordBreak = 'break-word';
-  const baseFontSize = parseFloat(getComputedStyle(labelEl).fontSize);
-  const sizes = [1, 0.88, 0.78, 0.68, 0.6, 0.52];
-  let fits = false;
-  for (const scale of sizes) {
-    labelEl.style.fontSize = (baseFontSize * scale) + 'px';
-    if (labelEl.scrollHeight <= TL_PATH_BTN_HEIGHT) { fits = true; break; }
-  }
-  if (!fits) {
-    // Dernier recours : tronque avec ellipsis sur 2 lignes plutôt que de déborder du bouton.
-    labelEl.style.overflow = 'hidden';
-    labelEl.style.textOverflow = 'ellipsis';
-    labelEl.style.display = '-webkit-box';
-    labelEl.style.webkitLineClamp = '2';
-    labelEl.style.webkitBoxOrient = 'vertical';
-  }
-}
-
 // Panneau de contrôle tier list : bulles des tierlists d'un même groupe (template + générées),
 // sélection unique — cliquer une bulle ouvre directement cette tierlist (pas de multi-affichage
 // comme pour les grilles bingo, une tier list ne s'affiche jamais qu'une à la fois).
@@ -8466,31 +8374,24 @@ function tlRenderGroupPanel(tl) {
   // séparé : le menu Chemin liste déjà les templates sous chaque dossier).
   const folderPath = (_tlFolderPath(folderId) || 'Racine') + (root ? ' \\ ' + root.name : '');
 
-  // Dropdown Chemin : toujours visible dès qu'un dossier est sélectionné ou qu'une tierlist est
-  // active (contrairement à Template/Listes/Comparaison/Plein écran, qui dépendent d'un template).
-  const tlPathWrap = document.getElementById('tl-btn-path-dropdown')?.closest('.tl-labeled-btn');
-  if (tlPathWrap) tlPathWrap.classList.toggle('hidden', !folderId && !tl);
+  // Gros bouton Chemin (rangée du haut #tl-hero) : toujours visible, comme le gros Chemin Bingo
+  // ("Racine" si aucun dossier). Texte trop long : coupé avec "…" (CSS .bingo-hero-path).
   const tlPathDropdownLabel = document.getElementById('tl-path-dropdown-label');
-  if (tlPathDropdownLabel) {
-    tlPathDropdownLabel.textContent = folderPath;
-    _tlFitPathBtnLabel(tlPathDropdownLabel);
-  }
+  if (tlPathDropdownLabel) tlPathDropdownLabel.textContent = folderPath;
 
-  const tlTierlistWrap = document.getElementById('tl-btn-tierlist-dropdown')?.closest('.tl-labeled-btn');
+  // Gros bouton Liste : seulement s'il y a un template dans ce dossier (sinon il n'aurait rien à lister).
+  const tlTierlistBtn = document.getElementById('tl-btn-tierlist-dropdown');
+  if (tlTierlistBtn) tlTierlistBtn.classList.toggle('hidden', !root);
   const tlBtnCompare = document.getElementById('tl-btn-compare');
-  const tlBtnOpenWindow = document.getElementById('tl-btn-open-window');
-
-  if (tlTierlistWrap) tlTierlistWrap.classList.remove('hidden');
 
   const tlTierlistDropdownLabel = document.getElementById('tl-tierlist-dropdown-label');
 
   const tlBtnUndoEl = document.getElementById('tl-btn-undo');
 
   if (!root) {
-    // Dossier sans aucun template : Listes n'affiche rien, Comparaison/Plein écran/Annuler cachés.
+    // Dossier sans aucun template : Liste caché, Comparaison/Annuler cachés.
     if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = '';
     if (tlBtnCompare) tlBtnCompare.classList.add('hidden');
-    if (tlBtnOpenWindow) tlBtnOpenWindow.classList.add('hidden');
     if (tlBtnUndoEl) tlBtnUndoEl.classList.add('hidden');
     if (window.lucide) lucide.createIcons();
     return;
@@ -8498,16 +8399,12 @@ function tlRenderGroupPanel(tl) {
 
   const members = tlState.tierlists.filter(t => !t.archived && (t.id === root.id || t.templateId === root.id));
 
-  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate && tl.templateId === root.id) ? tl.name : (tl && tl.isTemplate ? '(template)' : '');
+  if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate && tl.templateId === root.id) ? tl.name : (tl && tl.isTemplate ? '(Template)' : '');
 
-  // Plein écran/Comparaison/Annuler n'ont de sens que si une tierlist de CE groupe est réellement
+  // Comparaison/Annuler n'ont de sens que si une tierlist de CE groupe est réellement
   // affichée dans l'éditeur (pas seulement un dossier sélectionné sans tierlist active). Annuler
   // reste visible sur un template comme sur une liste générée (undo agit sur tiers/images des deux).
-  // Plein écran, lui, n'a de sens que sur une liste générée : un template n'a pas de mode plein
-  // écran dédié (_applySoloTierlistModeIfNeeded masque Tiers/Reset pour permettre de changer de
-  // liste sans repasser en mode normal — un template n'a pas cette notion de "changer de liste").
   const tlIsGroupMember = !!(tl && (tl.id === root.id || tl.templateId === root.id));
-  if (tlBtnOpenWindow) tlBtnOpenWindow.classList.toggle('hidden', !tlIsGroupMember || tl.isTemplate);
   if (tlBtnCompare) tlBtnCompare.classList.toggle('hidden', !tlIsGroupMember || members.filter(m => !m.isTemplate).length < 2);
   if (tlBtnUndoEl) tlBtnUndoEl.classList.toggle('hidden', !tlIsGroupMember);
   if (window.lucide) lucide.createIcons();
@@ -9613,54 +9510,6 @@ if (tlCompareShowLabelsToggle) {
   });
 }
 
-// Assemble les canvas de chaque tierlist comparée côte à côte (même rendu que _tlBuildCanvas,
-// donc respecte déjà la préférence _tlLocalShowLabels et la taille locale).
-async function _tlBuildCompareCanvas() {
-  const tls = _tlCompareTierlists;
-  if (!tls || tls.length === 0) return null;
-  const canvases = await Promise.all(tls.map(tl => _tlBuildCanvas(tl)));
-  const gap = 16;
-  const totalWidth = canvases.reduce((sum, c) => sum + c.width, 0) + gap * (canvases.length - 1);
-  const totalHeight = Math.max(...canvases.map(c => c.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = totalWidth;
-  canvas.height = totalHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#18181c';
-  ctx.fillRect(0, 0, totalWidth, totalHeight);
-  let x = 0;
-  for (const c of canvases) {
-    ctx.drawImage(c, x, 0);
-    x += c.width + gap;
-  }
-  return canvas;
-}
-
-function tlCompareExport() {
-  _tlBuildCompareCanvas().then(canvas => {
-    if (!canvas) return;
-    const link = document.createElement('a');
-    link.download = 'comparaison_tierlists.png';
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  });
-}
-
-function tlCompareCapture() {
-  _tlBuildCompareCanvas().then(canvas => {
-    if (!canvas) return;
-    canvas.toBlob(blob => {
-      if (!blob) return;
-      navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
-        playCaptureSound();
-      }).catch(err => {
-        console.warn('TL Compare capture clipboard error:', err);
-      });
-    }, 'image/png');
-  });
-}
-
-document.getElementById('tl-compare-btn-capture')?.addEventListener('click', () => openTlCaptureChoiceModal(tlCompareCapture, tlCompareExport));
 document.getElementById('tl-compare-btn-exit')?.addEventListener('click', _exitCompareTierlistMode);
 
 // Peuple la zone "non placées" (vide-la d'abord). Factorisé pour être réutilisé par le patch
@@ -10717,191 +10566,6 @@ function tlConfirmRenameImg() {
   tlSave(_tlForSave ? _tlGroupRoot(_tlForSave).id : undefined);
   tlRender();
   if (isNew && afterConfirm) afterConfirm();
-}
-
-// Dessine une image dans un carré size×size en respectant son ratio (comme object-fit:contain
-// sur .tl-img-card img à l'écran), fond surface pour les bandes vides plutôt que d'étirer/déformer.
-function _tlDrawImageContain(ctx, img, x, y, size) {
-  ctx.fillStyle = '#2a2a32';
-  ctx.fillRect(x, y, size, size);
-  const ratio = Math.min(size / img.width, size / img.height);
-  const w = img.width * ratio;
-  const h = img.height * ratio;
-  ctx.drawImage(img, x + (size - w) / 2, y + (size - h) / 2, w, h);
-}
-
-// Découpe un texte en lignes tenant dans maxWidth (mot par mot, coupe un mot trop long au caractère
-// près) — reproduit le word-break:break-word de .tl-tier-label-text, qui wrappe au lieu de déborder.
-function _tlWrapText(ctx, text, maxWidth) {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines = [];
-  let line = '';
-  const pushWord = (word) => {
-    const test = line ? line + ' ' + word : word;
-    if (ctx.measureText(test).width <= maxWidth || !line) {
-      line = test;
-    } else {
-      lines.push(line);
-      line = word;
-    }
-  };
-  words.forEach(word => {
-    if (ctx.measureText(word).width <= maxWidth) { pushWord(word); return; }
-    // Mot seul plus large que maxWidth : le couper caractère par caractère
-    if (line) { lines.push(line); line = ''; }
-    let chunk = '';
-    for (const ch of word) {
-      const test = chunk + ch;
-      if (ctx.measureText(test).width > maxWidth && chunk) { lines.push(chunk); chunk = ch; }
-      else chunk = test;
-    }
-    line = chunk;
-  });
-  if (line) lines.push(line);
-  return lines;
-}
-
-// Dessine tier.label centré dans labelW, multi-ligne (comme .tl-tier-label-text à l'écran :
-// word-break: break-word, max-width 128px, line-height 1.1) ; réduit la police en dernier recours
-// seulement si le label ne tient vraiment pas dans tierH (tier très bas + label très long).
-function _tlDrawTierLabel(ctx, label, x, y, labelW, tierH, baseFontSize) {
-  const maxTextWidth = labelW - 12;
-  let fontSize = baseFontSize;
-  let lines;
-  do {
-    ctx.font = `bold ${fontSize}px Arial`;
-    lines = _tlWrapText(ctx, label, maxTextWidth);
-    if (lines.length * fontSize * 1.1 <= tierH - 8 || fontSize <= 10) break;
-    fontSize -= 2;
-  } while (true);
-  ctx.font = `bold ${fontSize}px Arial`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const lineHeight = fontSize * 1.1;
-  const startY = y + tierH / 2 - (lines.length - 1) * lineHeight / 2;
-  lines.forEach((l, i) => ctx.fillText(l, x + labelW / 2, startY + i * lineHeight, maxTextWidth));
-}
-
-// ── Canvas partagé Export/Capture ────────────────────────────────────────────
-async function _tlBuildCanvas(tl) {
-  // Même taille que celle affichée à l'écran : la préférence locale (slider "Taille") prévaut sur
-  // tl.imgSize, comme dans tlRender()/tlRenderTiers()/tlRenderUnplaced() — sinon l'export ne
-  // correspond plus à ce que l'utilisateur voit s'il n'a pas sauvegardé cette taille sur la tierlist.
-  const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : _tlClampImgSize(tl.imgSize);
-  const showLabels = _tlLocalShowLabels !== null ? _tlLocalShowLabels : !!tl.showLabels;
-  const labelW = 140;
-  const padding = 6;
-  const rowGap = 4;
-  const imgGap = 4;
-  // .tl-tier-label-cell a une taille fixe (1.1rem = 17.6px), indépendante de la taille des images
-  // (contrairement à ce que labelFontSize proportionnel à imgSize laissait croire à l'écran).
-  const labelFontSize = 17.6;
-  // Largeur réelle affichée à l'écran (fluide, dépend de la fenêtre) plutôt qu'une valeur fixe,
-  // sinon la capture/export ne correspond plus à ce que l'utilisateur voit sur un écran large.
-  const totalWidth = Math.round(tlTiersZone?.getBoundingClientRect().width) || 860;
-
-  const canvas = document.createElement('canvas');
-  const measureCtx = canvas.getContext('2d');
-  // Carte texte : même rendu qu'à l'écran (.tl-text-card-content : 0.78rem, line-height 1.2,
-  // padding 4px) — largeur imgSize, hauteur au strict minimum de son texte.
-  const textFontPx = 12.5;
-  const textLineH = Math.round(textFontPx * 1.2);
-  const textFont = `${textFontPx}px Arial`;
-  measureCtx.font = textFont;
-
-  // Mise en page façon flex-wrap aligné en haut (cf. .tl-img-card--text) : chaque ligne prend la
-  // hauteur de sa carte la plus haute, les cartes texte ne s'étirent pas.
-  const groupImages = _tlGetGroupImages(tl);
-  const tierLayouts = tl.tiers.map(tier => {
-    const items = [];
-    let x = labelW + padding, rowTop = padding, rowH = 0;
-    for (const imgId of tier.items) {
-      const imgData = groupImages.find(i => i.id === imgId) || null;
-      if (!imgData) continue;
-      const isText = (imgData.type || 'image') === 'text';
-      const lines = isText ? _tlWrapText(measureCtx, imgData.name, imgSize - 8) : null;
-      const h = isText ? lines.length * textLineH + 8 : imgSize;
-      if (x + imgSize > totalWidth - padding && x > labelW + padding) {
-        x = labelW + padding; rowTop += rowH + imgGap; rowH = 0;
-      }
-      items.push({ imgData, isText, lines, x, top: rowTop, h });
-      rowH = Math.max(rowH, h);
-      x += imgSize + imgGap;
-    }
-    const height = Math.max(imgSize + padding * 2, rowTop + rowH + padding);
-    return { items, height };
-  });
-  const tierHeights = tierLayouts.map(l => l.height);
-
-  canvas.width = totalWidth;
-  canvas.height = tierHeights.reduce((a, b) => a + b + rowGap, 0) + 40;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#18181c';
-  ctx.fillRect(0, 0, totalWidth, canvas.height);
-  ctx.fillStyle = '#e8e8f0';
-  ctx.font = 'bold 18px Arial';
-  // Titre = chemin complet (dossiers | template | nom), pas seulement le nom de la tierlist.
-  ctx.fillText(_tlFullTitlePath(tl), 12, 26, totalWidth - 24);
-
-  const loadImage = (src) => new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
-
-  let y = 36;
-  for (let i = 0; i < tl.tiers.length; i++) {
-    const tier = tl.tiers[i];
-    const tierH = tierHeights[i];
-    ctx.fillStyle = tier.color;
-    ctx.fillRect(0, y, labelW, tierH);
-    ctx.fillStyle = '#111';
-    _tlDrawTierLabel(ctx, tier.label, 0, y, labelW, tierH, labelFontSize);
-    ctx.fillStyle = '#22222a';
-    ctx.fillRect(labelW, y, totalWidth - labelW, tierH);
-    for (const { imgData, isText, lines, x, top, h } of tierLayouts[i].items) {
-      const rowY = y + top;
-      if (isText) {
-        ctx.fillStyle = imgData.color || '#3a3a42';
-        ctx.fillRect(x, rowY, imgSize, h);
-        ctx.fillStyle = '#fff';
-        ctx.font = textFont;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        lines.forEach((l, li) => ctx.fillText(l, x + imgSize / 2, rowY + 4 + li * textLineH + textLineH / 2, imgSize - 8));
-      } else {
-        const imgEl = await loadImage(imgData.src);
-        if (imgEl) _tlDrawImageContain(ctx, imgEl, x, rowY, imgSize);
-      }
-      if (showLabels && !isText) {
-        ctx.fillStyle = 'rgba(0,0,0,0.72)';
-        ctx.fillRect(x, rowY + imgSize - 16, imgSize, 16);
-        ctx.fillStyle = '#e8e8f0';
-        ctx.font = 'bold 10px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(imgData.name.slice(0, 14), x + imgSize / 2, rowY + imgSize - 8);
-      }
-    }
-    y += tierH + rowGap;
-  }
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  return canvas;
-}
-
-// ── Export PNG ────────────────────────────────────────────────────────────────
-function tlExport() {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-  _tlBuildCanvas(tl).then(canvas => {
-    const link = document.createElement('a');
-    link.download = (tl.name || 'tierlist').replace(/[^a-z0-9]/gi, '_') + '.png';
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  });
 }
 
 // ── Export des images d'un template (téléchargement individuel de chaque image) ──
@@ -11961,22 +11625,6 @@ function tlOpenManageModal(id, anchorEl, context) {
   addItem('trash-2', 'Supprimer', true, () => confirmDelete(tl.isTemplate ? `le template "${tl.name}" et toutes ses listes` : `la liste "${tl.name}"`, () => tlDelete(id)));
 }
 
-// ── Capture Tierlist (presse-papier) ─────────────────────────────────────────
-function tlCapture() {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-  _tlBuildCanvas(tl).then(canvas => {
-    canvas.toBlob(blob => {
-      if (!blob) return;
-      navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
-        playCaptureSound();
-      }).catch(err => {
-        console.warn('TL Capture clipboard error:', err);
-      });
-    }, 'image/png');
-  });
-}
-
 // ── Ouverture de la page Dossiers (onglet Tier List) ──────────────────────────
 // openTlSidebar définie plus haut (stub de compat → openFoldersPage('tierlist')).
 document.getElementById('tl-empty-btn-folders').addEventListener('click', () => openFoldersPage('tierlist'));
@@ -11989,15 +11637,6 @@ if (_tlFoldersSortSelect) {
   });
 }
 
-document.getElementById('tl-btn-open-window').addEventListener('click', () => {
-  const tl = tlActiveTierlist();
-  if (!tl) return;
-  document.title = (_tlFullTitlePath(tl) || tl.name || 'Liste');
-  document.body.classList.add('solo-tierlist-mode');
-  _tlEnterSoloToolbarLayout();
-  requestAnimationFrame(_adjustTlLayoutHeight);
-});
-document.getElementById('tl-btn-exit-solo')?.addEventListener('click', _exitSoloTierlistMode);
 
 // Ligne composite pour les dropdowns Template/Tier lists : nom cliquable (switch) + bouton ⋮
 // (renommer/dupliquer/archiver/supprimer…, via le même tlOpenManageModal que partout ailleurs).
@@ -12176,11 +11815,24 @@ if (_tlBtnPathDropdown) {
     _tlRenderPathMenuRows(menu, activeFolders, close, true);
     // Redessin après une action de son sous-menu clic droit (ex. Dupliquer), cf _tlMakeCtxMenu.
     menu._rerender = () => _tlRenderPathMenuRows(menu, (tlState.folders || []).filter(f => !f.archived), close);
-    // Repositionne par-dessus le positionnement générique de _tlMakeCtxMenu (haut fixe, scroll
-    // interne — cf _positionPathMenu, jamais de décalage du haut selon les chemins dépliés).
-    _positionPathMenu(menu, _tlBtnPathDropdown);
+    // Repositionne SOUS le gros bouton, comme le gros Chemin Bingo (haut fixe, scroll interne).
+    _positionMenuBelow(menu, _tlBtnPathDropdown);
   });
 }
+
+// Clic droit sur les gros boutons Chemin et Liste : menu d'options ouvert au curseur (comme le gros Chemin
+// Bingo). Fausse ancre = point cliqué (_tlMakeCtxMenu ne lit que son getBoundingClientRect).
+function _tlCursorAnchor(e) {
+  return { getBoundingClientRect: () => ({ top: e.clientY, bottom: e.clientY, left: e.clientX, right: e.clientX, width: 0, height: 0 }) };
+}
+// Chemin : options du template affiché (dernier élément du chemin), sinon du dossier affiché.
+_tlBtnPathDropdown?.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  const { root, folderId } = _tlActiveGroupContext();
+  if (root) tlOpenManageModal(root.id, _tlCursorAnchor(e), 'folders');
+  else if (folderId) tlOpenFolderManageModal(folderId, _tlCursorAnchor(e));
+});
 
 // ── Dropdown Tier lists : liste les tier lists du groupe actif + option "Nouvelle" ──
 const _tlBtnTierlistDropdown = document.getElementById('tl-btn-tierlist-dropdown');
@@ -12191,16 +11843,20 @@ if (_tlBtnTierlistDropdown) {
     if (!root) return;
     const members = tlState.tierlists.filter(t => !t.archived && t.templateId === root.id);
     const { menu, addItem, addSep, close } = _tlMakeCtxMenu(_tlBtnTierlistDropdown, null);
-    // En plein écran, un template ne peut pas s'afficher (voir _applySoloTierlistModeIfNeeded) :
-    // on ne propose donc que les listes générées, jamais le template lui-même.
-    if (!document.body.classList.contains('solo-tierlist-mode')) {
-      _tlAddDropdownSwitchItem(menu, root, !!tl && root.id === tl.id, close, root.name + ' (template)');
-      addSep();
-    }
+    _tlAddDropdownSwitchItem(menu, root, !!tl && root.id === tl.id, close, '(Template)');
+    addSep();
     members.forEach(member => _tlAddDropdownSwitchItem(menu, member, !!tl && member.id === tl.id, close));
     if (members.length) addSep();
-    addItem('', '+ Liste', 'green', () => tlOpenGenerateFromTemplateModal(root.id));
+    addItem('', '+ Tier list', 'green', () => tlOpenGenerateFromTemplateModal(root.id));
     if (window.lucide) lucide.createIcons({ root: menu });
+    _positionMenuBelow(menu, _tlBtnTierlistDropdown);
+  });
+  // Clic droit : options de la liste affichée (même menu que le ⋮ de son menu Liste).
+  _tlBtnTierlistDropdown.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const tl = tlActiveTierlist();
+    if (tl) tlOpenManageModal(tl.id, _tlCursorAnchor(e), 'dropdown');
   });
 }
 
@@ -12486,33 +12142,7 @@ function tlRenderTrashList() {
   if (window.lucide) lucide.createIcons({ root: container });
 }
 
-tlBtnCapture?.addEventListener('click', () => openTlCaptureChoiceModal(tlCapture, tlExport));
 document.getElementById('tl-btn-export-images')?.addEventListener('click', tlExportImages);
-
-// ── Modal choix Capture tierlist (capture d'écran presse-papier ou export PNG) ──
-const modalTlCaptureChoice = document.getElementById('modal-tl-capture-choice');
-let _tlCaptureChoiceScreenshotFn = null;
-let _tlCaptureChoiceExportFn = null;
-function openTlCaptureChoiceModal(screenshotFn, exportFn) {
-  _tlCaptureChoiceScreenshotFn = screenshotFn;
-  _tlCaptureChoiceExportFn = exportFn;
-  modalTlCaptureChoice.classList.remove('hidden');
-}
-function closeTlCaptureChoiceModal() {
-  modalTlCaptureChoice.classList.add('hidden');
-  _tlCaptureChoiceScreenshotFn = null;
-  _tlCaptureChoiceExportFn = null;
-}
-document.getElementById('btn-tl-capture-choice-screenshot').addEventListener('click', () => {
-  const fn = _tlCaptureChoiceScreenshotFn;
-  closeTlCaptureChoiceModal();
-  if (fn) fn();
-});
-document.getElementById('btn-tl-capture-choice-export').addEventListener('click', () => {
-  const fn = _tlCaptureChoiceExportFn;
-  closeTlCaptureChoiceModal();
-  if (fn) fn();
-});
 
 tlShowLabelsToggle.addEventListener('click', () => {
   const tl = tlActiveTierlist();
@@ -13391,9 +13021,9 @@ function _tlStartTierlistListeners() {
     _tlSelectInitialTierlistIfNeeded();
     const pending = [];
     // Contenu lourd (images/tiers) chargé seulement si la page Tier List est affichée, ou si un lien
-    // direct la nécessite hors page (solo/comparaison) — sinon laissé à la charge de
+    // direct la nécessite hors page (comparaison) — sinon laissé à la charge de
     // _tlLoadActivePageContent(), déclenché quand l'utilisateur navigue vers Tier List (cf _switchPage).
-    if (_currentPage === 'tierlist' || _soloTierlistId || _compareTierlistIds.length >= 2) {
+    if (_currentPage === 'tierlist' || _compareTierlistIds.length >= 2) {
       _tlUpdateActiveGroupSubscription();
       const activeTl = tlState.tierlists.find(t => t.id === _tlLocalActiveTierlistId);
       if (activeTl) pending.push(_tlEnsureGroupLoaded(_tlGroupRoot(activeTl).id));
@@ -13404,7 +13034,6 @@ function _tlStartTierlistListeners() {
     }
     _tlRemoteUpdate = false;
     Promise.all(pending).catch(() => {}).then(() => {
-      _applySoloTierlistModeIfNeeded();
       _applyCompareTierlistModeIfNeeded();
       _tlRenderIfVisible();
       _openCurrentEventAtStartupIfNeeded();
@@ -13463,14 +13092,14 @@ function _homeGoToTlTierlist(tl) {
 // Dossiers), une seule fois par chargement. Attend les prefs (qui fixent le bingo/la liste actifs) et
 // l'index Bingo (qui porte la soirée en cours), plus l'index Tier List si la soirée est une liste —
 // appelée à la fin de _applyPrefsAndRender et du premier rendu de l'index Tier List. Jamais si
-// l'utilisateur a déjà changé de page entre-temps, ni sur un lien direct plein écran/comparaison.
+// l'utilisateur a déjà changé de page entre-temps, ni sur un lien direct de comparaison.
 function _openCurrentEventAtStartupIfNeeded() {
   // _prefsAppliedOnce : ne jamais changer de page pendant qu'_applyPrefsAndRender est encore en cours
   // (son rendu de fin suppose la page qu'elle a vue au départ). Index Tier List toujours attendu : la
   // page affichée au démarrage (même Dossiers) doit être complète avant d'apparaître (cf _revealApp).
   if (_startupCeDone || !_prefsReady || !_firebaseReady || !_prefsAppliedOnce || !_tlIndexReady) return;
   _startupCeDone = true;
-  if (_userNavigated || _soloTierlistId || _compareTierlistIds.length >= 2) { _revealApp(); return; }
+  if (_userNavigated || _compareTierlistIds.length >= 2) { _revealApp(); return; }
   const tl = state.currentEventTierlistId
     ? tlState.tierlists.find(t => t.id === state.currentEventTierlistId && !t.archived) : null;
   if (tl) {

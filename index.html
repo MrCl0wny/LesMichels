@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=367" />
+  <link rel="stylesheet" href="style.css?v=370" />
   <!-- Couleurs choisies (Préférences) appliquées dès le chargement, sans attendre Firebase ni app.js. -->
   <script>try { var _ct = localStorage.getItem('lmColorTheme'); if (_ct && _ct !== 'gray') document.documentElement.setAttribute('data-color-theme', _ct); } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -143,45 +143,36 @@
             </div>
           </label>
           <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
-          <button class="tl-toolbar-btn tl-btn-capture" id="tl-compare-btn-capture" title="Capturer la comparaison"><i data-lucide="camera"></i> Capture</button>
         </div>
-        <div class="tl-compare-toolbar-center"></div>
-        <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-compare-btn-exit" title="Quitter le mode comparaison"><i data-lucide="x"></i> Quitter comparaison</button>
+        <div class="tl-compare-toolbar-center">
+          <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-compare-btn-exit" title="Quitter le mode comparaison"><i data-lucide="x"></i> Quitter comparaison</button>
+        </div>
+        <!-- Annuler y est déplacé en JS (_tlEnterCompareToolbarLayout). -->
+        <div class="tl-compare-toolbar-right"></div>
       </div>
       <div id="tl-compare-view" class="tl-compare-view hidden"></div>
       <div id="tl-compare-lists-menu" class="ctx-menu hidden"></div>
+
+      <!-- ── Rangée du haut, comme la page Bingo : gros boutons Chemin et Liste centrés (sans titre,
+           même couleur que le gros Chemin Bingo) et, si la soirée en cours n'est pas le groupe affiché,
+           gros bouton soirée en cours à leur droite (_updateBingoHeroCeBtn). ── -->
+      <div class="bingo-hero" id="tl-hero">
+        <button class="bingo-hero-path" id="tl-btn-path-dropdown" title="Aller à un dossier"><i data-lucide="road"></i> <span id="tl-path-dropdown-label"></span></button>
+        <button class="bingo-hero-path hidden" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une liste"><i data-lucide="scroll-text"></i> <span id="tl-tierlist-dropdown-label"></span></button>
+        <button class="home-ce-btn" id="tl-hero-current-event" style="display:none" title="Aller à la soirée en cours"><i data-lucide="party-popper"></i> <span id="tl-hero-ce-label"></span></button>
+      </div>
 
       <!-- ── Panneau de contrôle tier list (cadre séparé, comme le Bingo) ── -->
       <div class="tl-control-panel hidden" id="tl-control-panel">
         <div class="tl-control-panel-body" id="tl-control-panel-body">
 
-          <!-- Ligne 1 : Dossiers + Chemin (dossiers + template)/Liste (avec mini-titres centrés) à gauche,
-               rien au centre, Non placés à droite. -->
-          <div class="ctrl-row ctrl-row-line1">
-            <div class="ctrl-row-grids-left tl-group-row">
-              <div class="tl-labeled-btn tl-group-elem hidden tl-shrink-0">
-                <span class="tl-labeled-btn-label">Chemin</span>
-                <button class="tl-toolbar-btn tl-btn-neutral tl-btn-path" id="tl-btn-path-dropdown" title="Aller à un dossier"><i data-lucide="road"></i> <span id="tl-path-dropdown-label"></span></button>
-              </div>
-              <div class="tl-labeled-btn tl-group-elem hidden tl-shrink-0">
-                <span class="tl-labeled-btn-label">Liste</span>
-                <button class="tl-toolbar-btn tl-btn-blue" id="tl-btn-tierlist-dropdown" title="Choisir ou créer une liste"><i data-lucide="scroll-text"></i> <span id="tl-tierlist-dropdown-label"></span></button>
-              </div>
-              <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
-              <input type="file" id="tl-file-input-replace" accept="image/*" class="hidden" />
-            </div>
-            <div class="ctrl-row-grids-center"></div>
-            <div class="ctrl-row-grids-right">
-              <button class="btn-ce-set" id="btn-ce-set-header" title="Définir la liste affichée comme soirée en cours"><i data-lucide="party-popper"></i> En cours</button>
-              <button class="tl-toolbar-btn tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Tiers</button>
-              <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Non placés</button>
-            </div>
-          </div>
-
-          <!-- Ligne 2 : cadre Options Liste à gauche (masqué sur un template ou sans liste
-               active), Annuler centré, Comparaison + Plein écran à droite. -->
+          <!-- Une seule rangée : Tiers + cadre Options Liste (Taille/Noms/Reset, masqué sur un template ou
+               sans liste active) à gauche, Comparaison centré, Annuler + Non placés à droite. -->
           <div class="ctrl-row ctrl-row-toolbar tl-ctrl-row-toolbar">
+            <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
+            <input type="file" id="tl-file-input-replace" accept="image/*" class="hidden" />
             <div class="ctrl-row-toolbar-left">
+              <button class="tl-toolbar-btn tl-btn-add-tier tl-shrink-0" id="tl-btn-add-tier" title="Gérer les tiers : presets, import, ajout"><i data-lucide="settings"></i> Tiers</button>
               <div class="tl-list-options-frame" id="tl-list-options-frame">
                 <label class="tl-toggle-label tl-shrink-0" id="tl-img-size-label" title="Régler la taille des images (100–200 px)">
                   <span class="tl-toggle-label-head">Taille <input type="number" id="tl-img-size-value-input" min="100" max="200" value="100" class="tl-split-value-input" /></span>
@@ -189,31 +180,16 @@
                     <input type="range" id="tl-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
                   </div>
                 </label>
-                <button class="tl-toolbar-btn tl-shrink-0" id="tl-btn-capture" title="Capturer la liste"><i data-lucide="camera"></i> Capture</button>
                 <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
                 <button class="tl-toolbar-btn tl-btn-reset tl-shrink-0" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
               </div>
             </div>
             <div class="ctrl-row-toolbar-center">
-              <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
-            </div>
-            <div class="ctrl-row-toolbar-right">
-              <button class="tl-toolbar-btn tl-btn-yellow tl-btn-open-window tl-group-elem" id="tl-btn-open-window" title="Ouvrir cette liste en plein écran"><i data-lucide="fullscreen"></i> Plein écran</button>
               <button class="tl-toolbar-btn tl-btn-yellow tl-group-elem hidden" id="tl-btn-compare" title="Comparer plusieurs listes de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparaison</button>
             </div>
-          </div>
-
-          <!-- Barre plein écran : cadre Options Liste + Annuler à gauche,
-               Non placés + Quitter à droite. #tl-btn-toggle-unplaced,
-               #tl-btn-undo et #tl-list-options-frame sont les mêmes éléments physiques que le mode
-               normal, déplacés ici en JS (jamais deux jeux de contrôles désynchronisés) — voir
-               _tlEnterSoloToolbarLayout/_tlExitSoloToolbarLayout. Pas de chemin en texte : la
-               barre plein écran est purement fonctionnelle, sans titre. -->
-          <div class="ctrl-row tl-solo-toolbar btn-fullscreen-only">
-            <div class="tl-solo-toolbar-left"></div>
-            <div class="tl-solo-toolbar-center"></div>
-            <div class="tl-solo-toolbar-right">
-              <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-btn-exit-solo" title="Quitter le mode plein écran"><i data-lucide="x"></i> Quitter plein écran</button>
+            <div class="ctrl-row-toolbar-right">
+              <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
+              <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Non placés</button>
             </div>
           </div>
 
@@ -975,22 +951,6 @@
     </div>
   </div>
 
-  <!-- Modal choix Capture tierlist (capture d'écran presse-papier ou export PNG) -->
-  <div id="modal-tl-capture-choice" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Capture</h3>
-      </div>
-      <div class="modal-body">
-        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Copier une capture d'écran dans le presse-papier ou exporter en PNG ?</p>
-        <div class="modal-actions modal-actions-wrap">
-          <button class="btn-action" id="btn-tl-capture-choice-screenshot"><i data-lucide="camera"></i> Capture d'écran</button>
-          <button class="btn-action" id="btn-tl-capture-choice-export"><i data-lucide="download"></i> Export PNG</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Modal choix Générer (toutes les cases ou seulement les vides) -->
   <div id="modal-generate-choice" class="modal-overlay hidden">
     <div class="modal-box modal-box-sm">
@@ -1137,6 +1097,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=516"></script>
+  <script src="app.js?v=519"></script>
 </body>
 </html>
