@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=370" />
+  <link rel="stylesheet" href="style.css?v=371" />
   <!-- Couleurs choisies (Préférences) appliquées dès le chargement, sans attendre Firebase ni app.js. -->
   <script>try { var _ct = localStorage.getItem('lmColorTheme'); if (_ct && _ct !== 'gray') document.documentElement.setAttribute('data-color-theme', _ct); } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -231,13 +231,6 @@
                      (--tl-split). Liste générée uniquement (masquée sur un template, voir CSS). -->
                 <button type="button" id="tl-split-handle" class="tl-split-handle" title="Glisser pour régler la place du cadre Éléments non placés"><i data-lucide="unfold-horizontal"></i></button>
                 <div class="tl-unplaced-top">
-                  <div id="tl-toplace-zone" class="tl-toplace-zone"
-                       data-dropzone="toplace"
-                       ondragover="tlToPlaceDragOver(event)" ondrop="tlDrop(event, '__toplace__')"
-                       ondragleave="tlToPlaceDragLeave(event)"
-                       title="Élément à placer — partagé avec tout le monde">
-                    <div class="tl-toplace-content"></div>
-                  </div>
                   <div class="tl-unplaced-header">
                     <div class="tl-unplaced-header-row tl-unplaced-header-row--top">
                       <span class="tl-unplaced-header-row--top-spacer"></span>
@@ -982,20 +975,6 @@
     </div>
   </div>
 
-  <!-- Modal confirmation remplacement élément "à placer" -->
-  <div id="modal-confirm-toplace" class="modal-overlay hidden">
-    <div class="modal-box modal-box-sm">
-      <div class="modal-header">
-        <h3>Remplacer l'élément à placer</h3>
-      </div>
-      <div class="modal-body">
-        <p style="margin-bottom:20px;color:var(--text-faint);font-size:0.9rem;">Tout le monde n'a pas encore placé l'élément actuel. Le remplacer et le remettre dans les éléments non placés ?</p>
-        <div class="modal-actions">
-          <button class="btn-action" id="btn-confirm-toplace">Remplacer</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- Modal confirmation Définir comme soirée en cours -->
   <div id="modal-confirm-current-event" class="modal-overlay hidden">
@@ -1097,6 +1076,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=519"></script>
+  <script src="app.js?v=521"></script>
 </body>
 </html>

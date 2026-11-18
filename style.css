@@ -3266,8 +3266,6 @@ textarea.element-edit-input {
   min-width: 0;
   height: auto;
 }
-/* Le template n'a pas de vrais tiers remplis (labels seuls) : "à placer" n'a aucun sens pour lui. */
-.tl-editor-body--template .tl-toplace-zone { display: none; }
 
 /* Template : cadre non placés compact — tous les groupes de boutons sur une seule rangée qui
    wrap si besoin (jamais 4 rangées empilées comme en mode normal), alignés à gauche sauf "Max"
@@ -3440,6 +3438,9 @@ textarea.element-edit-input {
 .tl-img-card:hover { border-color: var(--accent-dim); }
 .tl-img-card.dragging { opacity: 0.4; cursor: grabbing; transform: scale(0.95); }
 .tl-img-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); }
+/* Élément encadré pour tout le groupe (double-clic dans les non-placés) : même cadre blanc que la
+   dernière case cochée du Bingo (.bingo-cell.last-checked). */
+.tl-img-card.tl-img-card--highlight { outline: 3px solid #fff; outline-offset: -3px; }
 
 .tl-img-card img {
   display: block;
@@ -3575,7 +3576,7 @@ textarea.element-edit-input {
   padding: 10px;
 }
 
-/* ── Bande du haut : "À placer" (taille fixe) à gauche + header (titre/boutons) à droite ── */
+/* ── Bande du haut : header (titre/boutons) ── */
 .tl-unplaced-top {
   display: flex;
   flex-direction: row;
@@ -3619,47 +3620,6 @@ textarea.element-edit-input {
   gap: 8px;
   flex: 1;
   min-height: 0;
-}
-
-/* Zone "À placer" — fixe (ne scrolle jamais), taille fixe 150px quelle que soit la taille
-   réglée pour les cartes du cadre non placés (imgSize forcé à 150 dans _tlRenderToPlaceZone). */
-.tl-toplace-zone {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  flex-shrink: 0;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  padding: 3px;
-  box-sizing: border-box;
-  transition: background 0.15s, border-color 0.15s;
-}
-.tl-toplace-zone.tl-toplace-empty {
-  background: rgba(250, 204, 21, 0.14);
-  border-color: rgba(250, 204, 21, 0.4);
-}
-.tl-toplace-zone.tl-toplace-pending {
-  background: rgba(232, 91, 71, 0.16);
-  border-color: var(--danger);
-}
-.tl-toplace-zone.drag-over {
-  outline: 2px dashed var(--accent);
-  outline-offset: -2px;
-}
-.tl-toplace-content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-}
-.tl-toplace-content:empty::before {
-  content: 'À placer';
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-align: center;
-  color: #fff;
 }
 
 .tl-unplaced-label {

@@ -96,7 +96,6 @@ const MODAL_CLOSE_FNS = {
     document.getElementById('modal-confirm-clear').classList.add('hidden');
     _clearCellCallback = null;
   },
-  'modal-confirm-toplace': () => _tlCloseConfirmToPlaceModal(),
   'modal-confirm-current-event': () => closeConfirmCurrentEventModal(),
   'modal-confirm-delete': () => closeConfirmDeleteModal(),
   'modal-dialog': () => _uiDialogClose(false),
@@ -539,8 +538,11 @@ async function _applyPrefsAndRender(opts) {
     _tlLocalSplit = Math.max(TL_SPLIT_MIN, Math.min(TL_SPLIT_MAX, _tlLocalSplit));
     document.documentElement.style.setProperty('--tl-split', _tlLocalSplit);
   }
-  // Re-render la Tier List avec la bonne tierlist active (seulement si elle est affichée)
-  _tlRenderIfVisible();
+  // Re-render la Tier List avec la bonne tierlist active (seulement si elle est affichée). Pas sur un
+  // simple changement de l'index Bingo une fois les prefs appliquées : rien de la Tier List n'en
+  // dépend hormis le bouton soirée en cours, déjà rafraîchi plus haut (un rendu complet ici
+  // détruisait un renommage de tier en cours).
+  if (!(opts && opts.fromIndex && _prefsAppliedOnce)) _tlRenderIfVisible();
   if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
   _prefsAppliedOnce = true;
   _openCurrentEventAtStartupIfNeeded();
@@ -7471,16 +7473,10 @@ function _tlNormalizeGroupData(groupRootId, rawGroupData) {
     });
   });
 
-  // Nettoyage défensif : toPlaceImgId déjà résolu par tous les participants existants — cf. commentaire d'origine.
-  synthList.forEach(template => {
-    if (!template.isTemplate || !template.toPlaceImgId) return;
-    const participants = synthList.filter(t => t.templateId === template.id && !t.isTemplate);
-    const imgId = template.toPlaceImgId;
-    const isResolved = m => (m.resolvedToPlaceIds || []).includes(imgId) || (m.tiers || []).some(t => t.items.includes(imgId));
-    if (participants.length > 0 && participants.every(isResolved)) {
-      template.toPlaceImgId = null;
-    }
-  });
+  // toPlaceImgId = élément encadré en blanc pour tout le groupe (refonte 2026-11-19, ex-zone "à
+  // placer") : il reste encadré même une fois placé par tout le monde — plus de nettoyage "tous
+  // résolus" ici. Les anciennes données où il avait été retiré des non-placés sont réparées par la
+  // passe "images non référencées" ci-dessus (il y revient).
 
   // Reporter les résultats (potentiellement modifiés par les passes ci-dessus) dans `data`.
   const rootSynth = synthList.find(t => t.id === groupRootId);
@@ -8257,6 +8253,29 @@ function _tlRenderIfVisible() {
   renderCurrentEventButton();
 }
 
+// Empreinte de ce que l'éditeur affiche et qui vient de l'index (liste affichée, son groupe, ses
+// réglages partagés) — identique avant/après un snapshot d'index ⇒ tiers et non-placés inchangés.
+// null = cas non couvert (autre page, comparaison, pas de liste chargée) → rendu complet.
+function _tlEditorViewKey() {
+  if (_currentPage !== 'tierlist' || _compareTierlistIds.length >= 2 || document.body.classList.contains('compare-tierlist-mode')) return null;
+  const tl = tlActiveTierlist();
+  if (!tl || tl.archived) return null;
+  const root = _tlGroupRoot(tl);
+  if (_tlLoadedGroups.get(root.id) !== 'loaded') return null;
+  return JSON.stringify([tl.id, !!tl.isTemplate, tl.templateId || null, tl.showLabels, tl.imgSize, root.id, root.maxImagesOverride || 0]);
+}
+
+// tlRender() sans les tiers ni les non-placés : seulement les boutons autour (chemin, liste,
+// soirée en cours, annuler) — ne touche jamais un renommage en cours ni un glisser-déposer.
+function _tlRenderChromeOnly() {
+  _tlRenderDeferred = false;
+  tlUpdateUndoBtn();
+  tlRenderList();
+  renderCurrentEventButton();
+  tlRenderGroupPanel(tlActiveTierlist());
+  requestAnimationFrame(_adjustTlLayoutHeight);
+}
+
 // Icônes de fin de tlRender(). Lucide garde data-lucide sur le <svg> qu'il produit : un
 // lucide.createIcons() global redessinait donc TOUTES les icônes de l'appli (pages masquées comprises)
 // à chaque rendu. Ici : la page Tier List en un appel, puis — même filet que l'ancien appel global —
@@ -8345,7 +8364,6 @@ function tlRender(skipHeightRecalc = false) {
 
   tlRenderTiers(tl);
   tlRenderUnplaced(tl);
-  _tlRenderToPlaceZone(tl);
   _tlRenderIcons();
 }
 
@@ -8446,15 +8464,6 @@ function _tlGetGroupMembers(tl) {
   return tlState.tierlists.filter(t => t.id === root.id || t.templateId === root.id);
 }
 
-// ── Zone "À placer" — un seul élément désigné, partagé par tout le groupe/template ──
-// Stocké sur le root (root.toPlaceImgId), pas par tierlist : chaque membre déduit dynamiquement
-// si SA zone est vide (l'élément est déjà dans un de ses tiers) ou si elle doit encore l'afficher.
-// Le template lui-même n'est jamais un "participant" : il ne place jamais d'éléments dans ses
-// tiers (labels seuls), donc il faut l'exclure du calcul "tout le monde a placé".
-function _tlGetGroupParticipants(tl) {
-  return _tlGetGroupMembers(tl).filter(m => !m.isTemplate);
-}
-
 // ── Chargement à la demande d'un groupe (tierlist/data/<groupRootId>) ────────────────────────
 // Décision : une fois chargé, un groupe reste en mémoire pour toute la session (jamais déchargé
 // explicitement) — cohérent avec _tlSrcCache qui a déjà cette politique.
@@ -8483,149 +8492,36 @@ function _tlEnsureGroupsLoaded(groupRootIds) {
   return Promise.all([...new Set(groupRootIds.filter(Boolean))].map(_tlEnsureGroupLoaded));
 }
 
-function _tlIsPlacedInTiers(member, imgId) {
-  return member.tiers.some(t => t.items.includes(imgId));
+// ── Élément encadré (ex-zone "À placer", refonte 2026-11-19) ──
+// Un seul élément par groupe, stocké sur le root (root.toPlaceImgId, nom gardé pour la compat des
+// données) : double-clic dans les non-placés d'une liste = cadre blanc autour de cet élément sur
+// toutes les listes du groupe (tiers compris), et en tête des non-placés tant qu'il n'y est pas
+// placé. Re-double-clic sur l'élément encadré = retire le cadre. Rien sur le template.
+function _tlHighlightedImgId(tl) {
+  if (!tl || tl.isTemplate) return null;
+  return _tlGroupRoot(tl).toPlaceImgId || null;
 }
 
-// Marque, pour CE membre précis, que l'élément désigné a été résolu (placé au moins une fois
-// dans un de ses tiers) — une fois résolu, sa zone "à placer" reste vide DÉFINITIVEMENT pour ce
-// membre, même s'il redéplace ensuite l'élément ailleurs (non-placés ou un autre tier). Sans ce
-// marqueur persistant, un aller-retour tier→non-placés faisait réapparaître la carte à tort,
-// puisque _tlIsPlacedInTiers ne regarde que l'emplacement ACTUEL de l'élément.
-function _tlMarkToPlaceResolved(member, imgId) {
-  if (!member.resolvedToPlaceIds) member.resolvedToPlaceIds = [];
-  if (!member.resolvedToPlaceIds.includes(imgId)) member.resolvedToPlaceIds.push(imgId);
-}
-
-// true si CE membre précis a déjà "réglé son cas" pour cet élément désigné : soit il l'a placé
-// dans un de ses tiers actuellement, soit il l'a résolu par le passé (resolvedToPlaceIds) — donc
-// sa zone à placer doit rester vide et il ne doit plus compter comme "en attente" dans la couleur
-// partagée, même s'il redéplace ensuite l'élément ailleurs (ex. retour vers ses non-placés).
-function _tlMemberResolvedFor(member, imgId) {
-  if ((member.resolvedToPlaceIds || []).includes(imgId)) return true;
-  return _tlIsPlacedInTiers(member, imgId);
-}
-
-// Une fois que TOUS les participants actuels du groupe ont résolu l'élément désigné (zone
-// jaune/vide partout), le sujet est clos : root.toPlaceImgId est remis à null. Sans ce nettoyage,
-// il restait actif indéfiniment — une tierlist créée APRÈS coup (jamais résolue, puisqu'elle vient
-// de naître sans aucun tier rempli) affichait alors à tort l'élément comme "encore en attente"
-// dans sa propre zone, alors que le groupe entier avait déjà terminé.
-function _tlClearToPlaceIfAllResolved(tl) {
-  const root = _tlGroupRoot(tl);
-  if (!root.toPlaceImgId) return;
-  const members = _tlGetGroupParticipants(tl);
-  if (members.length > 0 && members.every(m => _tlMemberResolvedFor(m, root.toPlaceImgId))) {
-    root.toPlaceImgId = null;
-  }
-}
-
-// true si l'élément désigné est déjà résolu chez CE membre précis → sa zone est vide.
-function _tlToPlaceIsEmptyFor(tl) {
-  const root = _tlGroupRoot(tl);
-  if (!root.toPlaceImgId) return true;
-  return _tlMemberResolvedFor(tl, root.toPlaceImgId);
-}
-
-// Désigne un nouvel élément "à placer" pour tout le groupe. Si un élément occupait déjà la zone
-// quelque part (pas encore placé par tout le monde), demande confirmation avant de le remplacer.
-// Le template lui-même n'a pas de zone "à placer" (pas de vrais tiers remplis, labels seuls) —
-// la désignation n'a pas de sens depuis lui, on l'ignore silencieusement.
 function _tlSetImageToPlace(tl, imgId) {
-  if (tl.isTemplate) return;
+  if (!tl || tl.isTemplate) return;
   const root = _tlGroupRoot(tl);
-  const members = _tlGetGroupParticipants(tl);
-  const previousId = root.toPlaceImgId;
-
-  const applyChange = () => {
-    // Nouvelle désignation de cet élément : purger l'ancien marqueur "résolu" de TOUS les
-    // membres pour cet imgId précis — sinon un membre ayant déjà résolu cet élément lors d'une
-    // désignation antérieure ne le reverrait plus jamais dans sa zone "à placer", même après
-    // qu'on le redésigne explicitement. La résolution ne doit tenir que jusqu'à la prochaine
-    // fois où cet élément redevient "l'élément à placer" — _tlMemberResolvedFor recalcule
-    // ensuite dynamiquement l'état réel (placé actuellement dans un tier ou non) pour chacun.
-    members.forEach(member => {
-      if (member.resolvedToPlaceIds) {
-        member.resolvedToPlaceIds = member.resolvedToPlaceIds.filter(id => id !== imgId);
-      }
-    });
-    // L'élément désigné sort des non-placés de TOUS les membres du groupe (pas seulement celui
-    // qui vient de désigner) : un élément ne doit JAMAIS être visible à la fois dans les
-    // non-placés et dans la zone "à placer" d'un même membre. Chez les membres qui n'ont pas
-    // encore résolu, il n'apparaît donc plus que dans la zone à placer (jusqu'à ce qu'ils le
-    // placent dans un tier) — le compteur non-placés/total compense ce retrait pour ne pas
-    // baisser à tort (voir tlRenderUnplaced, qui recompte l'élément désigné non résolu).
-    members.forEach(member => {
-      const idx = member.unplaced.indexOf(imgId);
-      if (idx !== -1) member.unplaced.splice(idx, 1);
-    });
-    // L'ancien élément désigné retourne dans les non-placés de chaque membre où il n'est
-    // pas déjà placé dans un tier (sinon il reste où il est, comme demandé).
-    if (previousId && previousId !== imgId) {
-      members.forEach(member => {
-        if (!_tlMemberResolvedFor(member, previousId) && !member.unplaced.includes(previousId)) {
-          member.unplaced.push(previousId);
-        }
-      });
-    }
-    root.toPlaceImgId = imgId;
-    tlTouchFolderChain(_tlEffectiveFolderId(tl));
-    tlSave(root.id);
-    tlRender();
-  };
-
-  const previousStillPending = previousId && previousId !== imgId && members.some(m => !_tlMemberResolvedFor(m, previousId));
-  if (previousStillPending) {
-    _tlOpenConfirmToPlaceModal(applyChange);
-  } else {
-    applyChange();
-  }
+  root.toPlaceImgId = root.toPlaceImgId === imgId ? null : imgId;
+  // Groupe seul, jamais l'index (cf tlDrop) : le diff de tlSaveGroup n'envoie que toPlaceImgId.
+  tlSaveGroup(root.id);
+  _tlRefreshHighlight(tl);
 }
 
-let _tlPendingToPlaceConfirm = null;
-function _tlOpenConfirmToPlaceModal(onConfirm) {
-  _tlPendingToPlaceConfirm = onConfirm;
-  document.getElementById('modal-confirm-toplace').classList.remove('hidden');
-}
-function _tlCloseConfirmToPlaceModal() {
-  _tlPendingToPlaceConfirm = null;
-  document.getElementById('modal-confirm-toplace').classList.add('hidden');
-}
-document.getElementById('btn-confirm-toplace').addEventListener('click', () => {
-  const fn = _tlPendingToPlaceConfirm;
-  _tlCloseConfirmToPlaceModal();
-  if (fn) fn();
-});
-
-function _tlRenderToPlaceZone(tl) {
-  // Le template n'a pas de zone "à placer" (masquée en CSS, .tl-editor-body--template
-  // .tl-toplace-zone{display:none}) — pas la peine de calculer/peupler son contenu.
-  if (tl.isTemplate) return;
-  const zone = document.getElementById('tl-toplace-zone');
-  const content = zone.querySelector('.tl-toplace-content');
-  content.innerHTML = '';
-  const root = _tlGroupRoot(tl);
-  const members = _tlGetGroupParticipants(tl);
-  const imgId = root.toPlaceImgId;
-  const imgSize = 150; // taille fixe, indépendante du slider "Taille" du cadre non placés
-
-  const allPlaced = !imgId || members.every(m => _tlMemberResolvedFor(m, imgId));
-  zone.classList.toggle('tl-toplace-empty', allPlaced);
-  zone.classList.toggle('tl-toplace-pending', !allPlaced);
-
-  const showCard = imgId && !_tlToPlaceIsEmptyFor(tl) && tlFindImage(tl, imgId);
-  if (showCard) {
-    // Carte affichée : la zone s'adapte à sa taille réelle (image + nom si affiché).
-    content.style.width = '';
-    content.style.height = '';
-    content.appendChild(tlBuildImgCard(tl, showCard, imgSize, false, true));
-  } else {
-    // Vide : taille fixe d'une image seule (imgSize), jamais plus petite — sinon la zone
-    // rétrécirait à vide au lieu de garder sa place réservée.
-    content.style.width = imgSize + 'px';
-    content.style.height = imgSize + 'px';
-  }
-  if (window.lucide) lucide.createIcons({ root: zone });
+// Met à jour le cadre sans tlRender() complet : non-placés reconstruits (l'élément encadré passe en
+// tête), simple bascule de classe sur les cartes des tiers.
+function _tlRefreshHighlight(tl) {
+  if (!tl || tl.isTemplate) return;
+  const unplacedImgSize = _tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : _tlClampImgSize(tl.imgSize);
+  _tlFillUnplacedZone(tl, unplacedImgSize);
+  if (window.lucide) lucide.createIcons({ root: tlUnplacedZone });
+  const hl = _tlHighlightedImgId(tl);
+  tlTiersZone.querySelectorAll('.tl-img-card').forEach(card => {
+    card.classList.toggle('tl-img-card--highlight', card.dataset.imgId === hl);
+  });
 }
 
 // Texte "(Template \ Dossier)" à afficher à côté d'une tierlist archivée/supprimée, pour donner
@@ -9066,6 +8962,9 @@ function _tlInlineRenameTier(spanEl, tl, tier, caretOffset) {
   else input.select();
 
   const commit = () => {
+    // Objet tier re-résolu par id : une mise à jour distante reçue pendant la saisie (rendu suspendu,
+    // cf _tlEditingInline) a pu remplacer les objets tiers — écrire sur l'ancien perdrait le nom.
+    tier = tl.tiers.find(t => t.id === tier.id) || tier;
     const newLabel = input.value.trim();
     if (newLabel && newLabel !== tier.label) {
       _tlPushUndoOp({ tierlistId: tl.id, type: 'editTier', tierId: tier.id, oldLabel: tier.label, oldColor: tier.color });
@@ -9520,6 +9419,10 @@ function _tlFillUnplacedZone(tl, imgSize) {
   tlUnplacedZone.innerHTML = '';
   const searchText = tlAddTextInput.value.trim().toLowerCase();
   const sorted = _tlGetSortedUnplaced(tl);
+  // Élément encadré (cf _tlSetImageToPlace) : toujours en tête, quel que soit le tri (affichage seul).
+  const hlId = _tlHighlightedImgId(tl);
+  const hlIdx = hlId ? sorted.indexOf(hlId) : -1;
+  if (hlIdx > 0) { sorted.splice(hlIdx, 1); sorted.unshift(hlId); }
   const visibleIds = searchText
     ? sorted.filter(imgId => {
         const img = tlFindImage(tl, imgId);
@@ -9546,13 +9449,7 @@ function _tlFillUnplacedZone(tl, imgSize) {
 
 // Recalcule uniquement le texte du compteur "X / Y" — factorisé pour le patch ciblé.
 function _tlUpdateUnplacedCount(tl) {
-  // L'élément désigné "à placer" non encore résolu pour CE membre a été retiré de tl.unplaced
-  // (il est affiché à part, dans la zone à placer) mais doit continuer à compter comme un
-  // élément "non placé" dans l'affichage — sinon le compteur baisse à tort (ex. 30/31 → 29/30)
-  // dès qu'un élément est désigné, alors qu'aucun élément n'a réellement quitté la tierlist.
-  const toPlaceImgId = _tlGroupRoot(tl).toPlaceImgId;
-  const toPlaceCountsAsUnplaced = toPlaceImgId && !_tlMemberResolvedFor(tl, toPlaceImgId) ? 1 : 0;
-  const tlOwnUnplacedCount = tl.unplaced.length + toPlaceCountsAsUnplaced;
+  const tlOwnUnplacedCount = tl.unplaced.length;
   const tlOwnTotal = tlOwnUnplacedCount + tl.tiers.reduce((sum, t) => sum + t.items.length, 0);
   tlUnplacedCount.textContent = tlOwnUnplacedCount + ' / ' + tlOwnTotal;
 }
@@ -9616,6 +9513,7 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
   const card = document.createElement('div');
   card.className = 'tl-img-card';
   if (!readOnly && img.id === _tlSelectedImgId) card.classList.add('selected');
+  if (img.id === _tlHighlightedImgId(tl)) card.classList.add('tl-img-card--highlight');
   card.draggable = !readOnly;
   card.dataset.imgId = img.id;
   card.title = readOnly ? img.name : img.name + '\nClic gauche : sélectionner (Suppr pour supprimer) · Glisser pour déplacer · Clic droit : renommer / supprimer';
@@ -9647,7 +9545,9 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
       _tlClearDragSourceHidden();
     });
 
-    if (isUnplacedZone) {
+    // Double-clic (non-placés OU tiers : déjà placé chez soi ne veut pas dire chez les autres) :
+    // encadre l'élément pour tout le groupe (ou retire le cadre).
+    if (!tl.isTemplate) {
       card.addEventListener('dblclick', e => {
         e.stopPropagation();
         _tlSetImageToPlace(tl, img.id);
@@ -9741,6 +9641,7 @@ function _tlInlineRenameImg(labelEl, tl, img, size, caretOffset) {
   else input.select();
 
   const commit = () => {
+    img = tlFindImage(tl, img.id) || img; // re-résolu par id, même raison que _tlInlineRenameTier
     const newName = input.value.trim();
     if (newName && newName !== img.name) {
       _tlPushUndoOp({ tierlistId: tl.id, groupRootId: _tlGroupRoot(tl).id, type: 'renameImage', imgId: img.id, oldName: img.name });
@@ -9762,7 +9663,6 @@ function _tlShowImgCtxMenu(e, tl, img) {
   const { addItem } = _tlMakeCtxMenu(null, e);
   const isText = (img.type || 'image') === 'text';
   if (!isText) addItem('zoom-in', 'Zoomer', false, () => _tlOpenImgZoom(img, tl));
-  if (!tl.isTemplate) addItem('pin', 'À placer', false, () => _tlSetImageToPlace(tl, img.id));
   addItem('pencil', 'Renommer', false, () => tlOpenRenameImg(tl, img));
   // Élément texte : même sélecteur de fichier — la carte devient une image, le texte devient son nom.
   addItem(isText ? 'image-plus' : 'image-up', isText ? 'Associer une image' : 'Remplacer l\'image', false, () => tlOpenReplaceImage(tl, img));
@@ -10376,21 +10276,7 @@ function tlDrop(e, targetZoneId) {
   const tl = tlActiveTierlist();
   if (!tl) return;
 
-  if (targetZoneId === '__toplace__') {
-    _tlSetImageToPlace(tl, imgId);
-    return;
-  }
-  // La carte affichée dans la zone "à placer" (elle n'est ni dans unplaced ni dans un tier
-  // local — c'est la carte virtuelle affichée par _tlRenderToPlaceZone) ne peut être déposée
-  // que dans un TIER : c'est la seule action qui "résout" la zone pour ce membre précis. La
-  // désignation partagée (root.toPlaceImgId) n'est JAMAIS effacée ici — elle reste active pour
-  // les autres membres du groupe tant qu'ils n'ont pas eux-mêmes placé l'élément dans un tier ;
-  // _tlToPlaceIsEmptyFor recalcule dynamiquement, à chaque rendu, si leur zone doit encore l'afficher.
   const _rootForDrop = _tlGroupRoot(tl);
-  const isFromToPlaceZone = _rootForDrop.toPlaceImgId === imgId && !_tlLocateImage(tl, imgId);
-  let _toPlaceWasResolvedNow = false;
-  if (isFromToPlaceZone && targetZoneId === '__unplaced__') return;
-  if (isFromToPlaceZone) tl.unplaced.push(imgId); // entrée temporaire, retirée juste après par le flux normal
 
   if (tl.isTemplate && targetZoneId !== '__unplaced__') return;
   const from = _tlLocateImage(tl, imgId);
@@ -10431,11 +10317,6 @@ function tlDrop(e, targetZoneId) {
         );
       }
       tier.items.splice(insertIdx, 0, imgId);
-      if (_rootForDrop.toPlaceImgId === imgId) {
-        _tlMarkToPlaceResolved(tl, imgId);
-        _tlClearToPlaceIfAllResolved(tl);
-        _toPlaceWasResolvedNow = true;
-      }
     }
   }
 
@@ -10446,13 +10327,11 @@ function tlDrop(e, targetZoneId) {
   // utilisateurs, avec un rendu complet de leur Tier List en prime.
   tlSaveGroup(_rootForDrop.id);
   // Déplacer une image entre tiers/non-placés ne change jamais la hauteur du control-panel
-  // au-dessus de .tl-layout (la zone "à placer" garde une taille fixe qu'elle soit vide ou
-  // non, voir _tlRenderToPlaceZone/.tl-toplace-zone en CSS) : on peut sauter le reflow.
-  // Cas simple (déplacement classique tier↔tier ou tier↔non-placés, pas depuis/vers la zone "à
-  // placer" qui a son propre DOM séparé) : ne reconstruire QUE les deux zones concernées au
-  // lieu de tous les tiers + toute la liste non-placée + toutes leurs images. Sur une grosse
-  // tierlist (beaucoup d'images), c'est la partie la plus coûteuse de tlRender().
-  if (from && !isFromToPlaceZone && !_toPlaceWasResolvedNow && _tlPatchImageMove(tl, from.zone, targetZoneId)) {
+  // au-dessus de .tl-layout : on peut sauter le reflow.
+  // Ne reconstruire QUE les deux zones concernées au lieu de tous les tiers + toute la liste
+  // non-placée + toutes leurs images. Sur une grosse tierlist (beaucoup d'images), c'est la
+  // partie la plus coûteuse de tlRender().
+  if (from && _tlPatchImageMove(tl, from.zone, targetZoneId)) {
     return;
   }
   tlRender(true);
@@ -10461,9 +10340,7 @@ function tlDrop(e, targetZoneId) {
 // Met à jour uniquement les zones DOM affectées par un déplacement d'image (source et
 // destination), sans reconstruire tous les tiers ni toute la liste "non placées" — voir
 // _tlFillTierImagesDiv/_tlFillUnplacedZone. Retourne false si le cas n'est pas géré (l'appelant
-// doit alors retomber sur tlRender() complet) : ne gère pas la résolution de la zone "à placer"
-// (_tlMarkToPlaceResolved/_tlClearToPlaceIfAllResolved), qui a son propre DOM séparé et peut,
-// en théorie, affecter d'autres écrans — trop rare pour justifier le risque d'un patch ciblé.
+// doit alors retomber sur tlRender() complet).
 function _tlPatchImageMove(tl, fromZoneId, toZoneId) {
   if (tl.isTemplate) return false; // structure/visibilité spécifique aux templates, non couverte ici
 
@@ -10496,23 +10373,10 @@ function _tlPatchImageMove(tl, fromZoneId, toZoneId) {
   return true;
 }
 
-// Survol/sortie de la zone "à placer" : pas de placeholder réordonnable (un seul élément
-// possible), juste un simple retour visuel drag-over comme les tiers/non-placés.
-function tlToPlaceDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  e.currentTarget.classList.add('drag-over');
-}
-function tlToPlaceDragLeave(e) {
-  e.currentTarget.classList.remove('drag-over');
-}
-
 // Exposer les fonctions de drag globalement (utilisées dans le HTML via attributs)
 window.tlDragOver  = tlDragOver;
 window.tlDragLeave = tlDragLeave;
 window.tlDrop      = tlDrop;
-window.tlToPlaceDragOver  = tlToPlaceDragOver;
-window.tlToPlaceDragLeave = tlToPlaceDragLeave;
 
 // ── Renommer image ────────────────────────────────────────────────────────────
 let tlRenameImgContext = null;
@@ -12027,11 +11891,7 @@ function _tlCreateFromTemplate(templateId, name) {
   const copy = tlDefaultTierlist(name, false);
   copy.templateId = templateId;
   // Pas de folderId propre : elle suit toujours dynamiquement celui du template (_tlEffectiveFolderId)
-  // L'élément désigné "à placer" (s'il y en a un, encore non résolu par cette toute nouvelle
-  // tierlist puisqu'elle n'a aucun tier rempli) ne doit pas être copié dans ses non-placés — il
-  // doit apparaître uniquement dans sa zone "à placer", jamais aux deux endroits à la fois.
-  const toPlaceImgId = template.toPlaceImgId;
-  copy.unplaced = (template.unplaced || []).filter(id => id !== toPlaceImgId);
+  copy.unplaced = (template.unplaced || []).slice();
   // Conserve les tiers (labels/couleurs) définis sur le template, plutôt que les tiers par défaut
   copy.tiers = (template.tiers || []).map(t => ({ id: uid(), label: t.label, color: t.color, items: [] }));
   tlState.tierlists.push(copy);
@@ -12847,21 +12707,31 @@ let _tlActiveGroupSubHandler = null;
 
 // ── Patch ciblé d'un changement distant (Tier List) ──
 // Mémorise, AVANT la fusion d'un snapshot distant, ce qu'affiche la liste active de ce groupe. null =
-// cas non couvert (autre page, comparaison, template, élément "à placer" en cours) → rendu complet.
+// cas non couvert (autre page, comparaison) → rendu complet. Une modif d'une AUTRE liste du groupe ne
+// change rien ici (seuls images partagées, élément encadré et zones de la liste affichée comptent) :
+// aucun rendu, chacun travaille sur sa liste sans être dérangé (renommage en cours compris).
 function _tlCaptureForRemotePatch(groupRootId) {
   if (_currentPage !== 'tierlist' || document.body.classList.contains('compare-tierlist-mode')) return null;
   const tl = tlActiveTierlist();
-  if (!tl || tl.archived || tl.isTemplate || _tlGroupRoot(tl).id !== groupRootId) return null;
+  if (!tl || tl.archived || _tlGroupRoot(tl).id !== groupRootId) return null;
   const root = _tlGroupRoot(tl);
-  if (root.toPlaceImgId || _tlLoadedGroups.get(groupRootId) !== 'loaded') return null;
+  if (_tlLoadedGroups.get(groupRootId) !== 'loaded') return null;
   return {
     tl, root,
     tiers: tl.tiers,
     images: root.images,
     tierMeta: _tlTierMetaKey(tl.tiers),
     zoneItems: _tlZoneItemsMap(tl),
-    resolved: JSON.stringify(tl.resolvedToPlaceIds || []),
+    highlight: root.toPlaceImgId || null,
   };
+}
+
+// true si un renommage (tier ou élément) est en cours dans l'éditeur : un rendu le détruirait (perte
+// du focus et du texte tapé). Sa validation/annulation refait toujours un tlRender() complet, qui
+// rattrape alors tout changement distant reçu entre-temps.
+function _tlEditingInline() {
+  const a = document.activeElement;
+  return !!(a && a.matches && a.matches('.tl-tier-label-input, .tl-img-label-input') && tlEditor.contains(a));
 }
 
 // Tiers sans leurs items (id/label/couleur…), clés triées : identique ⇔ seuls des placements ont pu changer.
@@ -12876,15 +12746,14 @@ function _tlZoneItemsMap(tl) {
   return m;
 }
 
-// Après la fusion : si seuls des placements ont changé (images, tiers, "à placer" identiques),
-// remet les objets tiers/images d'AVANT la fusion — les handlers des lignes de tiers et des cartes
-// affichées les ont capturés (ex. renommer un tier écrit tier.label sur l'objet capturé) — avec les
-// nouveaux placements, et retourne les zones à reconstruire ([] = rien de visible n'a changé).
+// Après la fusion : si seuls des placements (ou l'élément encadré) ont changé (images, tiers
+// identiques), remet les objets tiers/images d'AVANT la fusion — les handlers des lignes de tiers et
+// des cartes affichées les ont capturés (ex. renommer un tier écrit tier.label sur l'objet capturé) —
+// avec les nouveaux placements, et retourne les zones à reconstruire ([] = rien de visible n'a changé).
 // null = rendu complet.
 function _tlRestoreForRemotePatch(ctx) {
   const { tl, root } = ctx;
-  if (tlActiveTierlist() !== tl || _tlGroupRoot(tl) !== root || root.toPlaceImgId) return null;
-  if (JSON.stringify(tl.resolvedToPlaceIds || []) !== ctx.resolved) return null;
+  if (tlActiveTierlist() !== tl || _tlGroupRoot(tl) !== root) return null;
   if (_tlTierMetaKey(tl.tiers) !== ctx.tierMeta) return null;
   const imgs = root.images || [];
   if (imgs.length !== ctx.images.length || imgs.some((img, i) => !_tlSameImage(img, ctx.images[i]))) return null;
@@ -12927,11 +12796,15 @@ function _tlSetActiveGroupSubscription(groupRootId) {
         : null;
     }
     _tlLastGroupSnapshot.set(groupRootId, groupSnap);
-    if (patchZones) {
+    if (_tlEditingInline()) {
+      // Renommage en cours : ne rien toucher, sa validation refera le rendu complet (cf _tlEditingInline).
+    } else if (patchZones) {
       // Seuls des placements de la liste affichée ont changé : ne reconstruire que ces zones (même
       // patch que le glisser-déposer local), rendu complet si l'une d'elles n'est pas patchable.
+      // [] = rien de la liste affichée n'a changé (ex. modif d'une autre liste du groupe) : aucun rendu.
       const tl = tlActiveTierlist();
       if (!patchZones.every(z => _tlPatchImageMove(tl, z, z))) tlRender();
+      else if ((_tlGroupRoot(tl).toPlaceImgId || null) !== patchCtx.highlight) _tlRefreshHighlight(tl);
     } else {
       _tlRenderIfVisible();
     }
@@ -13005,13 +12878,16 @@ function _tlStartTierlistListeners() {
     // d'origine (ex. tlDelete) qui s'exécutent juste après dans la même fonction.
     _tlRemoteUpdate = true;
     _tlIndexReady = true;
+    const viewKeyBefore = _tlEditorViewKey();
     const rawIndex = _tlNormalizeIndex(snapshot.val());
     // Préserve les champs lourds déjà fusionnés (tiers/unplaced/images) des groupes déjà chargés —
     // un nouveau snapshot d'index ne réinitialise que les métas légères, jamais le contenu lourd.
+    // Mise à jour SUR PLACE (même objet) : les handlers de la liste affichée, qui n'est plus forcément
+    // redessinée (cf fin de ce listener), gardent ainsi l'objet tierlist vivant.
     const heavyById = new Map(tlState.tierlists.map(t => [t.id, t]));
     tlState.tierlists = rawIndex.tierlists.map(meta => {
       const prev = heavyById.get(meta.id);
-      return prev ? Object.assign({}, prev, meta) : Object.assign({ tiers: [], unplaced: [], images: [] }, meta);
+      return prev ? Object.assign(prev, meta) : Object.assign({ tiers: [], unplaced: [], images: [] }, meta);
     });
     tlState.folders = rawIndex.folders;
     tlState.tierPresets = rawIndex.tierPresets;
@@ -13035,7 +12911,12 @@ function _tlStartTierlistListeners() {
     _tlRemoteUpdate = false;
     Promise.all(pending).catch(() => {}).then(() => {
       _applyCompareTierlistModeIfNeeded();
-      _tlRenderIfVisible();
+      // Presque toute action d'un autre utilisateur réécrit l'index (date de modif du dossier) : si
+      // rien de ce qu'affiche l'éditeur n'a changé, ne rafraîchir que les boutons (chemin, liste…),
+      // jamais les tiers/non-placés — sinon un renommage en cours était perdu. Renommage en cours :
+      // aucun rendu (sa validation le refera).
+      if (viewKeyBefore !== null && _tlEditorViewKey() === viewKeyBefore) _tlRenderChromeOnly();
+      else if (!_tlEditingInline()) _tlRenderIfVisible();
       _openCurrentEventAtStartupIfNeeded();
       // Page Dossiers déjà affichée avant l'arrivée de cet index (ex. clic sur "Dossiers" pendant que
       // l'index tierlist était encore en vol) : re-rendre pour ne pas laisser "Templates récents" figé
