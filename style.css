@@ -3288,6 +3288,137 @@ textarea.element-edit-input {
   display: none;
 }
 
+/* ── Diaporama (liste seulement, cf _tlStartSlideshow) : tiers à gauche affichés comme sur un
+   template (labels seuls, clic = y placer l'élément affiché), un seul élément en grand à droite à
+   la place des non placés, flèches en dessous. Doit rester APRÈS les règles :not(--template) et
+   .tl-unplaced-hidden ci-dessus (même spécificité). ── */
+.tl-slideshow { display: none; }
+.tl-editor-body.tl-editor-body--slideshow .tl-tiers-zone {
+  flex: 0 0 220px;
+  width: 220px;
+  height: auto;
+}
+.tl-editor-body--slideshow .tl-tier-row { min-height: 56px; cursor: pointer; }
+.tl-editor-body--slideshow .tl-tier-label-cell { width: 100%; min-width: 0; cursor: pointer; }
+.tl-editor-body--slideshow .tl-tier-label-text { cursor: pointer; }
+.tl-editor-body--slideshow .tl-tier-row:hover { filter: brightness(1.1); }
+.tl-editor-body--slideshow .tl-tier-images,
+.tl-editor-body--slideshow .tl-unplaced-section { display: none; }
+/* Case "Non placés" tout en bas, séparée des tiers par un trait */
+.tl-slideshow-unplaced-wrap {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.tl-slideshow-unplaced-wrap .tl-tier-label-cell { background: var(--surface-3); }
+.tl-slideshow-unplaced-wrap .tl-tier-label-text { color: var(--text); }
+/* Tier (ou case Non placés) où se trouve déjà l'élément affiché : contour blanc (comme l'élément encadré) */
+.tl-tier-wrap--slideshow-current .tl-tier-label-cell { outline: 3px solid #fff; outline-offset: -3px; }
+.tl-editor-body--slideshow .tl-slideshow {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  gap: 10px;
+}
+/* Cadre de l'élément : à la taille de l'élément (pas de toute la largeur), pour que les flèches
+   restent collées à lui. */
+.tl-slideshow-stage {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Image agrandie au maximum sans déformation, en laissant la place des 2 flèches (2 × 80px + 2 × 8px
+   d'écart = 176px) : cq* = taille de .tl-slideshow-main (container-type:size), --ar = largeur/hauteur
+   de l'image, posé en JS au chargement. */
+.tl-slideshow-img {
+  display: block;
+  width: min(calc(100cqw - 176px), calc(100cqh * var(--ar)));
+  height: auto;
+  aspect-ratio: var(--ar);
+  border-radius: var(--radius);
+  user-select: none;
+}
+.tl-slideshow-text {
+  max-width: calc(100cqw - 176px);
+  max-height: 100cqh;
+  overflow: auto;
+  padding: 24px 32px;
+  box-sizing: border-box;
+  border-radius: var(--radius);
+  color: #fff;
+  font-size: 2rem;
+  line-height: 1.2;
+  text-align: center;
+  word-break: break-word;
+  user-select: none;
+}
+.tl-slideshow-item--highlight { outline: 3px solid #fff; outline-offset: -3px; }
+.tl-slideshow-empty { color: var(--text-muted); }
+/* Élément au centre, grosses flèches épaisses de chaque côté */
+.tl-slideshow-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  container-type: size;
+  --ar: 1;
+}
+.tl-slideshow-arrow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #fff;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.tl-slideshow-arrow [data-lucide] { width: 80px; height: 80px; stroke-width: 3.5; margin-right: 0; }
+.tl-slideshow-arrow:hover:not(:disabled) { color: var(--accent); }
+.tl-slideshow-arrow:disabled { opacity: 0.2; cursor: default; }
+/* Nom (blanc, gras, gros) puis compteur, sous l'élément */
+.tl-slideshow-nav {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 16px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.tl-slideshow-name {
+  color: #fff;
+  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tl-slideshow-name:empty { display: none; }
+.tl-slideshow-info {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+/* Rangée de contrôle en diaporama : sens de parcours à gauche, Quitter diaporama au centre,
+   Annuler à droite (même principe que le mode comparaison). */
+.tl-slideshow-only { display: none !important; }
+body.tl-slideshow-mode .tl-slideshow-only { display: inline-flex !important; }
+body.tl-slideshow-mode #tl-btn-add-tier,
+body.tl-slideshow-mode #tl-list-options-frame,
+body.tl-slideshow-mode #tl-btn-compare,
+body.tl-slideshow-mode #tl-btn-slideshow,
+body.tl-slideshow-mode #tl-btn-toggle-unplaced { display: none !important; }
+
 /* ── Zone des tiers — cadre distinct, scroll interne indépendant de la zone non placée ── */
 .tl-tiers-zone {
   display: flex;

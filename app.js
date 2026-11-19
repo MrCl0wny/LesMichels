@@ -6991,6 +6991,12 @@ let _tlLocalImgSize         = null;
 let _tlLocalUnplacedImgSize = null; // taille des images du cadre "Éléments non placés" (indépendante de la tierlist)
 let _tlLocalUnplacedShowLabels = null; // afficher/masquer noms du cadre "Éléments non placés" (indépendant de la tierlist)
 let _tlLocalUnplacedHidden  = false; // true = cadre "Éléments non placés" masqué (préférence locale)
+// Diaporama (cf _tlStartSlideshow) : état local seul, rien en Firebase.
+let _tlSlideshowTlId = null;       // liste en diaporama (null = mode inactif)
+let _tlSlideshowIds = [];          // ordre de passage, figé à l'entrée : non placés puis déjà placés
+let _tlSlideshowHeadLen = 0;       // nombre d'éléments "non placés" en tête de _tlSlideshowIds
+let _tlSlideshowIdx = 0;           // élément affiché
+let _tlSlideshowBottomUp = false;  // true = déjà placés parcourus du tier le plus bas au plus haut
 let _tlLocalUnplacedSortByList = {}; // { tierlistId: 'alpha'|'alpha-desc'|'updatedAt'|'updatedAt-asc' } — absent = 'manual'
 let _tlLocalSplit          = null; // % de largeur allouée aux tiers (le reste va aux éléments non placés), null = pas encore chargé
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
@@ -7654,6 +7660,12 @@ function tlUndo() {
       break;
     }
   }
+  if (op.type === 'moveImage' && _tlSlideshowTlId === tl.id) {
+    // Diaporama : revenir sur l'élément dont le placement est annulé (occurrence la plus proche avant).
+    let i = _tlSlideshowIds.lastIndexOf(op.imgId, _tlSlideshowIdx);
+    if (i === -1) i = _tlSlideshowIds.indexOf(op.imgId);
+    if (i !== -1) _tlSlideshowIdx = i;
+  }
   tlSave(_tlGroupRoot(tl).id);
   tlRender();
   // tlRender() ne touche jamais .tl-compare-view (masqué dans le mode comparaison, seule
@@ -8308,6 +8320,11 @@ function tlRender(skipHeightRecalc = false) {
   // affiché même sans tierlist/template actif dans le dossier courant — seule la zone éditeur
   // (titre, tiers, cadre Options Liste…) dépend d'une tierlist active.
   tlControlPanel.classList.remove('hidden');
+  // Diaporama : propre à UNE liste — changer de liste, passer sur un template ou n'avoir plus
+  // de liste affichée (comparaison comprise) le quitte.
+  if (_tlSlideshowTlId && (!tl || tl.archived || tl.isTemplate || tl.id !== _tlSlideshowTlId)) _tlResetSlideshowState();
+  const tlBtnSlideshow = document.getElementById('tl-btn-slideshow');
+  if (tlBtnSlideshow) tlBtnSlideshow.classList.toggle('hidden', !tl || !!tl.archived || !!tl.isTemplate);
   if (!tl || tl.archived) {
     tlEditor.classList.add('hidden');
     tlRenderGroupPanel(null);
@@ -8364,6 +8381,7 @@ function tlRender(skipHeightRecalc = false) {
 
   tlRenderTiers(tl);
   tlRenderUnplaced(tl);
+  if (_tlSlideshowTlId) _tlRenderSlideshow(tl);
   _tlRenderIcons();
 }
 
@@ -8522,7 +8540,243 @@ function _tlRefreshHighlight(tl) {
   tlTiersZone.querySelectorAll('.tl-img-card').forEach(card => {
     card.classList.toggle('tl-img-card--highlight', card.dataset.imgId === hl);
   });
+  if (_tlSlideshowTlId === tl.id) _tlRenderSlideshow(tl);
 }
+
+// ── Diaporama (liste uniquement, jamais le template) ─────────────────────────
+// Un seul élément à la fois, en grand (toute la hauteur), flèches en dessous ; tiers à gauche
+// affichés comme sur un template : clic sur un tier = y placer l'élément (en fin de tier) puis
+// passer au suivant. Ordre de passage = non placés, figés à l'entrée (ordre du cadre Non placés,
+// élément encadré en tête), puis TOUS les déjà placés tier par tier (haut → bas ou bas → haut),
+// photographiés au moment où on y entre — les éléments placés juste avant y repassent donc, pour
+// pouvoir réarranger. Dernier élément : on y reste. Double-clic sur l'élément = cadre blanc.
+
+// Déjà placés, tier par tier dans le sens choisi.
+function _tlSlideshowPlacedIds(tl) {
+  const tiers = _tlSlideshowBottomUp ? tl.tiers.slice().reverse() : tl.tiers;
+  return tiers.flatMap(t => t.items).filter(id => tlFindImage(tl, id));
+}
+
+// Nouvelle photo des déjà placés (entrée dans cette partie du parcours, ou changement de sens).
+function _tlSlideshowRefreshTail(tl) {
+  _tlSlideshowIds = _tlSlideshowIds.slice(0, _tlSlideshowHeadLen).concat(_tlSlideshowPlacedIds(tl));
+}
+
+function _tlStartSlideshow() {
+  const tl = tlActiveTierlist();
+  if (!tl || tl.archived || tl.isTemplate) return;
+  // Même ordre que le cadre Non placés (tri personnel, élément encadré en tête — cf _tlFillUnplacedZone).
+  const head = _tlGetSortedUnplaced(tl).filter(id => tlFindImage(tl, id));
+  const hlId = _tlHighlightedImgId(tl);
+  const hlIdx = hlId ? head.indexOf(hlId) : -1;
+  if (hlIdx > 0) { head.splice(hlIdx, 1); head.unshift(hlId); }
+  _tlSlideshowTlId = tl.id;
+  _tlSlideshowIds = head;
+  _tlSlideshowHeadLen = head.length;
+  _tlSlideshowRefreshTail(tl);
+  _tlSlideshowIdx = 0;
+  document.body.classList.add('tl-slideshow-mode');
+  tlEditorBody.classList.add('tl-editor-body--slideshow');
+  _tlUpdateSlideshowDirBtn();
+  tlRender();
+}
+
+function _tlResetSlideshowState() {
+  _tlSlideshowTlId = null;
+  _tlSlideshowIds = [];
+  _tlSlideshowHeadLen = 0;
+  _tlSlideshowIdx = 0;
+  document.body.classList.remove('tl-slideshow-mode');
+  tlEditorBody.classList.remove('tl-editor-body--slideshow');
+  const stage = document.getElementById('tl-slideshow-stage');
+  if (stage) { stage.innerHTML = ''; stage._tlShown = null; }
+  tlTiersZone.querySelectorAll('.tl-tier-wrap--slideshow-current').forEach(w => w.classList.remove('tl-tier-wrap--slideshow-current'));
+}
+
+function _tlUpdateSlideshowDirBtn() {
+  const btn = document.getElementById('tl-btn-slideshow-dir');
+  if (!btn) return;
+  btn.innerHTML = _tlSlideshowBottomUp
+    ? '<i data-lucide="arrow-up"></i> Bas → haut'
+    : '<i data-lucide="arrow-down"></i> Haut → bas';
+  if (window.lucide) lucide.createIcons({ root: btn });
+}
+
+// Retire les éléments supprimés entre-temps, ajoute en fin de non placés ceux importés pendant le
+// diaporama ; l'élément affiché reste le même (par position : il peut être à la fois dans les non
+// placés et dans les déjà placés).
+function _tlSlideshowSync(tl) {
+  const inHead = _tlSlideshowIdx < _tlSlideshowHeadLen;
+  const curId = _tlSlideshowIds[_tlSlideshowIdx];
+  const alive = id => !!tlFindImage(tl, id) && !!_tlLocateImage(tl, id);
+  const known = new Set(_tlSlideshowIds);
+  const head = _tlSlideshowIds.slice(0, _tlSlideshowHeadLen).filter(alive);
+  const tail = _tlSlideshowIds.slice(_tlSlideshowHeadLen).filter(alive);
+  tl.unplaced.forEach(id => { if (!known.has(id) && tlFindImage(tl, id)) { head.push(id); known.add(id); } });
+  _tlSlideshowHeadLen = head.length;
+  _tlSlideshowIds = head.concat(tail);
+  let i = inHead ? head.indexOf(curId) : tail.indexOf(curId);
+  if (i !== -1 && !inHead) i += head.length;
+  if (i === -1) i = Math.min(_tlSlideshowIdx, _tlSlideshowIds.length - 1);
+  _tlSlideshowIdx = Math.max(0, i);
+}
+
+function _tlRenderSlideshow(tl) {
+  _tlSlideshowSync(tl);
+  const stage = document.getElementById('tl-slideshow-stage');
+  const info = document.getElementById('tl-slideshow-info');
+  const prevBtn = document.getElementById('tl-slideshow-prev');
+  const nextBtn = document.getElementById('tl-slideshow-next');
+  if (!stage) return;
+  const total = _tlSlideshowIds.length;
+  const imgId = _tlSlideshowIds[_tlSlideshowIdx] || null;
+  const img = imgId ? tlFindImage(tl, imgId) : null;
+  const isText = !!img && (img.type || 'image') === 'text';
+  // Élément reconstruit seulement s'il a changé (sinon l'image clignoterait à chaque rendu).
+  const shown = stage._tlShown;
+  const same = shown && img && shown.id === img.id && shown.src === img.src && shown.type === img.type
+    && shown.color === img.color && shown.name === img.name;
+  if (!same) {
+    stage.innerHTML = '';
+    stage._tlShown = img ? { id: img.id, src: img.src, type: img.type, color: img.color, name: img.name } : null;
+    if (!img) {
+      const empty = document.createElement('div');
+      empty.className = 'tl-slideshow-empty';
+      empty.textContent = 'Aucun élément';
+      stage.appendChild(empty);
+    } else if (isText) {
+      const el = document.createElement('div');
+      el.className = 'tl-slideshow-item tl-slideshow-text';
+      el.style.background = img.color || TL_TEXT_CARD_COLOR;
+      el.textContent = img.name;
+      stage.appendChild(el);
+    } else {
+      const el = document.createElement('img');
+      el.className = 'tl-slideshow-item tl-slideshow-img';
+      el.draggable = false;
+      el.alt = img.name || '';
+      el.addEventListener('load', () => {
+        if (el.naturalWidth && el.naturalHeight) el.style.setProperty('--ar', el.naturalWidth / el.naturalHeight);
+      });
+      el.src = img.src;
+      stage.appendChild(el);
+    }
+  }
+  const item = stage.querySelector('.tl-slideshow-item');
+  if (item) item.classList.toggle('tl-slideshow-item--highlight', img.id === _tlHighlightedImgId(tl));
+  const nameEl = document.getElementById('tl-slideshow-name');
+  if (nameEl) nameEl.textContent = img && !isText ? (img.name || '') : '';
+  if (info) info.textContent = total ? (_tlSlideshowIdx + 1) + ' / ' + total : '';
+  if (prevBtn) prevBtn.disabled = _tlSlideshowIdx <= 0;
+  // Fin des non placés : la suite (déjà placés) n'est photographiée qu'en y entrant → flèche active.
+  if (nextBtn) nextBtn.disabled = _tlSlideshowIdx >= total - 1 && !(_tlSlideshowIdx === _tlSlideshowHeadLen - 1 && tl.tiers.some(t => t.items.length));
+  // Case "Non placés" tout en bas des tiers (diaporama seulement) : même structure qu'un tier pour
+  // le même aspect et le même clic (capture sur tlTiersZone, zone '__unplaced__'). Recréée ici car
+  // tlRenderTiers() vide la colonne à chaque rendu complet.
+  if (!tlTiersZone.querySelector('.tl-slideshow-unplaced-wrap')) {
+    const wrap = document.createElement('div');
+    wrap.className = 'tl-tier-wrap tl-slideshow-unplaced-wrap';
+    wrap.dataset.tierId = '__unplaced__';
+    const controls = document.createElement('div');
+    controls.className = 'tl-tier-controls';
+    const row = document.createElement('div');
+    row.className = 'tl-tier-row';
+    const labelCell = document.createElement('div');
+    labelCell.className = 'tl-tier-label-cell';
+    const labelText = document.createElement('span');
+    labelText.className = 'tl-tier-label-text';
+    labelText.textContent = 'Non placés';
+    labelCell.appendChild(labelText);
+    row.appendChild(labelCell);
+    wrap.append(controls, row);
+    tlTiersZone.appendChild(wrap);
+  }
+  const loc = img ? _tlLocateImage(tl, img.id) : null;
+  tlTiersZone.querySelectorAll('.tl-tier-wrap').forEach(w => {
+    w.classList.toggle('tl-tier-wrap--slideshow-current', !!loc && w.dataset.tierId === loc.zone);
+  });
+}
+
+function _tlSlideshowGo(delta) {
+  const tl = tlActiveTierlist();
+  if (!tl || tl.id !== _tlSlideshowTlId) return;
+  // On quitte le dernier non placé vers l'avant : photo à jour des déjà placés (y compris ceux
+  // qu'on vient de placer).
+  if (delta > 0 && _tlSlideshowIdx === _tlSlideshowHeadLen - 1) _tlSlideshowRefreshTail(tl);
+  const i = _tlSlideshowIdx + delta;
+  if (i >= 0 && i < _tlSlideshowIds.length) _tlSlideshowIdx = i;
+  _tlRenderSlideshow(tl);
+}
+
+// Clic sur un tier : y place l'élément affiché (en fin de tier), puis élément suivant. Déjà dans ce
+// tier : rien ne bouge, on passe juste au suivant. tierId '__unplaced__' = case "Non placés" : renvoie
+// l'élément en fin des non placés.
+function _tlSlideshowPlace(tierId) {
+  const tl = tlActiveTierlist();
+  if (!tl || tl.id !== _tlSlideshowTlId) return;
+  const imgId = _tlSlideshowIds[_tlSlideshowIdx];
+  const toUnplaced = tierId === '__unplaced__';
+  const tier = toUnplaced ? null : tl.tiers.find(t => t.id === tierId);
+  if (!imgId || (!toUnplaced && !tier)) return;
+  const from = _tlLocateImage(tl, imgId);
+  if (from && from.zone !== tierId) {
+    // Même enregistrement que le glisser-déposer (tlDrop) : annulable, groupe seul, patch des 2 zones.
+    _tlPushUndoOp({ tierlistId: tl.id, type: 'moveImage', imgId, fromZone: from.zone, fromIndex: from.index });
+    _tlRemoveImageFromAllZones(tl, imgId);
+    if (toUnplaced) tl.unplaced.push(imgId); else tier.items.push(imgId);
+    tlTouchFolderChain(_tlEffectiveFolderId(tl));
+    tlSaveGroup(_tlGroupRoot(tl).id);
+    if (!_tlPatchImageMove(tl, from.zone, tierId)) tlRender(true);
+  }
+  _tlSlideshowGo(1);
+}
+
+function _tlToggleSlideshowDir() {
+  _tlSlideshowBottomUp = !_tlSlideshowBottomUp;
+  _tlUpdateSlideshowDirBtn();
+  const tl = tlActiveTierlist();
+  if (!tl || tl.id !== _tlSlideshowTlId) return;
+  _tlSlideshowRefreshTail(tl);
+  // Dans les déjà placés : repartir du début de ce parcours (tier du haut ou du bas). Dans les non
+  // placés : l'élément affiché ne change pas.
+  if (_tlSlideshowIdx >= _tlSlideshowHeadLen) _tlSlideshowIdx = Math.max(0, Math.min(_tlSlideshowHeadLen, _tlSlideshowIds.length - 1));
+  _tlRenderSlideshow(tl);
+}
+
+document.getElementById('tl-btn-slideshow')?.addEventListener('click', _tlStartSlideshow);
+document.getElementById('tl-btn-slideshow-exit')?.addEventListener('click', () => { _tlResetSlideshowState(); tlRender(); });
+document.getElementById('tl-btn-slideshow-dir')?.addEventListener('click', _tlToggleSlideshowDir);
+document.getElementById('tl-slideshow-prev')?.addEventListener('click', () => _tlSlideshowGo(-1));
+document.getElementById('tl-slideshow-next')?.addEventListener('click', () => _tlSlideshowGo(1));
+document.getElementById('tl-slideshow-stage')?.addEventListener('dblclick', e => {
+  if (!e.target.closest('.tl-slideshow-item')) return;
+  const tl = tlActiveTierlist();
+  const imgId = _tlSlideshowIds[_tlSlideshowIdx];
+  if (tl && tl.id === _tlSlideshowTlId && imgId) _tlSetImageToPlace(tl, imgId);
+});
+// Phase de capture : en diaporama, un clic sur un tier place l'élément au lieu de renommer le tier
+// (le bouton réglages et le clic droit gardent leur rôle).
+tlTiersZone.addEventListener('click', e => {
+  if (!_tlSlideshowTlId || e.target.closest('.tl-tier-settings-btn, input')) return;
+  const wrap = e.target.closest('.tl-tier-wrap');
+  if (!wrap) return;
+  e.stopPropagation();
+  e.preventDefault();
+  _tlSlideshowPlace(wrap.dataset.tierId);
+}, true);
+tlTiersZone.addEventListener('dblclick', e => {
+  if (_tlSlideshowTlId && !e.target.closest('.tl-tier-settings-btn, input')) e.stopPropagation();
+}, true);
+// Flèches gauche/droite du clavier = flèches du diaporama.
+document.addEventListener('keydown', e => {
+  if (!_tlSlideshowTlId || _currentPage !== 'tierlist') return;
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+  if (document.querySelector('.modal-overlay:not(.hidden)')) return;
+  e.preventDefault();
+  _tlSlideshowGo(e.key === 'ArrowLeft' ? -1 : 1);
+});
 
 // Texte "(Template \ Dossier)" à afficher à côté d'une tierlist archivée/supprimée, pour donner
 // son contexte d'origine (elle n'apparaît plus dans son emplacement habituel du panneau Dossiers).
@@ -12805,6 +13059,7 @@ function _tlSetActiveGroupSubscription(groupRootId) {
       const tl = tlActiveTierlist();
       if (!patchZones.every(z => _tlPatchImageMove(tl, z, z))) tlRender();
       else if ((_tlGroupRoot(tl).toPlaceImgId || null) !== patchCtx.highlight) _tlRefreshHighlight(tl);
+      else if (_tlSlideshowTlId === tl.id && patchZones.length) _tlRenderSlideshow(tl);
     } else {
       _tlRenderIfVisible();
     }
