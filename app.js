@@ -7047,6 +7047,8 @@ let _tlSlideshowIds = [];          // ordre de passage, figé à l'entrée : non
 let _tlSlideshowHeadLen = 0;       // nombre d'éléments "non placés" en tête de _tlSlideshowIds
 let _tlSlideshowIdx = 0;           // élément affiché
 let _tlSlideshowBottomUp = false;  // true = déjà placés parcourus du tier le plus bas au plus haut
+let _tlSlideshowAnimDir = 0;       // sens de l'animation "roulette" du prochain rendu (posé par _tlSlideshowGo)
+const _tlSlideshowArCache = new Map(); // src → largeur/hauteur (préchargement des voisins : pas de saut à l'arrivée)
 let _tlLocalUnplacedSortByList = {}; // { tierlistId: 'alpha'|'alpha-desc'|'updatedAt'|'updatedAt-asc' } — absent = 'manual'
 let _tlLocalSplit          = null; // % de largeur allouée aux tiers (le reste va aux éléments non placés), null = pas encore chargé
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
@@ -8684,7 +8686,22 @@ function _tlRenderSlideshow(tl) {
   const shown = stage._tlShown;
   const same = shown && img && shown.id === img.id && shown.src === img.src && shown.type === img.type
     && shown.color === img.color && shown.name === img.name;
+  const animDir = _tlSlideshowAnimDir;
+  _tlSlideshowAnimDir = 0;
   if (!same) {
+    // Roulette : l'ancien élément reste le temps de sortir sur le côté (cf _tlSlideshowAnimate).
+    stage.querySelectorAll('.tl-slideshow-item--out').forEach(e => e.remove());
+    const prevEl = stage.querySelector('.tl-slideshow-item');
+    const animate = !!(animDir && prevEl && img && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    let prevBox = null;
+    if (animate) {
+      const sr = stage.getBoundingClientRect();
+      // offset* = position sans la transformation en cours (clics rapides : animation pas finie).
+      prevBox = { left: sr.left + prevEl.offsetLeft, top: sr.top + prevEl.offsetTop, w: prevEl.offsetWidth, h: prevEl.offsetHeight,
+        transform: prevEl.getAnimations().length ? getComputedStyle(prevEl).transform : null,
+        opacity: prevEl.getAnimations().length ? getComputedStyle(prevEl).opacity : '1' };
+      prevEl.getAnimations().forEach(a => a.cancel());
+    }
     stage.innerHTML = '';
     stage._tlShown = img ? { id: img.id, src: img.src, type: img.type, color: img.color, name: img.name } : null;
     if (!img) {
@@ -8703,14 +8720,21 @@ function _tlRenderSlideshow(tl) {
       el.className = 'tl-slideshow-item tl-slideshow-img';
       el.draggable = false;
       el.alt = img.name || '';
+      const knownAr = _tlSlideshowArCache.get(img.src);
+      if (knownAr) el.style.setProperty('--ar', knownAr);
       el.addEventListener('load', () => {
-        if (el.naturalWidth && el.naturalHeight) el.style.setProperty('--ar', el.naturalWidth / el.naturalHeight);
+        if (el.naturalWidth && el.naturalHeight) {
+          el.style.setProperty('--ar', el.naturalWidth / el.naturalHeight);
+          _tlSlideshowArCache.set(img.src, el.naturalWidth / el.naturalHeight);
+        }
       });
       el.src = img.src;
       stage.appendChild(el);
     }
+    if (animate) _tlSlideshowAnimate(stage, prevEl, prevBox, stage.querySelector('.tl-slideshow-item'), animDir);
   }
-  const item = stage.querySelector('.tl-slideshow-item');
+  _tlSlideshowPreload(tl);
+  const item = stage.querySelector('.tl-slideshow-item:not(.tl-slideshow-item--out)');
   if (item) item.classList.toggle('tl-slideshow-item--highlight', img.id === _tlHighlightedImgId(tl));
   const nameEl = document.getElementById('tl-slideshow-name');
   if (nameEl) nameEl.textContent = img && !isText ? (img.name || '') : '';
@@ -8734,10 +8758,18 @@ function _tlRenderSlideshow(tl) {
     const labelText = document.createElement('span');
     labelText.className = 'tl-tier-label-text';
     labelText.textContent = 'Non placés';
-    labelCell.appendChild(labelText);
+    const countEl = document.createElement('span');
+    countEl.className = 'tl-slideshow-unplaced-count';
+    labelCell.append(labelText, countEl);
     row.appendChild(labelCell);
     wrap.append(controls, row);
     tlTiersZone.appendChild(wrap);
+  }
+  // (non placés / total), même calcul que le compteur du cadre Non placés.
+  const countEl = tlTiersZone.querySelector('.tl-slideshow-unplaced-count');
+  if (countEl) {
+    const nbUnplaced = tl.unplaced.length;
+    countEl.textContent = nbUnplaced + '/' + (nbUnplaced + tl.tiers.reduce((sum, t) => sum + t.items.length, 0));
   }
   const loc = img ? _tlLocateImage(tl, img.id) : null;
   tlTiersZone.querySelectorAll('.tl-tier-wrap').forEach(w => {
@@ -8753,7 +8785,56 @@ function _tlSlideshowGo(delta) {
   if (delta > 0 && _tlSlideshowIdx === _tlSlideshowHeadLen - 1) _tlSlideshowRefreshTail(tl);
   const i = _tlSlideshowIdx + delta;
   if (i >= 0 && i < _tlSlideshowIds.length) _tlSlideshowIdx = i;
+  _tlSlideshowAnimDir = delta;
   _tlRenderSlideshow(tl);
+}
+
+// Passage d'un élément à l'autre en "roulette" : l'ancien tourne et part sur le côté pendant que le
+// nouveau arrive de l'autre côté (dir > 0 = suivant : de droite à gauche). L'ancien est posé en
+// absolu à sa place exacte, puis retiré à la fin.
+const _TL_SLIDESHOW_ANIM_MS = 380;
+function _tlSlideshowWheel(x, deg, scale) {
+  return 'perspective(2000px) translateX(' + x + '%) rotateY(' + deg + 'deg) scale(' + scale + ')';
+}
+function _tlSlideshowAnimate(stage, prevEl, prevBox, newEl, dir) {
+  const s = dir > 0 ? 1 : -1;
+  const opts = { duration: _TL_SLIDESHOW_ANIM_MS, easing: 'cubic-bezier(.22,.61,.36,1)' };
+  const rest = _tlSlideshowWheel(0, 0, 1);
+  const sr = stage.getBoundingClientRect();
+  prevEl.classList.add('tl-slideshow-item--out');
+  Object.assign(prevEl.style, {
+    position: 'absolute', margin: '0', left: (prevBox.left - sr.left) + 'px', top: (prevBox.top - sr.top) + 'px',
+    width: prevBox.w + 'px', height: prevBox.h + 'px',
+  });
+  stage.appendChild(prevEl);
+  const out = prevEl.animate([
+    { transform: prevBox.transform && prevBox.transform !== 'none' ? prevBox.transform : rest, opacity: prevBox.opacity },
+    { transform: _tlSlideshowWheel(-60 * s, -45 * s, 0.7), opacity: 0 },
+  ], { ...opts, fill: 'forwards' });
+  out.onfinish = () => prevEl.remove();
+  if (newEl) newEl.animate([
+    { transform: _tlSlideshowWheel(60 * s, 45 * s, 0.7), opacity: 0 },
+    { transform: rest, opacity: 1 },
+  ], opts);
+}
+
+// Précharge les images voisines (2 de chaque côté) pour connaître leur format avant d'y arriver.
+const _tlSlideshowPreloading = new Set();
+function _tlSlideshowPreload(tl) {
+  for (let d = -2; d <= 2; d++) {
+    const id = d && _tlSlideshowIds[_tlSlideshowIdx + d];
+    const img = id ? tlFindImage(tl, id) : null;
+    if (!img || (img.type || 'image') === 'text' || !img.src) continue;
+    if (_tlSlideshowArCache.has(img.src) || _tlSlideshowPreloading.has(img.src)) continue;
+    _tlSlideshowPreloading.add(img.src);
+    const p = new Image();
+    p.onload = () => {
+      _tlSlideshowPreloading.delete(img.src);
+      if (p.naturalWidth && p.naturalHeight) _tlSlideshowArCache.set(img.src, p.naturalWidth / p.naturalHeight);
+    };
+    p.onerror = () => _tlSlideshowPreloading.delete(img.src);
+    p.src = img.src;
+  }
 }
 
 // Clic sur un tier : y place l'élément affiché (en fin de tier), puis élément suivant. Déjà dans ce

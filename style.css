@@ -3330,6 +3330,13 @@ textarea.element-edit-input {
 }
 .tl-slideshow-unplaced-wrap .tl-tier-label-cell { background: var(--surface-3); }
 .tl-slideshow-unplaced-wrap .tl-tier-label-text { color: var(--text); }
+/* non placés/total discret, à droite de "Non placés" */
+.tl-slideshow-unplaced-wrap .tl-tier-label-cell { flex-direction: row; gap: 8px; }
+.tl-slideshow-unplaced-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 /* Tier (ou case Non placés) où se trouve déjà l'élément affiché : contour blanc (comme l'élément encadré) */
 .tl-tier-wrap--slideshow-current .tl-tier-label-cell { outline: 3px solid #fff; outline-offset: -3px; }
 .tl-editor-body--slideshow .tl-slideshow {
@@ -3348,7 +3355,9 @@ textarea.element-edit-input {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative; /* repère de l'élément sortant (roulette, cf _tlSlideshowAnimate) */
 }
+.tl-slideshow-item--out { pointer-events: none; }
 /* Image agrandie au maximum sans déformation, en laissant la place des 2 flèches (2 × 80px + 2 × 8px
    d'écart = 176px) : cq* = taille de .tl-slideshow-main (container-type:size), --ar = largeur/hauteur
    de l'image, posé en JS au chargement. */
@@ -3386,6 +3395,7 @@ textarea.element-edit-input {
   min-height: 0;
   container-type: size;
   --ar: 1;
+  overflow: hidden; /* l'animation roulette ne déborde pas sur les tiers */
 }
 .tl-slideshow-arrow {
   flex-shrink: 0;
