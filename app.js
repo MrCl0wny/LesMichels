@@ -1039,17 +1039,14 @@ function _goToCurrentEvent(e) {
     }
     _tlGoToTierlistFromAnyPage(state.currentEventTierlistId);
   } else if (state.currentEventFolderId) {
-    if (window._switchPage) window._switchPage('bingo');
-    // Navigation directe sans toggle
+    // Navigation directe sans toggle. Bingo actif posé AVANT le changement de page : _switchPage
+    // charge son contenu puis fait le rendu (un seul, après chargement).
     _localActiveFolderId = state.currentEventFolderId;
     _saveLocalActiveFolderId(state.currentEventFolderId);
     const folder = findFolderById(state.folders, state.currentEventFolderId);
     _selectedGridIds = folder?.grids?.filter(g => !g.archived).map(g => g.id) || [];
     saveLocalSelectedGrids(_selectedGridIds);
-    renderAllFolders();
-    renderElements();
-    renderGridsList();
-    renderGrid();
+    if (window._switchPage) window._switchPage('bingo');
   }
 }
 
@@ -2931,7 +2928,11 @@ function renderFoldersPanelTree() {
     row.appendChild(name);
     row.appendChild(ctxBtn);
 
-    const openThisFolder = () => { if (_localActiveFolderId !== f.id) switchFolder(f.id); _switchPage('bingo'); };
+    // Autre bingo : switchFolder charge et rend, _switchPage ne doit pas le refaire.
+    const openThisFolder = () => {
+      if (_localActiveFolderId !== f.id) { _switchPage('bingo', true); switchFolder(f.id); }
+      else _switchPage('bingo');
+    };
 
     // Simple clic : même règle que la vue icônes — un dossier-bingo s'ouvre directement, un dossier
     // conteneur pur descend d'un niveau.
@@ -6870,7 +6871,9 @@ document.getElementById('btn-confirm-trash-empty').addEventListener('click', () 
 (function setupNav() {
   const pages   = document.querySelectorAll('.page');
 
-  window._switchPage = (target) => {
+  // skipBingoContent : l'appelant fait lui-même le chargement + rendu Bingo juste après (switchFolder…)
+  // — sinon la page Bingo serait reconstruite deux fois.
+  window._switchPage = (target, skipBingoContent) => {
     if (!document.getElementById(`page-${target}`)) return;
     pages.forEach(p => p.classList.toggle('active', p.id === `page-${target}`));
     _currentPage = target;
@@ -6878,7 +6881,7 @@ document.getElementById('btn-confirm-trash-empty').addEventListener('click', () 
     // Contenu lourd (grilles/images) chargé "à la demande" (cf _applyPrefsAndRender/listener d'index
     // tierlist, qui ne préchargent plus qu'en arrivant directement sur ces pages) : rattraper le
     // chargement ici si l'utilisateur navigue vers Bingo/Tier List après être arrivé sur l'accueil.
-    if (target === 'bingo' && _firebaseReady) _bingoLoadActivePageContent();
+    if (target === 'bingo' && _firebaseReady && !skipBingoContent) _bingoLoadActivePageContent();
     if (target === 'tierlist') {
       if (_firebaseReady) _tlLoadActivePageContent();
       else if (_tlRenderDeferred) tlRender(); // rendu sauté pendant que la page était masquée (cf _tlRenderIfVisible)
@@ -8863,7 +8866,7 @@ function _tlSlideshowPlace(tierId) {
     tier.items.push(imgId);
     tlTouchFolderChain(_tlEffectiveFolderId(tl));
     tlSaveGroup(_tlGroupRoot(tl).id);
-    if (!_tlPatchImageMove(tl, from.zone, tierId)) tlRender(true);
+    if (!_tlMoveImageCard(tl, imgId, from.zone, tierId) && !_tlPatchImageMove(tl, from.zone, tierId)) tlRender(true);
   }
   _tlSlideshowGo(1);
 }
@@ -9144,6 +9147,9 @@ function _tlBuildTierlistListRow(tl, container) {
 }
 
 function tlRenderList() {
+  // Colonne Tier List de la page Dossiers : inutile de la reconstruire cachée (ex. à chaque tlRender()
+  // sur la page Tier List) — _switchPage('folders') la redessine en y arrivant (_renderFoldersPage).
+  if (_currentPage !== 'folders') return;
   if (!tlState.folders) tlState.folders = [];
 
   _tlRenderRecentFolderPaths();
@@ -9792,21 +9798,27 @@ document.getElementById('tl-compare-btn-exit')?.addEventListener('click', _exitC
 // ciblé de tlDrop (_tlPatchImageMove), voir _tlFillTierImagesDiv pour le même principe côté tiers.
 // La barre d'ajout de texte sert aussi de recherche (voir tlAddTextInput 'input' listener) : ne
 // filtre que l'affichage de la zone non placées, jamais tl.unplaced lui-même.
-function _tlFillUnplacedZone(tl, imgSize) {
-  tlUnplacedZone.innerHTML = '';
-  _setSortBtn(tlUnplacedSortBtn, _tlUnplacedSortMode(tl), _TL_UNPLACED_SORT_MODES);
+// Ids de "non placés" dans l'ordre d'affichage (tri, élément encadré en tête, filtre de recherche) —
+// partagé par _tlFillUnplacedZone et _tlMoveImageCard pour qu'ils voient toujours le même ordre.
+function _tlUnplacedVisibleIds(tl) {
   const searchText = tlAddTextInput.value.trim().toLowerCase();
   const sorted = _tlGetSortedUnplaced(tl);
   // Élément encadré (cf _tlSetImageToPlace) : toujours en tête, quel que soit le tri (affichage seul).
   const hlId = _tlHighlightedImgId(tl);
   const hlIdx = hlId ? sorted.indexOf(hlId) : -1;
   if (hlIdx > 0) { sorted.splice(hlIdx, 1); sorted.unshift(hlId); }
-  const visibleIds = searchText
+  return searchText
     ? sorted.filter(imgId => {
         const img = tlFindImage(tl, imgId);
         return img && img.name.toLowerCase().includes(searchText);
       })
     : sorted;
+}
+
+function _tlFillUnplacedZone(tl, imgSize) {
+  tlUnplacedZone.innerHTML = '';
+  _setSortBtn(tlUnplacedSortBtn, _tlUnplacedSortMode(tl), _TL_UNPLACED_SORT_MODES);
+  const visibleIds = _tlUnplacedVisibleIds(tl);
   if (tl.unplaced.length === 0) {
     const hint = document.createElement('div');
     hint.className = 'tl-unplaced-hint';
@@ -10086,7 +10098,8 @@ async function tlSwitch(id, allowDeselect = true) {
     _tlUpdateActiveGroupSubscription();
   }
   tlSave();
-  tlRender();
+  // Page Tier List cachée (clic depuis Dossiers) : rendu fait par le _switchPage('tierlist') qui suit.
+  _tlRenderIfVisible();
 }
 
 // async : un seul groupe concerné (_tlGroupRoot(tl).id) — le charger d'abord garantit que le snapshot
@@ -10709,10 +10722,62 @@ function tlDrop(e, targetZoneId) {
   // Ne reconstruire QUE les deux zones concernées au lieu de tous les tiers + toute la liste
   // non-placée + toutes leurs images. Sur une grosse tierlist (beaucoup d'images), c'est la
   // partie la plus coûteuse de tlRender().
-  if (from && _tlPatchImageMove(tl, from.zone, targetZoneId)) {
+  // Au mieux : une seule carte déplacée (_tlMoveImageCard) ; sinon les deux zones reconstruites.
+  if (from && (_tlMoveImageCard(tl, imgId, from.zone, targetZoneId) || _tlPatchImageMove(tl, from.zone, targetZoneId))) {
     return;
   }
   tlRender(true);
+}
+
+// Déplacement d'UNE image (glisser-déposer, diaporama) : retire sa carte de la zone de départ et
+// insère une seule carte neuve à sa place dans la zone d'arrivée (taille/étiquettes propres à cette
+// zone), sans toucher aux autres cartes. Vérifie ensuite que les cartes affichées des deux zones sont
+// exactement, dans l'ordre, celles qu'aurait produites leur reconstruction ; au moindre écart, ou
+// dans un cas non couvert (zone vide avec son message, template…), retourne false et l'appelant
+// retombe sur _tlPatchImageMove, qui reconstruit les deux zones et répare donc le DOM.
+function _tlMoveImageCard(tl, imgId, fromZoneId, toZoneId) {
+  if (tl.isTemplate) return false;
+  const zoneInfo = zoneId => {
+    if (zoneId === '__unplaced__') return { el: tlUnplacedZone, ids: _tlUnplacedVisibleIds(tl), unplaced: true };
+    const tier = tl.tiers.find(t => t.id === zoneId);
+    const el = tier ? tlTiersZone.querySelector(`.tl-tier-images[data-dropzone="${zoneId}"]`) : null;
+    return el ? { el, ids: tier.items, unplaced: false } : null;
+  };
+  const from = zoneInfo(fromZoneId);
+  const to = toZoneId === fromZoneId ? from : zoneInfo(toZoneId);
+  if (!from || !to) return false;
+  const isCard = c => c.classList.contains('tl-img-card');
+  // Message de zone vide ("Dépose des images ici", "Aucun résultat."…) : géré par la reconstruction.
+  if ([...from.el.children].some(c => !isCard(c)) || [...to.el.children].some(c => !isCard(c))) return false;
+  const known = new Set(_tlGetGroupImages(tl).map(i => i.id));
+  const fromIds = from.ids.filter(id => known.has(id));
+  const toIds = to === from ? fromIds : to.ids.filter(id => known.has(id));
+  if (fromIds.length === 0 || toIds.length === 0) return false; // zone qui devient vide : message à afficher
+
+  const cardsOf = el => [...el.children].filter(isCard);
+  const oldCard = cardsOf(from.el).find(c => c.dataset.imgId === imgId);
+  if (oldCard) oldCard.remove();
+  let newCard = null;
+  const pos = toIds.indexOf(imgId);
+  if (pos !== -1) { // absent = masqué par la recherche dans "non placés"
+    const img = tlFindImage(tl, imgId);
+    if (!img) return false;
+    const size = to.unplaced
+      ? (_tlLocalUnplacedImgSize !== null ? _tlLocalUnplacedImgSize : _tlClampImgSize(tl.imgSize))
+      : (_tlLocalImgSize !== null ? _tlLocalImgSize : _tlClampImgSize(tl.imgSize));
+    newCard = tlBuildImgCard(tl, img, size, false, to.unplaced);
+    const nextId = toIds[pos + 1];
+    const nextCard = nextId ? cardsOf(to.el).find(c => c.dataset.imgId === nextId) : null;
+    to.el.insertBefore(newCard, nextCard || null);
+  }
+  const matches = (el, ids) => {
+    const cards = cardsOf(el);
+    return cards.length === ids.length && cards.every((c, i) => c.dataset.imgId === ids[i]);
+  };
+  if (!matches(from.el, fromIds) || (to !== from && !matches(to.el, toIds))) return false;
+  if (from.unplaced || to.unplaced) _tlUpdateUnplacedCount(tl);
+  if (newCard && window.lucide) lucide.createIcons({ root: newCard });
+  return true;
 }
 
 // Met à jour uniquement les zones DOM affectées par un déplacement d'image (source et
@@ -12776,6 +12841,13 @@ function _bingoPatchRemoteChecks(changedIds) {
   });
 }
 
+// Ce que la page Dossiers lit du contenu lourd d'un dossier (icône bingo/conteneur, présence dans
+// "Bingos récents") — le reste (noms, dates, archivage) vient de l'index.
+function _bingoFoldersRowKey(f) {
+  if (!f) return '';
+  return (_isFolderBingo(f) ? 'b' : 'c') + ((f.grids || []).some(g => !g.archived) ? '1' : '0');
+}
+
 function _bingoSetActiveSeasonSubscription(folderIds) {
   const nextIds = new Set((folderIds || []).filter(Boolean));
   // Désabonner les dossiers sortis du périmètre
@@ -12833,6 +12905,7 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
       const prevArchivedKey = canPatch ? _bingoCanonKey(fPrev.archivedElementIds || []) : null;
       const prevGrids = fPrev ? fPrev.grids : null;
       const prevElements = fPrev ? fPrev.elements : null;
+      const prevFoldersRowKey = _bingoFoldersRowKey(fPrev);
       _bingoMergeDataIntoState(id, rawVal);
       const f = findFolderById(state.folders, id);
       _bingoLoadedFolders.add(id);
@@ -12907,7 +12980,10 @@ function _bingoSetActiveSeasonSubscription(folderIds) {
         else _applyPrefsAndRender();
       } else if (patchedIds) _bingoPatchRemoteChecks(patchedIds);
       else if (_prefsReady && id === _localActiveFolderId && _currentPage === 'bingo') _applyPrefsAndRender();
-      if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
+      // Page Dossiers : n'affiche rien du contenu des cases (coches…) — la redessiner seulement si ce
+      // snapshot change ce qu'elle lit de ce dossier (cf _bingoFoldersRowKey).
+      if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function'
+          && _bingoFoldersRowKey(findFolderById(state.folders, id)) !== prevFoldersRowKey) _renderFoldersPage();
     };
     _dbBingoData.child(id).on('value', handler);
     _bingoActiveSeasonHandlers.set(id, handler);
@@ -13058,8 +13134,8 @@ function _bingoStartListeners() {
       }
       // Page Dossiers déjà affichée avant l'arrivée de cet index (ex. clic sur "Dossiers" pendant que
       // l'index bingo était encore en vol) : re-rendre pour ne pas laisser le panneau figé sur son
-      // premier rendu incomplet.
-      if (_currentPage === 'folders' && typeof _renderFoldersPage === 'function') _renderFoldersPage();
+      // premier rendu incomplet. Seulement sans prefs : sinon _applyPrefsAndRender() vient de le faire.
+      if (_currentPage === 'folders' && !_prefsReady && typeof _renderFoldersPage === 'function') _renderFoldersPage();
     });
   });
 
@@ -13309,7 +13385,7 @@ function _tlStartTierlistListeners() {
 // navigation du panneau Dossiers sur son dossier parent — utilisée pour "rejoindre" un dossier
 // après sa création via "+ Bingo" (_homeNewGridAfterFolder) et par les liens "Récents" du panneau.
 async function _homeGoToBingoFolder(folderId) {
-  window._switchPage('bingo');
+  window._switchPage('bingo', true); // chargement + rendu faits ci-dessous (un seul rendu)
   const ancestors = getFolderPath(state.folders, folderId).slice(0, -1);
   _foldersNavFolderId = ancestors.length ? ancestors[ancestors.length - 1].id : null;
   if (_localActiveFolderId !== folderId) {
@@ -13323,22 +13399,20 @@ async function _homeGoToBingoFolder(folderId) {
     // vrai premier accès au dossier.
     _selectedGridIds = (findFolderById(state.folders, folderId)?.grids || []).filter(g => !g.archived).map(g => g.id);
     saveLocalSelectedGrids(_selectedGridIds);
-    renderAllFolders();
-    renderElements();
-    renderGridsList();
-    renderGrid();
+    // Charge le contenu s'il ne l'est pas encore (arrivée depuis l'accueil) puis fait le rendu.
+    await _bingoLoadActivePageContent();
   }
   saveUserPrefs({ activePage: 'bingo' });
 }
 
 function _homeGoToTlTierlist(tl) {
-  window._switchPage('tierlist');
   const root = typeof _tlGroupRoot === 'function' ? _tlGroupRoot(tl) : tl;
   if (tl.folderId) _tlExpandFolderAncestors(tl.folderId);
   _tlLocalActiveTierlistId = root.id;
   _tlLocalNoSelection = false;
   saveUserPrefs({ activePage: 'tierlist', tlActiveTierlistId: root.id, tlNoSelection: false });
-  tlRender();
+  // Liste active posée AVANT le changement de page : _switchPage charge son groupe puis fait le rendu (un seul).
+  window._switchPage('tierlist');
 }
 
 // Ouverture de l'appli : aller directement sur la soirée en cours s'il y en a une (sinon on reste sur
