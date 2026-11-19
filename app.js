@@ -2489,7 +2489,7 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
     archBtn.className = 'path-menu-archives-btn'; // pas .path-menu-sort-btn : _ensurePathMenuSortBtn le confondrait avec le tri
     archBtn.addEventListener('click', ev => { ev.stopPropagation(); _toggleBingoShowArchives(); });
     topRow.appendChild(archBtn);
-    topRow.appendChild(menu.querySelector('.path-menu-sort-btn'));
+    topRow.appendChild(menu.querySelector('.path-menu-sort'));
     menu.prepend(topRow);
   }
   topRow.querySelector('.path-menu-archives-btn').innerHTML = _bingoArchivesToggleLabel();
@@ -2597,31 +2597,71 @@ function _renderPathMenuRows(menu, rootFolders, resetPathExpansion) {
   if (window.lucide) lucide.createIcons({ root: menu });
 }
 
-// Petit bouton de tri en haut du menu Chemin (Bingo + Tier List) : chaque clic passe au mode
-// suivant (A→Z, Z→A, récent→ancien, ancien→récent). Mémorisé dans le navigateur (comme le tri du
-// panneau Dossiers, cf _folderSortMode) mais indépendant de lui. Créé une seule fois par menu,
-// seul son libellé est mis à jour à chaque rendu. Retourne le mode de tri courant.
-const _PATH_SORT_MODES = [
-  ['alpha', 'A→Z'], ['alpha-desc', 'Z→A'], ['updatedAt', 'Récent→ancien'], ['updatedAt-asc', 'Ancien→récent'],
+// Tris proposés partout : [mode, libellé, icône Lucide]. Le bouton de tri affiche toujours l'icône
+// et le libellé du mode choisi, précédé de "Trier par", et ouvre un menu déroulant (_openSortMenu).
+// "Ancien→récent" ('updatedAt-asc') n'existe plus : un ancien choix mémorisé retombe sur 'updatedAt'.
+const _SORT_MODES = [
+  ['alpha', 'A→Z', 'arrow-down-a-z'],
+  ['alpha-desc', 'Z→A', 'arrow-down-z-a'],
+  ['updatedAt', 'Update', 'arrow-down-1-0'],
 ];
+// Non placés (Tier List) : le mode "Manuel" en plus.
+const _TL_UNPLACED_SORT_MODES = [['manual', 'Manuel', 'hand'], ..._SORT_MODES];
+// Sens du diaporama (Tier List) : déjà placés parcourus du meilleur tier au pire, ou l'inverse.
+const _TL_SLIDESHOW_DIR_MODES = [
+  ['best', 'Meilleur→Pire', 'arrow-down-wide-narrow'],
+  ['worst', 'Pire→Meilleur', 'arrow-down-narrow-wide'],
+];
+
+// Met le bouton de tri à jour (icône + libellé du mode), seulement si le mode a changé.
+function _setSortBtn(btn, mode, modes = _SORT_MODES) {
+  if (!btn || btn.dataset.sortMode === mode) return;
+  const m = modes.find(x => x[0] === mode) || modes[0];
+  btn.dataset.sortMode = mode;
+  btn.innerHTML = `<i data-lucide="${m[2]}"></i> ${m[1]}`;
+  if (window.lucide) lucide.createIcons({ root: btn });
+}
+
+// Menu déroulant sous un bouton de tri : un mode par ligne, le mode actif en couleur.
+// Lignes construites à la main (pas addItem) : dans un menu Chemin, addItem fermerait le menu
+// parent quand une fenêtre est ouverte derrière (ex. Dossier cible du modal Preset cases).
+function _openSortMenu(btn, modes, current, onPick) {
+  const { menu, close } = _tlMakeCtxMenu(btn, null);
+  modes.forEach(([mode, label, icon]) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'ctx-menu-item' + (mode === current ? ' ctx-active' : '');
+    item.innerHTML = `<i data-lucide="${icon}"></i>${label}`;
+    item.addEventListener('click', () => { close(); onPick(mode); });
+    menu.appendChild(item);
+  });
+  _positionMenuBelow(menu, btn);
+}
+
+// "Trier par" + bouton de tri en haut du menu Chemin (Bingo, Tier List, Dossier cible des presets).
+// Mémorisé dans le navigateur (comme le tri du panneau Dossiers, cf _folderSortMode) mais indépendant
+// de lui. Créé une seule fois par menu, seul le bouton est mis à jour à chaque rendu. Retourne le mode.
 function _ensurePathMenuSortBtn(menu, storageKey, rerender) {
   let btn = menu.querySelector('.path-menu-sort-btn');
   if (!btn) {
+    const wrap = document.createElement('div');
+    wrap.className = 'path-menu-sort';
+    wrap.innerHTML = '<span class="sort-label">Trier par</span>';
     btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'path-menu-sort-btn';
-    btn.title = 'Changer le tri';
     btn.addEventListener('click', ev => {
       ev.stopPropagation();
-      const idx = _PATH_SORT_MODES.findIndex(m => m[0] === _folderSortMode(storageKey));
-      localStorage.setItem(storageKey, _PATH_SORT_MODES[(idx + 1) % _PATH_SORT_MODES.length][0]);
-      rerender();
+      _openSortMenu(btn, _SORT_MODES, _folderSortMode(storageKey), mode => {
+        localStorage.setItem(storageKey, mode);
+        rerender();
+      });
     });
-    menu.prepend(btn);
+    wrap.appendChild(btn);
+    menu.prepend(wrap);
   }
   const mode = _folderSortMode(storageKey);
-  const label = (_PATH_SORT_MODES.find(m => m[0] === mode) || _PATH_SORT_MODES[0])[1];
-  btn.innerHTML = `<i data-lucide="arrow-down-up"></i> ${label}`;
+  _setSortBtn(btn, mode);
   return mode;
 }
 
@@ -2665,7 +2705,8 @@ if (_btnPathDropdown && _pathDropdownMenu) {
 // changer un dossier de parent).
 function _folderSortMode(key) {
   const mode = localStorage.getItem(key);
-  return ['alpha', 'alpha-desc', 'updatedAt', 'updatedAt-asc'].includes(mode) ? mode : 'alpha';
+  if (mode === 'updatedAt-asc') return 'updatedAt'; // "Ancien→récent" supprimé
+  return ['alpha', 'alpha-desc', 'updatedAt'].includes(mode) ? mode : 'alpha';
 }
 function _sortFoldersList(list, mode) {
   const sorted = list.slice();
@@ -2855,8 +2896,7 @@ function renderFoldersPanelTree() {
   container.innerHTML = '';
 
   const sortMode = _folderSortMode('bingoFoldersSortMode');
-  const sortSelect = document.getElementById('folders-sort-select');
-  if (sortSelect) sortSelect.value = sortMode;
+  _setSortBtn(document.getElementById('folders-sort-btn'), sortMode);
 
   const { currentFolder } = _renderFoldersBreadcrumb(renderFoldersPanelTree);
 
@@ -5090,7 +5130,7 @@ function openElementPresetsModal(targetId) {
   const tree = _buildElementPresetTargetTree(state.folders);
   const isEligible = (folders, id) => (folders || []).some(f => (f.isBingo && f.id === id) || isEligible(f.folders, id));
   _setElementPresetsTarget(targetId && isEligible(tree, targetId) ? targetId : null);
-  document.getElementById('element-presets-sort-select').value = _elementPresetsSortMode();
+  _setSortBtn(document.getElementById('element-presets-sort-btn'), _elementPresetsSortMode());
   _elementPresetsChecked.clear();
   _elementPresetsPartial.clear();
   _elementPresetPendingDelete = null;
@@ -5110,9 +5150,13 @@ function closeElementPresetsModal() {
   renderElements();
 }
 
-document.getElementById('element-presets-sort-select').addEventListener('change', e => {
-  localStorage.setItem('elementPresetsSortMode', e.target.value);
-  renderElementPresetList();
+document.getElementById('element-presets-sort-btn').addEventListener('click', e => {
+  const btn = e.currentTarget;
+  _openSortMenu(btn, _SORT_MODES, _elementPresetsSortMode(), mode => {
+    localStorage.setItem('elementPresetsSortMode', mode);
+    _setSortBtn(btn, mode);
+    renderElementPresetList();
+  });
 });
 
 document.getElementById('btn-new-element-preset').addEventListener('click', () => _openElementPresetPane(null));
@@ -5357,7 +5401,7 @@ function _openElementPresetPane(presetId, initialTexts = null) {
   nameInput.value = preset ? preset.name : '';
   const editInput = document.getElementById('element-preset-edit-input');
   if (editInput) editInput.value = '';
-  document.getElementById('element-preset-cases-sort-select').value = _folderSortMode('elementPresetCasesSortMode');
+  _setSortBtn(document.getElementById('element-preset-cases-sort-btn'), _folderSortMode('elementPresetCasesSortMode'));
   _renderElementPresetEditList();
   _elementPresetsBox().classList.add('pane-open');
   renderElementPresetList(); // surbrillance du preset ouvert
@@ -5409,9 +5453,13 @@ document.getElementById('element-preset-edit-input').addEventListener('keydown',
   if (e.key === 'Enter') _addElementPresetEditText();
 });
 document.getElementById('element-preset-edit-input').addEventListener('input', _renderElementPresetEditList);
-document.getElementById('element-preset-cases-sort-select').addEventListener('change', e => {
-  localStorage.setItem('elementPresetCasesSortMode', e.target.value);
-  _renderElementPresetEditList();
+document.getElementById('element-preset-cases-sort-btn').addEventListener('click', e => {
+  const btn = e.currentTarget;
+  _openSortMenu(btn, _SORT_MODES, _folderSortMode('elementPresetCasesSortMode'), mode => {
+    localStorage.setItem('elementPresetCasesSortMode', mode);
+    _setSortBtn(btn, mode);
+    _renderElementPresetEditList();
+  });
 });
 document.getElementById('element-preset-edit-name').addEventListener('input', _commitElementPresetEdit);
 
@@ -6656,11 +6704,13 @@ function _makeArchiveButtons(actions) {
   return area;
 }
 
-const _foldersSortSelect = document.getElementById('folders-sort-select');
-if (_foldersSortSelect) {
-  _foldersSortSelect.addEventListener('change', () => {
-    localStorage.setItem('bingoFoldersSortMode', _foldersSortSelect.value);
-    renderFoldersPanelTree();
+const _foldersSortBtn = document.getElementById('folders-sort-btn');
+if (_foldersSortBtn) {
+  _foldersSortBtn.addEventListener('click', () => {
+    _openSortMenu(_foldersSortBtn, _SORT_MODES, _folderSortMode('bingoFoldersSortMode'), mode => {
+      localStorage.setItem('bingoFoldersSortMode', mode);
+      renderFoldersPanelTree();
+    });
   });
 }
 
@@ -7718,7 +7768,8 @@ function tlDefaultTierlist(name, isTemplate = false) {
 // Mode de tri de la zone "non placés" : préférence personnelle de l'utilisateur, par liste (jamais
 // stockée dans la tierlist partagée — tl.unplacedSort est un ancien champ, ignoré désormais).
 function _tlUnplacedSortMode(tl) {
-  return (tl && _tlLocalUnplacedSortByList[tl.id]) || 'manual';
+  const mode = (tl && _tlLocalUnplacedSortByList[tl.id]) || 'manual';
+  return mode === 'updatedAt-asc' ? 'updatedAt' : mode; // "Ancien→récent" supprimé
 }
 
 // Copie triée de tl.unplaced pour l'affichage — ne mute jamais tl.unplaced (le drag&drop manuel s'appuie dessus)
@@ -8596,10 +8647,7 @@ function _tlResetSlideshowState() {
 function _tlUpdateSlideshowDirBtn() {
   const btn = document.getElementById('tl-btn-slideshow-dir');
   if (!btn) return;
-  btn.innerHTML = _tlSlideshowBottomUp
-    ? '<i data-lucide="arrow-up"></i> Bas → haut'
-    : '<i data-lucide="arrow-down"></i> Haut → bas';
-  if (window.lucide) lucide.createIcons({ root: btn });
+  _setSortBtn(btn, _tlSlideshowBottomUp ? 'worst' : 'best', _TL_SLIDESHOW_DIR_MODES);
 }
 
 // Retire les éléments supprimés entre-temps, ajoute en fin de non placés ceux importés pendant le
@@ -8745,7 +8793,11 @@ function _tlToggleSlideshowDir() {
 
 document.getElementById('tl-btn-slideshow')?.addEventListener('click', _tlStartSlideshow);
 document.getElementById('tl-btn-slideshow-exit')?.addEventListener('click', () => { _tlResetSlideshowState(); tlRender(); });
-document.getElementById('tl-btn-slideshow-dir')?.addEventListener('click', _tlToggleSlideshowDir);
+document.getElementById('tl-btn-slideshow-dir')?.addEventListener('click', e => {
+  _openSortMenu(e.currentTarget, _TL_SLIDESHOW_DIR_MODES, _tlSlideshowBottomUp ? 'worst' : 'best', mode => {
+    if ((mode === 'worst') !== _tlSlideshowBottomUp) _tlToggleSlideshowDir();
+  });
+});
 document.getElementById('tl-slideshow-prev')?.addEventListener('click', () => _tlSlideshowGo(-1));
 document.getElementById('tl-slideshow-next')?.addEventListener('click', () => _tlSlideshowGo(1));
 document.getElementById('tl-slideshow-stage')?.addEventListener('dblclick', e => {
@@ -9026,8 +9078,7 @@ function tlRenderList() {
 
   tlList.innerHTML = '';
   const tlSortMode = _folderSortMode('tlFoldersSortMode');
-  const tlSortSelect = document.getElementById('tl-folders-sort-select');
-  if (tlSortSelect) tlSortSelect.value = tlSortMode;
+  _setSortBtn(document.getElementById('tl-folders-sort-btn'), tlSortMode);
 
   const { currentFolder } = _tlRenderFoldersBreadcrumb(tlRenderList);
   const parentId = currentFolder ? currentFolder.id : null;
@@ -9671,6 +9722,7 @@ document.getElementById('tl-compare-btn-exit')?.addEventListener('click', _exitC
 // filtre que l'affichage de la zone non placées, jamais tl.unplaced lui-même.
 function _tlFillUnplacedZone(tl, imgSize) {
   tlUnplacedZone.innerHTML = '';
+  _setSortBtn(tlUnplacedSortBtn, _tlUnplacedSortMode(tl), _TL_UNPLACED_SORT_MODES);
   const searchText = tlAddTextInput.value.trim().toLowerCase();
   const sorted = _tlGetSortedUnplaced(tl);
   // Élément encadré (cf _tlSetImageToPlace) : toujours en tête, quel que soit le tri (affichage seul).
@@ -11747,11 +11799,13 @@ function tlOpenManageModal(id, anchorEl, context) {
 // openTlSidebar définie plus haut (stub de compat → openFoldersPage('tierlist')).
 document.getElementById('tl-empty-btn-folders').addEventListener('click', () => openFoldersPage('tierlist'));
 
-const _tlFoldersSortSelect = document.getElementById('tl-folders-sort-select');
-if (_tlFoldersSortSelect) {
-  _tlFoldersSortSelect.addEventListener('change', () => {
-    localStorage.setItem('tlFoldersSortMode', _tlFoldersSortSelect.value);
-    tlRenderList();
+const _tlFoldersSortBtn = document.getElementById('tl-folders-sort-btn');
+if (_tlFoldersSortBtn) {
+  _tlFoldersSortBtn.addEventListener('click', () => {
+    _openSortMenu(_tlFoldersSortBtn, _SORT_MODES, _folderSortMode('tlFoldersSortMode'), mode => {
+      localStorage.setItem('tlFoldersSortMode', mode);
+      tlRenderList();
+    });
   });
 }
 
@@ -12448,21 +12502,12 @@ tlUnplacedZone.addEventListener('dragleave', tlDragLeave);
 tlUnplacedSortBtn.addEventListener('click', () => {
   const tl = tlActiveTierlist();
   if (!tl) return;
-  const current = _tlUnplacedSortMode(tl);
-  const applySort = mode => {
+  _openSortMenu(tlUnplacedSortBtn, _TL_UNPLACED_SORT_MODES, _tlUnplacedSortMode(tl), mode => {
     if (mode === 'manual') delete _tlLocalUnplacedSortByList[tl.id];
     else _tlLocalUnplacedSortByList[tl.id] = mode;
     saveUserPrefs({ ['tlUnplacedSortByList/' + tl.id]: mode === 'manual' ? null : mode });
     tlRender();
-  };
-  const { addItem } = _tlMakeCtxMenu(tlUnplacedSortBtn, null);
-  // Le mode actif remplace son icône par une coche.
-  const addSortItem = (icon, label, mode) => addItem(current === mode ? 'check' : icon, label, false, () => applySort(mode));
-  addSortItem('hand', 'Manuel', 'manual');
-  addSortItem('arrow-down-a-z', 'Alphabétique (A→Z)', 'alpha');
-  addSortItem('arrow-up-a-z', 'Alphabétique (Z→A)', 'alpha-desc');
-  addSortItem('arrow-down-0-1', 'Date de modification (récent→ancien)', 'updatedAt');
-  addSortItem('arrow-up-0-1', 'Date de modification (ancien→récent)', 'updatedAt-asc');
+  });
 });
 
 // ── Afficher/masquer le cadre "Éléments non placés" (tierlist normale uniquement) ──

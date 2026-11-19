@@ -470,9 +470,6 @@ body.compare-tierlist-mode .page-profile-btn { display: none; }
   font-size: 0.78rem;
   color: var(--text-faint);
 }
-.folders-panel-sort label {
-  white-space: nowrap;
-}
 .folders-sort-select {
   flex: 1;
   min-width: 0;
@@ -485,11 +482,31 @@ body.compare-tierlist-mode .page-profile-btn { display: none; }
   outline: none;
   cursor: pointer;
 }
-/* Page Dossiers : menu de tri réduit à la largeur de son contenu. */
-.folders-panel-sort .folders-sort-select {
-  flex: none;
-  width: auto;
+/* "Trier par" devant chaque bouton de tri (cf _setSortBtn / _openSortMenu). */
+.sort-label {
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: var(--text-faint);
 }
+/* Bouton de tri (pages Dossiers, Preset cases) : icône + libellé du tri choisi, ouvre un menu. */
+.sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.78rem;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sort-btn:hover { border-color: var(--text-dim); }
+.sort-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
+/* Menu de tri : le tri actif en couleur. */
+.ctx-menu-item.ctx-active { color: var(--accent); }
 
 /* Cadre englobant l'arbre de dossiers, avec titre — lui seul scrolle en interne, pour que Récents
    et le tri restent toujours visibles en haut du panneau même avec beaucoup de dossiers. */
@@ -2247,9 +2264,14 @@ textarea.element-edit-input {
 .path-menu-sort-btn [data-lucide],
 .path-menu-archives-btn [data-lucide] { width: 12px; height: 12px; margin-right: 0; }
 /* Rangée du haut du menu Chemin Bingo : Afficher/Masquer archives + tri, à droite */
-.path-menu-top-row { display: flex; justify-content: flex-end; gap: 6px; margin: 0 8px 4px; }
+.path-menu-top-row { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin: 0 8px 4px; }
 .path-menu-top-row .path-menu-sort-btn,
 .path-menu-top-row .path-menu-archives-btn { margin: 0; }
+/* "Trier par" + bouton de tri en haut des menus Chemin (cf _ensurePathMenuSortBtn). */
+.path-menu-sort { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin: 0 8px 4px; }
+.path-menu-sort .sort-label { font-size: 0.72rem; }
+.path-menu-sort .path-menu-sort-btn,
+.path-menu-top-row .path-menu-sort { margin: 0; }
 /* Bingos récents du menu Chemin Bingo : entre séparateurs, 5 lignes visibles puis scroll */
 .path-menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
 .path-menu-recent-list { max-height: calc(5 * 28px); overflow-y: auto; }
@@ -2558,10 +2580,6 @@ textarea.element-edit-input {
   white-space: nowrap;
 }
 /* Menus de tri du modal : largeur réduite au contenu. */
-.folders-sort-select.element-presets-sort-select {
-  flex: none;
-  width: auto;
-}
 .element-presets-pane-tools {
   margin-top: 10px;
   align-items: center;
