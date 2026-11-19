@@ -2607,11 +2607,6 @@ const _SORT_MODES = [
 ];
 // Non placés (Tier List) : le mode "Manuel" en plus.
 const _TL_UNPLACED_SORT_MODES = [['manual', 'Manuel', 'hand'], ..._SORT_MODES];
-// Sens du diaporama (Tier List) : déjà placés parcourus du meilleur tier au pire, ou l'inverse.
-const _TL_SLIDESHOW_DIR_MODES = [
-  ['best', 'Meilleur→Pire', 'arrow-down-wide-narrow'],
-  ['worst', 'Pire→Meilleur', 'arrow-down-narrow-wide'],
-];
 
 // Met le bouton de tri à jour (icône + libellé du mode), seulement si le mode a changé.
 function _setSortBtn(btn, mode, modes = _SORT_MODES) {
@@ -7043,10 +7038,10 @@ let _tlLocalUnplacedShowLabels = null; // afficher/masquer noms du cadre "Élém
 let _tlLocalUnplacedHidden  = false; // true = cadre "Éléments non placés" masqué (préférence locale)
 // Diaporama (cf _tlStartSlideshow) : état local seul, rien en Firebase.
 let _tlSlideshowTlId = null;       // liste en diaporama (null = mode inactif)
-let _tlSlideshowIds = [];          // ordre de passage, figé à l'entrée : non placés puis déjà placés
-let _tlSlideshowHeadLen = 0;       // nombre d'éléments "non placés" en tête de _tlSlideshowIds
-let _tlSlideshowIdx = 0;           // élément affiché
-let _tlSlideshowBottomUp = false;  // true = déjà placés parcourus du tier le plus bas au plus haut
+let _tlSlideshowIds = [];          // historique des éléments affichés (flèche ←) ; le suivant est calculé (cf _tlSlideshowNextId)
+let _tlSlideshowIdx = 0;           // élément affiché (position dans l'historique)
+const _tlSlideshowSeen = new Set(); // non placés déjà proposés dans ce tour (un non placé gardé repasse après les autres)
+const _tlSlideshowPlacedSeen = new Set(); // déjà placés déjà proposés dans cette boucle (meilleur → pire)
 let _tlSlideshowAnimDir = 0;       // sens de l'animation "roulette" du prochain rendu (posé par _tlSlideshowGo)
 const _tlSlideshowArCache = new Map(); // src → largeur/hauteur (préchargement des voisins : pas de saut à l'arrivée)
 let _tlLocalUnplacedSortByList = {}; // { tierlistId: 'alpha'|'alpha-desc'|'updatedAt'|'updatedAt-asc' } — absent = 'manual'
@@ -8599,46 +8594,84 @@ function _tlRefreshHighlight(tl) {
 // ── Diaporama (liste uniquement, jamais le template) ─────────────────────────
 // Un seul élément à la fois, en grand (toute la hauteur), flèches en dessous ; tiers à gauche
 // affichés comme sur un template : clic sur un tier = y placer l'élément (en fin de tier) puis
-// passer au suivant. Ordre de passage = non placés, figés à l'entrée (ordre du cadre Non placés,
-// élément encadré en tête), puis TOUS les déjà placés tier par tier (haut → bas ou bas → haut),
-// photographiés au moment où on y entre — les éléments placés juste avant y repassent donc, pour
-// pouvoir réarranger. Dernier élément : on y reste. Double-clic sur l'élément = cadre blanc.
+// passer au suivant. Suivant : tant qu'il reste des non placés, TOUJOURS un non placé (ordre du
+// cadre Non placés, élément encadré en tête) ; un non placé gardé (passé à la flèche) n'est
+// reproposé qu'après tous les autres. Une fois tout placé : boucle sur TOUS les
+// déjà placés, du meilleur tier au pire, pour réarranger : un élément déjà proposé dans la boucle ne
+// revient pas (même changé de tier) ; boucle finie = on repart du meilleur, ordre ACTUEL des tiers.
+// Flèche ← = éléments affichés avant, sans valeur de décision : les éléments quittés avec ← reviennent
+// dans l'ordre dès qu'on décide (placer ou →). Double-clic sur l'élément = cadre blanc.
 
-// Déjà placés, tier par tier dans le sens choisi.
+// Déjà placés, tier par tier du meilleur au pire (état actuel).
 function _tlSlideshowPlacedIds(tl) {
-  const tiers = _tlSlideshowBottomUp ? tl.tiers.slice().reverse() : tl.tiers;
-  return tiers.flatMap(t => t.items).filter(id => tlFindImage(tl, id));
+  return tl.tiers.flatMap(t => t.items).filter(id => tlFindImage(tl, id));
 }
 
-// Nouvelle photo des déjà placés (entrée dans cette partie du parcours, ou changement de sens).
-function _tlSlideshowRefreshTail(tl) {
-  _tlSlideshowIds = _tlSlideshowIds.slice(0, _tlSlideshowHeadLen).concat(_tlSlideshowPlacedIds(tl));
+// Non placés dans l'ordre du cadre Non placés (tri personnel, élément encadré en tête — cf _tlFillUnplacedZone).
+function _tlSlideshowSortedUnplaced(tl) {
+  const ids = _tlGetSortedUnplaced(tl).filter(id => tlFindImage(tl, id));
+  const hlId = _tlHighlightedImgId(tl);
+  const hlIdx = hlId ? ids.indexOf(hlId) : -1;
+  if (hlIdx > 0) { ids.splice(hlIdx, 1); ids.unshift(hlId); }
+  return ids;
+}
+
+// Élément qui suit curId (null = aucun, on reste). dryRun = juste savoir, sans rien changer (flèche
+// grisée, préchargement).
+function _tlSlideshowNextId(tl, curId, dryRun) {
+  const unplaced = _tlSlideshowSortedUnplaced(tl);
+  if (unplaced.length) {
+    const others = unplaced.filter(id => id !== curId);
+    if (dryRun) return others.find(id => !_tlSlideshowSeen.has(id)) || others[0] || null;
+    let id = others.find(x => !_tlSlideshowSeen.has(x));
+    // Tous déjà proposés : nouveau tour parmi les non placés gardés.
+    if (!id) {
+      _tlSlideshowSeen.clear();
+      if (curId) _tlSlideshowSeen.add(curId); // celui qu'on quitte repasse après tous les autres
+      id = others[0] || unplaced[0];
+    }
+    return id;
+  }
+  // Tout placé : premier pas encore proposé dans la boucle, ordre actuel des tiers (meilleur → pire).
+  const others = _tlSlideshowPlacedIds(tl).filter(id => id !== curId);
+  const id = others.find(x => !_tlSlideshowPlacedSeen.has(x));
+  if (id || dryRun) return id || others[0] || null;
+  // Boucle finie : on repart du meilleur.
+  _tlSlideshowPlacedSeen.clear();
+  return others[0] || null;
+}
+
+// Affiche id : oublie ce qui suivait dans l'historique (après un retour en arrière) et l'y ajoute.
+function _tlSlideshowShow(tl, id) {
+  _tlSlideshowIds = _tlSlideshowIds.slice(0, _tlSlideshowIdx + 1);
+  _tlSlideshowIds.push(id);
+  _tlSlideshowIdx = _tlSlideshowIds.length - 1;
+  const loc = _tlLocateImage(tl, id);
+  (loc && loc.zone !== '__unplaced__' ? _tlSlideshowPlacedSeen : _tlSlideshowSeen).add(id);
 }
 
 function _tlStartSlideshow() {
   const tl = tlActiveTierlist();
   if (!tl || tl.archived || tl.isTemplate) return;
-  // Même ordre que le cadre Non placés (tri personnel, élément encadré en tête — cf _tlFillUnplacedZone).
-  const head = _tlGetSortedUnplaced(tl).filter(id => tlFindImage(tl, id));
-  const hlId = _tlHighlightedImgId(tl);
-  const hlIdx = hlId ? head.indexOf(hlId) : -1;
-  if (hlIdx > 0) { head.splice(hlIdx, 1); head.unshift(hlId); }
   _tlSlideshowTlId = tl.id;
-  _tlSlideshowIds = head;
-  _tlSlideshowHeadLen = head.length;
-  _tlSlideshowRefreshTail(tl);
-  _tlSlideshowIdx = 0;
+  _tlSlideshowIds = [];
+  _tlSlideshowIdx = -1;
+  _tlSlideshowSeen.clear();
+  _tlSlideshowPlacedSeen.clear();
+  const first = _tlSlideshowNextId(tl, null);
+  if (first) _tlSlideshowShow(tl, first);
+  _tlSlideshowIdx = Math.max(0, _tlSlideshowIdx);
   document.body.classList.add('tl-slideshow-mode');
   tlEditorBody.classList.add('tl-editor-body--slideshow');
-  _tlUpdateSlideshowDirBtn();
   tlRender();
 }
 
 function _tlResetSlideshowState() {
   _tlSlideshowTlId = null;
   _tlSlideshowIds = [];
-  _tlSlideshowHeadLen = 0;
   _tlSlideshowIdx = 0;
+  _tlSlideshowSeen.clear();
+  _tlSlideshowPlacedSeen.clear();
   document.body.classList.remove('tl-slideshow-mode');
   tlEditorBody.classList.remove('tl-editor-body--slideshow');
   const stage = document.getElementById('tl-slideshow-stage');
@@ -8646,39 +8679,30 @@ function _tlResetSlideshowState() {
   tlTiersZone.querySelectorAll('.tl-tier-wrap--slideshow-current').forEach(w => w.classList.remove('tl-tier-wrap--slideshow-current'));
 }
 
-function _tlUpdateSlideshowDirBtn() {
-  const btn = document.getElementById('tl-btn-slideshow-dir');
-  if (!btn) return;
-  _setSortBtn(btn, _tlSlideshowBottomUp ? 'worst' : 'best', _TL_SLIDESHOW_DIR_MODES);
-}
-
-// Retire les éléments supprimés entre-temps, ajoute en fin de non placés ceux importés pendant le
-// diaporama ; l'élément affiché reste le même (par position : il peut être à la fois dans les non
-// placés et dans les déjà placés).
+// Retire de l'historique les éléments supprimés entre-temps. Élément affiché supprimé (ou rien
+// d'affiché, ex. éléments importés pendant le diaporama) : passe au suivant.
 function _tlSlideshowSync(tl) {
-  const inHead = _tlSlideshowIdx < _tlSlideshowHeadLen;
-  const curId = _tlSlideshowIds[_tlSlideshowIdx];
   const alive = id => !!tlFindImage(tl, id) && !!_tlLocateImage(tl, id);
-  const known = new Set(_tlSlideshowIds);
-  const head = _tlSlideshowIds.slice(0, _tlSlideshowHeadLen).filter(alive);
-  const tail = _tlSlideshowIds.slice(_tlSlideshowHeadLen).filter(alive);
-  tl.unplaced.forEach(id => { if (!known.has(id) && tlFindImage(tl, id)) { head.push(id); known.add(id); } });
-  _tlSlideshowHeadLen = head.length;
-  _tlSlideshowIds = head.concat(tail);
-  let i = inHead ? head.indexOf(curId) : tail.indexOf(curId);
-  if (i !== -1 && !inHead) i += head.length;
-  if (i === -1) i = Math.min(_tlSlideshowIdx, _tlSlideshowIds.length - 1);
-  _tlSlideshowIdx = Math.max(0, i);
+  const curId = _tlSlideshowIds[_tlSlideshowIdx];
+  const before = _tlSlideshowIds.slice(0, _tlSlideshowIdx).filter(alive);
+  if (curId && alive(curId)) {
+    _tlSlideshowIds = before.concat(curId, _tlSlideshowIds.slice(_tlSlideshowIdx + 1).filter(alive));
+    _tlSlideshowIdx = before.length;
+    return;
+  }
+  _tlSlideshowIds = before;
+  _tlSlideshowIdx = before.length - 1;
+  const next = _tlSlideshowNextId(tl, null);
+  if (next) _tlSlideshowShow(tl, next);
+  _tlSlideshowIdx = Math.max(0, _tlSlideshowIdx);
 }
 
 function _tlRenderSlideshow(tl) {
   _tlSlideshowSync(tl);
   const stage = document.getElementById('tl-slideshow-stage');
-  const info = document.getElementById('tl-slideshow-info');
   const prevBtn = document.getElementById('tl-slideshow-prev');
   const nextBtn = document.getElementById('tl-slideshow-next');
   if (!stage) return;
-  const total = _tlSlideshowIds.length;
   const imgId = _tlSlideshowIds[_tlSlideshowIdx] || null;
   const img = imgId ? tlFindImage(tl, imgId) : null;
   const isText = !!img && (img.type || 'image') === 'text';
@@ -8738,39 +8762,16 @@ function _tlRenderSlideshow(tl) {
   if (item) item.classList.toggle('tl-slideshow-item--highlight', img.id === _tlHighlightedImgId(tl));
   const nameEl = document.getElementById('tl-slideshow-name');
   if (nameEl) nameEl.textContent = img && !isText ? (img.name || '') : '';
-  if (info) info.textContent = total ? (_tlSlideshowIdx + 1) + ' / ' + total : '';
+  // Pastille à la couleur du tier de l'élément, à gauche du nom (rien si non placé ou sans nom).
+  const dotEl = document.getElementById('tl-slideshow-tier-dot');
+  if (dotEl) {
+    const imgLoc = img ? _tlLocateImage(tl, img.id) : null;
+    const imgTier = imgLoc ? tl.tiers.find(t => t.id === imgLoc.zone) : null;
+    dotEl.style.background = imgTier ? imgTier.color : '';
+    dotEl.classList.toggle('hidden', !imgTier || !nameEl || !nameEl.textContent);
+  }
   if (prevBtn) prevBtn.disabled = _tlSlideshowIdx <= 0;
-  // Fin des non placés : la suite (déjà placés) n'est photographiée qu'en y entrant → flèche active.
-  if (nextBtn) nextBtn.disabled = _tlSlideshowIdx >= total - 1 && !(_tlSlideshowIdx === _tlSlideshowHeadLen - 1 && tl.tiers.some(t => t.items.length));
-  // Case "Non placés" tout en bas des tiers (diaporama seulement) : même structure qu'un tier pour
-  // le même aspect et le même clic (capture sur tlTiersZone, zone '__unplaced__'). Recréée ici car
-  // tlRenderTiers() vide la colonne à chaque rendu complet.
-  if (!tlTiersZone.querySelector('.tl-slideshow-unplaced-wrap')) {
-    const wrap = document.createElement('div');
-    wrap.className = 'tl-tier-wrap tl-slideshow-unplaced-wrap';
-    wrap.dataset.tierId = '__unplaced__';
-    const controls = document.createElement('div');
-    controls.className = 'tl-tier-controls';
-    const row = document.createElement('div');
-    row.className = 'tl-tier-row';
-    const labelCell = document.createElement('div');
-    labelCell.className = 'tl-tier-label-cell';
-    const labelText = document.createElement('span');
-    labelText.className = 'tl-tier-label-text';
-    labelText.textContent = 'Non placés';
-    const countEl = document.createElement('span');
-    countEl.className = 'tl-slideshow-unplaced-count';
-    labelCell.append(labelText, countEl);
-    row.appendChild(labelCell);
-    wrap.append(controls, row);
-    tlTiersZone.appendChild(wrap);
-  }
-  // (non placés / total), même calcul que le compteur du cadre Non placés.
-  const countEl = tlTiersZone.querySelector('.tl-slideshow-unplaced-count');
-  if (countEl) {
-    const nbUnplaced = tl.unplaced.length;
-    countEl.textContent = nbUnplaced + '/' + (nbUnplaced + tl.tiers.reduce((sum, t) => sum + t.items.length, 0));
-  }
+  if (nextBtn) nextBtn.disabled = _tlSlideshowIdx >= _tlSlideshowIds.length - 1 && !_tlSlideshowNextId(tl, imgId, true);
   const loc = img ? _tlLocateImage(tl, img.id) : null;
   tlTiersZone.querySelectorAll('.tl-tier-wrap').forEach(w => {
     w.classList.toggle('tl-tier-wrap--slideshow-current', !!loc && w.dataset.tierId === loc.zone);
@@ -8780,11 +8781,17 @@ function _tlRenderSlideshow(tl) {
 function _tlSlideshowGo(delta) {
   const tl = tlActiveTierlist();
   if (!tl || tl.id !== _tlSlideshowTlId) return;
-  // On quitte le dernier non placé vers l'avant : photo à jour des déjà placés (y compris ceux
-  // qu'on vient de placer).
-  if (delta > 0 && _tlSlideshowIdx === _tlSlideshowHeadLen - 1) _tlSlideshowRefreshTail(tl);
-  const i = _tlSlideshowIdx + delta;
-  if (i >= 0 && i < _tlSlideshowIds.length) _tlSlideshowIdx = i;
+  if (delta < 0) {
+    if (_tlSlideshowIdx > 0) _tlSlideshowIdx--;
+  } else if (_tlSlideshowIdx < _tlSlideshowIds.length - 1) {
+    // ← n'est pas une décision : après être revenu en arrière, on retrouve dans l'ordre les éléments
+    // quittés avec ← (dès qu'on a décidé pour celui-ci : placé ou passé avec →).
+    _tlSlideshowIdx++;
+  } else {
+    const curId = _tlSlideshowIds[_tlSlideshowIdx] || null;
+    const next = _tlSlideshowNextId(tl, curId);
+    if (next && next !== curId) _tlSlideshowShow(tl, next);
+  }
   _tlSlideshowAnimDir = delta;
   _tlRenderSlideshow(tl);
 }
@@ -8818,11 +8825,14 @@ function _tlSlideshowAnimate(stage, prevEl, prevBox, newEl, dir) {
   ], opts);
 }
 
-// Précharge les images voisines (2 de chaque côté) pour connaître leur format avant d'y arriver.
+// Précharge les images voisines (2 précédentes, la suivante et les prochains non placés) pour
+// connaître leur format avant d'y arriver.
 const _tlSlideshowPreloading = new Set();
 function _tlSlideshowPreload(tl) {
-  for (let d = -2; d <= 2; d++) {
-    const id = d && _tlSlideshowIds[_tlSlideshowIdx + d];
+  const curId = _tlSlideshowIds[_tlSlideshowIdx] || null;
+  const ids = [_tlSlideshowIds[_tlSlideshowIdx - 1], _tlSlideshowIds[_tlSlideshowIdx - 2], _tlSlideshowIds[_tlSlideshowIdx + 1], _tlSlideshowNextId(tl, curId, true)]
+    .concat(_tlSlideshowSortedUnplaced(tl).filter(id => id !== curId && !_tlSlideshowSeen.has(id)).slice(0, 3));
+  for (const id of ids) {
     const img = id ? tlFindImage(tl, id) : null;
     if (!img || (img.type || 'image') === 'text' || !img.src) continue;
     if (_tlSlideshowArCache.has(img.src) || _tlSlideshowPreloading.has(img.src)) continue;
@@ -8838,21 +8848,19 @@ function _tlSlideshowPreload(tl) {
 }
 
 // Clic sur un tier : y place l'élément affiché (en fin de tier), puis élément suivant. Déjà dans ce
-// tier : rien ne bouge, on passe juste au suivant. tierId '__unplaced__' = case "Non placés" : renvoie
-// l'élément en fin des non placés.
+// tier : rien ne bouge, on passe juste au suivant.
 function _tlSlideshowPlace(tierId) {
   const tl = tlActiveTierlist();
   if (!tl || tl.id !== _tlSlideshowTlId) return;
   const imgId = _tlSlideshowIds[_tlSlideshowIdx];
-  const toUnplaced = tierId === '__unplaced__';
-  const tier = toUnplaced ? null : tl.tiers.find(t => t.id === tierId);
-  if (!imgId || (!toUnplaced && !tier)) return;
+  const tier = tl.tiers.find(t => t.id === tierId);
+  if (!imgId || !tier) return;
   const from = _tlLocateImage(tl, imgId);
   if (from && from.zone !== tierId) {
     // Même enregistrement que le glisser-déposer (tlDrop) : annulable, groupe seul, patch des 2 zones.
     _tlPushUndoOp({ tierlistId: tl.id, type: 'moveImage', imgId, fromZone: from.zone, fromIndex: from.index });
     _tlRemoveImageFromAllZones(tl, imgId);
-    if (toUnplaced) tl.unplaced.push(imgId); else tier.items.push(imgId);
+    tier.items.push(imgId);
     tlTouchFolderChain(_tlEffectiveFolderId(tl));
     tlSaveGroup(_tlGroupRoot(tl).id);
     if (!_tlPatchImageMove(tl, from.zone, tierId)) tlRender(true);
@@ -8860,25 +8868,8 @@ function _tlSlideshowPlace(tierId) {
   _tlSlideshowGo(1);
 }
 
-function _tlToggleSlideshowDir() {
-  _tlSlideshowBottomUp = !_tlSlideshowBottomUp;
-  _tlUpdateSlideshowDirBtn();
-  const tl = tlActiveTierlist();
-  if (!tl || tl.id !== _tlSlideshowTlId) return;
-  _tlSlideshowRefreshTail(tl);
-  // Dans les déjà placés : repartir du début de ce parcours (tier du haut ou du bas). Dans les non
-  // placés : l'élément affiché ne change pas.
-  if (_tlSlideshowIdx >= _tlSlideshowHeadLen) _tlSlideshowIdx = Math.max(0, Math.min(_tlSlideshowHeadLen, _tlSlideshowIds.length - 1));
-  _tlRenderSlideshow(tl);
-}
-
 document.getElementById('tl-btn-slideshow')?.addEventListener('click', _tlStartSlideshow);
 document.getElementById('tl-btn-slideshow-exit')?.addEventListener('click', () => { _tlResetSlideshowState(); tlRender(); });
-document.getElementById('tl-btn-slideshow-dir')?.addEventListener('click', e => {
-  _openSortMenu(e.currentTarget, _TL_SLIDESHOW_DIR_MODES, _tlSlideshowBottomUp ? 'worst' : 'best', mode => {
-    if ((mode === 'worst') !== _tlSlideshowBottomUp) _tlToggleSlideshowDir();
-  });
-});
 document.getElementById('tl-slideshow-prev')?.addEventListener('click', () => _tlSlideshowGo(-1));
 document.getElementById('tl-slideshow-next')?.addEventListener('click', () => _tlSlideshowGo(1));
 document.getElementById('tl-slideshow-stage')?.addEventListener('dblclick', e => {

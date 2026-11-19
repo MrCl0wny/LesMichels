@@ -3322,22 +3322,7 @@ textarea.element-edit-input {
 .tl-editor-body--slideshow .tl-tier-row:hover { filter: brightness(1.1); }
 .tl-editor-body--slideshow .tl-tier-images,
 .tl-editor-body--slideshow .tl-unplaced-section { display: none; }
-/* Case "Non placés" tout en bas, séparée des tiers par un trait */
-.tl-slideshow-unplaced-wrap {
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-.tl-slideshow-unplaced-wrap .tl-tier-label-cell { background: var(--surface-3); }
-.tl-slideshow-unplaced-wrap .tl-tier-label-text { color: var(--text); }
-/* non placés/total discret, à droite de "Non placés" */
-.tl-slideshow-unplaced-wrap .tl-tier-label-cell { flex-direction: row; gap: 8px; }
-.tl-slideshow-unplaced-count {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-/* Tier (ou case Non placés) où se trouve déjà l'élément affiché : contour blanc (comme l'élément encadré) */
+/* Tier où se trouve déjà l'élément affiché : contour blanc (comme l'élément encadré) */
 .tl-tier-wrap--slideshow-current .tl-tier-label-cell { outline: 3px solid #fff; outline-offset: -3px; }
 .tl-editor-body--slideshow .tl-slideshow {
   display: flex;
@@ -3412,7 +3397,7 @@ textarea.element-edit-input {
 .tl-slideshow-arrow [data-lucide] { width: 80px; height: 80px; stroke-width: 3.5; margin-right: 0; }
 .tl-slideshow-arrow:hover:not(:disabled) { color: var(--accent); }
 .tl-slideshow-arrow:disabled { opacity: 0.2; cursor: default; }
-/* Nom (blanc, gras, gros) puis compteur, sous l'élément */
+/* Nom (blanc, gras, gros), sous l'élément */
 .tl-slideshow-nav {
   display: flex;
   align-items: baseline;
@@ -3432,13 +3417,18 @@ textarea.element-edit-input {
   white-space: nowrap;
 }
 .tl-slideshow-name:empty { display: none; }
-.tl-slideshow-info {
-  color: var(--text-muted);
+/* Pastille à la couleur du tier de l'élément, à gauche du nom */
+.tl-slideshow-tier-dot {
   flex-shrink: 0;
-  white-space: nowrap;
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.25);
+  margin-right: -4px; /* rapprochée du nom (écart de la rangée : 16px) */
 }
-/* Rangée de contrôle en diaporama : sens de parcours à gauche, Quitter diaporama au centre,
-   Annuler à droite (même principe que le mode comparaison). */
+/* Rangée de contrôle en diaporama : Quitter diaporama au centre, Annuler à droite (même principe
+   que le mode comparaison). */
 .tl-slideshow-only { display: none !important; }
 body.tl-slideshow-mode .tl-slideshow-only { display: inline-flex !important; }
 body.tl-slideshow-mode #tl-btn-add-tier,

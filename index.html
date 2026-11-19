@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=378" />
+  <link rel="stylesheet" href="style.css?v=381" />
   <!-- Couleurs choisies (Préférences) appliquées dès le chargement, sans attendre Firebase ni app.js. -->
   <script>try { var _ct = localStorage.getItem('lmColorTheme'); if (_ct && _ct !== 'gray') document.documentElement.setAttribute('data-color-theme', _ct); } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -173,9 +173,6 @@
                 <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
                 <button class="tl-toolbar-btn tl-btn-reset tl-shrink-0" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
               </div>
-              <!-- Diaporama seulement (cf body.tl-slideshow-mode) : sens de parcours des éléments déjà placés -->
-              <span class="sort-label tl-shrink-0 tl-slideshow-only">Trier par</span>
-              <button type="button" class="tl-toolbar-btn tl-btn-neutral tl-shrink-0 tl-slideshow-only" id="tl-btn-slideshow-dir" title="Sens de parcours des éléments déjà placés"><i data-lucide="arrow-down-wide-narrow"></i> Meilleur→Pire</button>
             </div>
             <div class="ctrl-row-toolbar-center">
               <button class="tl-toolbar-btn tl-btn-yellow tl-group-elem hidden" id="tl-btn-compare" title="Comparer plusieurs listes de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparaison</button>
@@ -266,7 +263,7 @@
                 </div>
               </div>
 
-              <!-- Diaporama : un seul élément en grand, flèches sur les côtés, nom + compteur dessous
+              <!-- Diaporama : un seul élément en grand, flèches sur les côtés, pastille du tier + nom dessous
                    (cf _tlRenderSlideshow), visible seulement en mode diaporama (.tl-editor-body--slideshow),
                    à la place des non placés -->
               <div id="tl-slideshow" class="tl-slideshow">
@@ -276,8 +273,8 @@
                   <button type="button" id="tl-slideshow-next" class="tl-slideshow-arrow" title="Élément suivant"><i data-lucide="chevron-right"></i></button>
                 </div>
                 <div class="tl-slideshow-nav">
+                  <span id="tl-slideshow-tier-dot" class="tl-slideshow-tier-dot hidden"></span>
                   <span id="tl-slideshow-name" class="tl-slideshow-name"></span>
-                  <span id="tl-slideshow-info" class="tl-slideshow-info"></span>
                 </div>
               </div>
 
@@ -1077,6 +1074,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=527"></script>
+  <script src="app.js?v=532"></script>
 </body>
 </html>
