@@ -606,6 +606,11 @@ function _normalizeGridTitle(str) {
   return String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 }
 
+// Recherche : ignore majuscules ET accents ("eleve" trouve "Élève"). Appliquer au texte cherché ET au texte saisi.
+function _searchNorm(str) {
+  return String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
 function _defaultFavGridId(folderId) {
   const wanted = _normalizeGridTitle(_localFavGridTitle);
   if (!wanted) return null;
@@ -2228,10 +2233,10 @@ function renderElements() {
     filterSelect.value = tags.includes(prevValue) ? prevValue : '';
   }
   const filterTag = filterSelect ? filterSelect.value : '';
-  const searchText = inputEl ? inputEl.value.trim().toLowerCase() : '';
+  const searchText = inputEl ? _searchNorm(inputEl.value.trim()) : '';
   const filteredElems = sElems
     .filter(e => !filterTag || tagsOf(e).includes(filterTag))
-    .filter(e => !searchText || e.text.toLowerCase().includes(searchText));
+    .filter(e => !searchText || _searchNorm(e.text).includes(searchText));
 
   const elemCompare = (a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' });
   const active   = filteredElems.filter(e => !archivedIds.includes(e.id)).sort(elemCompare);
@@ -5200,11 +5205,11 @@ function _renderElementPresetEditList() {
   // valides pour éditer/supprimer). Tri : mêmes 4 modes que Dossiers (date = modification de la case ;
   // à date égale, l'ordre d'ajout départage).
   const searchInput = document.getElementById('element-preset-edit-input');
-  const searchText = searchInput ? searchInput.value.trim().toLowerCase() : '';
+  const searchText = searchInput ? _searchNorm(searchInput.value.trim()) : '';
   const mode = _folderSortMode('elementPresetCasesSortMode');
   const entries = _elementPresetEditTexts
     .map((text, idx) => ({ text, idx, date: _elementPresetEditDates[idx] || 0 }))
-    .filter(e => !searchText || e.text.toLowerCase().includes(searchText));
+    .filter(e => !searchText || _searchNorm(e.text).includes(searchText));
   if (mode === 'updatedAt' || mode === 'updatedAt-asc') entries.sort((a, b) => (b.date - a.date) || (b.idx - a.idx));
   else entries.sort((a, b) => a.text.localeCompare(b.text, 'fr', { sensitivity: 'base' }));
   if (mode === 'alpha-desc' || mode === 'updatedAt-asc') entries.reverse();
@@ -5567,7 +5572,7 @@ function _bingoUpdateSuggestionsSubscription() {
 
 function _bingoSortedSuggestions(searchText) {
   return _bingoSuggestions
-    .filter(sg => !searchText || sg.text.toLowerCase().includes(searchText))
+    .filter(sg => !searchText || _searchNorm(sg.text).includes(searchText))
     .sort((a, b) => a.text.localeCompare(b.text, 'fr', { sensitivity: 'base' }));
 }
 
@@ -5707,7 +5712,7 @@ function renderSuggestions() {
   const list = document.getElementById('suggestions-list');
   if (!panel || !list || !panel.classList.contains('open')) return;
   if (_suggestionEditingIn(list)) return;
-  const searchText = document.getElementById('new-suggestion-input').value.trim().toLowerCase();
+  const searchText = _searchNorm(document.getElementById('new-suggestion-input').value.trim());
   list.innerHTML = '';
   _bingoSortedSuggestions(searchText).forEach(sg => list.appendChild(_buildSuggestionItem(sg, false)));
   if (window.lucide) lucide.createIcons({ root: list });
@@ -7017,7 +7022,7 @@ let _tlLocalUnplacedImgSize = null; // taille des images du cadre "Éléments no
 let _tlLocalUnplacedShowLabels = null; // afficher/masquer noms du cadre "Éléments non placés" (indépendant de la tierlist)
 let _tlLocalUnplacedHidden  = false; // true = cadre "Éléments non placés" masqué (préférence locale)
 let _tlLocalSingleRow       = false; // true = chaque tier sur une seule rangée, défilement horizontal (pref perso)
-let _tlTierSearchText       = '';    // recherche dans les tiers (minuscules), affichage seul, jamais sauvegardée
+let _tlTierSearchText       = '';    // recherche dans les tiers (minuscules, sans accents), affichage seul, jamais sauvegardée
 // Diaporama (cf _tlStartSlideshow) : état local seul, rien en Firebase.
 let _tlSlideshowTlId = null;       // liste en diaporama (null = mode inactif)
 let _tlSlideshowIds = [];          // historique des éléments affichés (flèche ←) ; le suivant est calculé (cf _tlSlideshowNextId)
@@ -9855,7 +9860,7 @@ if (tlCompareShowLabelsToggle) {
 // Ids de "non placés" dans l'ordre d'affichage (tri, élément encadré en tête, filtre de recherche) —
 // partagé par _tlFillUnplacedZone et _tlMoveImageCard pour qu'ils voient toujours le même ordre.
 function _tlUnplacedVisibleIds(tl) {
-  const searchText = tlAddTextInput.value.trim().toLowerCase();
+  const searchText = _searchNorm(tlAddTextInput.value.trim());
   const sorted = _tlGetSortedUnplaced(tl);
   // Élément encadré (cf _tlSetImageToPlace) : toujours en tête, quel que soit le tri (affichage seul).
   const hlId = _tlHighlightedImgId(tl);
@@ -9864,7 +9869,7 @@ function _tlUnplacedVisibleIds(tl) {
   return searchText
     ? sorted.filter(imgId => {
         const img = tlFindImage(tl, imgId);
-        return img && img.name.toLowerCase().includes(searchText);
+        return img && _searchNorm(img.name).includes(searchText);
       })
     : sorted;
 }
@@ -9963,7 +9968,7 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
   }
   card.draggable = !readOnly;
   card.dataset.imgId = img.id;
-  card.dataset.searchName = (img.name || '').toLowerCase(); // recherche dans les tiers (cf _tlApplyTierSearch)
+  card.dataset.searchName = _searchNorm(img.name); // recherche dans les tiers (cf _tlApplyTierSearch)
   if (!isUnplacedZone && _tlTierSearchText && !card.dataset.searchName.includes(_tlTierSearchText)) card.classList.add('tl-search-hidden');
   card.title = readOnly ? img.name : img.name + '\nClic gauche : sélectionner (Suppr pour supprimer) · Glisser pour déplacer · Clic droit : renommer / supprimer';
 
@@ -12545,7 +12550,7 @@ function _tlTierInsertIdx(tier, idx, cards) {
   return Math.min(idx, tier.items.length);
 }
 document.getElementById('tl-tier-search')?.addEventListener('input', e => {
-  _tlTierSearchText = e.target.value.trim().toLowerCase();
+  _tlTierSearchText = _searchNorm(e.target.value.trim());
   _tlApplyTierSearch();
 });
 
