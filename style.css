@@ -3402,7 +3402,26 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
    comparaison). */
 body.tl-slideshow-mode #tl-btn-add-tier,
 body.tl-slideshow-mode #tl-list-options-frame,
-body.tl-slideshow-mode #tl-btn-toggle-unplaced { display: none !important; }
+body.tl-slideshow-mode #tl-btn-toggle-unplaced,
+body.tl-slideshow-mode #tl-tier-search { display: none !important; }
+
+/* Recherche dans les tiers (rangée de contrôle, Classique + Comparaison) : filtre l'affichage seul */
+.tl-tier-search-input {
+  height: 32px;
+  width: 160px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+.tl-tier-search-input::placeholder { color: var(--text-muted); }
+.tl-tier-search-input:focus { outline: none; border-color: var(--accent-dim); }
+body:not(.compare-tierlist-mode) #tl-tier-search.tl-on-template { display: none; }
+.tl-img-card.tl-search-hidden { display: none !important; }
 
 /* ── Zone des tiers — cadre distinct, scroll interne indépendant de la zone non placée ── */
 .tl-tiers-zone {
@@ -3523,6 +3542,15 @@ body.tl-slideshow-mode #tl-btn-toggle-unplaced { display: none !important; }
   border-left: 1px solid var(--border);
   position: relative;
 }
+/* Bouton "Rangée unique" : jamais de 2e rangée, défilement horizontal dans le tier — tous les modes
+   (classe sur <body> ; plus spécifique que .tl-compare-tier-row .tl-tier-images de la Comparaison) */
+body.tl-single-row .tl-tier-images {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+  scrollbar-width: thin;
+}
 .tl-tier-images.drag-over {
   background: var(--accent-glow) !important;
   outline: 2px dashed var(--accent);
@@ -3557,6 +3585,9 @@ body.tl-slideshow-mode #tl-btn-toggle-unplaced { display: none !important; }
 /* Élément encadré pour tout le groupe (double-clic dans les non-placés) : même cadre blanc que la
    dernière case cochée du Bingo (.bingo-cell.last-checked). */
 .tl-img-card.tl-img-card--highlight { outline: 3px solid #fff; outline-offset: -3px; }
+/* Élément encadré placé par TOUTES les listes du groupe : cadre vert (cf _tlHighlightAllPlaced) */
+.tl-img-card.tl-img-card--highlight.tl-highlight-done,
+.tl-slideshow-item--highlight.tl-highlight-done { outline-color: var(--bingo-green); }
 
 .tl-img-card img {
   display: block;

@@ -301,6 +301,8 @@ function setupAuth() {
       _tlLocalUnplacedImgSize  = null;
       _tlLocalUnplacedShowLabels = null;
       _tlLocalUnplacedHidden   = false;
+      _tlLocalSingleRow        = false;
+      _tlApplySingleRow();
       _tlLocalUnplacedSortByList = {};
       _tlLocalSplit           = null;
       _tlLocalActiveTierlistId = null;
@@ -365,6 +367,8 @@ function loadUserPrefs() {
     if (prefs.tlUnplacedImgSize   != null) _tlLocalUnplacedImgSize  = prefs.tlUnplacedImgSize;
     if (prefs.tlUnplacedShowLabels != null) _tlLocalUnplacedShowLabels = !!prefs.tlUnplacedShowLabels;
     if (prefs.tlUnplacedHidden    != null) _tlLocalUnplacedHidden   = !!prefs.tlUnplacedHidden;
+    _tlLocalSingleRow = !!prefs.tlSingleRow;
+    _tlApplySingleRow();
     if (prefs.tlUnplacedSortByList && typeof prefs.tlUnplacedSortByList === 'object') _tlLocalUnplacedSortByList = prefs.tlUnplacedSortByList;
     if (prefs.tlSplit             != null) _tlLocalSplit            = prefs.tlSplit;
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
@@ -425,6 +429,10 @@ function _exitCompareTierlistMode() {
   // _tlRenderCompareView() démasque la vue indépendamment de la classe du body — sans ça
   // elle reste visible même après la sortie du mode.
   document.getElementById('tl-compare-view')?.classList.add('hidden');
+  // Vidée aussi : ses cartes cachées (placées AVANT .tl-layout dans le DOM) étaient trouvées en premier
+  // par les document.querySelector(`.tl-img-card[data-img-id=…]`) du mode Classique (sélection, glisser).
+  const compareView = document.getElementById('tl-compare-view');
+  if (compareView) compareView.innerHTML = '';
   document.getElementById('tl-compare-lists-menu')?.classList.add('hidden');
   if (typeof _tlUpdateActiveGroupSubscription === 'function') _tlUpdateActiveGroupSubscription();
 }
@@ -7008,6 +7016,8 @@ let _tlLocalImgSize         = null;
 let _tlLocalUnplacedImgSize = null; // taille des images du cadre "Éléments non placés" (indépendante de la tierlist)
 let _tlLocalUnplacedShowLabels = null; // afficher/masquer noms du cadre "Éléments non placés" (indépendant de la tierlist)
 let _tlLocalUnplacedHidden  = false; // true = cadre "Éléments non placés" masqué (préférence locale)
+let _tlLocalSingleRow       = false; // true = chaque tier sur une seule rangée, défilement horizontal (pref perso)
+let _tlTierSearchText       = '';    // recherche dans les tiers (minuscules), affichage seul, jamais sauvegardée
 // Diaporama (cf _tlStartSlideshow) : état local seul, rien en Firebase.
 let _tlSlideshowTlId = null;       // liste en diaporama (null = mode inactif)
 let _tlSlideshowIds = [];          // historique des éléments affichés (flèche ←) ; le suivant est calculé (cf _tlSlideshowNextId)
@@ -8380,6 +8390,8 @@ function tlRender(skipHeightRecalc = false) {
   const tlListOptionsFrame = document.getElementById('tl-list-options-frame');
   if (tlListOptionsFrame) tlListOptionsFrame.classList.toggle('hidden', !!tl.isTemplate);
   if (tlBtnAddTier) tlBtnAddTier.classList.remove('hidden');
+  // Template : tiers sans éléments → recherche masquée, sauf en Comparaison (accessible depuis un template), cf style.css
+  document.getElementById('tl-tier-search')?.classList.toggle('tl-on-template', !!tl.isTemplate);
   if (tlBtnToggleUnplaced) {
     tlBtnToggleUnplaced.classList.toggle('hidden', !!tl.isTemplate);
     tlEditorBody.classList.toggle('tl-unplaced-hidden', !tl.isTemplate && _tlLocalUnplacedHidden);
@@ -8533,6 +8545,25 @@ function _tlHighlightedImgId(tl) {
   return _tlGroupRoot(tl).toPlaceImgId || null;
 }
 
+// true si l'élément encadré est placé dans un tier de TOUTES les listes (non archivées) du groupe :
+// le cadre passe alors du blanc au vert (classe tl-highlight-done).
+function _tlHighlightAllPlaced(tl) {
+  const imgId = _tlHighlightedImgId(tl);
+  if (!imgId) return false;
+  const root = _tlGroupRoot(tl);
+  const lists = root.isTemplate
+    ? tlState.tierlists.filter(t => !t.isTemplate && t.templateId === root.id && !t.archived)
+    : [root];
+  return lists.length > 0 && lists.every(l => (l.tiers || []).some(tier => (tier.items || []).includes(imgId)));
+}
+// Bascule blanc/vert sur les cadres déjà affichés : simple classe, aucun rendu (une action sur une
+// autre liste du groupe ne doit jamais redessiner la liste affichée).
+function _tlUpdateHighlightDone(tl) {
+  const done = _tlHighlightAllPlaced(tl);
+  document.querySelectorAll('.tl-img-card--highlight, .tl-slideshow-item--highlight')
+    .forEach(el => el.classList.toggle('tl-highlight-done', done));
+}
+
 function _tlSetImageToPlace(tl, imgId) {
   if (!tl || tl.isTemplate) return;
   const root = _tlGroupRoot(tl);
@@ -8554,6 +8585,7 @@ function _tlRefreshHighlight(tl) {
     card.classList.toggle('tl-img-card--highlight', card.dataset.imgId === hl);
   });
   if (_tlSlideshowTlId === tl.id) _tlRenderSlideshow(tl);
+  _tlUpdateHighlightDone(tl);
 }
 
 // ── Diaporama (liste uniquement, jamais le template) ─────────────────────────
@@ -8724,7 +8756,10 @@ function _tlRenderSlideshow(tl) {
   }
   _tlSlideshowPreload(tl);
   const item = stage.querySelector('.tl-slideshow-item:not(.tl-slideshow-item--out)');
-  if (item) item.classList.toggle('tl-slideshow-item--highlight', img.id === _tlHighlightedImgId(tl));
+  if (item) {
+    item.classList.toggle('tl-slideshow-item--highlight', img.id === _tlHighlightedImgId(tl));
+    item.classList.toggle('tl-highlight-done', img.id === _tlHighlightedImgId(tl) && _tlHighlightAllPlaced(tl));
+  }
   const nameEl = document.getElementById('tl-slideshow-name');
   if (nameEl) nameEl.textContent = img && !isText ? (img.name || '') : '';
   // Pastille à la couleur du tier de l'élément, à gauche du nom (rien si non placé ou sans nom).
@@ -9653,6 +9688,7 @@ function _tlRenderCompareView(tls) {
 // dans les autres colonnes, glisser-déposer = réordonner/changer de tier DANS la même liste.
 function _tlBuildCompareImgCard(tl, img, size) {
   const card = tlBuildImgCard(tl, img, size, true);
+  card.classList.remove('tl-img-card--highlight'); // pas de cadre blanc "à placer" en Comparaison
   card.classList.toggle('tl-compare-highlight', img.id === _tlCompareHighlightImgId);
   card.draggable = true;
   card.title = img.name + '\nClic gauche : surligner dans toutes les listes · Double-clic : localiser · Glisser pour réordonner';
@@ -9700,7 +9736,13 @@ function _tlCompareScrollToImg(imgId) {
     const colRect = col.getBoundingClientRect();
     const cardRect = card.getBoundingClientRect();
     const alreadyVisible = cardRect.top >= colRect.top && cardRect.bottom <= colRect.bottom;
-    if (!alreadyVisible) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (!alreadyVisible) { card.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; } // inline 'nearest' par défaut : gère aussi le côté
+    // Visible verticalement mais coupé sur le côté (tier en "Rangée unique") : défilement horizontal du tier seul
+    const zone = card.closest('.tl-tier-images');
+    if (!zone || zone.scrollWidth <= zone.clientWidth) return;
+    const zoneRect = zone.getBoundingClientRect();
+    if (cardRect.left < zoneRect.left) zone.scrollBy({ left: cardRect.left - zoneRect.left - 8, behavior: 'smooth' });
+    else if (cardRect.right > zoneRect.right) zone.scrollBy({ left: cardRect.right - zoneRect.right + 8, behavior: 'smooth' });
   });
 }
 
@@ -9783,8 +9825,8 @@ function _tlCompareDrop(e, tl, targetTierId) {
   const tier = tl.tiers.find(t => t.id === targetTierId);
   if (!tier) return;
   const imgsDiv = e.currentTarget;
-  const { idx: insertIdx } = _tlComputeDropIndex(imgsDiv, imgId, e.clientX, e.clientY);
-  tier.items.splice(insertIdx, 0, imgId);
+  const { idx: dropIdx, cards: dropCards } = _tlComputeDropIndex(imgsDiv, imgId, e.clientX, e.clientY);
+  tier.items.splice(_tlTierInsertIdx(tier, dropIdx, dropCards), 0, imgId);
 
   tlTouchFolderChain(_tlEffectiveFolderId(tl));
   tlSaveGroup(_tlGroupRoot(tl).id); // groupe seul, jamais l'index : cf tlDrop
@@ -9915,9 +9957,14 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
   const card = document.createElement('div');
   card.className = 'tl-img-card';
   if (!readOnly && img.id === _tlSelectedImgId) card.classList.add('selected');
-  if (img.id === _tlHighlightedImgId(tl)) card.classList.add('tl-img-card--highlight');
+  if (img.id === _tlHighlightedImgId(tl)) {
+    card.classList.add('tl-img-card--highlight');
+    if (_tlHighlightAllPlaced(tl)) card.classList.add('tl-highlight-done');
+  }
   card.draggable = !readOnly;
   card.dataset.imgId = img.id;
+  card.dataset.searchName = (img.name || '').toLowerCase(); // recherche dans les tiers (cf _tlApplyTierSearch)
+  if (!isUnplacedZone && _tlTierSearchText && !card.dataset.searchName.includes(_tlTierSearchText)) card.classList.add('tl-search-hidden');
   card.title = readOnly ? img.name : img.name + '\nClic gauche : sélectionner (Suppr pour supprimer) · Glisser pour déplacer · Clic droit : renommer / supprimer';
 
   if (!readOnly) {
@@ -9926,12 +9973,9 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
       // Simple bascule de classe CSS ciblée au lieu d'un tlRender() complet : la sélection ne
       // change rien d'autre dans le DOM (confirmé dans tlBuildImgCard, aucun autre élément ne
       // dépend de _tlSelectedImgId), donc reconstruire tous les tiers pour ça est inutile.
-      const previouslySelectedId = _tlSelectedImgId;
       _tlSelectedImgId = (_tlSelectedImgId === img.id) ? null : img.id;
-      if (previouslySelectedId && previouslySelectedId !== img.id) {
-        const prevCard = document.querySelector(`.tl-img-card[data-img-id="${previouslySelectedId}"]`);
-        if (prevCard) prevCard.classList.remove('selected');
-      }
+      // Toutes les cartes encore sélectionnées (pas seulement la première trouvée par identifiant)
+      document.querySelectorAll('.tl-img-card.selected').forEach(c => { if (c !== card) c.classList.remove('selected'); });
       card.classList.toggle('selected', _tlSelectedImgId === img.id);
     });
 
@@ -10566,7 +10610,7 @@ function _tlComputeDropIndex(zone, imgId, clientX, clientY) {
   if (placeholder) placeholder.remove();
 
   const cards = Array.from(zone.querySelectorAll('.tl-img-card'))
-    .filter(c => c.dataset.imgId !== imgId);
+    .filter(c => c.dataset.imgId !== imgId && !c.classList.contains('tl-search-hidden')); // cachées par la recherche : sans position
   const rects = new Map(cards.map(c => [c, c.getBoundingClientRect()]));
   const idx = tlDropInsertIndex(zone, clientX, clientY, cards, rects);
 
@@ -10710,7 +10754,8 @@ function tlDrop(e, targetZoneId) {
       // Même fonction de calcul que l'aperçu (tlDragOver) — garantit que le résultat final
       // corresponde toujours exactement à la position montrée par le placeholder.
       const imgsDiv = e.currentTarget;
-      const { idx: insertIdx } = _tlComputeDropIndex(imgsDiv, imgId, e.clientX, e.clientY);
+      const { idx: dropIdx, cards: dropCards } = _tlComputeDropIndex(imgsDiv, imgId, e.clientX, e.clientY);
+      const insertIdx = _tlTierInsertIdx(tier, dropIdx, dropCards);
       if (window.__TL_DND_DEBUG) {
         const preview = window.__TL_DND_LAST_PREVIEW || {};
         const match = preview.idx === insertIdx;
@@ -12191,8 +12236,7 @@ document.addEventListener('keydown', e => {
 // qu'un tlRender() complet, même principe que le clic de sélection dans tlBuildImgCard.
 document.addEventListener('click', e => {
   if (_tlSelectedImgId && !e.target.closest('.tl-img-card')) {
-    const prevCard = document.querySelector(`.tl-img-card[data-img-id="${_tlSelectedImgId}"]`);
-    if (prevCard) prevCard.classList.remove('selected');
+    document.querySelectorAll('.tl-img-card.selected').forEach(c => c.classList.remove('selected'));
     _tlSelectedImgId = null;
   }
 });
@@ -12469,6 +12513,48 @@ tlShowLabelsToggle.addEventListener('click', () => {
   _tlUpdateShowLabelsBtn(_tlLocalShowLabels);
   saveUserPrefs({ tlShowLabels: _tlLocalShowLabels });
   tlRender();
+});
+
+// "Rangée unique" : simple classe CSS sur <body> (pas de re-rendu), valable dans tous les modes
+// (Classique, Comparaison, et Diaporama si ses tiers affichent un jour leurs éléments), cf style.css .tl-single-row
+function _tlApplySingleRow() {
+  document.body.classList.toggle('tl-single-row', _tlLocalSingleRow);
+  ['tl-single-row-toggle', 'tl-compare-single-row-toggle'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.innerHTML = `<i data-lucide="${_tlLocalSingleRow ? 'square-check' : 'square'}"></i> Rangée unique`;
+    if (window.lucide) lucide.createIcons({ root: btn });
+  });
+}
+// Recherche dans les tiers : cache (classe tl-search-hidden) les cartes des tiers dont le nom ne
+// contient pas le texte — Classique et Comparaison ; jamais les Non placés (leur propre recherche).
+// Les cartes restent dans le DOM (cf _tlMoveImageCard) ; les nouvelles cartes suivent via tlBuildImgCard.
+function _tlApplyTierSearch() {
+  document.querySelectorAll('.tl-tier-images > .tl-img-card').forEach(card => {
+    card.classList.toggle('tl-search-hidden', !!_tlTierSearchText && !(card.dataset.searchName || '').includes(_tlTierSearchText));
+  });
+}
+// Dépôt dans un tier pendant une recherche : _tlComputeDropIndex ignore les cartes cachées, son index
+// ne correspond donc plus à tier.items → on se repère sur la carte visible suivante (ou la dernière).
+function _tlTierInsertIdx(tier, idx, cards) {
+  if (!_tlTierSearchText) return idx;
+  const next = cards[idx];
+  if (next) { const i = tier.items.indexOf(next.dataset.imgId); if (i !== -1) return i; }
+  const last = cards[cards.length - 1];
+  if (last && idx >= cards.length) { const i = tier.items.indexOf(last.dataset.imgId); if (i !== -1) return i + 1; }
+  return Math.min(idx, tier.items.length);
+}
+document.getElementById('tl-tier-search')?.addEventListener('input', e => {
+  _tlTierSearchText = e.target.value.trim().toLowerCase();
+  _tlApplyTierSearch();
+});
+
+['tl-single-row-toggle', 'tl-compare-single-row-toggle'].forEach(id => {
+  document.getElementById(id)?.addEventListener('click', () => {
+    _tlLocalSingleRow = !_tlLocalSingleRow;
+    _tlApplySingleRow();
+    saveUserPrefs({ tlSingleRow: _tlLocalSingleRow });
+  });
 });
 
 if (tlUnplacedShowLabelsToggle) {
@@ -13270,6 +13356,9 @@ function _tlSetActiveGroupSubscription(groupRootId) {
       _tlRenderIfVisible();
     }
     _tlRemoteUpdate = false;
+    // Une autre liste du groupe a pu placer l'élément encadré : cadre blanc ↔ vert, sans rendu.
+    const activeTl = tlActiveTierlist();
+    if (activeTl) _tlUpdateHighlightDone(activeTl);
     // cf. commentaire équivalent dans _tlEnsureGroupLoaded : persiste les réparations auto.
     if (needsSave) tlSaveGroup(groupRootId);
   };

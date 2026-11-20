@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=382" />
+  <link rel="stylesheet" href="style.css?v=386" />
   <!-- Couleurs choisies (Préférences) appliquées dès le chargement, sans attendre Firebase ni app.js. -->
   <script>try { var _ct = localStorage.getItem('lmColorTheme'); if (_ct && _ct !== 'gray') document.documentElement.setAttribute('data-color-theme', _ct); } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -153,6 +153,7 @@
                   </div>
                 </label>
                 <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
+                <button type="button" id="tl-single-row-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher chaque tier sur une seule rangée (défilement horizontal)"><i data-lucide="square"></i> Rangée unique</button>
                 <button class="tl-toolbar-btn tl-btn-reset tl-shrink-0" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
               </div>
               <!-- Réglages du mode Comparaison (visibles seulement dans ce mode) -->
@@ -165,6 +166,7 @@
                   </div>
                 </label>
                 <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
+                <button type="button" id="tl-compare-single-row-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher chaque tier sur une seule rangée (défilement horizontal)"><i data-lucide="square"></i> Rangée unique</button>
               </div>
             </div>
             <div class="ctrl-row-toolbar-center">
@@ -174,6 +176,8 @@
             <div class="ctrl-row-toolbar-right">
               <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
               <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Non placés</button>
+              <!-- Recherche dans les tiers (Classique + Comparaison) : filtre l'affichage, cf _tlApplyTierSearch -->
+              <input type="text" id="tl-tier-search" class="tl-tier-search-input tl-shrink-0" placeholder="Rechercher…" title="Filtrer les éléments placés dans les tiers" autocomplete="off" />
             </div>
           </div>
 
@@ -1069,6 +1073,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=536"></script>
+  <script src="app.js?v=542"></script>
 </body>
 </html>
