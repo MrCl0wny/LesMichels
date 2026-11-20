@@ -12,9 +12,6 @@ let _compareTierlistIds = (_soloGridParams.get('compareTierlists') || '')
   .map(s => s.trim())
   .filter(Boolean);
 let _compareModeApplied = false;
-// true si la page a été ouverte directement sur ?compareTierlists= (fenêtre dédiée créée par
-// window.open() depuis le modal "Comparer" — donc fermable par le script qui l'a ouverte).
-const _compareModeIsDedicatedWindow = _compareTierlistIds.length >= 2;
 
 // Page actuellement affichée (mise à jour par window._switchPage) — sert à ne charger le contenu
 // lourd (grilles/images) d'un bingo ou d'une tierlist que si sa page est réellement affichée, plutôt
@@ -387,20 +384,6 @@ function loadUserPrefs() {
   }).catch(e => console.warn('Prefs load error:', e));
 }
 
-// Annuler à droite de la barre comparaison (Quitter comparaison est au centre), même élément DOM
-// physique que le mode normal, déplacé en JS.
-function _tlEnterCompareToolbarLayout() {
-  const undoBtn = document.getElementById('tl-btn-undo');
-  const compareRight = document.querySelector('.tl-compare-toolbar-right');
-  if (undoBtn && compareRight) compareRight.appendChild(undoBtn);
-}
-function _tlExitCompareToolbarLayout() {
-  // Retour à sa place : à droite de la rangée du panneau de contrôle, juste avant Non placés.
-  const undoBtn = document.getElementById('tl-btn-undo');
-  const toolbarRight = document.querySelector('.tl-ctrl-row-toolbar .ctrl-row-toolbar-right');
-  if (undoBtn && toolbarRight) toolbarRight.insertBefore(undoBtn, document.getElementById('tl-btn-toggle-unplaced'));
-}
-
 function _applyCompareTierlistModeIfNeeded() {
   if (_compareTierlistIds.length < 2) return;
   const tls = _compareTierlistIds
@@ -416,19 +399,12 @@ function _applyCompareTierlistModeIfNeeded() {
   _tlUpdateActiveGroupSubscription();
   if (!_compareModeApplied) {
     _compareModeApplied = true;
-    _tlLocalActiveTierlistId = null;
+    // Liste affichée = une des listes comparées (gros boutons Chemin/Liste et bouton Mode justes).
+    _tlLocalActiveTierlistId = tls[0].id;
     if (window._switchPage) window._switchPage('tierlist');
     document.body.classList.add('compare-tierlist-mode');
-    _tlEnterCompareToolbarLayout();
     tlUpdateUndoBtn();
-    if (_compareModeIsDedicatedWindow) {
-      const exitBtn = document.getElementById('tl-compare-btn-exit');
-      if (exitBtn) {
-        exitBtn.innerHTML = '<i data-lucide="x"></i> Fermer';
-        exitBtn.title = 'Fermer cette fenêtre';
-        if (window.lucide) lucide.createIcons({ root: exitBtn });
-      }
-    }
+    _tlUpdateModeBtn();
   }
   document.title = 'Comparaison : ' + _tlCommonTitlePath(tls);
   _tlCompareGroupMembers = tls;
@@ -437,27 +413,20 @@ function _applyCompareTierlistModeIfNeeded() {
   _tlRenderCompareView(tls);
 }
 
+// Sortie du mode comparaison (état seul, sans rendu : l'appelant fait tlRender, ou est tlRender).
 function _exitCompareTierlistMode() {
-  // Fenêtre dédiée ouverte via window.open() depuis le modal "Comparer" (?compareTierlists=
-  // dès le chargement) : window.close() fonctionne car la page a été ouverte par script.
-  // Si window.close() échoue (bloqué par le navigateur), on retombe sur le comportement normal.
-  if (_compareModeIsDedicatedWindow) {
-    window.close();
-  }
   document.body.classList.remove('compare-tierlist-mode');
   document.title = 'LesMichels';
-  _tlExitCompareToolbarLayout();
   // Empêche le listener Firebase (tierlist/index) de rouvrir le mode au prochain snapshot
   _compareTierlistIds = [];
   _compareModeApplied = false;
   _tlCompareGroupMembers = null;
   _tlCompareSelectedIds = null;
-  // _tlRenderCompareView() démasque ces deux éléments indépendamment de la classe du body — sans ça
-  // ils restent visibles même après la sortie du mode.
-  document.getElementById('tl-compare-toolbar')?.classList.add('hidden');
+  // _tlRenderCompareView() démasque la vue indépendamment de la classe du body — sans ça
+  // elle reste visible même après la sortie du mode.
   document.getElementById('tl-compare-view')?.classList.add('hidden');
+  document.getElementById('tl-compare-lists-menu')?.classList.add('hidden');
   if (typeof _tlUpdateActiveGroupSubscription === 'function') _tlUpdateActiveGroupSubscription();
-  tlRender();
 }
 
 // async : appelée depuis plusieurs points (chargement des prefs, snapshot d'index, souscription
@@ -8374,19 +8343,17 @@ function tlRender(skipHeightRecalc = false) {
   // Diaporama : propre à UNE liste — changer de liste, passer sur un template ou n'avoir plus
   // de liste affichée (comparaison comprise) le quitte.
   if (_tlSlideshowTlId && (!tl || tl.archived || tl.isTemplate || tl.id !== _tlSlideshowTlId)) _tlResetSlideshowState();
-  const tlBtnSlideshow = document.getElementById('tl-btn-slideshow');
-  if (tlBtnSlideshow) tlBtnSlideshow.classList.toggle('hidden', !tl || !!tl.archived || !!tl.isTemplate);
+  // Comparaison : changer de liste DANS le groupe comparé la garde ; afficher autre chose (autre
+  // groupe/dossier, rien) repasse en Classique.
+  if (document.body.classList.contains('compare-tierlist-mode')) {
+    const cmpFirst = (_tlCompareGroupMembers || [])[0];
+    const root = tl && !tl.archived ? _tlGroupRoot(tl) : null;
+    if (!root || !cmpFirst || _tlGroupRoot(cmpFirst)?.id !== root.id) _exitCompareTierlistMode();
+  }
+  _tlUpdateModeBtn();
   if (!tl || tl.archived) {
     tlEditor.classList.add('hidden');
     tlRenderGroupPanel(null);
-    // En mode comparaison, tlActiveTierlist() est null (pas de tierlist "active" unique, voir
-    // _tlOpenCompareInline) mais Annuler reste pertinent (undo agit sur le groupe entier) — le
-    // bouton est déplacé dans .tl-compare-toolbar-right (_tlEnterCompareToolbarLayout), donc
-    // tlRenderGroupPanel(null) ci-dessus l'a caché à tort, le réafficher explicitement ici.
-    if (document.body.classList.contains('compare-tierlist-mode')) {
-      const tlBtnUndoEl = document.getElementById('tl-btn-undo');
-      if (tlBtnUndoEl) tlBtnUndoEl.classList.remove('hidden');
-    }
     const tlListOptionsFrameEmpty = document.getElementById('tl-list-options-frame');
     if (tlListOptionsFrameEmpty) tlListOptionsFrameEmpty.classList.add('hidden');
     if (tlBtnAddTier) tlBtnAddTier.classList.add('hidden');
@@ -8469,30 +8436,25 @@ function tlRenderGroupPanel(tl) {
   // Gros bouton Liste : seulement s'il y a un template dans ce dossier (sinon il n'aurait rien à lister).
   const tlTierlistBtn = document.getElementById('tl-btn-tierlist-dropdown');
   if (tlTierlistBtn) tlTierlistBtn.classList.toggle('hidden', !root);
-  const tlBtnCompare = document.getElementById('tl-btn-compare');
 
   const tlTierlistDropdownLabel = document.getElementById('tl-tierlist-dropdown-label');
 
   const tlBtnUndoEl = document.getElementById('tl-btn-undo');
 
   if (!root) {
-    // Dossier sans aucun template : Liste caché, Comparaison/Annuler cachés.
+    // Dossier sans aucun template : Liste caché, Annuler caché.
     if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = '';
-    if (tlBtnCompare) tlBtnCompare.classList.add('hidden');
     if (tlBtnUndoEl) tlBtnUndoEl.classList.add('hidden');
     if (window.lucide) lucide.createIcons();
     return;
   }
 
-  const members = tlState.tierlists.filter(t => !t.archived && (t.id === root.id || t.templateId === root.id));
-
   if (tlTierlistDropdownLabel) tlTierlistDropdownLabel.textContent = (tl && !tl.isTemplate && tl.templateId === root.id) ? tl.name : (tl && tl.isTemplate ? '(Template)' : '');
 
-  // Comparaison/Annuler n'ont de sens que si une tierlist de CE groupe est réellement
+  // Annuler n'a de sens que si une tierlist de CE groupe est réellement
   // affichée dans l'éditeur (pas seulement un dossier sélectionné sans tierlist active). Annuler
   // reste visible sur un template comme sur une liste générée (undo agit sur tiers/images des deux).
   const tlIsGroupMember = !!(tl && (tl.id === root.id || tl.templateId === root.id));
-  if (tlBtnCompare) tlBtnCompare.classList.toggle('hidden', !tlIsGroupMember || members.filter(m => !m.isTemplate).length < 2);
   if (tlBtnUndoEl) tlBtnUndoEl.classList.toggle('hidden', !tlIsGroupMember);
   if (window.lucide) lucide.createIcons();
 }
@@ -8871,8 +8833,63 @@ function _tlSlideshowPlace(tierId) {
   _tlSlideshowGo(1);
 }
 
-document.getElementById('tl-btn-slideshow')?.addEventListener('click', _tlStartSlideshow);
-document.getElementById('tl-btn-slideshow-exit')?.addEventListener('click', () => { _tlResetSlideshowState(); tlRender(); });
+// ── Bouton Mode (rangée de contrôle, centre) : Classique / Comparaison / Diaporama ──────────────
+// Libellé = mode actuel + chevron ; clic = menu sous le bouton, un mode impossible ici y est
+// transparent et non cliquable (Diaporama : listes seulement ; Comparaison : au moins 2 listes).
+const _TL_MODES = [
+  ['classic', 'Classique', 'layout-list'],
+  ['compare', 'Comparaison', 'columns-2'],
+  ['slideshow', 'Diaporama', 'presentation'],
+];
+function _tlCurrentMode() {
+  if (document.body.classList.contains('compare-tierlist-mode')) return 'compare';
+  return _tlSlideshowTlId ? 'slideshow' : 'classic';
+}
+function _tlModeAvailable(mode, tl) {
+  if (!tl || tl.archived) return false;
+  if (mode === 'slideshow') return !tl.isTemplate;
+  if (mode === 'compare') return _tlGetGroupMembers(tl).filter(m => !m.isTemplate && !m.archived).length >= 2;
+  return true;
+}
+function _tlUpdateModeBtn() {
+  const btn = document.getElementById('tl-btn-mode');
+  if (!btn) return;
+  const tl = tlActiveTierlist();
+  btn.classList.toggle('hidden', !tl || !!tl.archived);
+  const [mode, label, icon] = _TL_MODES.find(m => m[0] === _tlCurrentMode());
+  if (btn.dataset.mode === mode) return;
+  btn.dataset.mode = mode;
+  btn.innerHTML = `<i data-lucide="${icon}"></i> Mode ${label}<i data-lucide="chevron-down" class="tl-mode-chevron"></i>`;
+  if (window.lucide) lucide.createIcons({ root: btn });
+}
+function _tlSetMode(mode) {
+  const cur = _tlCurrentMode();
+  if (mode === cur || !_tlModeAvailable(mode, tlActiveTierlist())) return;
+  if (cur === 'slideshow') _tlResetSlideshowState();
+  if (cur === 'compare') _exitCompareTierlistMode();
+  if (mode === 'slideshow') { _tlStartSlideshow(); return; } // fait le rendu
+  if (mode === 'compare') _tlStartCompare();
+  tlRender();
+}
+document.getElementById('tl-btn-mode')?.addEventListener('click', e => {
+  e.stopPropagation();
+  const btn = e.currentTarget;
+  // Re-clic sur le bouton, menu ouvert : le fermer.
+  if (btn._menu && btn._menu.isConnected) { btn._menu._close(); btn._menu = null; return; }
+  const tl = tlActiveTierlist();
+  const { menu, close } = _tlMakeCtxMenu(btn, null);
+  const cur = _tlCurrentMode();
+  _TL_MODES.forEach(([mode, label, icon]) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'ctx-menu-item' + (mode === cur ? ' ctx-active' : '') + (_tlModeAvailable(mode, tl) ? '' : ' tl-mode-unavailable');
+    item.innerHTML = `<i data-lucide="${icon}"></i>Mode ${label}`;
+    item.addEventListener('click', () => { close(); _tlSetMode(mode); });
+    menu.appendChild(item);
+  });
+  _positionMenuBelow(menu, btn);
+  btn._menu = menu;
+});
 document.getElementById('tl-slideshow-prev')?.addEventListener('click', () => _tlSlideshowGo(-1));
 document.getElementById('tl-slideshow-next')?.addEventListener('click', () => _tlSlideshowGo(1));
 document.getElementById('tl-slideshow-stage')?.addEventListener('dblclick', e => {
@@ -9579,9 +9596,6 @@ function _tlRenderCompareView(tls) {
   else tls = _tlCompareTierlists;
   if (!tls) return;
 
-  const toolbar = document.getElementById('tl-compare-toolbar');
-  if (toolbar) toolbar.classList.remove('hidden');
-
   container.classList.remove('hidden');
   container.innerHTML = '';
   tls.forEach(tl => {
@@ -9791,8 +9805,6 @@ if (tlCompareShowLabelsToggle) {
     _tlRenderCompareView(null);
   });
 }
-
-document.getElementById('tl-compare-btn-exit')?.addEventListener('click', _exitCompareTierlistMode);
 
 // Peuple la zone "non placées" (vide-la d'abord). Factorisé pour être réutilisé par le patch
 // ciblé de tlDrop (_tlPatchImageMove), voir _tlFillTierImagesDiv pour le même principe côté tiers.
@@ -11874,8 +11886,8 @@ function _tlOpenCompareInline() {
   const ids = _tlCompareSelectedIds || [];
   const tls = ids.map(id => tlState.tierlists.find(t => t.id === id)).filter(Boolean);
   document.body.classList.add('compare-tierlist-mode');
-  _tlEnterCompareToolbarLayout();
   tlUpdateUndoBtn();
+  _tlUpdateModeBtn();
   if (tls.length === 0) {
     document.title = 'Comparaison';
     _tlCompareTierlists = [];
@@ -11900,14 +11912,15 @@ document.getElementById('tl-compare-btn-lists')?.addEventListener('click', e => 
 _tlCompareListsMenu?.addEventListener('click', e => e.stopPropagation());
 document.addEventListener('click', () => _tlCompareListsMenu?.classList.add('hidden'));
 
-document.getElementById('tl-btn-compare')?.addEventListener('click', () => {
+// Passage en mode Comparaison (bouton Mode, cf _tlSetMode) : toutes les listes du groupe cochées.
+function _tlStartCompare() {
   const tl = tlActiveTierlist();
-  const members = tl ? _tlGetGroupMembers(tl).filter(m => !m.isTemplate) : [];
+  const members = tl ? _tlGetGroupMembers(tl).filter(m => !m.isTemplate && !m.archived) : [];
   if (members.length < 2) return;
   _tlCompareGroupMembers = members;
   _tlCompareSelectedIds = members.map(m => m.id);
   _tlOpenCompareInline();
-});
+}
 
 // ── Menu contextuel tierlist (clic droit sur onglet) ─────────────────────────
 function tlOpenManageModal(id, anchorEl, context) {

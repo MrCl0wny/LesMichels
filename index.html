@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=381" />
+  <link rel="stylesheet" href="style.css?v=382" />
   <!-- Couleurs choisies (Préférences) appliquées dès le chargement, sans attendre Firebase ni app.js. -->
   <script>try { var _ct = localStorage.getItem('lmColorTheme'); if (_ct && _ct !== 'gray') document.documentElement.setAttribute('data-color-theme', _ct); } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -122,25 +122,6 @@
     <!-- ═══════════════════ TIERLIST PAGE ══════════════════ -->
     <section id="page-tierlist" class="page">
 
-      <!-- ── Vue comparaison (fenêtre séparée, lecture seule) ── -->
-      <div id="tl-compare-toolbar" class="tl-compare-toolbar hidden">
-        <div class="tl-toolbar-side tl-toolbar-side-left">
-          <button class="tl-toolbar-btn tl-btn-neutral" id="tl-compare-btn-lists" title="Choisir les listes affichées"><i data-lucide="scroll-text"></i> Listes</button>
-          <label class="tl-toggle-label" title="Régler la taille des images (50–200 px)">
-            <span class="tl-toggle-label-head">Taille <input type="number" id="tl-compare-img-size-value-input" min="100" max="200" value="100" class="tl-split-value-input" /></span>
-            <div class="tl-toggle-label-slider-row">
-              <input type="range" id="tl-compare-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
-            </div>
-          </label>
-          <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
-        </div>
-        <div class="tl-compare-toolbar-center">
-          <button class="tl-toolbar-btn tl-btn-exit-mode" id="tl-compare-btn-exit" title="Quitter le mode comparaison"><i data-lucide="x"></i> Quitter comparaison</button>
-        </div>
-        <!-- Annuler y est déplacé en JS (_tlEnterCompareToolbarLayout). -->
-        <div class="tl-compare-toolbar-right"></div>
-      </div>
-      <div id="tl-compare-view" class="tl-compare-view hidden"></div>
       <div id="tl-compare-lists-menu" class="ctx-menu hidden"></div>
 
       <!-- ── Rangée du haut, comme la page Bingo : gros boutons Chemin et Liste centrés (sans titre,
@@ -157,7 +138,8 @@
         <div class="tl-control-panel-body" id="tl-control-panel-body">
 
           <!-- Une seule rangée : Tiers + cadre Options Liste (Taille/Noms/Reset, masqué sur un template ou
-               sans liste active) à gauche, Comparaison centré, Annuler + Non placés à droite. -->
+               sans liste active) à gauche (en comparaison : Listes/Taille/Noms de la comparaison),
+               bouton Mode centré (Classique/Comparaison/Diaporama), Annuler + Non placés à droite. -->
           <div class="ctrl-row ctrl-row-toolbar tl-ctrl-row-toolbar">
             <input type="file" id="tl-file-input" accept="image/*" multiple class="hidden" />
             <input type="file" id="tl-file-input-replace" accept="image/*" class="hidden" />
@@ -173,11 +155,21 @@
                 <button type="button" id="tl-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
                 <button class="tl-toolbar-btn tl-btn-reset tl-shrink-0" id="tl-btn-reset" title="Remettre toutes les images dans la zone non placée"><i data-lucide="undo-dot"></i> Reset</button>
               </div>
+              <!-- Réglages du mode Comparaison (visibles seulement dans ce mode) -->
+              <div class="tl-compare-only">
+                <button class="tl-toolbar-btn tl-btn-neutral tl-shrink-0" id="tl-compare-btn-lists" title="Choisir les listes affichées"><i data-lucide="scroll-text"></i> Listes</button>
+                <label class="tl-toggle-label tl-shrink-0" title="Régler la taille des images (100–200 px)">
+                  <span class="tl-toggle-label-head">Taille <input type="number" id="tl-compare-img-size-value-input" min="100" max="200" value="100" class="tl-split-value-input" /></span>
+                  <div class="tl-toggle-label-slider-row">
+                    <input type="range" id="tl-compare-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
+                  </div>
+                </label>
+                <button type="button" id="tl-compare-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Afficher ou masquer les noms sous chaque image"><i data-lucide="eye"></i> Noms</button>
+              </div>
             </div>
             <div class="ctrl-row-toolbar-center">
-              <button class="tl-toolbar-btn tl-btn-yellow tl-group-elem hidden" id="tl-btn-compare" title="Comparer plusieurs listes de ce groupe côte à côte"><i data-lucide="columns-2"></i> Comparaison</button>
-              <button class="tl-toolbar-btn tl-btn-yellow hidden" id="tl-btn-slideshow" title="Placer les éléments un par un, en grand"><i data-lucide="presentation"></i> Diaporama</button>
-              <button type="button" class="tl-toolbar-btn tl-btn-yellow tl-slideshow-only" id="tl-btn-slideshow-exit" title="Quitter le mode diaporama"><i data-lucide="x"></i> Quitter diaporama</button>
+              <!-- Mode d'affichage : libellé = mode actuel + chevron, clic = menu (cf _tlOpenModeMenu) -->
+              <button type="button" class="tl-toolbar-btn tl-btn-yellow hidden" id="tl-btn-mode" title="Changer de mode d'affichage"></button>
             </div>
             <div class="ctrl-row-toolbar-right">
               <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
@@ -187,6 +179,9 @@
 
         </div>
       </div>
+
+      <!-- ── Vue comparaison (mode Comparaison, à la place de .tl-layout) ── -->
+      <div id="tl-compare-view" class="tl-compare-view hidden"></div>
 
       <div class="tl-layout">
 
@@ -1074,6 +1069,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=534"></script>
+  <script src="app.js?v=536"></script>
 </body>
 </html>

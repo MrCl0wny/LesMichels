@@ -150,8 +150,6 @@ body {
 body.app-loading .main,
 body.app-loading .page-switcher,
 body.app-loading .page-profile-btn { visibility: hidden; }
-body.compare-tierlist-mode .page-switcher,
-body.compare-tierlist-mode .page-profile-btn { display: none; }
 
 /* ── Layout principal ── */
 .main {
@@ -969,20 +967,13 @@ body.compare-tierlist-mode .page-profile-btn { display: none; }
 .suggestions-sidebar .panel-elements-body { overflow: hidden; }
 .suggestions-sidebar .elements-list { max-height: none; flex: 1; min-height: 0; }
 
-/* Quitter comparaison : visible seulement en mode comparaison (cf règle body.compare-tierlist-mode ci-dessous).
-   !important nécessaire : .tl-toolbar-btn (définie plus bas) impose display:inline-flex avec la même spécificité. */
-.tl-btn-exit-mode { display: none !important; }
-
-/* ── Mode "comparaison" (overlay interne, lecture seule) ── */
-body.compare-tierlist-mode #tl-hero,
+/* ── Mode "comparaison" : même page (gros boutons + rangée de contrôle gardés), la vue comparaison
+   remplace la zone tiers/non placés ; outils propres à la liste masqués. ── */
 body.compare-tierlist-mode .tl-layout,
-body.compare-tierlist-mode .tl-control-panel,
-body.compare-tierlist-mode #tl-empty-state,
-body.compare-tierlist-mode #tl-editor {
+body.compare-tierlist-mode #tl-btn-add-tier,
+body.compare-tierlist-mode #tl-list-options-frame,
+body.compare-tierlist-mode #tl-btn-toggle-unplaced {
   display: none !important;
-}
-body.compare-tierlist-mode #tl-compare-btn-exit {
-  display: inline-flex !important;
 }
 /* Même modèle que body.solo-grid-mode .main (éprouvé) : .main devient lui-même le plafond de
    hauteur EXPLICITE (height:100vh + overflow:hidden), impossible à déborder peu importe le
@@ -990,8 +981,7 @@ body.compare-tierlist-mode #tl-compare-btn-exit {
    toolbar fixe et peut légèrement déborder (le contenu passe alors visuellement par-dessus la
    toolbar, qui elle n'est pas sticky). #page-tierlist doit relayer le flex jusqu'à .tl-compare-view
    (un display:block de .page intermédiaire suffit à casser toute la chaîne). */
-body.compare-tierlist-mode .main {
-  padding: 8px;
+body.compare-tierlist-mode .main:has(> #page-tierlist.active) {
   height: 100vh;
   box-sizing: border-box;
   display: flex;
@@ -1004,35 +994,8 @@ body.compare-tierlist-mode #page-tierlist.page.active {
   min-height: 0;
   flex: 1 1 auto;
 }
-.tl-compare-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  position: relative;
-  flex-shrink: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 10px 16px 6px;
-  margin-bottom: 14px;
-}
-/* Quitter comparaison centré sur TOUTE la barre comparaison (position absolue). */
-.tl-compare-toolbar-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-/* Annuler tout à droite — déplacé ici en JS depuis le panneau de contrôle
-   (_tlEnterCompareToolbarLayout/_tlExitCompareToolbarLayout). */
-.tl-compare-toolbar-right {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-}
+body.compare-tierlist-mode #tl-hero,
+body.compare-tierlist-mode .tl-control-panel { flex-shrink: 0; }
 .tl-compare-view {
   display: flex;
   align-items: stretch;
@@ -1568,15 +1531,25 @@ textarea.element-edit-input {
    les boutons voisins (32px) : sans contrainte, son apparition/disparition agrandit toute
    la ligne et donc le panneau de contrôle. On le fait tenir sur la hauteur des boutons
    en resserrant son empilement vertical, seulement dans ce contexte. */
-.tl-list-options-frame .tl-toggle-label {
+.tl-list-options-frame .tl-toggle-label,
+.tl-compare-only .tl-toggle-label {
   height: 32px;
   justify-content: center;
   gap: 1px;
 }
-.tl-list-options-frame .tl-toggle-label-head {
+.tl-list-options-frame .tl-toggle-label-head,
+.tl-compare-only .tl-toggle-label-head {
   height: 14px;
   font-size: 0.72rem;
 }
+/* Réglages du mode Comparaison (Listes/Taille/Noms), à gauche de la rangée, seulement dans ce mode. */
+.tl-compare-only { display: none !important; align-items: center; gap: 10px; }
+body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
+/* Bouton Mode : chevron après le libellé (menu déroulant). */
+#tl-btn-mode { gap: 6px; }
+#tl-btn-mode .tl-mode-chevron { width: 14px; height: 14px; margin-left: -2px; }
+/* Menu Mode : mode impossible ici = transparent, non cliquable. */
+.ctx-menu-item.tl-mode-unavailable { opacity: 0.4; pointer-events: none; }
 
 .size-btn {
   width: 28px;
@@ -3181,16 +3154,14 @@ textarea.element-edit-input {
   color: var(--accent) !important;
   background: var(--accent-glow) !important;
 }
-/* Boutons jaunes (accent) : Comparaison, Quitter comparaison */
-.tl-btn-yellow,
-.tl-btn-exit-mode {
+/* Boutons jaunes (accent) : Mode */
+.tl-btn-yellow {
   color: #111 !important;
   border-color: var(--accent) !important;
   background: var(--accent) !important;
   font-weight: 700;
 }
-.tl-btn-yellow:hover,
-.tl-btn-exit-mode:hover { filter: brightness(1.1); }
+.tl-btn-yellow:hover { filter: brightness(1.1); }
 /* Bouton orange : Annuler */
 .tl-btn-orange {
   background: rgba(224,120,0,0.15) !important;
@@ -3427,14 +3398,10 @@ textarea.element-edit-input {
   box-shadow: 0 0 0 1px rgba(255,255,255,0.25);
   margin-right: -4px; /* rapprochée du nom (écart de la rangée : 16px) */
 }
-/* Rangée de contrôle en diaporama : Quitter diaporama au centre, Annuler à droite (même principe
-   que le mode comparaison). */
-.tl-slideshow-only { display: none !important; }
-body.tl-slideshow-mode .tl-slideshow-only { display: inline-flex !important; }
+/* Rangée de contrôle en diaporama : Mode au centre, Annuler à droite (même principe que le mode
+   comparaison). */
 body.tl-slideshow-mode #tl-btn-add-tier,
 body.tl-slideshow-mode #tl-list-options-frame,
-body.tl-slideshow-mode #tl-btn-compare,
-body.tl-slideshow-mode #tl-btn-slideshow,
 body.tl-slideshow-mode #tl-btn-toggle-unplaced { display: none !important; }
 
 /* ── Zone des tiers — cadre distinct, scroll interne indépendant de la zone non placée ── */
