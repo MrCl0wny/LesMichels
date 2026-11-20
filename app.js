@@ -9874,9 +9874,33 @@ function _tlUnplacedVisibleIds(tl) {
     : sorted;
 }
 
+// Bouton de tri des Non placés : largeur fixe = celle du mode au libellé le plus long (le bouton ne
+// change pas de taille selon le tri choisi). Mesuré une seule fois sur des clones invisibles (le
+// bouton lui-même peut être masqué au premier rendu) ; réessayé tant que la mesure échoue.
+let _tlUnplacedSortBtnWidth = 0;
+function _tlFixUnplacedSortBtnWidth() {
+  if (_tlUnplacedSortBtnWidth || !window.lucide || !tlUnplacedSortBtn) return;
+  let max = 0;
+  _TL_UNPLACED_SORT_MODES.forEach(([, label, icon]) => {
+    const clone = document.createElement('button');
+    clone.className = tlUnplacedSortBtn.className;
+    clone.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden';
+    clone.innerHTML = `<i data-lucide="${icon}"></i> ${label}`;
+    document.body.appendChild(clone);
+    lucide.createIcons({ root: clone });
+    max = Math.max(max, clone.getBoundingClientRect().width);
+    clone.remove();
+  });
+  if (max > 0) {
+    _tlUnplacedSortBtnWidth = Math.ceil(max);
+    tlUnplacedSortBtn.style.minWidth = _tlUnplacedSortBtnWidth + 'px';
+  }
+}
+
 function _tlFillUnplacedZone(tl, imgSize) {
   tlUnplacedZone.innerHTML = '';
   _setSortBtn(tlUnplacedSortBtn, _tlUnplacedSortMode(tl), _TL_UNPLACED_SORT_MODES);
+  _tlFixUnplacedSortBtnWidth();
   const visibleIds = _tlUnplacedVisibleIds(tl);
   if (tl.unplaced.length === 0) {
     const hint = document.createElement('div');
@@ -9900,7 +9924,7 @@ function _tlFillUnplacedZone(tl, imgSize) {
 function _tlUpdateUnplacedCount(tl) {
   const tlOwnUnplacedCount = tl.unplaced.length;
   const tlOwnTotal = tlOwnUnplacedCount + tl.tiers.reduce((sum, t) => sum + t.items.length, 0);
-  tlUnplacedCount.textContent = tlOwnUnplacedCount + ' / ' + tlOwnTotal;
+  tlUnplacedCount.textContent = '(' + tlOwnUnplacedCount + '/' + tlOwnTotal + ')';
 }
 
 function tlRenderUnplaced(tl) {
@@ -12621,14 +12645,26 @@ if (tlUnplacedImgSizeSlider) {
   );
 }
 
-// Poignée de répartition (#tl-split-handle, coin supérieur gauche du cadre Éléments non placés) :
-// glisser horizontalement règle --tl-split (largeur des tiers en % du corps éditeur, le reste va aux
-// non placés). Aperçu local pendant le glissement (throttle rAF), sauvegarde des prefs au relâchement
-// seulement — même règle que les sliders (CLAUDE.md : Firebase au `change` seul, jamais à l'`input`).
+// Poignée de répartition (#tl-split-handle, barre verticale sur toute la hauteur, entre les cadres
+// Tiers et Non placés) : glisser horizontalement règle --tl-split (largeur des tiers en % du corps
+// éditeur, le reste va aux non placés). Aperçu local pendant le glissement (throttle rAF), sauvegarde
+// des prefs au relâchement seulement — même règle que les sliders (CLAUDE.md : Firebase au `change`
+// seul, jamais à l'`input`).
+// Bornes en pixels : chaque cadre doit toujours pouvoir montrer 2 images à la taille max (200 px).
+// Mêmes valeurs que min-width/max-width de .tl-tiers-zone dans style.css (620 px / 470 px + gap 16).
 const TL_SPLIT_MIN = 5;
 const TL_SPLIT_MAX = 95;
+const TL_SPLIT_TIERS_MIN_PX = 620;
+const TL_SPLIT_UNPLACED_MIN_PX = 470 + 16;
 function _tlApplySplit(value) {
-  _tlLocalSplit = Math.max(TL_SPLIT_MIN, Math.min(TL_SPLIT_MAX, value));
+  let min = TL_SPLIT_MIN, max = TL_SPLIT_MAX;
+  const w = tlEditorBody ? tlEditorBody.clientWidth : 0;
+  if (w > 0) {
+    min = Math.max(min, TL_SPLIT_TIERS_MIN_PX / w * 100);
+    max = Math.min(max, (w - TL_SPLIT_UNPLACED_MIN_PX) / w * 100);
+    if (max < min) max = min; // écran trop étroit pour les deux : le cadre Tiers garde son minimum
+  }
+  _tlLocalSplit = Math.max(min, Math.min(max, value));
   document.documentElement.style.setProperty('--tl-split', _tlLocalSplit);
 }
 const tlSplitHandle = document.getElementById('tl-split-handle');
@@ -12636,13 +12672,18 @@ if (tlSplitHandle) {
   let dragging = false, startX = 0, startSplit = 60, lastX = 0, rafPending = false;
   // Décalage relatif au point de départ (pas la position absolue du pointeur) : la poignée ne
   // "saute" pas au premier mouvement.
-  const splitAt = x => startSplit + (x - startX) / tlEditorBody.getBoundingClientRect().width * 100;
+  const splitAt = x => startSplit + (x - startX) / tlEditorBody.clientWidth * 100;
   tlSplitHandle.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     e.preventDefault();
     dragging = true;
     startX = lastX = e.clientX;
-    startSplit = _tlLocalSplit !== null ? _tlLocalSplit : 60;
+    // Départ = largeur réellement affichée (une valeur enregistrée hors bornes est bridée par le CSS :
+    // partir d'elle créerait une zone morte au début du glissement).
+    const tiersZone = document.getElementById('tl-tiers-zone');
+    startSplit = (tiersZone && tlEditorBody.clientWidth > 0)
+      ? tiersZone.getBoundingClientRect().width / tlEditorBody.clientWidth * 100
+      : (_tlLocalSplit !== null ? _tlLocalSplit : 60);
     tlSplitHandle.setPointerCapture(e.pointerId);
     document.body.classList.add('tl-split-dragging');
   });

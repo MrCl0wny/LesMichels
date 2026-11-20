@@ -3217,10 +3217,15 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
   align-items: stretch;
   gap: 16px;
 }
+/* Bornes : chaque cadre doit toujours pouvoir montrer 2 images à la taille max (200 px) —
+   620 px pour les tiers, 470 px pour les non placés (+ 16 px de gap). Mêmes valeurs que
+   TL_SPLIT_TIERS_MIN_PX / TL_SPLIT_UNPLACED_MIN_PX dans app.js. Écran trop étroit pour les deux :
+   min-width l'emporte sur max-width, le cadre Tiers garde son minimum. */
 .tl-editor-body:not(.tl-editor-body--template) .tl-tiers-zone {
   flex: 0 0 calc(var(--tl-split, 60) * 1%);
   height: auto;
-  min-width: 0;
+  min-width: 620px;
+  max-width: calc(100% - 486px);
 }
 .tl-editor-body:not(.tl-editor-body--template) .tl-unplaced-section {
   flex: 1;
@@ -3231,7 +3236,7 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
 /* Bouton "Masquer/Afficher éléments non placés" (tierlist normale uniquement) : le cadre tiers
    reprend toute la largeur quand le cadre non placés est masqué. */
 .tl-editor-body.tl-unplaced-hidden .tl-unplaced-section { display: none; }
-.tl-editor-body.tl-unplaced-hidden .tl-tiers-zone { flex: 1; }
+.tl-editor-body.tl-unplaced-hidden .tl-tiers-zone { flex: 1; max-width: none; }
 
 /* Template : ni image ni placement possible dans les tiers — panneau Tiers (labels seuls,
    largeur réduite) et panneau Éléments non placés affichés côte à côte plutôt qu'empilés.
@@ -3273,6 +3278,8 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
 .tl-editor-body--template .tl-unplaced-header-row--top {
   display: contents;
 }
+/* Template : + Image/barre de texte restent à la suite (pas plaqués à droite comme en Classique) */
+.tl-editor-body--template .tl-unplaced-header-row--top-right { margin-left: 0; }
 .tl-editor-body--template .tl-unplaced-header-row--top-spacer {
   display: none;
 }
@@ -3285,6 +3292,8 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
 .tl-editor-body.tl-editor-body--slideshow .tl-tiers-zone {
   flex: 0 0 220px;
   width: 220px;
+  min-width: 0;
+  max-width: none;
   height: auto;
 }
 .tl-editor-body--slideshow .tl-tier-row { min-height: 56px; cursor: pointer; }
@@ -3746,12 +3755,21 @@ body.tl-single-row .tl-tier-images {
   gap: 8px;
   flex-wrap: wrap;
 }
-/* 1ère rangée : "Non placés"/compteur à gauche, "Max" plaqué à droite. */
+/* 1ère rangée : "Non placés"/compteur à gauche, + Image et barre de texte plaqués à droite. */
 .tl-unplaced-header-row--top {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+.tl-unplaced-header-row--top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+/* 2e rangée : Trier par à gauche, Taille + Noms plaqués à droite. */
+.tl-unplaced-header-row--tools { justify-content: flex-start; }
+.tl-unplaced-header-row--tools .tl-toggle-label { margin-left: auto; }
 .tl-unplaced-header-row--top-spacer { display: none; }
 .tl-unplaced-header-row--top-center {
   display: flex;
@@ -3777,19 +3795,21 @@ body.tl-single-row .tl-tier-images {
   color: var(--text-muted);
 }
 
+/* Compteur "(m/n)" en simple texte à côté de "Non placés" (plus de pastille) */
 .tl-unplaced-count {
-  font-family: 'Space Mono', monospace;
   font-size: 0.72rem;
-  background: var(--surface-2);
+  font-weight: 700;
+  letter-spacing: 0.05em;
   color: var(--text-muted);
-  padding: 1px 7px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
+  margin-left: -4px;
 }
 
+/* Même police que les autres boutons (Noms, etc.). Largeur fixe posée en JS
+   (_tlFixUnplacedSortBtnWidth : celle du libellé le plus long). */
 .tl-unplaced-sort-btn {
   font-size: 0.8rem;
-  font-family: 'Space Mono', monospace;
+  font-family: Arial, sans-serif;
+  font-weight: 600;
   line-height: 1;
   background: var(--surface-2);
   color: var(--text-muted);
@@ -3808,32 +3828,58 @@ body.tl-single-row .tl-tier-images {
 .tl-unplaced-sort-btn:hover { color: var(--text); border-color: var(--accent-dim); }
 .tl-unplaced-sort-btn [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
 
-/* Poignée de répartition : collée à cheval sur le coin supérieur gauche du cadre non placés
-   (la moitié qui dépasse tient dans le gap de 16px entre les cadres et le padding de .tl-main).
-   Glisser horizontalement règle --tl-split (voir _tlApplySplit). Inutile sur un template. */
+/* Poignée de répartition : barre verticale sur toute la hauteur, qui occupe le gap de 16px entre
+   le cadre Tiers et le cadre non placés (left -17px = gap + bordure 1px du cadre). Trait fin au
+   centre, jaune au survol/glissement. Glisser horizontalement règle --tl-split (voir _tlApplySplit).
+   Inutile sur un template. */
 .tl-split-handle {
   position: absolute;
-  top: 0;
-  left: 0;
-  transform: translate(-50%, -50%);
+  top: -1px;
+  bottom: -1px;
+  left: -17px;
   z-index: 5;
-  width: 26px;
-  height: 26px;
+  width: 16px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-muted);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
   cursor: ew-resize;
   touch-action: none;
+}
+.tl-split-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: var(--border);
   transition: var(--transition);
 }
-.tl-split-handle:hover,
-body.tl-split-dragging .tl-split-handle { color: var(--accent); border-color: var(--accent); }
-.tl-split-handle [data-lucide] { width: 16px; height: 16px; margin-right: 0; }
+/* Pastille de préhension (6 points) au milieu de la barre : signale qu'on peut la faire glisser. */
+.tl-split-grip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 48px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+.tl-split-grip [data-lucide] { width: 14px; height: 14px; margin-right: 0; }
+.tl-split-handle:hover::before,
+body.tl-split-dragging .tl-split-handle::before { background: var(--accent); }
+.tl-split-handle:hover .tl-split-grip,
+body.tl-split-dragging .tl-split-grip { color: var(--accent); border-color: var(--accent); }
 .tl-editor-body--template .tl-split-handle { display: none; }
 body.tl-split-dragging { cursor: ew-resize; user-select: none; }
 

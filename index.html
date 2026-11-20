@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=386" />
+  <link rel="stylesheet" href="style.css?v=391" />
   <!-- Couleurs choisies (Préférences) appliquées dès le chargement, sans attendre Firebase ni app.js. -->
   <script>try { var _ct = localStorage.getItem('lmColorTheme'); if (_ct && _ct !== 'gray') document.documentElement.setAttribute('data-color-theme', _ct); } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -218,9 +218,10 @@
 
               <!-- Zone images non placées -->
               <div class="tl-unplaced-section">
-                <!-- Poignée de répartition : glisser horizontalement règle la largeur tiers / non placés
-                     (--tl-split). Liste générée uniquement (masquée sur un template, voir CSS). -->
-                <button type="button" id="tl-split-handle" class="tl-split-handle" title="Glisser pour régler la place du cadre Éléments non placés"><i data-lucide="unfold-horizontal"></i></button>
+                <!-- Poignée de répartition : barre verticale pleine hauteur entre les deux cadres ; glisser
+                     horizontalement règle la largeur tiers / non placés (--tl-split). Liste générée
+                     uniquement (masquée sur un template, voir CSS). -->
+                <button type="button" id="tl-split-handle" class="tl-split-handle" title="Glisser pour régler la place du cadre Éléments non placés"><span class="tl-split-grip"><i data-lucide="grip-vertical"></i></span></button>
                 <div class="tl-unplaced-top">
                   <div class="tl-unplaced-header">
                     <div class="tl-unplaced-header-row tl-unplaced-header-row--top">
@@ -229,26 +230,26 @@
                         <span class="tl-unplaced-label">Non placés</span>
                         <span id="tl-unplaced-count" class="tl-unplaced-count">0</span>
                       </span>
-                    </div>
-                    <div class="tl-unplaced-header-row">
-                      <button id="tl-btn-add-image" class="tl-btn-add-image" title="Ajouter des images&#10;Clic : importer des fichiers ou coller depuis le presse-papier">+ Image</button>
-                      <span id="tl-add-text-wrap" class="tl-add-text-wrap">
-                        <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Texte / recherche..." title="Rechercher : filtre les éléments non placés en direct&#10;Entrée : ajoute une carte texte avec ce contenu" />
+                      <!-- + Image et barre de texte sur la rangée du titre, tout à droite -->
+                      <span class="tl-unplaced-header-row--top-right">
+                        <button id="tl-btn-add-image" class="tl-btn-add-image" title="Ajouter des images&#10;Clic : importer des fichiers ou coller depuis le presse-papier">+ Image</button>
+                        <span id="tl-add-text-wrap" class="tl-add-text-wrap">
+                          <input type="text" id="tl-add-text-input" class="tl-add-text-input" placeholder="Texte / recherche..." title="Rechercher : filtre les éléments non placés en direct&#10;Entrée : ajoute une carte texte avec ce contenu" />
+                        </span>
+                        <button type="button" id="tl-btn-export-images" class="tl-toolbar-btn tl-btn-neutral hidden" title="Exporter toutes les images du template (fichier .zip)"><i data-lucide="images"></i> Exporter images</button>
                       </span>
-                      <button type="button" id="tl-btn-export-images" class="tl-toolbar-btn tl-btn-neutral hidden" title="Exporter toutes les images du template (fichier .zip)"><i data-lucide="images"></i> Exporter images</button>
                     </div>
-                    <div class="tl-unplaced-header-row">
+                    <!-- Rangée du dessous, depuis la gauche : Trier par, Taille, Noms -->
+                    <div class="tl-unplaced-header-row tl-unplaced-header-row--tools">
                       <span class="sort-label">Trier par</span>
                       <button id="tl-unplaced-sort-btn" class="tl-unplaced-sort-btn" title="Trier les éléments non placés"><i data-lucide="hand"></i> Manuel</button>
-                      <button type="button" id="tl-unplaced-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image du cadre Éléments non placés"><i data-lucide="eye"></i> Noms</button>
-                    </div>
-                    <div class="tl-unplaced-header-row">
                       <label class="tl-toggle-label" title="Régler la taille des images du cadre Éléments non placés (100–200 px)">
                         <span class="tl-toggle-label-head">Taille <input type="number" id="tl-unplaced-img-size-value-input" min="100" max="200" value="100" class="tl-split-value-input" /></span>
                         <div class="tl-toggle-label-slider-row">
                           <input type="range" id="tl-unplaced-img-size-slider" min="100" max="200" value="100" class="tl-slider" />
                         </div>
                       </label>
+                      <button type="button" id="tl-unplaced-show-labels-toggle" class="tl-toolbar-btn tl-btn-toggle-labels" title="Afficher ou masquer les noms sous chaque image du cadre Éléments non placés"><i data-lucide="eye"></i> Noms</button>
                     </div>
                   </div>
                 </div>
@@ -1073,6 +1074,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=543"></script>
+  <script src="app.js?v=545"></script>
 </body>
 </html>
