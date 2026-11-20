@@ -3284,34 +3284,69 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
   display: none;
 }
 
-/* ── Diaporama (liste seulement, cf _tlStartSlideshow) : tiers à gauche affichés comme sur un
-   template (labels seuls, clic = y placer l'élément affiché), un seul élément en grand à droite à
-   la place des non placés, flèches en dessous. Doit rester APRÈS les règles :not(--template) et
-   .tl-unplaced-hidden ci-dessus (même spécificité). ── */
+/* ── Diaporama (liste seulement, cf _tlStartSlideshow) : cadre Tiers à gauche, complet (éléments
+   compris, rangée unique activée en entrant — cf _tlStartSlideshow), jusqu'aux boutons d'envoi ;
+   puis boutons, flèches et élément en grand dans une partie droite de largeur fixe (le cadre Tiers
+   ne bouge pas d'un élément à l'autre). Doit rester APRÈS les règles
+   :not(--template) et .tl-unplaced-hidden ci-dessus (même spécificité). ── */
 .tl-slideshow { display: none; }
 .tl-editor-body.tl-editor-body--slideshow .tl-tiers-zone {
-  flex: 0 0 220px;
-  width: 220px;
+  flex: 1 1 0;
+  width: auto;
   min-width: 0;
   max-width: none;
   height: auto;
 }
-.tl-editor-body--slideshow .tl-tier-row { min-height: 56px; cursor: pointer; }
-.tl-editor-body--slideshow .tl-tier-label-cell { width: 100%; min-width: 0; cursor: pointer; }
-.tl-editor-body--slideshow .tl-tier-label-text { cursor: pointer; }
-.tl-editor-body--slideshow .tl-tier-row:hover { filter: brightness(1.1); }
-.tl-editor-body--slideshow .tl-tier-images,
 .tl-editor-body--slideshow .tl-unplaced-section { display: none; }
-/* Tier où se trouve déjà l'élément affiché : contour blanc (comme l'élément encadré) */
-.tl-tier-wrap--slideshow-current .tl-tier-label-cell { outline: 3px solid #fff; outline-offset: -3px; }
 .tl-editor-body--slideshow .tl-slideshow {
   display: flex;
-  flex-direction: column;
-  flex: 1;
+  flex: 0 0 var(--tl-ss-width, calc(40vw + 170px)); /* largeur fixe pour la liste, calculée par _tlSlideshowFitWidth */
   min-width: 0;
   min-height: 0;
-  gap: 10px;
 }
+/* Boutons d'envoi : un par tier (couleur + nom du tier) puis "Non placé" (neutre), en colonne juste
+   avant la flèche ←. Aspect "touche" (bord bas plus foncé, soulèvement au survol) pour montrer qu'on
+   clique dessus. Contour blanc = endroit où se trouve déjà l'élément affiché. */
+.tl-slideshow-tier-btns {
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 150px;
+  max-height: 100%;
+  box-sizing: border-box;
+  padding: 6px; /* place du contour blanc (débordant) */
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.tl-slideshow-tier-btn {
+  flex-shrink: 0;
+  min-height: 46px;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 4px solid rgba(0,0,0,0.35);
+  border-radius: var(--radius);
+  color: #111;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+  word-break: break-word;
+  cursor: pointer;
+  transition: transform 0.1s, filter 0.1s;
+}
+.tl-slideshow-tier-btn:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-2px); }
+.tl-slideshow-tier-btn:active:not(:disabled) { filter: brightness(0.95); transform: translateY(1px); }
+.tl-slideshow-tier-btn:disabled { opacity: 0.4; cursor: default; }
+.tl-slideshow-tier-btn--unplaced {
+  margin-top: 8px; /* séparé des tiers */
+  background: var(--surface-3);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.tl-slideshow-tier-btn--current { outline: 3px solid #fff; outline-offset: 2px; }
 /* Cadre de l'élément : à la taille de l'élément (pas de toute la largeur), pour que les flèches
    restent collées à lui. */
 .tl-slideshow-stage {
@@ -3323,20 +3358,20 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
   position: relative; /* repère de l'élément sortant (roulette, cf _tlSlideshowAnimate) */
 }
 .tl-slideshow-item--out { pointer-events: none; }
-/* Image agrandie au maximum sans déformation, en laissant la place des 2 flèches (2 × 80px + 2 × 8px
-   d'écart = 176px) : cq* = taille de .tl-slideshow-main (container-type:size), --ar = largeur/hauteur
-   de l'image, posé en JS au chargement. */
+/* Image agrandie au maximum sans déformation, en laissant la place des boutons, des flèches et du nom
+   (--tl-ss-side / --tl-ss-nav) : cq* = taille de .tl-slideshow-main (container-type:size),
+   --ar = largeur/hauteur de l'image, posé en JS au chargement. */
 .tl-slideshow-img {
   display: block;
-  width: min(calc(100cqw - 176px), calc(100cqh * var(--ar)));
+  width: min(calc(100cqw - var(--tl-ss-side)), calc((100cqh - var(--tl-ss-nav)) * var(--ar)));
   height: auto;
   aspect-ratio: var(--ar);
   border-radius: var(--radius);
   user-select: none;
 }
 .tl-slideshow-text {
-  max-width: calc(100cqw - 176px);
-  max-height: 100cqh;
+  max-width: calc(100cqw - var(--tl-ss-side));
+  max-height: calc(100cqh - var(--tl-ss-nav));
   overflow: auto;
   padding: 24px 32px;
   box-sizing: border-box;
@@ -3350,17 +3385,33 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
 }
 .tl-slideshow-item--highlight { outline: 3px solid #fff; outline-offset: -3px; }
 .tl-slideshow-empty { color: var(--text-muted); }
-/* Élément au centre, grosses flèches épaisses de chaque côté */
+/* [boutons d'envoi] ← [élément + nom] → : tout à position fixe (le cadre Tiers va jusqu'aux boutons
+   et ne bouge pas) ; une image étroite est centrée entre les flèches. --tl-ss-side = place prise à
+   côté de l'élément (boutons 150 + 2 flèches × 44 + 3 écarts × 8), --tl-ss-nav = place du nom dessous. */
 .tl-slideshow-main {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   container-type: size;
   --ar: 1;
+  --tl-ss-side: 262px;
+  --tl-ss-nav: 50px;
   overflow: hidden; /* l'animation roulette ne déborde pas sur les tiers */
+}
+/* Élément + nom centré dessous : occupe tout l'espace entre les flèches */
+.tl-slideshow-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1 1 0;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
 }
 .tl-slideshow-arrow {
   flex-shrink: 0;
@@ -3369,21 +3420,25 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
   justify-content: center;
   background: none;
   border: none;
+  width: 44px; /* icône de 80px qui déborde : seul son vide intérieur dépasse (flèches collées) */
+  height: 80px;
+  overflow: visible;
   padding: 0;
   color: #fff;
   cursor: pointer;
   transition: var(--transition);
 }
-.tl-slideshow-arrow [data-lucide] { width: 80px; height: 80px; stroke-width: 3.5; margin-right: 0; }
+.tl-slideshow-arrow [data-lucide] { flex-shrink: 0; width: 80px; height: 80px; stroke-width: 3.5; margin-right: 0; }
 .tl-slideshow-arrow:hover:not(:disabled) { color: var(--accent); }
 .tl-slideshow-arrow:disabled { opacity: 0.2; cursor: default; }
-/* Nom (blanc, gras, gros), sous l'élément */
+/* Nom (blanc, gras, gros), sous l'élément : largeur de la zone entre les flèches, au-delà coupé par "…" */
 .tl-slideshow-nav {
   display: flex;
   align-items: baseline;
   justify-content: center;
   gap: 16px;
   flex-shrink: 0;
+  width: 100%;
   min-width: 0;
 }
 .tl-slideshow-name {
@@ -3407,17 +3462,14 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
   box-shadow: 0 0 0 1px rgba(255,255,255,0.25);
   margin-right: -4px; /* rapprochée du nom (écart de la rangée : 16px) */
 }
-/* Rangée de contrôle en diaporama : Mode au centre, Annuler à droite (même principe que le mode
-   comparaison). */
-body.tl-slideshow-mode #tl-btn-add-tier,
-body.tl-slideshow-mode #tl-list-options-frame,
-body.tl-slideshow-mode #tl-btn-toggle-unplaced,
-body.tl-slideshow-mode #tl-tier-search { display: none !important; }
+/* Rangée de contrôle en diaporama : mêmes options que le Classique, sauf Non placés (cadre caché). */
+body.tl-slideshow-mode #tl-btn-toggle-unplaced { display: none !important; }
 
-/* Recherche dans les tiers (rangée de contrôle, Classique + Comparaison) : filtre l'affichage seul */
+/* Recherche dans les tiers (rangée de contrôle, à gauche, tous les modes) : filtre l'affichage seul */
 .tl-tier-search-input {
   height: 32px;
   width: 160px;
+  flex-shrink: 0; /* même taille dans tous les modes */
   box-sizing: border-box;
   padding: 0 10px;
   background: var(--surface-2);

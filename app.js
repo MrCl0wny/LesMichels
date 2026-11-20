@@ -7027,8 +7027,9 @@ let _tlTierSearchText       = '';    // recherche dans les tiers (minuscules, sa
 let _tlSlideshowTlId = null;       // liste en diaporama (null = mode inactif)
 let _tlSlideshowIds = [];          // historique des éléments affichés (flèche ←) ; le suivant est calculé (cf _tlSlideshowNextId)
 let _tlSlideshowIdx = 0;           // élément affiché (position dans l'historique)
-const _tlSlideshowSeen = new Set(); // non placés déjà proposés dans ce tour (un non placé gardé repasse après les autres)
-const _tlSlideshowPlacedSeen = new Set(); // déjà placés déjà proposés dans cette boucle (meilleur → pire)
+const _tlSlideshowSeen = new Set(); // éléments déjà proposés dans cette boucle (non placés puis placés, cf _tlSlideshowNextId)
+let _tlSlideshowDragFromStage = false; // glisser en cours de l'élément affiché en grand (cf tlDrop)
+let _tlSlideshowScrolledFor = null;    // élément|tier pour lequel le cadre Tiers a déjà défilé (cf _tlSlideshowMarkCard)
 let _tlSlideshowAnimDir = 0;       // sens de l'animation "roulette" du prochain rendu (posé par _tlSlideshowGo)
 const _tlSlideshowArCache = new Map(); // src → largeur/hauteur (préchargement des voisins : pas de saut à l'arrivée)
 let _tlLocalUnplacedSortByList = {}; // { tierlistId: 'alpha'|'alpha-desc'|'updatedAt'|'updatedAt-asc' } — absent = 'manual'
@@ -8594,15 +8595,14 @@ function _tlRefreshHighlight(tl) {
 }
 
 // ── Diaporama (liste uniquement, jamais le template) ─────────────────────────
-// Un seul élément à la fois, en grand (toute la hauteur), flèches en dessous ; tiers à gauche
-// affichés comme sur un template : clic sur un tier = y placer l'élément (en fin de tier) puis
-// passer au suivant. Suivant : tant qu'il reste des non placés, TOUJOURS un non placé (ordre du
-// cadre Non placés, élément encadré en tête) ; un non placé gardé (passé à la flèche) n'est
-// reproposé qu'après tous les autres. Une fois tout placé : boucle sur TOUS les
-// déjà placés, du meilleur tier au pire, pour réarranger : un élément déjà proposé dans la boucle ne
-// revient pas (même changé de tier) ; boucle finie = on repart du meilleur, ordre ACTUEL des tiers.
-// Flèche ← = éléments affichés avant, sans valeur de décision : les éléments quittés avec ← reviennent
-// dans l'ordre dès qu'on décide (placer ou →). Double-clic sur l'élément = cadre blanc.
+// Un seul élément à la fois, en grand tout à droite, flèches sur les côtés ; cadre Tiers complet à
+// gauche (fonctionne comme en Classique, cliquer un tier n'y place rien). Entre les deux : un bouton
+// par tier + "Non placé" = y envoyer l'élément (en fin de zone) puis passer au suivant.
+// Ordre = UNE boucle : d'abord les non placés (ordre du cadre Non placés, élément encadré en tête),
+// puis les placés du meilleur tier au pire ; un élément déjà proposé dans la boucle ne revient pas
+// (même changé de zone, non placé gardé compris : rien n'oblige à placer) ; boucle finie = on repart
+// du début, ordre ACTUEL. Flèche ← = éléments affichés avant, sans valeur de décision : les éléments
+// quittés avec ← reviennent dans l'ordre dès qu'on décide (bouton ou →). Double-clic = cadre blanc.
 
 // Déjà placés, tier par tier du meilleur au pire (état actuel).
 function _tlSlideshowPlacedIds(tl) {
@@ -8621,25 +8621,12 @@ function _tlSlideshowSortedUnplaced(tl) {
 // Élément qui suit curId (null = aucun, on reste). dryRun = juste savoir, sans rien changer (flèche
 // grisée, préchargement).
 function _tlSlideshowNextId(tl, curId, dryRun) {
-  const unplaced = _tlSlideshowSortedUnplaced(tl);
-  if (unplaced.length) {
-    const others = unplaced.filter(id => id !== curId);
-    if (dryRun) return others.find(id => !_tlSlideshowSeen.has(id)) || others[0] || null;
-    let id = others.find(x => !_tlSlideshowSeen.has(x));
-    // Tous déjà proposés : nouveau tour parmi les non placés gardés.
-    if (!id) {
-      _tlSlideshowSeen.clear();
-      if (curId) _tlSlideshowSeen.add(curId); // celui qu'on quitte repasse après tous les autres
-      id = others[0] || unplaced[0];
-    }
-    return id;
-  }
-  // Tout placé : premier pas encore proposé dans la boucle, ordre actuel des tiers (meilleur → pire).
-  const others = _tlSlideshowPlacedIds(tl).filter(id => id !== curId);
-  const id = others.find(x => !_tlSlideshowPlacedSeen.has(x));
+  // Premier pas encore proposé dans la boucle : non placés d'abord, puis placés meilleur → pire.
+  const others = _tlSlideshowSortedUnplaced(tl).concat(_tlSlideshowPlacedIds(tl)).filter(id => id !== curId);
+  const id = others.find(x => !_tlSlideshowSeen.has(x));
   if (id || dryRun) return id || others[0] || null;
-  // Boucle finie : on repart du meilleur.
-  _tlSlideshowPlacedSeen.clear();
+  // Boucle finie : on repart du début.
+  _tlSlideshowSeen.clear();
   return others[0] || null;
 }
 
@@ -8648,8 +8635,7 @@ function _tlSlideshowShow(tl, id) {
   _tlSlideshowIds = _tlSlideshowIds.slice(0, _tlSlideshowIdx + 1);
   _tlSlideshowIds.push(id);
   _tlSlideshowIdx = _tlSlideshowIds.length - 1;
-  const loc = _tlLocateImage(tl, id);
-  (loc && loc.zone !== '__unplaced__' ? _tlSlideshowPlacedSeen : _tlSlideshowSeen).add(id);
+  _tlSlideshowSeen.add(id);
 }
 
 function _tlStartSlideshow() {
@@ -8659,7 +8645,12 @@ function _tlStartSlideshow() {
   _tlSlideshowIds = [];
   _tlSlideshowIdx = -1;
   _tlSlideshowSeen.clear();
-  _tlSlideshowPlacedSeen.clear();
+  // Rangée unique activée en entrant (réglage commun à tous les modes, désactivable ensuite).
+  if (!_tlLocalSingleRow) {
+    _tlLocalSingleRow = true;
+    _tlApplySingleRow();
+    saveUserPrefs({ tlSingleRow: true });
+  }
   const first = _tlSlideshowNextId(tl, null);
   if (first) _tlSlideshowShow(tl, first);
   _tlSlideshowIdx = Math.max(0, _tlSlideshowIdx);
@@ -8673,12 +8664,13 @@ function _tlResetSlideshowState() {
   _tlSlideshowIds = [];
   _tlSlideshowIdx = 0;
   _tlSlideshowSeen.clear();
-  _tlSlideshowPlacedSeen.clear();
   document.body.classList.remove('tl-slideshow-mode');
   tlEditorBody.classList.remove('tl-editor-body--slideshow');
   const stage = document.getElementById('tl-slideshow-stage');
   if (stage) { stage.innerHTML = ''; stage._tlShown = null; }
-  tlTiersZone.querySelectorAll('.tl-tier-wrap--slideshow-current').forEach(w => w.classList.remove('tl-tier-wrap--slideshow-current'));
+  const btns = document.getElementById('tl-slideshow-tier-btns');
+  if (btns) btns.innerHTML = '';
+  _tlSlideshowMarkCard(null); // retire le cadre jaune
 }
 
 // Retire de l'historique les éléments supprimés entre-temps. Élément affiché supprimé (ou rien
@@ -8738,13 +8730,14 @@ function _tlRenderSlideshow(tl) {
     } else if (isText) {
       const el = document.createElement('div');
       el.className = 'tl-slideshow-item tl-slideshow-text';
+      el.draggable = true; // glissable vers un tier (cf dragstart sur #tl-slideshow-stage)
       el.style.background = img.color || TL_TEXT_CARD_COLOR;
       el.textContent = img.name;
       stage.appendChild(el);
     } else {
       const el = document.createElement('img');
       el.className = 'tl-slideshow-item tl-slideshow-img';
-      el.draggable = false;
+      el.draggable = true; // glissable vers un tier (cf dragstart sur #tl-slideshow-stage)
       el.alt = img.name || '';
       const knownAr = _tlSlideshowArCache.get(img.src);
       if (knownAr) el.style.setProperty('--ar', knownAr);
@@ -8752,6 +8745,7 @@ function _tlRenderSlideshow(tl) {
         if (el.naturalWidth && el.naturalHeight) {
           el.style.setProperty('--ar', el.naturalWidth / el.naturalHeight);
           _tlSlideshowArCache.set(img.src, el.naturalWidth / el.naturalHeight);
+          _tlSlideshowFitWidthSoon();
         }
       });
       el.src = img.src;
@@ -8760,6 +8754,7 @@ function _tlRenderSlideshow(tl) {
     if (animate) _tlSlideshowAnimate(stage, prevEl, prevBox, stage.querySelector('.tl-slideshow-item'), animDir);
   }
   _tlSlideshowPreload(tl);
+  _tlSlideshowFitWidth(tl);
   const item = stage.querySelector('.tl-slideshow-item:not(.tl-slideshow-item--out)');
   if (item) {
     item.classList.toggle('tl-slideshow-item--highlight', img.id === _tlHighlightedImgId(tl));
@@ -8778,9 +8773,58 @@ function _tlRenderSlideshow(tl) {
   if (prevBtn) prevBtn.disabled = _tlSlideshowIdx <= 0;
   if (nextBtn) nextBtn.disabled = _tlSlideshowIdx >= _tlSlideshowIds.length - 1 && !_tlSlideshowNextId(tl, imgId, true);
   const loc = img ? _tlLocateImage(tl, img.id) : null;
-  tlTiersZone.querySelectorAll('.tl-tier-wrap').forEach(w => {
-    w.classList.toggle('tl-tier-wrap--slideshow-current', !!loc && w.dataset.tierId === loc.zone);
+  _tlRenderSlideshowTierBtns(tl, loc ? loc.zone : null, !!img);
+  _tlSlideshowMarkCard(img && loc && loc.zone !== '__unplaced__' ? img.id : null);
+}
+
+// Élément affiché déjà placé : cadre jaune sur sa carte dans les tiers (comme la surbrillance du mode
+// Comparaison) et, quand l'élément affiché ou son tier change, défilement pour la rendre visible
+// (vertical dans le cadre Tiers, horizontal dans le tier en rangée unique). Jamais de défilement à un
+// simple re-rendu : le défilement manuel de l'utilisateur est respecté.
+function _tlSlideshowMarkCard(imgId) {
+  let card = null;
+  tlTiersZone.querySelectorAll('.tl-tier-images > .tl-img-card').forEach(c => {
+    const on = !!imgId && c.dataset.imgId === imgId;
+    c.classList.toggle('tl-compare-highlight', on);
+    if (on) card = c;
   });
+  const key = card ? imgId + '|' + (card.closest('.tl-tier-images')?.dataset.dropzone || '') : null;
+  if (!card || key === _tlSlideshowScrolledFor) { _tlSlideshowScrolledFor = key; return; }
+  _tlSlideshowScrolledFor = key;
+  const zoneRect = tlTiersZone.getBoundingClientRect();
+  const cardRect = card.getBoundingClientRect();
+  if (cardRect.top < zoneRect.top || cardRect.bottom > zoneRect.bottom) {
+    const delta = (cardRect.top + cardRect.height / 2) - (zoneRect.top + zoneRect.height / 2);
+    tlTiersZone.scrollBy({ top: delta, behavior: 'smooth' });
+  }
+  const row = card.closest('.tl-tier-images');
+  if (!row || row.scrollWidth <= row.clientWidth) return;
+  const rowRect = row.getBoundingClientRect();
+  if (cardRect.left < rowRect.left || cardRect.right > rowRect.right) {
+    const delta = (cardRect.left + cardRect.width / 2) - (rowRect.left + rowRect.width / 2);
+    row.scrollBy({ left: delta, behavior: 'smooth' });
+  }
+}
+
+// Boutons d'envoi (cf #tl-slideshow-tier-btns) : un par tier, à sa couleur et à son nom, puis
+// "Non placé" (neutre) ; contour blanc sur la zone où se trouve déjà l'élément affiché.
+function _tlRenderSlideshowTierBtns(tl, curZone, hasItem) {
+  const box = document.getElementById('tl-slideshow-tier-btns');
+  if (!box) return;
+  box.innerHTML = '';
+  const add = (zone, label, color) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tl-slideshow-tier-btn' + (zone === '__unplaced__' ? ' tl-slideshow-tier-btn--unplaced' : '')
+      + (zone === curZone ? ' tl-slideshow-tier-btn--current' : '');
+    b.dataset.zone = zone;
+    if (color) b.style.background = color;
+    b.textContent = label;
+    b.disabled = !hasItem;
+    box.appendChild(b);
+  };
+  tl.tiers.forEach(t => add(t.id, t.label, t.color));
+  add('__unplaced__', 'Non placé', null);
 }
 
 function _tlSlideshowGo(delta) {
@@ -8840,32 +8884,76 @@ function _tlSlideshowPreload(tl) {
   for (const id of ids) {
     const img = id ? tlFindImage(tl, id) : null;
     if (!img || (img.type || 'image') === 'text' || !img.src) continue;
-    if (_tlSlideshowArCache.has(img.src) || _tlSlideshowPreloading.has(img.src)) continue;
-    _tlSlideshowPreloading.add(img.src);
-    const p = new Image();
-    p.onload = () => {
-      _tlSlideshowPreloading.delete(img.src);
-      if (p.naturalWidth && p.naturalHeight) _tlSlideshowArCache.set(img.src, p.naturalWidth / p.naturalHeight);
-    };
-    p.onerror = () => _tlSlideshowPreloading.delete(img.src);
-    p.src = img.src;
+    _tlSlideshowLoadAr(img.src);
   }
 }
+// Format (largeur/hauteur) d'une image, chargée à part ; un format nouveau peut élargir la partie droite.
+function _tlSlideshowLoadAr(src) {
+  if (_tlSlideshowArCache.has(src) || _tlSlideshowPreloading.has(src)) return;
+  _tlSlideshowPreloading.add(src);
+  const p = new Image();
+  p.onload = () => {
+    _tlSlideshowPreloading.delete(src);
+    if (p.naturalWidth && p.naturalHeight) {
+      _tlSlideshowArCache.set(src, p.naturalWidth / p.naturalHeight);
+      _tlSlideshowFitWidthSoon();
+    }
+  };
+  p.onerror = () => _tlSlideshowPreloading.delete(src);
+  p.src = src;
+}
 
-// Clic sur un tier : y place l'élément affiché (en fin de tier), puis élément suivant. Déjà dans ce
-// tier : rien ne bouge, on passe juste au suivant.
+// Largeur de la partie droite (boutons + flèches + élément) : FIXE pour toute la liste = zone de
+// l'élément à la largeur du format d'image le plus large de la liste (à pleine hauteur), plafonnée à
+// 40vw. Les flèches collent donc l'élément (exactement si toutes les images ont le même format), la
+// flèche → colle le bord droit, et le cadre Tiers prend tout le reste jusqu'aux boutons. 262px = place
+// à côté de l'élément (--tl-ss-side), 50px = place du nom (--tl-ss-nav), cf style.css.
+function _tlSlideshowFitWidth(tl) {
+  const box = document.getElementById('tl-slideshow');
+  const main = box && box.querySelector('.tl-slideshow-main');
+  if (!main || !main.clientHeight) return;
+  // Formats déjà connus grâce aux cartes affichées (images déjà chargées).
+  tlEditorBody.querySelectorAll('.tl-img-card img').forEach(el => {
+    if (el.complete && el.naturalWidth && el.naturalHeight && !_tlSlideshowArCache.has(el.getAttribute('src'))) {
+      _tlSlideshowArCache.set(el.getAttribute('src'), el.naturalWidth / el.naturalHeight);
+    }
+  });
+  let maxAr = 0;
+  for (const img of _tlGetGroupImages(tl)) {
+    if (!img || (img.type || 'image') === 'text' || !img.src) continue;
+    const ar = _tlSlideshowArCache.get(img.src);
+    if (ar) maxAr = Math.max(maxAr, ar);
+    else _tlSlideshowLoadAr(img.src);
+  }
+  const maxW = window.innerWidth * 0.4 - 92;
+  const w = maxAr ? Math.max(200, Math.min(maxW, (main.clientHeight - 50) * maxAr)) : maxW;
+  box.style.setProperty('--tl-ss-width', Math.round(w + 262) + 'px');
+}
+let _tlSlideshowFitRaf = 0;
+function _tlSlideshowFitWidthSoon() {
+  if (_tlSlideshowFitRaf) return;
+  _tlSlideshowFitRaf = requestAnimationFrame(() => {
+    _tlSlideshowFitRaf = 0;
+    const tl = tlActiveTierlist();
+    if (tl && tl.id === _tlSlideshowTlId) _tlSlideshowFitWidth(tl);
+  });
+}
+window.addEventListener('resize', () => { if (_tlSlideshowTlId) _tlSlideshowFitWidthSoon(); });
+
+// Bouton d'envoi : place l'élément affiché en fin du tier (ou des Non placés si tierId =
+// '__unplaced__'), puis élément suivant. Déjà dans cette zone : rien ne bouge, on passe au suivant.
 function _tlSlideshowPlace(tierId) {
   const tl = tlActiveTierlist();
   if (!tl || tl.id !== _tlSlideshowTlId) return;
   const imgId = _tlSlideshowIds[_tlSlideshowIdx];
-  const tier = tl.tiers.find(t => t.id === tierId);
-  if (!imgId || !tier) return;
+  const tier = tierId === '__unplaced__' ? null : tl.tiers.find(t => t.id === tierId);
+  if (!imgId || (!tier && tierId !== '__unplaced__')) return;
   const from = _tlLocateImage(tl, imgId);
   if (from && from.zone !== tierId) {
     // Même enregistrement que le glisser-déposer (tlDrop) : annulable, groupe seul, patch des 2 zones.
     _tlPushUndoOp({ tierlistId: tl.id, type: 'moveImage', imgId, fromZone: from.zone, fromIndex: from.index });
     _tlRemoveImageFromAllZones(tl, imgId);
-    tier.items.push(imgId);
+    (tier ? tier.items : tl.unplaced).push(imgId);
     tlTouchFolderChain(_tlEffectiveFolderId(tl));
     tlSaveGroup(_tlGroupRoot(tl).id);
     if (!_tlMoveImageCard(tl, imgId, from.zone, tierId) && !_tlPatchImageMove(tl, from.zone, tierId)) tlRender(true);
@@ -8938,19 +9026,27 @@ document.getElementById('tl-slideshow-stage')?.addEventListener('dblclick', e =>
   const imgId = _tlSlideshowIds[_tlSlideshowIdx];
   if (tl && tl.id === _tlSlideshowTlId && imgId) _tlSetImageToPlace(tl, imgId);
 });
-// Phase de capture : en diaporama, un clic sur un tier place l'élément au lieu de renommer le tier
-// (le bouton réglages et le clic droit gardent leur rôle).
-tlTiersZone.addEventListener('click', e => {
-  if (!_tlSlideshowTlId || e.target.closest('.tl-tier-settings-btn, input')) return;
-  const wrap = e.target.closest('.tl-tier-wrap');
-  if (!wrap) return;
-  e.stopPropagation();
-  e.preventDefault();
-  _tlSlideshowPlace(wrap.dataset.tierId);
-}, true);
-tlTiersZone.addEventListener('dblclick', e => {
-  if (_tlSlideshowTlId && !e.target.closest('.tl-tier-settings-btn, input')) e.stopPropagation();
-}, true);
+// Glisser l'élément affiché vers un tier : même mécanique que les cartes (tlDragImgId → tlDrop, qui
+// passe ensuite à l'élément suivant, cf _tlSlideshowDragFromStage).
+document.getElementById('tl-slideshow-stage')?.addEventListener('dragstart', e => {
+  const item = e.target.closest('.tl-slideshow-item');
+  const imgId = _tlSlideshowIds[_tlSlideshowIdx];
+  if (!item || item.classList.contains('tl-slideshow-item--out') || !imgId) { e.preventDefault(); return; }
+  tlDragImgId = imgId;
+  _tlSlideshowDragFromStage = true;
+  e.dataTransfer.effectAllowed = 'move';
+});
+document.getElementById('tl-slideshow-stage')?.addEventListener('dragend', () => {
+  tlDragImgId = null;
+  _tlSlideshowDragFromStage = false;
+  tlClearDropBefore();
+  _tlClearDragSourceHidden();
+});
+// Boutons d'envoi (reconstruits à chaque rendu : délégation sur leur conteneur).
+document.getElementById('tl-slideshow-tier-btns')?.addEventListener('click', e => {
+  const b = e.target.closest('.tl-slideshow-tier-btn');
+  if (b && !b.disabled) _tlSlideshowPlace(b.dataset.zone);
+});
 // Flèches gauche/droite du clavier = flèches du diaporama.
 document.addEventListener('keydown', e => {
   if (!_tlSlideshowTlId || _currentPage !== 'tierlist') return;
@@ -9994,6 +10090,8 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
   card.dataset.imgId = img.id;
   card.dataset.searchName = _searchNorm(img.name); // recherche dans les tiers (cf _tlApplyTierSearch)
   if (!isUnplacedZone && _tlTierSearchText && !card.dataset.searchName.includes(_tlTierSearchText)) card.classList.add('tl-search-hidden');
+  // Diaporama : élément affiché à droite, déjà placé → cadre jaune dans son tier (cf _tlSlideshowMarkCard)
+  if (!isUnplacedZone && _tlSlideshowTlId === tl.id && img.id === _tlSlideshowIds[_tlSlideshowIdx]) card.classList.add('tl-compare-highlight');
   card.title = readOnly ? img.name : img.name + '\nClic gauche : sélectionner (Suppr pour supprimer) · Glisser pour déplacer · Clic droit : renommer / supprimer';
 
   if (!readOnly) {
@@ -10809,10 +10907,22 @@ function tlDrop(e, targetZoneId) {
   // non-placée + toutes leurs images. Sur une grosse tierlist (beaucoup d'images), c'est la
   // partie la plus coûteuse de tlRender().
   // Au mieux : une seule carte déplacée (_tlMoveImageCard) ; sinon les deux zones reconstruites.
+  // Diaporama : élément affiché glissé depuis la droite = comme un bouton d'envoi (élément suivant) ;
+  // sinon pastille du nom et contour des boutons d'envoi remis à jour.
+  const fromSlideshowStage = _tlSlideshowDragFromStage && _tlSlideshowTlId === tl.id;
+  if (_tlSlideshowDragFromStage) {
+    // L'élément glissé va être remplacé par le suivant : son dragend n'arrivera pas, on nettoie ici.
+    _tlSlideshowDragFromStage = false;
+    tlDragImgId = null;
+    _tlClearDragSourceHidden();
+  }
   if (from && (_tlMoveImageCard(tl, imgId, from.zone, targetZoneId) || _tlPatchImageMove(tl, from.zone, targetZoneId))) {
+    if (fromSlideshowStage) _tlSlideshowGo(1);
+    else if (_tlSlideshowTlId === tl.id) _tlRenderSlideshow(tl);
     return;
   }
   tlRender(true);
+  if (fromSlideshowStage) _tlSlideshowGo(1);
 }
 
 // Déplacement d'UNE image (glisser-déposer, diaporama) : retire sa carte de la zone de départ et
@@ -12545,7 +12655,7 @@ tlShowLabelsToggle.addEventListener('click', () => {
 });
 
 // "Rangée unique" : simple classe CSS sur <body> (pas de re-rendu), valable dans tous les modes
-// (Classique, Comparaison, et Diaporama si ses tiers affichent un jour leurs éléments), cf style.css .tl-single-row
+// (Classique, Comparaison ; toujours forcée en Diaporama, cf style.css body.tl-slideshow-mode), cf style.css .tl-single-row
 function _tlApplySingleRow() {
   document.body.classList.toggle('tl-single-row', _tlLocalSingleRow);
   ['tl-single-row-toggle', 'tl-compare-single-row-toggle'].forEach(id => {
