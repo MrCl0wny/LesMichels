@@ -7030,9 +7030,10 @@ let _tlSlideshowIdx = 0;           // élément affiché (position dans l'histor
 const _tlSlideshowSeen = new Set(); // éléments déjà proposés dans cette boucle (non placés puis placés, cf _tlSlideshowNextId)
 let _tlSlideshowDragFromStage = false; // glisser en cours de l'élément affiché en grand (cf tlDrop)
 let _tlSlideshowScrolledFor = null;    // élément|tier pour lequel le cadre Tiers a déjà défilé (cf _tlSlideshowMarkCard)
+let _tlSlideshowRevealId = null;       // élément qui vient d'arriver dans un tier : à rendre entièrement visible au prochain rendu (cf _tlSlideshowMarkCard)
 let _tlSlideshowAnimDir = 0;       // sens de l'animation "roulette" du prochain rendu (posé par _tlSlideshowGo)
 const _tlSlideshowArCache = new Map(); // src → largeur/hauteur (préchargement des voisins : pas de saut à l'arrivée)
-let _tlLocalUnplacedSortByList = {}; // { tierlistId: 'alpha'|'alpha-desc'|'updatedAt'|'updatedAt-asc' } — absent = 'manual'
+let _tlLocalUnplacedSortByList = {}; // { tierlistId: 'manual'|'alpha-desc'|'updatedAt'|'updatedAt-asc' } — absent = 'alpha' (A→Z, défaut)
 let _tlLocalSplit          = null; // % de largeur allouée aux tiers (le reste va aux éléments non placés), null = pas encore chargé
 let _tlLocalActiveTierlistId = null; // null = pas encore chargé
 let _tlLocalActiveFolderId  = null; // dossier sélectionné (vide) sans tierlist active
@@ -7753,7 +7754,7 @@ function tlDefaultTierlist(name, isTemplate = false) {
 // Mode de tri de la zone "non placés" : préférence personnelle de l'utilisateur, par liste (jamais
 // stockée dans la tierlist partagée — tl.unplacedSort est un ancien champ, ignoré désormais).
 function _tlUnplacedSortMode(tl) {
-  const mode = (tl && _tlLocalUnplacedSortByList[tl.id]) || 'manual';
+  const mode = (tl && _tlLocalUnplacedSortByList[tl.id]) || 'alpha'; // défaut : A→Z
   return mode === 'updatedAt-asc' ? 'updatedAt' : mode; // "Ancien→récent" supprimé
 }
 
@@ -8789,21 +8790,63 @@ function _tlSlideshowMarkCard(imgId) {
     if (on) card = c;
   });
   const key = card ? imgId + '|' + (card.closest('.tl-tier-images')?.dataset.dropzone || '') : null;
-  if (!card || key === _tlSlideshowScrolledFor) { _tlSlideshowScrolledFor = key; return; }
+  const scrollToCard = !!card && key !== _tlSlideshowScrolledFor;
   _tlSlideshowScrolledFor = key;
-  const zoneRect = tlTiersZone.getBoundingClientRect();
+  // Élément qui vient d'arriver dans un tier (cf _tlSlideshowRevealId) : rendu entièrement visible lui
+  // aussi, mais priorité au cadre jaune (choix utilisateur) : s'il y en a un, défilement vertical et
+  // rangée du cadre jaune lui sont réservés.
+  const revealId = _tlSlideshowRevealId;
+  _tlSlideshowRevealId = null;
+  const revealCard = revealId && revealId !== imgId
+    ? tlTiersZone.querySelector(`.tl-tier-images > .tl-img-card[data-img-id="${CSS.escape(revealId)}"]`) : null;
+  if (revealCard && !(card && card.parentElement === revealCard.parentElement)) {
+    const vertical = !card;
+    _tlSlideshowRevealCard(revealCard, vertical);
+    // Image pas encore chargée : sa taille peut changer, on recommence au chargement.
+    const im = revealCard.querySelector('img');
+    if (im && !im.complete) im.addEventListener('load', () => { if (revealCard.isConnected) _tlSlideshowRevealCard(revealCard, vertical); }, { once: true });
+  }
+  if (scrollToCard) _tlSlideshowRevealCard(card, true);
+}
+
+// Défile pour que la carte soit entièrement visible (centrée) : verticalement dans le cadre Tiers
+// (si vertical), horizontalement dans la rangée de son tier. Positions absolues (scrollTo), pour
+// que deux défilements à la suite ne s'additionnent pas.
+function _tlSlideshowRevealCard(card, vertical) {
   const cardRect = card.getBoundingClientRect();
-  if (cardRect.top < zoneRect.top || cardRect.bottom > zoneRect.bottom) {
-    const delta = (cardRect.top + cardRect.height / 2) - (zoneRect.top + zoneRect.height / 2);
-    tlTiersZone.scrollBy({ top: delta, behavior: 'smooth' });
+  if (vertical) {
+    const zoneRect = tlTiersZone.getBoundingClientRect();
+    if (cardRect.top < zoneRect.top || cardRect.bottom > zoneRect.bottom) {
+      const delta = (cardRect.top + cardRect.height / 2) - (zoneRect.top + zoneRect.height / 2);
+      tlTiersZone.scrollTo({ top: tlTiersZone.scrollTop + delta, behavior: 'smooth' });
+    }
   }
   const row = card.closest('.tl-tier-images');
   if (!row || row.scrollWidth <= row.clientWidth) return;
   const rowRect = row.getBoundingClientRect();
   if (cardRect.left < rowRect.left || cardRect.right > rowRect.right) {
     const delta = (cardRect.left + cardRect.width / 2) - (rowRect.left + rowRect.width / 2);
-    row.scrollBy({ left: delta, behavior: 'smooth' });
+    row.scrollTo({ left: row.scrollLeft + delta, behavior: 'smooth' });
   }
+}
+
+// Clic sur un élément d'un tier : l'affiche à droite. Déjà proposé dans la boucle actuelle → on
+// remonte jusqu'à lui (comme ←, sans valeur de décision) ; sinon il est affiché juste après
+// l'élément actuel (les éléments quittés avec ← restent à suivre avec →).
+function _tlSlideshowJumpTo(tl, id) {
+  if (!tl || tl.id !== _tlSlideshowTlId) return;
+  const curIdx = _tlSlideshowIdx;
+  if (_tlSlideshowIds[curIdx] === id) return;
+  const idx = _tlSlideshowSeen.has(id) ? _tlSlideshowIds.lastIndexOf(id) : -1;
+  if (idx !== -1) {
+    _tlSlideshowIdx = idx;
+  } else {
+    _tlSlideshowIds.splice(curIdx + 1, 0, id);
+    _tlSlideshowIdx = curIdx + 1;
+    _tlSlideshowSeen.add(id);
+  }
+  _tlSlideshowAnimDir = _tlSlideshowIdx < curIdx ? -1 : 1;
+  _tlRenderSlideshow(tl);
 }
 
 // Boutons d'envoi (cf #tl-slideshow-tier-btns) : un par tier, à sa couleur et à son nom, puis
@@ -8824,7 +8867,9 @@ function _tlRenderSlideshowTierBtns(tl, curZone, hasItem) {
     box.appendChild(b);
   };
   tl.tiers.forEach(t => add(t.id, t.label, t.color));
-  add('__unplaced__', 'Non placé', null);
+  // "(m/n)" = même compteur que le cadre Non placés (cf _tlUpdateUnplacedCount).
+  const total = tl.unplaced.length + tl.tiers.reduce((sum, t) => sum + t.items.length, 0);
+  add('__unplaced__', 'Non placé (' + tl.unplaced.length + '/' + total + ')', null);
 }
 
 function _tlSlideshowGo(delta) {
@@ -8957,6 +9002,7 @@ function _tlSlideshowPlace(tierId) {
     tlTouchFolderChain(_tlEffectiveFolderId(tl));
     tlSaveGroup(_tlGroupRoot(tl).id);
     if (!_tlMoveImageCard(tl, imgId, from.zone, tierId) && !_tlPatchImageMove(tl, from.zone, tierId)) tlRender(true);
+    if (tier) _tlSlideshowRevealId = imgId; // rendu entièrement visible (cf _tlSlideshowMarkCard)
   }
   _tlSlideshowGo(1);
 }
@@ -10097,6 +10143,8 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
   if (!readOnly) {
     card.addEventListener('click', e => {
       e.stopPropagation();
+      // Diaporama : clic sur un élément d'un tier = l'afficher à droite (cf _tlSlideshowJumpTo).
+      if (!isUnplacedZone && _tlSlideshowTlId === tl.id) _tlSlideshowJumpTo(tl, img.id);
       // Simple bascule de classe CSS ciblée au lieu d'un tlRender() complet : la sélection ne
       // change rien d'autre dans le DOM (confirmé dans tlBuildImgCard, aucun autre élément ne
       // dépend de _tlSelectedImgId), donc reconstruire tous les tiers pour ça est inutile.
@@ -10916,13 +10964,19 @@ function tlDrop(e, targetZoneId) {
     tlDragImgId = null;
     _tlClearDragSourceHidden();
   }
+  // Diaporama : élément arrivé dans un tier = rendu entièrement visible (cf _tlSlideshowMarkCard) ;
+  // depuis l'élément affiché, posé juste avant de passer au suivant (pas consommé par un rendu
+  // intermédiaire où il est encore l'élément affiché).
+  const revealInTier = _tlSlideshowTlId === tl.id && targetZoneId !== '__unplaced__';
+  const goNext = () => { if (revealInTier) _tlSlideshowRevealId = imgId; _tlSlideshowGo(1); };
+  if (revealInTier && !fromSlideshowStage) _tlSlideshowRevealId = imgId;
   if (from && (_tlMoveImageCard(tl, imgId, from.zone, targetZoneId) || _tlPatchImageMove(tl, from.zone, targetZoneId))) {
-    if (fromSlideshowStage) _tlSlideshowGo(1);
+    if (fromSlideshowStage) goNext();
     else if (_tlSlideshowTlId === tl.id) _tlRenderSlideshow(tl);
     return;
   }
   tlRender(true);
-  if (fromSlideshowStage) _tlSlideshowGo(1);
+  if (fromSlideshowStage) goNext();
 }
 
 // Déplacement d'UNE image (glisser-déposer, diaporama) : retire sa carte de la zone de départ et
@@ -12895,9 +12949,10 @@ tlUnplacedSortBtn.addEventListener('click', () => {
   const tl = tlActiveTierlist();
   if (!tl) return;
   _openSortMenu(tlUnplacedSortBtn, _TL_UNPLACED_SORT_MODES, _tlUnplacedSortMode(tl), mode => {
-    if (mode === 'manual') delete _tlLocalUnplacedSortByList[tl.id];
+    // A→Z = défaut : rien de stocké ; "Manuel" est donc stocké explicitement.
+    if (mode === 'alpha') delete _tlLocalUnplacedSortByList[tl.id];
     else _tlLocalUnplacedSortByList[tl.id] = mode;
-    saveUserPrefs({ ['tlUnplacedSortByList/' + tl.id]: mode === 'manual' ? null : mode });
+    saveUserPrefs({ ['tlUnplacedSortByList/' + tl.id]: mode === 'alpha' ? null : mode });
     tlRender();
   });
 });
