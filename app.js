@@ -70,7 +70,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // définies plus loin dans ce fichier.
 // ──────────────────────────────────────────────
 const MODAL_CLOSE_FNS = {
-  'tl-modal-img-zoom': () => _tlCloseImgZoom(),
+  // Fermé au mousedown sur le fond : le click qui suit ne doit pas désélectionner l'élément zoomé.
+  'tl-modal-img-zoom': () => { _tlCloseImgZoom(); _tlZoomCloseGuard = true; },
   'tl-modal-new': () => tlModalNew.classList.add('hidden'),
   'tl-modal-tier': () => { tlModalTier.classList.add('hidden'); tlTierModalCtx = null; },
   'tl-modal-generate-from-template': () => tlModalGenerate.classList.add('hidden'),
@@ -9906,6 +9907,20 @@ function _tlOpenImgZoom(img, tl) {
     label.classList.toggle('hidden', !showLabels);
     label.textContent = img.name || '';
   }
+  // Zoomer = sélectionner l'élément (cadre jaune) : en Comparaison, surbrillance dans toutes les
+  // listes (comme un clic sur la carte) ; sinon sélection de la carte (Suppr), diaporama compris.
+  // Reste sélectionné après la fermeture du zoom (cf _tlZoomCloseGuard).
+  if (_tlCurrentMode() === 'compare') {
+    _tlCompareHighlightImgId = img.id;
+    _tlApplyCompareHighlight();
+    _tlCompareScrollToImg(img.id); // visible dans toutes les listes (derrière le zoom, prêt à sa fermeture)
+  } else if (tl && tl === tlActiveTierlist()) {
+    _tlSelectedImgId = img.id;
+    document.querySelectorAll(`.tl-img-card.selected, .tl-img-card[data-img-id="${CSS.escape(img.id)}"]`)
+      .forEach(c => c.classList.toggle('selected', c.dataset.imgId === img.id));
+    document.querySelectorAll('#tl-slideshow-stage .tl-slideshow-item:not(.tl-slideshow-item--out)').forEach(el =>
+      el.classList.toggle('tl-slideshow-item--selected', _tlSlideshowIds[_tlSlideshowIdx] === img.id));
+  }
   // Boutons d'envoi à gauche (comme le diaporama), tous les modes, liste seulement (jamais un
   // template) : clic = élément envoyé en fin de cette zone, puis le zoom se ferme (cf _tlZoomPlace).
   const btns = document.getElementById('tl-img-zoom-tier-btns');
@@ -10090,6 +10105,8 @@ function _tlBuildCompareImgCard(tl, img, size) {
     e.stopPropagation();
     _tlCompareHighlightImgId = (_tlCompareHighlightImgId === img.id) ? null : img.id;
     _tlApplyCompareHighlight();
+    // Sélectionné : rendu visible dans toutes les listes (défilement auto si besoin).
+    if (_tlCompareHighlightImgId) _tlCompareScrollToImg(img.id);
   });
   card.addEventListener('dblclick', e => {
     e.stopPropagation();
@@ -10123,15 +10140,22 @@ function _tlApplyCompareHighlight() {
 }
 
 // Scrolle chaque colonne où l'élément n'est pas déjà visible jusqu'à sa carte.
+// Défilement calculé colonne par colonne (scrollTo) et non scrollIntoView : plusieurs scrollIntoView
+// doux lancés en même temps dans des colonnes différentes peuvent s'annuler entre eux. Zone visible
+// = sous le titre collant de la colonne ; carte cachée par la recherche ignorée.
 function _tlCompareScrollToImg(imgId) {
   document.querySelectorAll('#tl-compare-view .tl-compare-column').forEach(col => {
-    const card = col.querySelector(`.tl-img-card[data-img-id="${imgId}"]`);
-    if (!card) return;
+    const card = col.querySelector(`.tl-img-card[data-img-id="${CSS.escape(imgId)}"]`);
+    if (!card || card.classList.contains('tl-search-hidden')) return;
     const colRect = col.getBoundingClientRect();
+    const top = colRect.top + (col.querySelector(':scope > .tl-compare-column-title')?.offsetHeight || 0);
     const cardRect = card.getBoundingClientRect();
-    const alreadyVisible = cardRect.top >= colRect.top && cardRect.bottom <= colRect.bottom;
-    if (!alreadyVisible) { card.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; } // inline 'nearest' par défaut : gère aussi le côté
-    // Visible verticalement mais coupé sur le côté (tier en "Rangée unique") : défilement horizontal du tier seul
+    if (cardRect.top < top || cardRect.bottom > colRect.bottom) {
+      // Centrée dans la partie visible de la colonne.
+      const delta = (cardRect.top + cardRect.height / 2) - (top + colRect.bottom) / 2;
+      col.scrollTo({ top: col.scrollTop + delta, behavior: 'smooth' });
+    }
+    // Coupée sur le côté (tier en "Rangée unique") : défilement horizontal du tier seul
     const zone = card.closest('.tl-tier-images');
     if (!zone || zone.scrollWidth <= zone.clientWidth) return;
     const zoneRect = zone.getBoundingClientRect();
@@ -12724,7 +12748,12 @@ document.addEventListener('keydown', e => {
 
 // Désélectionner l'image en cliquant ailleurs — patch ciblé (retrait de la classe CSS) plutôt
 // qu'un tlRender() complet, même principe que le clic de sélection dans tlBuildImgCard.
+// Exceptions : clic dans le zoom (boutons d'envoi) et click qui suit sa fermeture par le fond
+// (_tlZoomCloseGuard) — zoomer sélectionne l'élément, il doit le rester (cf _tlOpenImgZoom).
+let _tlZoomCloseGuard = false;
 document.addEventListener('click', e => {
+  if (_tlZoomCloseGuard) { _tlZoomCloseGuard = false; return; }
+  if (e.target.closest('#tl-modal-img-zoom')) return;
   if (_tlSelectedImgId && !e.target.closest('.tl-img-card, .tl-slideshow-item')) {
     document.querySelectorAll('.tl-img-card.selected').forEach(c => c.classList.remove('selected'));
     document.querySelectorAll('.tl-slideshow-item--selected').forEach(c => c.classList.remove('tl-slideshow-item--selected'));
@@ -12737,6 +12766,8 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && _tlSelectedImgId) {
     const tag = document.activeElement.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    // Zoom ouvert : rien de supprimé sous l'image agrandie (Suppr marche après sa fermeture).
+    if (!document.getElementById('tl-modal-img-zoom')?.classList.contains('hidden')) return;
     const tl = tlActiveTierlist();
     if (!tl) return;
     const img = tlFindImage(tl, _tlSelectedImgId);
