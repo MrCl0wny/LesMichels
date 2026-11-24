@@ -9,7 +9,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="theme-color" content="#0e0e10" />
-  <link rel="stylesheet" href="style.css?v=395" />
+  <link rel="stylesheet" href="style.css?v=397" />
   <!-- Couleurs choisies (Préférences) appliquées dès le chargement, sans attendre Firebase ni app.js. -->
   <script>try { var _ct = localStorage.getItem('lmColorTheme'); if (_ct && _ct !== 'gray') document.documentElement.setAttribute('data-color-theme', _ct); } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -178,6 +178,8 @@
             <div class="ctrl-row-toolbar-right">
               <button class="tl-toolbar-btn tl-btn-orange tl-btn-undo tl-shrink-0" id="tl-btn-undo" title="Annuler la dernière action"><i data-lucide="undo-2"></i> Annuler</button>
               <button class="tl-toolbar-btn tl-btn-toggle-unplaced tl-shrink-0" id="tl-btn-toggle-unplaced" title="Masquer le cadre Éléments non placés"><i data-lucide="eye-off"></i> Non placés</button>
+              <!-- Diaporama seulement (cf style.css) : ne proposer que les éléments non placés (pref perso) -->
+              <button type="button" id="tl-ss-unplaced-only-toggle" class="tl-toolbar-btn tl-btn-toggle-labels tl-shrink-0" title="Ne proposer que les éléments non placés"><i data-lucide="square"></i> Non placés uniquement</button>
             </div>
           </div>
 
@@ -424,6 +426,8 @@
   <!-- Modal zoom image (tier list) — div avec background-image (pas <img>) pour échapper
        aux extensions de scan d'images type Fatkun, utilisée par ailleurs pour l'import. -->
   <div id="tl-modal-img-zoom" class="modal-overlay hidden">
+    <!-- Boutons d'envoi (un par tier + "Non placé"), comme le diaporama — liste seulement, cf _tlOpenImgZoom -->
+    <div id="tl-img-zoom-tier-btns" class="tl-slideshow-tier-btns hidden"></div>
     <div id="tl-img-zoom-frame">
       <div id="tl-img-zoom-picture"></div>
       <div id="tl-img-zoom-label" class="hidden"></div>
@@ -1077,6 +1081,6 @@
     firebase.initializeApp(firebaseConfig);
     window._db = firebase.database();
   </script>
-  <script src="app.js?v=550"></script>
+  <script src="app.js?v=552"></script>
 </body>
 </html>

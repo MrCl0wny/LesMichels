@@ -3307,41 +3307,47 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
 /* Boutons d'envoi : un par tier (couleur + nom du tier) puis "Non placé" (neutre), en colonne juste
    avant la flèche ←. Aspect "touche" (bord bas plus foncé, soulèvement au survol) pour montrer qu'on
    clique dessus. Contour blanc = endroit où se trouve déjà l'élément affiché. */
+/* Trop de boutons pour la hauteur : ils rétrécissent (hauteur, écarts, texte), jamais de défilement.
+   --tl-tb-n = nombre de boutons (posé par _tlFillTierBtns) ; --tl-tb-slot = hauteur disponible par
+   bouton, en cqh de cette colonne (container-type:size, hauteur imposée : stretch ici, 90vh au zoom). */
 .tl-slideshow-tier-btns {
   display: flex;
   flex-direction: column;
   justify-content: safe center;
-  gap: 8px;
   flex-shrink: 0;
+  align-self: stretch;
   width: 150px;
   max-height: 100%;
   box-sizing: border-box;
   padding: 6px; /* place du contour blanc (débordant) */
-  overflow-y: auto;
-  scrollbar-width: thin;
+  overflow: hidden;
+  container-type: size;
+  --tl-tb-slot: calc((100cqh - 10px) / var(--tl-tb-n, 1));
 }
 .tl-slideshow-tier-btn {
-  flex-shrink: 0;
-  min-height: 46px;
-  padding: 8px 10px;
+  flex: 0 1 auto;
+  min-height: min(46px, calc(var(--tl-tb-slot) * 0.88));
+  padding: min(8px, calc(var(--tl-tb-slot) * 0.08)) 10px;
   border: none;
   border-bottom: 4px solid rgba(0,0,0,0.35);
   border-radius: var(--radius);
   color: #111;
   font-family: inherit;
-  font-size: 1rem;
+  font-size: min(1rem, calc(var(--tl-tb-slot) * 0.4));
   font-weight: 700;
   line-height: 1.1;
   text-align: center;
   word-break: break-word;
+  overflow: hidden;
   cursor: pointer;
   transition: transform 0.1s, filter 0.1s;
 }
+.tl-slideshow-tier-btn + .tl-slideshow-tier-btn { margin-top: min(8px, calc(var(--tl-tb-slot) * 0.12)); }
 .tl-slideshow-tier-btn:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-2px); }
 .tl-slideshow-tier-btn:active:not(:disabled) { filter: brightness(0.95); transform: translateY(1px); }
 .tl-slideshow-tier-btn:disabled { opacity: 0.4; cursor: default; }
-.tl-slideshow-tier-btn--unplaced {
-  margin-top: 8px; /* séparé des tiers */
+.tl-slideshow-tier-btn.tl-slideshow-tier-btn--unplaced {
+  margin-top: min(16px, calc(var(--tl-tb-slot) * 0.12 + 8px)); /* séparé des tiers */
   background: var(--surface-3);
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--border);
@@ -3384,7 +3390,56 @@ body.compare-tierlist-mode .tl-compare-only { display: flex !important; }
   user-select: none;
 }
 .tl-slideshow-item--highlight { outline: 3px solid #fff; outline-offset: -3px; }
+.tl-slideshow-item { cursor: pointer; }
+/* Élément affiché sélectionné (clic gauche, Suppr le supprime) : couleur de sélection des cartes,
+   prioritaire sur le cadre blanc/vert tant qu'il est sélectionné. */
+.tl-slideshow-stage .tl-slideshow-item.tl-slideshow-item--selected { outline: 3px solid var(--accent); outline-offset: -3px; }
 .tl-slideshow-empty { color: var(--text-muted); }
+/* "Non placés uniquement", plus rien à placer : cadre vide à la place de l'élément, où déposer un
+   élément d'un tier (cf drop sur #tl-slideshow-stage). */
+.tl-slideshow-dropzone {
+  width: calc(100cqw - var(--tl-ss-side));
+  height: calc(100cqh - var(--tl-ss-nav));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-style: italic;
+  font-size: 1rem;
+  transition: background 0.15s;
+}
+.tl-slideshow-dropzone.drag-over {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+}
+/* Renommage du nom de l'élément affiché (clic sur le nom, cf _tlSlideshowRenameName) */
+.tl-slideshow-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: #fff;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1.2;
+  text-align: center;
+  outline: none;
+}
+.tl-slideshow-name { cursor: text; }
+/* Bouton "Non placés uniquement" : diaporama seulement (tout à droite, après Annuler) */
+body:not(.tl-slideshow-mode) #tl-ss-unplaced-only-toggle { display: none !important; }
+/* Zoom d'un élément : boutons d'envoi à gauche de l'image (cf _tlOpenImgZoom) */
+#tl-modal-img-zoom { gap: 16px; }
+#tl-img-zoom-tier-btns { height: 90vh; align-self: center; }
 /* [boutons d'envoi] ← [élément + nom] → : tout à position fixe (le cadre Tiers va jusqu'aux boutons
    et ne bouge pas) ; une image étroite est centrée entre les flèches. --tl-ss-side = place prise à
    côté de l'élément (boutons 150 + 2 flèches × 44 + 3 écarts × 8), --tl-ss-nav = place du nom dessous. */
@@ -3611,7 +3666,15 @@ body.tl-single-row .tl-tier-images {
   overflow-y: hidden;
   min-width: 0;
   scrollbar-width: thin;
+  padding-right: 8px; /* remplace la place libre des rangées multiples, cf ::after ci-dessous */
 }
+/* Place libre après le dernier élément d'un tier, pour pouvoir y déposer un élément (en fin de tier) :
+   marge droite en rangées multiples (chaque ligne s'arrête avant), espace en fin de rangée unique
+   (compté dans le défilement). Tous les modes (Comparaison comprise). */
+.tl-tier-images,
+.tl-compare-tier-row .tl-tier-images { padding-right: 40px; }
+body.tl-single-row .tl-compare-tier-row .tl-tier-images { padding-right: 4px; }
+body.tl-single-row .tl-tier-images::after { content: ''; flex: 0 0 36px; }
 .tl-tier-images.drag-over {
   background: var(--accent-glow) !important;
   outline: 2px dashed var(--accent);

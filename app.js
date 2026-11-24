@@ -303,6 +303,8 @@ function setupAuth() {
       _tlLocalUnplacedHidden   = false;
       _tlLocalSingleRow        = false;
       _tlApplySingleRow();
+      _tlLocalSsUnplacedOnly   = false;
+      _tlApplySsUnplacedOnlyBtn();
       _tlLocalUnplacedSortByList = {};
       _tlLocalSplit           = null;
       _tlLocalActiveTierlistId = null;
@@ -369,6 +371,8 @@ function loadUserPrefs() {
     if (prefs.tlUnplacedHidden    != null) _tlLocalUnplacedHidden   = !!prefs.tlUnplacedHidden;
     _tlLocalSingleRow = !!prefs.tlSingleRow;
     _tlApplySingleRow();
+    _tlLocalSsUnplacedOnly = !!prefs.tlSlideshowUnplacedOnly;
+    _tlApplySsUnplacedOnlyBtn();
     if (prefs.tlUnplacedSortByList && typeof prefs.tlUnplacedSortByList === 'object') _tlLocalUnplacedSortByList = prefs.tlUnplacedSortByList;
     if (prefs.tlSplit             != null) _tlLocalSplit            = prefs.tlSplit;
     if (prefs.tlActiveTierlistId  != null) _tlLocalActiveTierlistId = prefs.tlActiveTierlistId;
@@ -7022,6 +7026,7 @@ let _tlLocalUnplacedImgSize = null; // taille des images du cadre "Éléments no
 let _tlLocalUnplacedShowLabels = null; // afficher/masquer noms du cadre "Éléments non placés" (indépendant de la tierlist)
 let _tlLocalUnplacedHidden  = false; // true = cadre "Éléments non placés" masqué (préférence locale)
 let _tlLocalSingleRow       = false; // true = chaque tier sur une seule rangée, défilement horizontal (pref perso)
+let _tlLocalSsUnplacedOnly  = false; // Diaporama : ne proposer que les non placés (pref perso, bouton "Non placés uniquement")
 let _tlTierSearchText       = '';    // recherche dans les tiers (minuscules, sans accents), affichage seul, jamais sauvegardée
 // Diaporama (cf _tlStartSlideshow) : état local seul, rien en Firebase.
 let _tlSlideshowTlId = null;       // liste en diaporama (null = mode inactif)
@@ -7703,16 +7708,7 @@ function tlUndo() {
     if (i !== -1) _tlSlideshowIdx = i;
   }
   tlSave(_tlGroupRoot(tl).id);
-  tlRender();
-  // tlRender() ne touche jamais .tl-compare-view (masqué dans le mode comparaison, seule
-  // l'éditeur normal en dépend) — sans ce re-render dédié, l'undo modifiait bien les données mais
-  // l'écran de comparaison restait figé sur l'ancien état, donnant l'impression que le bouton ne
-  // faisait rien.
-  if (document.body.classList.contains('compare-tierlist-mode')) {
-    const ids = _tlCompareSelectedIds || [];
-    const tls = ids.map(id => tlState.tierlists.find(t => t.id === id)).filter(Boolean);
-    _tlRenderCompareView(tls);
-  }
+  tlRender(); // redessine aussi la Comparaison si elle est affichée (cf _tlRefreshCompareView)
   tlUpdateUndoBtn();
 }
 
@@ -8367,6 +8363,8 @@ function tlRender(skipHeightRecalc = false) {
     const root = tl && !tl.archived ? _tlGroupRoot(tl) : null;
     if (!root || !cmpFirst || _tlGroupRoot(cmpFirst)?.id !== root.id) _exitCompareTierlistMode();
   }
+  // Comparaison toujours active : colonnes redessinées (modif locale ou d'un autre utilisateur).
+  if (document.body.classList.contains('compare-tierlist-mode')) _tlRefreshCompareView();
   _tlUpdateModeBtn();
   if (!tl || tl.archived) {
     tlEditor.classList.add('hidden');
@@ -8622,8 +8620,10 @@ function _tlSlideshowSortedUnplaced(tl) {
 // Élément qui suit curId (null = aucun, on reste). dryRun = juste savoir, sans rien changer (flèche
 // grisée, préchargement).
 function _tlSlideshowNextId(tl, curId, dryRun) {
-  // Premier pas encore proposé dans la boucle : non placés d'abord, puis placés meilleur → pire.
-  const others = _tlSlideshowSortedUnplaced(tl).concat(_tlSlideshowPlacedIds(tl)).filter(id => id !== curId);
+  // Premier pas encore proposé dans la boucle : non placés d'abord, puis placés meilleur → pire
+  // (non placés seulement avec le bouton "Non placés uniquement").
+  const placed = _tlLocalSsUnplacedOnly ? [] : _tlSlideshowPlacedIds(tl);
+  const others = _tlSlideshowSortedUnplaced(tl).concat(placed).filter(id => id !== curId);
   const id = others.find(x => !_tlSlideshowSeen.has(x));
   if (id || dryRun) return id || others[0] || null;
   // Boucle finie : on repart du début.
@@ -8674,10 +8674,14 @@ function _tlResetSlideshowState() {
   _tlSlideshowMarkCard(null); // retire le cadre jaune
 }
 
-// Retire de l'historique les éléments supprimés entre-temps. Élément affiché supprimé (ou rien
-// d'affiché, ex. éléments importés pendant le diaporama) : passe au suivant.
+// Retire de l'historique les éléments supprimés entre-temps (et, avec "Non placés uniquement", ceux
+// qui sont placés). Élément affiché retiré (ou rien d'affiché, ex. éléments importés pendant le
+// diaporama) : passe au suivant.
 function _tlSlideshowSync(tl) {
-  const alive = id => !!tlFindImage(tl, id) && !!_tlLocateImage(tl, id);
+  const alive = id => {
+    const loc = tlFindImage(tl, id) ? _tlLocateImage(tl, id) : null;
+    return !!loc && (!_tlLocalSsUnplacedOnly || loc.zone === '__unplaced__');
+  };
   const curId = _tlSlideshowIds[_tlSlideshowIdx];
   const before = _tlSlideshowIds.slice(0, _tlSlideshowIdx).filter(alive);
   if (curId && alive(curId)) {
@@ -8707,6 +8711,12 @@ function _tlRenderSlideshow(tl) {
     && shown.color === img.color && shown.name === img.name;
   const animDir = _tlSlideshowAnimDir;
   _tlSlideshowAnimDir = 0;
+  // L'élément sélectionné quitte l'affichage : sélection retirée (Suppr ne doit jamais supprimer un
+  // élément qu'on ne voit plus).
+  if (shown && (!img || shown.id !== img.id) && _tlSelectedImgId === shown.id) {
+    _tlSelectedImgId = null;
+    document.querySelectorAll('.tl-img-card.selected').forEach(c => c.classList.remove('selected'));
+  }
   if (!same) {
     // Roulette : l'ancien élément reste le temps de sortir sur le côté (cf _tlSlideshowAnimate).
     stage.querySelectorAll('.tl-slideshow-item--out').forEach(e => e.remove());
@@ -8723,7 +8733,14 @@ function _tlRenderSlideshow(tl) {
     }
     stage.innerHTML = '';
     stage._tlShown = img ? { id: img.id, src: img.src, type: img.type, color: img.color, name: img.name } : null;
-    if (!img) {
+    if (!img && _tlLocalSsUnplacedOnly) {
+      // "Non placés uniquement", plus rien à placer : cadre vide où déposer un élément d'un tier
+      // (il repasse en Non placés et s'affiche, cf dragover/drop sur #tl-slideshow-stage).
+      const zone = document.createElement('div');
+      zone.className = 'tl-slideshow-dropzone';
+      zone.textContent = 'Dépose des images ici';
+      stage.appendChild(zone);
+    } else if (!img) {
       const empty = document.createElement('div');
       empty.className = 'tl-slideshow-empty';
       empty.textContent = 'Aucun élément';
@@ -8760,6 +8777,7 @@ function _tlRenderSlideshow(tl) {
   if (item) {
     item.classList.toggle('tl-slideshow-item--highlight', img.id === _tlHighlightedImgId(tl));
     item.classList.toggle('tl-highlight-done', img.id === _tlHighlightedImgId(tl) && _tlHighlightAllPlaced(tl));
+    item.classList.toggle('tl-slideshow-item--selected', img.id === _tlSelectedImgId);
   }
   const nameEl = document.getElementById('tl-slideshow-name');
   if (nameEl) nameEl.textContent = img && !isText ? (img.name || '') : '';
@@ -8835,6 +8853,7 @@ function _tlSlideshowRevealCard(card, vertical) {
 // l'élément actuel (les éléments quittés avec ← restent à suivre avec →).
 function _tlSlideshowJumpTo(tl, id) {
   if (!tl || tl.id !== _tlSlideshowTlId) return;
+  if (_tlLocalSsUnplacedOnly) return; // "Non placés uniquement" : un élément placé n'est jamais affiché
   const curIdx = _tlSlideshowIdx;
   if (_tlSlideshowIds[curIdx] === id) return;
   const idx = _tlSlideshowSeen.has(id) ? _tlSlideshowIds.lastIndexOf(id) : -1;
@@ -8852,9 +8871,14 @@ function _tlSlideshowJumpTo(tl, id) {
 // Boutons d'envoi (cf #tl-slideshow-tier-btns) : un par tier, à sa couleur et à son nom, puis
 // "Non placé" (neutre) ; contour blanc sur la zone où se trouve déjà l'élément affiché.
 function _tlRenderSlideshowTierBtns(tl, curZone, hasItem) {
-  const box = document.getElementById('tl-slideshow-tier-btns');
+  _tlFillTierBtns(document.getElementById('tl-slideshow-tier-btns'), tl, curZone, hasItem);
+}
+// Construit les boutons d'envoi dans box (diaporama, et zoom d'un élément — cf _tlOpenImgZoom).
+// --tl-tb-n = nombre de boutons : trop nombreux, ils rétrécissent au lieu de défiler (cf style.css).
+function _tlFillTierBtns(box, tl, curZone, hasItem) {
   if (!box) return;
   box.innerHTML = '';
+  box.style.setProperty('--tl-tb-n', tl.tiers.length + 1);
   const add = (zone, label, color) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -9072,6 +9096,29 @@ document.getElementById('tl-slideshow-stage')?.addEventListener('dblclick', e =>
   const imgId = _tlSlideshowIds[_tlSlideshowIdx];
   if (tl && tl.id === _tlSlideshowTlId && imgId) _tlSetImageToPlace(tl, imgId);
 });
+// Clic gauche sur l'élément affiché = le sélectionner (cadre de sélection, Suppr le supprime), comme
+// une carte ; re-clic = désélectionner (cf écouteur 'click' de document pour un clic ailleurs).
+document.getElementById('tl-slideshow-stage')?.addEventListener('click', e => {
+  const item = e.target.closest('.tl-slideshow-item');
+  const imgId = _tlSlideshowIds[_tlSlideshowIdx];
+  if (!item || item.classList.contains('tl-slideshow-item--out') || !imgId) return;
+  _tlSelectedImgId = _tlSelectedImgId === imgId ? null : imgId;
+  // Sa carte dans les tiers (s'il est placé) suit la même sélection.
+  document.querySelectorAll(`.tl-img-card.selected, .tl-tier-images > .tl-img-card[data-img-id="${CSS.escape(imgId)}"]`)
+    .forEach(c => c.classList.toggle('selected', c.dataset.imgId === _tlSelectedImgId));
+  item.classList.toggle('tl-slideshow-item--selected', _tlSelectedImgId === imgId);
+});
+// Clic droit sur l'élément affiché = mêmes options qu'une carte (Zoomer, Renommer, Remplacer, Supprimer).
+document.getElementById('tl-slideshow-stage')?.addEventListener('contextmenu', e => {
+  const item = e.target.closest('.tl-slideshow-item');
+  const tl = tlActiveTierlist();
+  const imgId = _tlSlideshowIds[_tlSlideshowIdx];
+  const img = tl && tl.id === _tlSlideshowTlId && imgId ? tlFindImage(tl, imgId) : null;
+  if (!item || item.classList.contains('tl-slideshow-item--out') || !img) return;
+  e.preventDefault();
+  e.stopPropagation();
+  _tlShowImgCtxMenu(e, tl, img);
+});
 // Glisser l'élément affiché vers un tier : même mécanique que les cartes (tlDragImgId → tlDrop, qui
 // passe ensuite à l'élément suivant, cf _tlSlideshowDragFromStage).
 document.getElementById('tl-slideshow-stage')?.addEventListener('dragstart', e => {
@@ -9103,6 +9150,114 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
   _tlSlideshowGo(e.key === 'ArrowLeft' ? -1 : 1);
 });
+
+// Bouton "Non placés uniquement" (rangée de contrôle, tout à droite, diaporama seulement) : pref perso.
+function _tlApplySsUnplacedOnlyBtn() {
+  const btn = document.getElementById('tl-ss-unplaced-only-toggle');
+  if (!btn) return;
+  btn.innerHTML = `<i data-lucide="${_tlLocalSsUnplacedOnly ? 'square-check' : 'square'}"></i> Non placés uniquement`;
+  if (window.lucide) lucide.createIcons({ root: btn });
+}
+document.getElementById('tl-ss-unplaced-only-toggle')?.addEventListener('click', () => {
+  _tlLocalSsUnplacedOnly = !_tlLocalSsUnplacedOnly;
+  _tlApplySsUnplacedOnlyBtn();
+  saveUserPrefs({ tlSlideshowUnplacedOnly: _tlLocalSsUnplacedOnly });
+  // Élément placé affiché : remplacé par le prochain non placé (cf _tlSlideshowSync).
+  const tl = tlActiveTierlist();
+  if (tl && tl.id === _tlSlideshowTlId) _tlRenderSlideshow(tl);
+});
+
+// Cadre vide "Dépose des images ici" (Non placés uniquement, plus rien à placer) : un élément d'un
+// tier déposé dessus repasse en fin de Non placés et s'affiche aussitôt.
+document.getElementById('tl-slideshow-stage')?.addEventListener('dragover', e => {
+  const zone = e.target.closest('.tl-slideshow-dropzone');
+  if (!zone || !tlDragImgId) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  zone.classList.add('drag-over');
+});
+document.getElementById('tl-slideshow-stage')?.addEventListener('dragleave', e => {
+  const zone = e.target.closest('.tl-slideshow-dropzone');
+  if (zone && !zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
+});
+document.getElementById('tl-slideshow-stage')?.addEventListener('drop', e => {
+  if (!e.target.closest('.tl-slideshow-dropzone')) return;
+  e.preventDefault();
+  const imgId = tlDragImgId;
+  tlDragImgId = null; // la carte glissée est retirée de son tier : son dragend peut ne pas arriver
+  tlClearDropBefore();
+  _tlClearDragSourceHidden();
+  const tl = tlActiveTierlist();
+  if (!imgId || !tl || tl.id !== _tlSlideshowTlId) return;
+  const from = _tlLocateImage(tl, imgId);
+  if (!from || from.zone === '__unplaced__') return;
+  // Même enregistrement que le glisser-déposer (tlDrop) : annulable, groupe seul, patch des 2 zones.
+  _tlPushUndoOp({ tierlistId: tl.id, type: 'moveImage', imgId, fromZone: from.zone, fromIndex: from.index });
+  _tlRemoveImageFromAllZones(tl, imgId);
+  tl.unplaced.push(imgId);
+  tlTouchFolderChain(_tlEffectiveFolderId(tl));
+  tlSaveGroup(_tlGroupRoot(tl).id);
+  if (!_tlMoveImageCard(tl, imgId, from.zone, '__unplaced__') && !_tlPatchImageMove(tl, from.zone, '__unplaced__')) tlRender(true);
+  _tlSlideshowShow(tl, imgId);
+  _tlRenderSlideshow(tl);
+});
+
+// Nom de l'élément affiché : clic = renommer, curseur au caractère cliqué ; double-clic = tout
+// sélectionner (comme le nom des éléments placés, cf tlBuildImgCard).
+let _tlSsNameClickTimer = null;
+document.getElementById('tl-slideshow-name')?.addEventListener('click', e => {
+  e.stopPropagation();
+  if (_tlSsNameClickTimer) { clearTimeout(_tlSsNameClickTimer); _tlSsNameClickTimer = null; return; }
+  const caretOffset = _tlCaretOffsetFromClick(e.currentTarget, e.clientX, e.clientY);
+  _tlSsNameClickTimer = setTimeout(() => {
+    _tlSsNameClickTimer = null;
+    _tlSlideshowRenameName(caretOffset);
+  }, 220);
+});
+document.getElementById('tl-slideshow-name')?.addEventListener('dblclick', e => {
+  e.stopPropagation();
+  if (_tlSsNameClickTimer) { clearTimeout(_tlSsNameClickTimer); _tlSsNameClickTimer = null; }
+  _tlSlideshowRenameName(null);
+});
+// Le nom (span fixe du diaporama) est masqué le temps de l'édition, un champ prend sa place ; la
+// validation refait un tlRender() complet, comme _tlInlineRenameImg.
+function _tlSlideshowRenameName(caretOffset) {
+  const tl = tlActiveTierlist();
+  const imgId = _tlSlideshowIds[_tlSlideshowIdx];
+  const img = tl && tl.id === _tlSlideshowTlId && imgId ? tlFindImage(tl, imgId) : null;
+  const nameEl = document.getElementById('tl-slideshow-name');
+  if (!img || !nameEl || !nameEl.textContent || nameEl.classList.contains('hidden')) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = img.name || '';
+  input.className = 'tl-slideshow-name-input';
+  nameEl.classList.add('hidden');
+  nameEl.after(input);
+  input.focus();
+  if (caretOffset !== null && caretOffset !== undefined) input.setSelectionRange(caretOffset, caretOffset);
+  else input.select();
+  let done = false;
+  const finish = save => {
+    if (done) return;
+    done = true;
+    const cur = tlFindImage(tl, imgId); // re-résolu par id (cf _tlInlineRenameImg)
+    const newName = input.value.trim();
+    input.remove();
+    nameEl.classList.remove('hidden');
+    if (save && cur && newName && newName !== cur.name) {
+      _tlPushUndoOp({ tierlistId: tl.id, groupRootId: _tlGroupRoot(tl).id, type: 'renameImage', imgId: cur.id, oldName: cur.name });
+      cur.name = newName;
+      cur.updatedAt = Date.now();
+      tlSave(_tlGroupRoot(tl).id);
+    }
+    tlRender();
+  };
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+}
 
 // Texte "(Template \ Dossier)" à afficher à côté d'une tierlist archivée/supprimée, pour donner
 // son contexte d'origine (elle n'apparaît plus dans son emplacement habituel du panneau Dossiers).
@@ -9384,6 +9539,7 @@ function tlRenderList() {
 // réutilisé par le patch ciblé de tlDrop (_tlPatchImageMove), qui ne doit reconstruire QUE les
 // deux zones (source/destination) concernées par un déplacement d'image plutôt que tous les tiers.
 function _tlFillTierImagesDiv(tl, tier, imgsDiv, imgSize) {
+  const left = imgsDiv.scrollLeft; // défilement horizontal gardé (rangée unique)
   imgsDiv.innerHTML = '';
   if (tier.items.length === 0) {
     if (!tl.isTemplate) {
@@ -9398,6 +9554,7 @@ function _tlFillTierImagesDiv(tl, tier, imgsDiv, imgSize) {
       if (img) imgsDiv.appendChild(tlBuildImgCard(tl, img, imgSize));
     });
   }
+  if (left) imgsDiv.scrollLeft = left;
 }
 
 // Patch ciblé : met à jour uniquement la taille (largeur/hauteur inline) des cartes-images déjà
@@ -9433,6 +9590,12 @@ function _tlPreviewUnplacedImgSize(v) {
 }
 
 function tlRenderTiers(tl) {
+  // Même liste qu'au rendu précédent : défilements gardés (cadre Tiers + chaque tier en rangée unique),
+  // un rendu (élément ajouté, modif d'un autre utilisateur…) ne doit jamais ramener au début.
+  const keepScroll = tlTiersZone._tlRenderedTlId === tl.id;
+  const prevTop = tlTiersZone.scrollTop;
+  const prevRowLeft = new Map();
+  if (keepScroll) tlTiersZone.querySelectorAll('.tl-tier-images[data-dropzone]').forEach(d => { if (d.scrollLeft) prevRowLeft.set(d.dataset.dropzone, d.scrollLeft); });
   tlTiersZone.innerHTML = '';
   const imgSize = _tlLocalImgSize !== null ? _tlLocalImgSize : _tlClampImgSize(tl.imgSize);
 
@@ -9510,6 +9673,14 @@ function tlRenderTiers(tl) {
     wrap.appendChild(row);
     tlTiersZone.appendChild(wrap);
   });
+  tlTiersZone._tlRenderedTlId = tl.id;
+  if (keepScroll) {
+    tlTiersZone.scrollTop = prevTop;
+    tlTiersZone.querySelectorAll('.tl-tier-images[data-dropzone]').forEach(d => {
+      const left = prevRowLeft.get(d.dataset.dropzone);
+      if (left) d.scrollLeft = left;
+    });
+  }
   if (window.lucide) lucide.createIcons({ root: tlTiersZone });
 }
 
@@ -9735,9 +9906,18 @@ function _tlOpenImgZoom(img, tl) {
     label.classList.toggle('hidden', !showLabels);
     label.textContent = img.name || '';
   }
+  // Boutons d'envoi à gauche (comme le diaporama), tous les modes, liste seulement (jamais un
+  // template) : clic = élément envoyé en fin de cette zone, puis le zoom se ferme (cf _tlZoomPlace).
+  const btns = document.getElementById('tl-img-zoom-tier-btns');
+  const loc = tl && !tl.isTemplate && !tl.archived ? _tlLocateImage(tl, img.id) : null;
+  if (btns) {
+    btns.classList.toggle('hidden', !loc);
+    btns._tlZoom = loc ? { tlId: tl.id, imgId: img.id } : null;
+    if (loc) _tlFillTierBtns(btns, tl, loc.zone, true);
+  }
   const probe = new Image();
   probe.onload = () => {
-    const maxW = window.innerWidth * 0.9;
+    const maxW = window.innerWidth * 0.9 - (loc ? 166 : 0); // place des boutons (150 + écart 16)
     const maxH = window.innerHeight * 0.9;
     // Toutes les images sont compressées à l'import (~400px de long côté, cf. _tlCompressToBase64),
     // donc leur taille native est toujours petite face à 90vw/90vh — sans cette normalisation le
@@ -9760,6 +9940,41 @@ function _tlCloseImgZoom() {
 document.getElementById('tl-modal-img-zoom')?.addEventListener('click', e => {
   if (e.target.id === 'tl-modal-img-zoom') _tlCloseImgZoom();
 });
+document.getElementById('tl-img-zoom-tier-btns')?.addEventListener('click', e => {
+  const b = e.target.closest('.tl-slideshow-tier-btn');
+  const ctx = e.currentTarget._tlZoom;
+  if (!b || b.disabled || !ctx) return;
+  _tlCloseImgZoom();
+  _tlZoomPlace(ctx.tlId, ctx.imgId, b.dataset.zone);
+});
+// Bouton d'envoi du zoom : élément en fin du tier (ou des Non placés), même enregistrement que le
+// glisser-déposer (annulable, groupe seul) ; affichage patché selon le mode.
+function _tlZoomPlace(tlId, imgId, zoneId) {
+  const tl = tlState.tierlists.find(t => t.id === tlId);
+  if (!tl || tl.isTemplate || tl.archived) return;
+  const tier = zoneId === '__unplaced__' ? null : tl.tiers.find(t => t.id === zoneId);
+  if (!tier && zoneId !== '__unplaced__') return;
+  const from = _tlLocateImage(tl, imgId);
+  if (!from || from.zone === zoneId) return;
+  _tlPushUndoOp({ tierlistId: tl.id, type: 'moveImage', imgId, fromZone: from.zone, fromIndex: from.index });
+  _tlRemoveImageFromAllZones(tl, imgId);
+  (tier ? tier.items : tl.unplaced).push(imgId);
+  tlTouchFolderChain(_tlEffectiveFolderId(tl));
+  tlSaveGroup(_tlGroupRoot(tl).id);
+  if (_tlCurrentMode() === 'compare') {
+    if (!_tlPatchCompareImageMove(tl, from.zone, zoneId)) _tlRefreshCompareView();
+    if (tier) _tlRevealPlacedInCompare(tl.id, imgId); // entièrement visible (cf _tlRevealPlacedCard)
+    return;
+  }
+  if (tl !== tlActiveTierlist()) return;
+  if (!_tlMoveImageCard(tl, imgId, from.zone, zoneId) && !_tlPatchImageMove(tl, from.zone, zoneId)) tlRender(true);
+  if (_tlSlideshowTlId === tl.id) {
+    if (tier) _tlSlideshowRevealId = imgId; // rendu entièrement visible (cf _tlSlideshowMarkCard)
+    _tlRenderSlideshow(tl);
+  } else if (tier) {
+    _tlRevealPlacedInTiers(imgId); // entièrement visible (cf _tlRevealPlacedCard)
+  }
+}
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') _tlCloseImgZoom();
 });
@@ -9777,6 +9992,13 @@ function _tlRenderCompareView(tls) {
   if (tls) _tlCompareTierlists = tls;
   else tls = _tlCompareTierlists;
   if (!tls) return;
+
+  // Défilements gardés (vue, chaque colonne, chaque tier en rangée unique) : un rendu ne doit jamais
+  // ramener l'utilisateur en haut / au début.
+  const prevLeft = container.scrollLeft;
+  const prevScroll = new Map();
+  container.querySelectorAll('.tl-compare-column').forEach(col => prevScroll.set(col.dataset.tlId, col.scrollTop));
+  container.querySelectorAll('.tl-tier-images').forEach(d => { if (d.scrollLeft) prevScroll.set(d.dataset.tlId + '|' + d.dataset.tierId, d.scrollLeft); });
 
   container.classList.remove('hidden');
   container.innerHTML = '';
@@ -9823,11 +10045,35 @@ function _tlRenderCompareView(tls) {
 
     container.appendChild(col);
   });
+  container.scrollLeft = prevLeft;
+  container.querySelectorAll('.tl-compare-column').forEach(col => {
+    if (prevScroll.has(col.dataset.tlId)) col.scrollTop = prevScroll.get(col.dataset.tlId);
+  });
+  container.querySelectorAll('.tl-tier-images').forEach(d => {
+    const left = prevScroll.get(d.dataset.tlId + '|' + d.dataset.tierId);
+    if (left) d.scrollLeft = left;
+  });
   // root: container (pas document) — sans ça, createIcons() re-scanne TOUTE la page à chaque appel ;
   // ici c'est particulièrement coûteux car le slider de taille (_tlWireImgSizeControls) rappelle
   // cette fonction jusqu'à 60x/seconde pendant le glissement (même piège déjà corrigé sur
   // _tlPatchImageMove, cf commentaire là-bas — container suffit, aucune icône hors de lui ne change ici).
   if (window.lucide) lucide.createIcons({ root: container });
+}
+
+// Redessine la Comparaison affichée avec l'état actuel (appelé par tlRender : modif locale, annulation,
+// ou modif d'un autre utilisateur reçue de Firebase). Listes re-résolues par id ; nouvelles listes du
+// groupe ajoutées au menu Listes (non cochées). Glisser-déposer en cours : reporté à sa fin.
+let _tlCompareRenderPending = false;
+function _tlRefreshCompareView() {
+  if (_tlCompareDragImgId) { _tlCompareRenderPending = true; return; }
+  _tlCompareRenderPending = false;
+  const tl = tlActiveTierlist();
+  if (tl && !tl.archived) {
+    const members = _tlGetGroupMembers(tl).filter(m => !m.isTemplate && !m.archived);
+    if (members.length) _tlCompareGroupMembers = members;
+  }
+  const tls = (_tlCompareSelectedIds || []).map(id => tlState.tierlists.find(t => t.id === id && !t.archived)).filter(Boolean);
+  _tlRenderCompareView(tls);
 }
 
 // Carte en mode comparaison : pas de renommage/suppression (contrairement à l'éditeur normal),
@@ -9864,6 +10110,7 @@ function _tlBuildCompareImgCard(tl, img, size) {
     tlClearDropBefore();
     _tlClearDragSourceHidden();
     document.querySelectorAll('.tl-compare-view .tl-tier-images.drag-over').forEach(z => z.classList.remove('drag-over'));
+    if (_tlCompareRenderPending) _tlRefreshCompareView(); // modif reçue pendant le glisser
   });
 
   return card;
@@ -9944,11 +10191,13 @@ function _tlPatchCompareImageMove(tl, fromTierId, toTierId) {
     const tier = tl.tiers.find(t => t.id === tierId);
     const imgsDiv = col.querySelector(`.tl-tier-images[data-tier-id="${tierId}"]`);
     if (!tier || !imgsDiv) return false;
+    const left = imgsDiv.scrollLeft; // défilement horizontal gardé (rangée unique)
     imgsDiv.innerHTML = '';
     tier.items.forEach(imgId => {
       const img = tlFindImage(tl, imgId);
       if (img) imgsDiv.appendChild(_tlBuildCompareImgCard(tl, img, imgSize));
     });
+    if (left) imgsDiv.scrollLeft = left;
     return true;
   };
 
@@ -9977,11 +10226,13 @@ function _tlCompareDrop(e, tl, targetTierId) {
 
   tlTouchFolderChain(_tlEffectiveFolderId(tl));
   tlSaveGroup(_tlGroupRoot(tl).id); // groupe seul, jamais l'index : cf tlDrop
+  // Modif reçue pendant le glisser (rendu reporté) : tout redessiner maintenant.
+  if (_tlCompareRenderPending) { _tlCompareDragImgId = null; _tlRefreshCompareView(); _tlRevealPlacedInCompare(tl.id, imgId); return; }
   // Patch ciblé (2 zones de la colonne concernée) au lieu de reconstruire toutes les colonnes
   // comparées — from peut être '__unplaced__' (image jamais placée avant le drag), zone absente
   // du DOM en mode comparaison : _tlPatchCompareImageMove retombe alors sur le rendu complet.
-  if (from && _tlPatchCompareImageMove(tl, from.zone, targetTierId)) return;
-  _tlRenderCompareView(null);
+  if (!(from && _tlPatchCompareImageMove(tl, from.zone, targetTierId))) _tlRenderCompareView(null);
+  _tlRevealPlacedInCompare(tl.id, imgId); // entièrement visible (cf _tlRevealPlacedCard)
 }
 
 const tlCompareShowLabelsToggle = document.getElementById('tl-compare-show-labels-toggle');
@@ -10040,6 +10291,8 @@ function _tlFixUnplacedSortBtnWidth() {
 }
 
 function _tlFillUnplacedZone(tl, imgSize) {
+  // Même liste : défilement gardé (cf tlRenderTiers).
+  const prevTop = tlUnplacedZone._tlRenderedTlId === tl.id ? tlUnplacedZone.scrollTop : 0;
   tlUnplacedZone.innerHTML = '';
   _setSortBtn(tlUnplacedSortBtn, _tlUnplacedSortMode(tl), _TL_UNPLACED_SORT_MODES);
   _tlFixUnplacedSortBtnWidth();
@@ -10060,6 +10313,8 @@ function _tlFillUnplacedZone(tl, imgSize) {
       if (img) tlUnplacedZone.appendChild(tlBuildImgCard(tl, img, imgSize, false, true));
     });
   }
+  tlUnplacedZone._tlRenderedTlId = tl.id;
+  if (prevTop) tlUnplacedZone.scrollTop = prevTop;
 }
 
 // Recalcule uniquement le texte du compteur "X / Y" — factorisé pour le patch ciblé.
@@ -10152,6 +10407,9 @@ function tlBuildImgCard(tl, img, size, readOnly = false, isUnplacedZone = false)
       // Toutes les cartes encore sélectionnées (pas seulement la première trouvée par identifiant)
       document.querySelectorAll('.tl-img-card.selected').forEach(c => { if (c !== card) c.classList.remove('selected'); });
       card.classList.toggle('selected', _tlSelectedImgId === img.id);
+      // Diaporama : l'élément affiché en grand suit la sélection (cf _tlRenderSlideshow).
+      document.querySelectorAll('#tl-slideshow-stage .tl-slideshow-item:not(.tl-slideshow-item--out)').forEach(el =>
+        el.classList.toggle('tl-slideshow-item--selected', !!_tlSelectedImgId && _tlSlideshowIds[_tlSlideshowIdx] === _tlSelectedImgId));
     });
 
     card.addEventListener('dragstart', e => {
@@ -10889,6 +11147,41 @@ function tlDropInsertBeforeId(zone, clientX, clientY, excludeImgId) {
   return idx < cards.length ? cards[idx].dataset.imgId : null;
 }
 
+// Élément qui vient d'arriver dans un tier (glisser-déposer, bouton d'envoi du zoom) : défilement
+// minimal, seulement si nécessaire, pour qu'il soit entièrement visible — vertical dans scroller
+// (cadre Tiers, ou colonne en Comparaison, sous son titre collant), horizontal dans la rangée de son
+// tier (rangée unique). Le Diaporama a sa propre règle (cf _tlSlideshowMarkCard).
+function _tlRevealPlacedCard(scroller, card) {
+  if (!card || !card.isConnected) return;
+  const m = 6; // petite marge autour de l'élément
+  const r = card.getBoundingClientRect();
+  if (scroller) {
+    const s = scroller.getBoundingClientRect();
+    const top = s.top + (scroller.querySelector(':scope > .tl-compare-column-title')?.offsetHeight || 0);
+    let dy = 0;
+    if (r.bottom > s.bottom - m) dy = r.bottom - s.bottom + m;
+    if (r.top - dy < top + m) dy = r.top - top - m;
+    if (dy) scroller.scrollBy({ top: dy, behavior: 'smooth' });
+  }
+  const row = card.closest('.tl-tier-images');
+  if (row && row.scrollWidth > row.clientWidth) {
+    const rr = row.getBoundingClientRect();
+    let dx = 0;
+    if (r.right > rr.right - m) dx = r.right - rr.right + m;
+    if (r.left - dx < rr.left + m) dx = r.left - rr.left - m;
+    if (dx) row.scrollBy({ left: dx, behavior: 'smooth' });
+  }
+}
+// Mode Classique : carte de l'élément dans les tiers.
+function _tlRevealPlacedInTiers(imgId) {
+  _tlRevealPlacedCard(tlTiersZone, tlTiersZone.querySelector(`.tl-tier-images > .tl-img-card[data-img-id="${CSS.escape(imgId)}"]`));
+}
+// Mode Comparaison : carte de l'élément dans la colonne de sa liste.
+function _tlRevealPlacedInCompare(tlId, imgId) {
+  const col = document.querySelector(`#tl-compare-view .tl-compare-column[data-tl-id="${CSS.escape(tlId)}"]`);
+  if (col) _tlRevealPlacedCard(col, col.querySelector(`.tl-tier-images > .tl-img-card[data-img-id="${CSS.escape(imgId)}"]`));
+}
+
 function tlDrop(e, targetZoneId) {
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
@@ -10970,13 +11263,17 @@ function tlDrop(e, targetZoneId) {
   const revealInTier = _tlSlideshowTlId === tl.id && targetZoneId !== '__unplaced__';
   const goNext = () => { if (revealInTier) _tlSlideshowRevealId = imgId; _tlSlideshowGo(1); };
   if (revealInTier && !fromSlideshowStage) _tlSlideshowRevealId = imgId;
+  // Hors Diaporama : élément déposé dans un tier rendu entièrement visible (cf _tlRevealPlacedCard).
+  const revealClassic = _tlSlideshowTlId !== tl.id && targetZoneId !== '__unplaced__';
   if (from && (_tlMoveImageCard(tl, imgId, from.zone, targetZoneId) || _tlPatchImageMove(tl, from.zone, targetZoneId))) {
     if (fromSlideshowStage) goNext();
     else if (_tlSlideshowTlId === tl.id) _tlRenderSlideshow(tl);
+    if (revealClassic) _tlRevealPlacedInTiers(imgId);
     return;
   }
   tlRender(true);
   if (fromSlideshowStage) goNext();
+  if (revealClassic) _tlRevealPlacedInTiers(imgId);
 }
 
 // Déplacement d'UNE image (glisser-déposer, diaporama) : retire sa carte de la zone de départ et
@@ -12428,8 +12725,9 @@ document.addEventListener('keydown', e => {
 // Désélectionner l'image en cliquant ailleurs — patch ciblé (retrait de la classe CSS) plutôt
 // qu'un tlRender() complet, même principe que le clic de sélection dans tlBuildImgCard.
 document.addEventListener('click', e => {
-  if (_tlSelectedImgId && !e.target.closest('.tl-img-card')) {
+  if (_tlSelectedImgId && !e.target.closest('.tl-img-card, .tl-slideshow-item')) {
     document.querySelectorAll('.tl-img-card.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.tl-slideshow-item--selected').forEach(c => c.classList.remove('tl-slideshow-item--selected'));
     _tlSelectedImgId = null;
   }
 });
@@ -13488,7 +13786,7 @@ function _tlCaptureForRemotePatch(groupRootId) {
 // rattrape alors tout changement distant reçu entre-temps.
 function _tlEditingInline() {
   const a = document.activeElement;
-  return !!(a && a.matches && a.matches('.tl-tier-label-input, .tl-img-label-input') && tlEditor.contains(a));
+  return !!(a && a.matches && a.matches('.tl-tier-label-input, .tl-img-label-input, .tl-slideshow-name-input') && tlEditor.contains(a));
 }
 
 // Tiers sans leurs items (id/label/couleur…), clés triées : identique ⇔ seuls des placements ont pu changer.
